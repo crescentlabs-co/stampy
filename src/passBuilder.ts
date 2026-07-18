@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { PKPass } from "passkit-generator";
 import { config, setupStatus } from "./config.js";
-import type { PassRow } from "./db.js";
+import type { CafeRow, PassRow } from "./db.js";
 import { buildPassJson } from "./passModel.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +30,7 @@ function loadArt(): Record<string, Buffer> {
 export class NotConfiguredError extends Error {}
 
 /** Builds and signs the .pkpass for a card. Throws NotConfiguredError until certs exist. */
-export function buildPkpass(row: PassRow): Buffer {
+export function buildPkpass(row: PassRow, cafe: CafeRow): Buffer {
   if (!setupStatus().canSignPasses) {
     throw new NotConfiguredError(
       "Apple certificates are not configured yet — check /setup for what's missing.",
@@ -40,7 +40,7 @@ export function buildPkpass(row: PassRow): Buffer {
   const pass = new PKPass(
     {
       ...loadArt(),
-      "pass.json": Buffer.from(JSON.stringify(buildPassJson(row))),
+      "pass.json": Buffer.from(JSON.stringify(buildPassJson(row, cafe))),
     },
     {
       wwdr: readFileSync(path.join(certsDir, "wwdr.pem")),

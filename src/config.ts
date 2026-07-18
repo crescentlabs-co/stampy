@@ -8,30 +8,16 @@
  * crashing the server. The /setup page reports which pieces are present.
  */
 
-export interface CafeConfig {
-  /** Display name on the card and pages. */
-  name: string;
-  /** Total stamps needed to redeem. */
-  stampsTarget: number;
-  /** Stamps pre-filled on a brand-new card (endowed progress). */
-  stampsStart: number;
-  /** What a full card earns. */
-  reward: string;
-  /** Card colours (CSS rgb() strings, per PassKit spec). */
-  backgroundColor: string;
-  foregroundColor: string;
-  labelColor: string;
-}
-
-/** v1 has exactly one hardcoded café (the thin slice). Multi-tenant comes later. */
-export const CAFE: CafeConfig = {
+/**
+ * Café content now lives in the `cafes` DB table (multi-café). These env values
+ * are used ONCE — to seed the default café on first boot — so v0.1 deployments
+ * keep working unchanged. Edits after that happen in the owner dashboard.
+ */
+export const seedCafe = {
   name: process.env.CAFE_NAME ?? "Kopi Corner",
   stampsTarget: intEnv("STAMPS_TARGET", 10),
   stampsStart: intEnv("STAMPS_START", 2),
   reward: process.env.CAFE_REWARD ?? "Free coffee",
-  backgroundColor: "rgb(59, 32, 22)",
-  foregroundColor: "rgb(255, 250, 240)",
-  labelColor: "rgb(214, 178, 120)",
 };
 
 export const config = {
@@ -54,8 +40,15 @@ export const config = {
   apnsKeyB64: process.env.APNS_KEY_B64 ?? "",
   apnsKeyId: process.env.APNS_KEY_ID ?? "",
 
-  /** Simple shared PIN gating the staff page (thin-slice auth). */
+  /** Seed PIN for the default café's staff page (per-café PINs live in the DB). */
   staffPin: process.env.STAFF_PIN ?? "1234",
+
+  /**
+   * Secret for signing dashboard session cookies. If unset, a random one is
+   * generated per boot (sessions survive until the next deploy — fine for now;
+   * set SESSION_SECRET in Railway for stable logins).
+   */
+  sessionSecret: process.env.SESSION_SECRET ?? "",
 };
 
 function intEnv(name: string, fallback: number): number {

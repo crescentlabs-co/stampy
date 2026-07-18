@@ -1,24 +1,33 @@
 /**
- * Staff-facing routes, gated by a shared PIN (thin-slice auth — sent as the
- * x-staff-pin header; the page remembers it in localStorage after first entry).
+ * Staff-facing routes, gated by the café's PIN (sent as the x-staff-pin header;
+ * the page remembers it in localStorage after first entry). Multi-café: requests
+ * carry x-cafe-id (default "default"); the PIN is checked against that café row.
  *
- *   GET  /staff                the stamper page (recent cards + buttons)
- *   GET  /staff/api/passes     recent cards as JSON
- *   POST /staff/api/stamp      { serial } → +1 stamp → APNs push
- *   POST /staff/api/redeem     { serial } → reset card to 0 → APNs push
- *   POST /staff/api/message    { serial, message } → win-back nudge → APNs push
+ *   GET  /staff                    the stamper page (camera scanner + recent cards)
+ *   GET  /staff/api/passes         recent cards as JSON
+ *   POST /staff/api/stamp          { serial } → +1 stamp → APNs push   (scanner path)
+ *   POST /staff/api/stamp-by-code  { code }   → resolve short code → +1 stamp (typed fallback)
+ *   POST /staff/api/redeem         { serial } → reset card to 0 → APNs push
+ *   POST /staff/api/message        { serial, message } → win-back nudge → APNs push
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { pushPassUpdate } from "../apns.js";
-import { config } from "../config.js";
 import {
   addStamps,
+  DEFAULT_CAFE_ID,
+  getCafe,
   getPass,
+  getPassByShortCode,
   listRecentPasses,
+  logEvent,
   pushTokensForSerial,
   redeemPass,
   setMessage,
+  type CafeRow,
+  type EventType,
   type PassRow,
 } from "../db.js";
 import { isRewardReady, stampDots } from "../passModel.js";
@@ -26,14 +35,21 @@ import { staffPage } from "../pages.js";
 
 export const staffRouter = Router();
 
-function pinOk(req: Request): boolean {
-  const given = Buffer.from(req.get("x-staff-pin") ?? "");
-  const expected = Buffer.from(config.staffPin);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+interface StaffRequest extends Request {
+  cafe?: CafeRow;
 }
 
-function requirePin(req: Request, res: Response, next: NextFunction): void {
-  if (!pinOk(req)) return void res.status(401).json({ error: "wrong-pin" });
+/** Looks up the request's café and verifies the PIN against its row (constant-time). */
+async function requirePin(req: StaffRequest, res: Response, next: NextFunction): Promise<void> {
+  const cafeId = req.get("x-cafe-id") || DEFAULT_CAFE_ID;
+  const cafe = await getCafe(cafeId);
+  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
+  const given = Buffer.from(req.get("x-staff-pin") ?? "");
+  const expected = Buffer.from(cafe.staff_pin);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    return void res.status(401).json({ error: "wrong-pin" });
+  }
+  req.cafe = cafe;
   next();
 }
 
@@ -41,10 +57,26 @@ staffRouter.get("/", (_req, res) => {
   res.type("html").send(staffPage());
 });
 
+// QR-decoder fallback for browsers without BarcodeDetector (iPhone Safari).
+// Served from our own node_modules — no CDN, works offline in the café.
+staffRouter.get("/jsqr.js", (_req, res) => {
+  res.type("application/javascript").send(loadJsQr());
+});
+
+let jsQrCache: string | null = null;
+function loadJsQr(): string {
+  if (jsQrCache === null) {
+    const path = fileURLToPath(new URL("../../node_modules/jsqr/dist/jsQR.js", import.meta.url));
+    jsQrCache = readFileSync(path, "utf8");
+  }
+  return jsQrCache;
+}
+
 function passView(row: PassRow) {
   return {
     serial: row.serial,
     shortId: row.serial.slice(0, 8),
+    code: row.short_code,
     stamps: row.stamp_count,
     target: row.stamps_target,
     dots: stampDots(row.stamp_count, row.stamps_target),
@@ -54,21 +86,27 @@ function passView(row: PassRow) {
   };
 }
 
-staffRouter.get("/api/passes", requirePin, async (_req, res) => {
-  const rows = await listRecentPasses(20);
+staffRouter.get("/api/passes", requirePin, async (req: StaffRequest, res) => {
+  const rows = await listRecentPasses(req.cafe!.id, 20);
   res.json({ passes: rows.map(passView) });
 });
 
-/** Updates the card then pushes to every registered device. */
+/** Updates the card (must belong to this café), logs the event, then pushes. */
 async function updateAndPush(
+  req: StaffRequest,
   res: Response,
   serial: string,
+  eventType: EventType,
   update: () => Promise<PassRow | null>,
 ): Promise<void> {
+  const cafe = req.cafe!;
   const existing = await getPass(serial);
-  if (!existing) return void res.status(404).json({ error: "no-such-card" });
+  if (!existing || existing.cafe_id !== cafe.id) {
+    return void res.status(404).json({ error: "no-such-card" });
+  }
   const row = await update();
   if (!row) return void res.status(404).json({ error: "no-such-card" });
+  await logEvent(cafe.id, serial, eventType);
   const pushResults = await pushPassUpdate(await pushTokensForSerial(serial));
   res.json({
     pass: passView(row),
@@ -82,22 +120,33 @@ async function updateAndPush(
   });
 }
 
-staffRouter.post("/api/stamp", requirePin, async (req, res) => {
+staffRouter.post("/api/stamp", requirePin, async (req: StaffRequest, res) => {
   const { serial } = (req.body ?? {}) as { serial?: string };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
-  await updateAndPush(res, serial, () => addStamps(serial, 1));
+  await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, 1));
 });
 
-staffRouter.post("/api/redeem", requirePin, async (req, res) => {
+/** Typed-code fallback: staff keys in the short code printed on the card. */
+staffRouter.post("/api/stamp-by-code", requirePin, async (req: StaffRequest, res) => {
+  const { code } = (req.body ?? {}) as { code?: string };
+  if (!code?.trim()) return void res.status(400).json({ error: "missing-code" });
+  const row = await getPassByShortCode(req.cafe!.id, code);
+  if (!row) return void res.status(404).json({ error: "no-such-card" });
+  await updateAndPush(req, res, row.serial, "stamp", () => addStamps(row.serial, 1));
+});
+
+staffRouter.post("/api/redeem", requirePin, async (req: StaffRequest, res) => {
   const { serial } = (req.body ?? {}) as { serial?: string };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
-  await updateAndPush(res, serial, () => redeemPass(serial));
+  await updateAndPush(req, res, serial, "redeem", () => redeemPass(serial));
 });
 
-staffRouter.post("/api/message", requirePin, async (req, res) => {
+staffRouter.post("/api/message", requirePin, async (req: StaffRequest, res) => {
   const { serial, message } = (req.body ?? {}) as { serial?: string; message?: string };
   if (!serial || !message?.trim()) {
     return void res.status(400).json({ error: "missing-serial-or-message" });
   }
-  await updateAndPush(res, serial, () => setMessage(serial, message.trim().slice(0, 200)));
+  await updateAndPush(req, res, serial, "nudge", () =>
+    setMessage(serial, message.trim().slice(0, 200)),
+  );
 });

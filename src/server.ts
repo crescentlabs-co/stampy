@@ -6,6 +6,7 @@ import express from "express";
 import { config, setupStatus } from "./config.js";
 import { migrate } from "./db.js";
 import { setupPage } from "./pages.js";
+import { dashboardRouter } from "./routes/dashboard.js";
 import { publicRouter } from "./routes/public.js";
 import { staffRouter } from "./routes/staff.js";
 import { walletRouter } from "./routes/wallet.js";
@@ -18,6 +19,7 @@ app.get("/setup", (_req, res) => res.type("html").send(setupPage(setupStatus(), 
 
 app.use("/wallet", walletRouter);
 app.use("/staff", staffRouter);
+app.use("/dashboard", dashboardRouter);
 app.use("/", publicRouter);
 
 // Log-and-500 fallback so one bad request never kills the demo.

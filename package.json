@@ -12,6 +12,7 @@
     "start": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",
     "test": "vitest run",
+    "e2e": "tsx scripts/e2e-local.ts",
     "typecheck": "tsc --noEmit",
     "art": "tsx scripts/generate-art.ts",
     "prepare-certs": "tsx scripts/prepare-certs.ts"
@@ -19,6 +20,7 @@
   "dependencies": {
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "jsqr": "^1.4.0",
     "passkit-generator": "^3.3.4",
     "pg": "^8.13.1",
     "qrcode": "^1.5.4",
@@ -30,6 +32,7 @@
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "@types/qrcode": "^1.5.5",
+    "embedded-postgres": "18.4.0-beta.17",
     "sharp": "^0.33.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

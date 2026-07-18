@@ -2,8 +2,8 @@
  * Pure pass-content logic — no certificates, no I/O — so the card's look and
  * notification wording are unit-testable before Apple approval even lands.
  */
-import { CAFE, config } from "./config.js";
-import type { PassRow } from "./db.js";
+import { config } from "./config.js";
+import type { CafeRow, PassRow } from "./db.js";
 
 /** "●●●○○○○○○○" — filled vs empty stamp slots. */
 export function stampDots(count: number, target: number): string {
@@ -16,7 +16,7 @@ export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target"
 }
 
 /**
- * Builds the complete pass.json content for a card.
+ * Builds the complete pass.json content for a card, branded per café.
  *
  * Notification design (the hero feature): iOS shows a lock-screen banner when
  * a field that carries `changeMessage` changes. Exactly two fields carry one:
@@ -24,7 +24,7 @@ export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target"
  *  - the hidden `message` field → fires when we set a win-back message
  * Everything else changes silently, so customers get one clean banner per event.
  */
-export function buildPassJson(row: PassRow): Record<string, unknown> {
+export function buildPassJson(row: PassRow, cafe: CafeRow): Record<string, unknown> {
   const ready = isRewardReady(row);
   const progress = `${row.stamp_count}/${row.stamps_target}`;
 
@@ -32,22 +32,23 @@ export function buildPassJson(row: PassRow): Record<string, unknown> {
     formatVersion: 1,
     passTypeIdentifier: config.passTypeId,
     teamIdentifier: config.teamId,
-    organizationName: CAFE.name,
-    description: `${CAFE.name} loyalty card`,
+    organizationName: cafe.name,
+    description: `${cafe.name} loyalty card`,
     serialNumber: row.serial,
     webServiceURL: `${config.baseUrl}/wallet`,
     authenticationToken: row.auth_token,
     sharingProhibited: true,
-    logoText: CAFE.name,
-    backgroundColor: CAFE.backgroundColor,
-    foregroundColor: CAFE.foregroundColor,
-    labelColor: CAFE.labelColor,
+    logoText: cafe.name,
+    backgroundColor: cafe.background_color,
+    foregroundColor: cafe.foreground_color,
+    labelColor: cafe.label_color,
     barcodes: [
       {
         format: "PKBarcodeFormatQR",
         message: row.serial,
         messageEncoding: "iso-8859-1",
-        altText: `Card ${row.serial.slice(0, 8)}`,
+        // Staff fallback: if the camera won't read, they type this code.
+        altText: `Code ${row.short_code}`,
       },
     ],
     storeCard: {
@@ -57,8 +58,8 @@ export function buildPassJson(row: PassRow): Record<string, unknown> {
           label: "STAMPS",
           value: progress,
           changeMessage: ready
-            ? `Card full! %@ — your ${CAFE.reward.toLowerCase()} is ready 🎉`
-            : `You now have %@ stamps — ${CAFE.reward.toLowerCase()} at ${row.stamps_target}!`,
+            ? `Card full! %@ — your ${row.reward.toLowerCase()} is ready 🎉`
+            : `You now have %@ stamps — ${row.reward.toLowerCase()} at ${row.stamps_target}!`,
         },
       ],
       primaryFields: [],
@@ -79,9 +80,14 @@ export function buildPassJson(row: PassRow): Record<string, unknown> {
       backFields: [
         {
           key: "message",
-          label: CAFE.name,
-          value: row.message || `Welcome to ${CAFE.name}!`,
+          label: cafe.name,
+          value: row.message || `Welcome to ${cafe.name}!`,
           changeMessage: "%@",
+        },
+        {
+          key: "code",
+          label: "CARD CODE",
+          value: row.short_code,
         },
         {
           key: "howto",

@@ -14,6 +14,7 @@ import { Router, type Request, type Response } from "express";
 import { timingSafeEqual } from "node:crypto";
 import {
   deleteRegistration,
+  getCafe,
   getPass,
   serialsUpdatedSince,
   upsertRegistration,
@@ -78,8 +79,10 @@ walletRouter.get("/v1/devices/:deviceId/registrations/:passTypeId", async (req, 
 walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
   const row = await authedPass(req, res);
   if (!row) return;
+  const cafe = await getCafe(row.cafe_id);
+  if (!cafe) return void res.status(500).end();
   try {
-    const pkpass = buildPkpass(row);
+    const pkpass = buildPkpass(row, cafe);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")
