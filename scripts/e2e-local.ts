@@ -96,10 +96,11 @@ async function main() {
   expect(cafeAfter!.reward === "Free latte" && cafeAfter!.staff_pin === "9876", "edit persisted");
 
   // Create two passes directly (enroll route would 503 without Apple certs)
-  const mk = async () =>
+  const mk = async (platform: "apple" | "google" = "apple") =>
     createPass({
       serial: crypto.randomUUID(),
       cafeId: "default",
+      platform,
       shortCode: generateShortCode(),
       authToken: "t".repeat(24),
       stampCount: 2,
@@ -182,6 +183,37 @@ async function main() {
     body: JSON.stringify({ serial: p1.serial }),
   });
   expect(crossStamp.status === 404, "cannot stamp another café's card");
+
+  // --- Google Wallet branch (no Google creds → graceful, never throws) ---
+  const gEnroll = await get("/enroll/google");
+  expect(gEnroll.status === 503, "google enroll → 503 until Google creds configured");
+
+  const gp = await mk("google");
+  const gStamp = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: gp.serial }),
+  });
+  const gStampOut = JSON.parse(await gStamp.text());
+  expect(
+    gStamp.status === 200 && gStampOut.pass.stamps === 3,
+    "google-platform card: stamp still updates the DB (2 → 3)",
+  );
+  expect(
+    gStampOut.push.detail[0].reason === "google-not-configured",
+    "google dispatch reports google-not-configured gracefully (no throw)",
+  );
+
+  const gNudge = await fetch(base + "/staff/api/message", {
+    method: "POST", headers: staffHeaders,
+    body: JSON.stringify({ serial: gp.serial, message: "Come back!" }),
+  });
+  const gNudgeOut = JSON.parse(await gNudge.text());
+  expect(
+    gNudge.status === 200 && gNudgeOut.push.detail[0].reason === "google-not-configured",
+    "google nudge path graceful without creds",
+  );
+
+  const logo = await get("/art/logo.png");
+  expect(logo.status === 200, "hosted logo for Google class is served");
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

@@ -59,18 +59,31 @@ function page(title: string, body: string, extraCss = "", script = ""): string {
 
 // ------------------------------------------------------------- customer ----
 
-export function landingPage(cafe: CafeRow, ready: boolean, cafeId: string): string {
-  const enrollHref = cafeId === DEFAULT_CAFE_ID ? "/enroll" : `/c/${cafeId}/enroll`;
+export function landingPage(
+  cafe: CafeRow,
+  appleReady: boolean,
+  googleReady: boolean,
+  cafeId: string,
+): string {
+  const base = cafeId === DEFAULT_CAFE_ID ? "" : `/c/${cafeId}`;
+  const buttons = [
+    appleReady
+      ? `<a class="btn btn-dark" href="${base}/enroll">&#63743; Add to Apple Wallet</a>`
+      : "",
+    googleReady
+      ? `<a class="btn btn-dark" style="margin-top:10px" href="${base}/enroll/google">Add to Google Wallet</a>`
+      : "",
+  ].join("");
   return page(
     `${cafe.name} — Loyalty Card`,
     `<div class="card" style="text-align:center">
       <div style="font-size:3rem; margin-bottom:8px">☕️</div>
       <h1>${cafe.name}</h1>
       <p class="sub">Collect ${cafe.stamps_target} stamps, get a ${cafe.reward.toLowerCase()}.<br>
-      Your card lives in Apple Wallet — no app needed.</p>
+      Your card lives in your phone’s wallet — no app needed.</p>
       ${
-        ready
-          ? `<a class="btn btn-dark" href="${enrollHref}">&#63743; Add to Apple Wallet</a>
+        buttons
+          ? `${buttons}
              <p class="muted" style="margin-top:14px">You start with stamps already on your card 🎁</p>`
           : `<p class="sub"><strong>Almost ready!</strong> Cards can’t be issued yet — the café is still being set up.</p>`
       }
@@ -417,10 +430,13 @@ export function setupPage(s: SetupStatus, baseUrl: string): string {
         ${check(s.passTypeId, "Pass Type ID (PASS_TYPE_ID)", "e.g. pass.com.stampy.loyalty — created at developer.apple.com.")}
         ${check(s.signerCert, "Signing certificate (SIGNER_CERT_B64 + SIGNER_KEY_B64)", "Exported from Keychain — Claude walks you through this.")}
         ${check(s.apnsKey, "Push key (APNS_KEY_B64 + APNS_KEY_ID)", "An APNs auth key (.p8) from developer.apple.com.")}
+        ${check(s.googleIssuer, "Google Wallet Issuer ID (GOOGLE_ISSUER_ID)", "From the Google Wallet Business Console — needed for Android cards.")}
+        ${check(s.googleServiceAccount, "Google service account (GOOGLE_SERVICE_ACCOUNT_B64)", "Produced by pnpm prepare-google from the downloaded JSON key.")}
       </ul>
       <hr style="border:none;border-top:1px solid #eee2d5;margin:16px 0">
-      <p><strong>Can issue cards:</strong> ${s.canSignPasses ? "YES ✅" : "not yet"}</p>
-      <p><strong>Can push updates:</strong> ${s.canPush ? "YES ✅" : "not yet"}</p>
+      <p><strong>Apple — can issue cards:</strong> ${s.canSignPasses ? "YES ✅" : "not yet"}</p>
+      <p><strong>Apple — can push updates:</strong> ${s.canPush ? "YES ✅" : "not yet"}</p>
+      <p><strong>Google Wallet (Android):</strong> ${s.canGoogleWallet ? "YES ✅" : "not yet"}</p>
       <p style="margin-top:14px">Owner dashboard: <a href="/dashboard">${baseUrl || ""}/dashboard</a></p>
       ${
         s.canSignPasses

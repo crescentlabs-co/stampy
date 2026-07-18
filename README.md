@@ -1,14 +1,23 @@
 # Stampy ☕️
 
-Digital loyalty stamp cards that live in Apple Wallet — no customer app.
-Staff stamp from a web page; the card updates on the customer's phone in
-seconds, with a lock-screen banner.
+Digital loyalty stamp cards that live in Apple Wallet **and Google Wallet** —
+no customer app. Staff stamp from a web page; the card updates on the
+customer's phone in seconds, with a lock-screen notification.
+
+**How updates flow, per platform:**
+- **Apple:** we host the pass + Apple's web-service endpoints; on each stamp we
+  send an empty APNs push, the iPhone re-fetches the pass, and iOS renders the
+  `changeMessage` banner.
+- **Google:** Google hosts the card; on each stamp we `PATCH` the LoyaltyObject
+  (`NOTIFY_ON_UPDATE`) — no push tokens, no web service. Nudges use
+  `addMessage` with `TEXT_AND_NOTIFY`. Google caps notifications at 3 per card
+  per 24 h.
 
 ## The pieces
 
 | Piece | Where | What |
 |---|---|---|
-| Customer card | Apple Wallet | Branded pass, stamp dots, QR barcode + typed card code. Added by scanning the counter QR. |
+| Customer card | Apple Wallet / Google Wallet | Branded pass, stamp dots, QR barcode + typed card code. Added by scanning the counter QR — the landing page shows both wallet buttons. |
 | Staff stamper | `/staff` (web page, PIN-gated) | 📷 scan the customer's card → +1 stamp; typed-code fallback; redeem & reset; lock-screen nudge. |
 | Owner dashboard | `/dashboard` (email + password) | Metrics (cards, stamps, redemptions), edit reward/PIN/targets, add more cafés. |
 | Brain | This Node server + Postgres on Railway | Multi-café; issues signed passes, hosts Apple's pass web service, pushes updates via APNs. |
@@ -42,6 +51,8 @@ card in the recent list.
 | `SIGNER_CERT_B64` / `SIGNER_KEY_B64` | From the exported `.p12` — produced by `pnpm prepare-certs` |
 | `SIGNER_KEY_PASSPHRASE` | Only if the exported key kept a passphrase (prepare-certs strips it) |
 | `APNS_KEY_B64` / `APNS_KEY_ID` | APNs auth key `.p8` + its Key ID |
+| `GOOGLE_ISSUER_ID` | From the Google Wallet Business Console (Android cards) |
+| `GOOGLE_SERVICE_ACCOUNT_B64` | Produced by `pnpm prepare-google <key.json>` |
 | `STAFF_PIN` | Seeds the default café's staff PIN (change it later in the dashboard) |
 | `SESSION_SECRET` | Any long random string — keeps dashboard logins valid across deploys |
 | `CAFE_NAME` / `CAFE_REWARD` / `STAMPS_TARGET` / `STAMPS_START` | Seed the default café on first boot (Kopi Corner / Free coffee / 10 / 2); edit in the dashboard afterwards |

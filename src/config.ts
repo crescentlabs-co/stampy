@@ -40,6 +40,11 @@ export const config = {
   apnsKeyB64: process.env.APNS_KEY_B64 ?? "",
   apnsKeyId: process.env.APNS_KEY_ID ?? "",
 
+  /** Google Wallet: Issuer ID (from the Wallet Business Console). */
+  googleIssuerId: process.env.GOOGLE_ISSUER_ID ?? "",
+  /** Google Cloud service-account JSON, base64-encoded (from pnpm prepare-google). */
+  googleServiceAccountB64: process.env.GOOGLE_SERVICE_ACCOUNT_B64 ?? "",
+
   /** Seed PIN for the default café's staff page (per-café PINs live in the DB). */
   staffPin: process.env.STAFF_PIN ?? "1234",
 
@@ -65,15 +70,21 @@ export interface SetupStatus {
   passTypeId: boolean;
   signerCert: boolean;
   apnsKey: boolean;
-  /** True when a signed pass can be generated. */
+  googleIssuer: boolean;
+  googleServiceAccount: boolean;
+  /** True when a signed Apple pass can be generated. */
   canSignPasses: boolean;
-  /** True when push updates can be sent. */
+  /** True when Apple push updates can be sent. */
   canPush: boolean;
+  /** True when Google Wallet cards can be issued and updated. */
+  canGoogleWallet: boolean;
 }
 
 export function setupStatus(): SetupStatus {
   const signerCert = Boolean(config.signerCertB64 && config.signerKeyB64);
   const apnsKey = Boolean(config.apnsKeyB64 && config.apnsKeyId && config.teamId);
+  const googleIssuer = Boolean(config.googleIssuerId);
+  const googleServiceAccount = Boolean(config.googleServiceAccountB64);
   return {
     database: Boolean(config.databaseUrl),
     baseUrl: Boolean(config.baseUrl),
@@ -81,7 +92,10 @@ export function setupStatus(): SetupStatus {
     passTypeId: Boolean(config.passTypeId),
     signerCert,
     apnsKey,
+    googleIssuer,
+    googleServiceAccount,
     canSignPasses: signerCert && Boolean(config.teamId && config.passTypeId && config.baseUrl),
     canPush: apnsKey && Boolean(config.passTypeId),
+    canGoogleWallet: googleIssuer && googleServiceAccount,
   };
 }

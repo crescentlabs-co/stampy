@@ -35,6 +35,7 @@ import {
   updateCafe,
   type OwnerRow,
 } from "../db.js";
+import { ensureClass } from "../googleWallet.js";
 import { dashboardPage } from "../pages.js";
 
 export const dashboardRouter = Router();
@@ -147,6 +148,13 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
   }
   const cafe = await updateCafe(cafeId, fields);
   if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
+  // Mirror branding/name changes into the Google-hosted card class (no-op
+  // result until Google credentials are configured).
+  void ensureClass(cafe).then((r) => {
+    if (!r.ok && r.reason !== "google-not-configured") {
+      console.error("[dashboard] google class sync failed:", r);
+    }
+  });
   res.json({ ok: true });
 });
 

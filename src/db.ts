@@ -39,9 +39,13 @@ export interface OwnerRow {
   created_at: Date;
 }
 
+export type Platform = "apple" | "google";
+
 export interface PassRow {
   serial: string;
   cafe_id: string;
+  /** Which wallet the card lives in — decides how updates are delivered. */
+  platform: Platform;
   /** Short human-typeable code printed on the card — staff fallback when the camera won't scan. */
   short_code: string;
   auth_token: string;
@@ -114,6 +118,7 @@ export async function migrate(): Promise<void> {
     CREATE TABLE IF NOT EXISTS passes (
       serial        text PRIMARY KEY,
       cafe_id       text NOT NULL REFERENCES cafes(id),
+      platform      text NOT NULL DEFAULT 'apple',
       short_code    text NOT NULL UNIQUE,
       auth_token    text NOT NULL,
       stamp_count   integer NOT NULL DEFAULT 0,
@@ -140,6 +145,8 @@ export async function migrate(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_events_cafe_time ON events(cafe_id, created_at);
+    -- v0.3: pre-existing deployments get the platform column added in place.
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS platform text NOT NULL DEFAULT 'apple';
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -270,6 +277,7 @@ export async function ownerHasCafe(ownerId: string, cafeId: string): Promise<boo
 export async function createPass(row: {
   serial: string;
   cafeId: string;
+  platform: Platform;
   shortCode: string;
   authToken: string;
   stampCount: number;
@@ -277,9 +285,9 @@ export async function createPass(row: {
   reward: string;
 }): Promise<PassRow> {
   const res = await getPool().query<PassRow>(
-    `INSERT INTO passes (serial, cafe_id, short_code, auth_token, stamp_count, stamps_target, reward)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [row.serial, row.cafeId, row.shortCode, row.authToken, row.stampCount, row.stampsTarget, row.reward],
+    `INSERT INTO passes (serial, cafe_id, platform, short_code, auth_token, stamp_count, stamps_target, reward)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [row.serial, row.cafeId, row.platform, row.shortCode, row.authToken, row.stampCount, row.stampsTarget, row.reward],
   );
   return res.rows[0]!;
 }

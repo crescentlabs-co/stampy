@@ -15,6 +15,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { pushPassUpdate } from "../apns.js";
+import { addMessage, patchBalance } from "../googleWallet.js";
 import {
   addStamps,
   DEFAULT_CAFE_ID,
@@ -91,13 +92,21 @@ staffRouter.get("/api/passes", requirePin, async (req: StaffRequest, res) => {
   res.json({ passes: rows.map(passView) });
 });
 
-/** Updates the card (must belong to this café), logs the event, then pushes. */
+/**
+ * Updates the card (must belong to this café), logs the event, then delivers
+ * the update to the phone — per platform:
+ *   apple  → empty APNs push; the device re-fetches the pass and iOS renders
+ *            the changeMessage banner.
+ *   google → PATCH the LoyaltyObject (NOTIFY_ON_UPDATE) or addMessage
+ *            (TEXT_AND_NOTIFY for nudges); Google delivers it.
+ */
 async function updateAndPush(
   req: StaffRequest,
   res: Response,
   serial: string,
   eventType: EventType,
   update: () => Promise<PassRow | null>,
+  nudgeText?: string,
 ): Promise<void> {
   const cafe = req.cafe!;
   const existing = await getPass(serial);
@@ -107,17 +116,35 @@ async function updateAndPush(
   const row = await update();
   if (!row) return void res.status(404).json({ error: "no-such-card" });
   await logEvent(cafe.id, serial, eventType);
-  const pushResults = await pushPassUpdate(await pushTokensForSerial(serial));
-  res.json({
-    pass: passView(row),
-    push: {
+
+  let push: {
+    sent: number;
+    failed: number;
+    registeredDevices: number;
+    detail: { status?: number; reason?: string }[];
+  };
+  if (row.platform === "google") {
+    const result =
+      eventType === "nudge" && nudgeText
+        ? await addMessage(row, cafe, nudgeText)
+        : await patchBalance(row, cafe);
+    push = {
+      sent: result.ok ? 1 : 0,
+      failed: result.ok ? 0 : 1,
+      registeredDevices: 1, // Google hosts the card — no per-device registrations.
+      detail: [{ status: result.status, reason: result.reason }],
+    };
+  } else {
+    const pushResults = await pushPassUpdate(await pushTokensForSerial(serial));
+    push = {
       sent: pushResults.filter((r) => r.ok).length,
       failed: pushResults.filter((r) => !r.ok).length,
       // A card that was never opened on a phone has no registrations yet.
       registeredDevices: pushResults.length,
       detail: pushResults.map((r) => ({ status: r.status, reason: r.reason })),
-    },
-  });
+    };
+  }
+  res.json({ pass: passView(row), push });
 }
 
 staffRouter.post("/api/stamp", requirePin, async (req: StaffRequest, res) => {
@@ -146,7 +173,6 @@ staffRouter.post("/api/message", requirePin, async (req: StaffRequest, res) => {
   if (!serial || !message?.trim()) {
     return void res.status(400).json({ error: "missing-serial-or-message" });
   }
-  await updateAndPush(req, res, serial, "nudge", () =>
-    setMessage(serial, message.trim().slice(0, 200)),
-  );
+  const text = message.trim().slice(0, 200);
+  await updateAndPush(req, res, serial, "nudge", () => setMessage(serial, text), text);
 });

@@ -22,6 +22,7 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
   return {
     serial: "11111111-2222-3333-4444-555555555555",
     cafe_id: "default",
+    platform: "apple",
     short_code: "ABC234",
     auth_token: "a".repeat(32),
     stamp_count: 3,
