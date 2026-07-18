@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(git --version)",
+      "Bash(psql --version)",
+      "Bash(gh --version)",
+      "Bash(openssl version *)"
+    ]
+  }
+}

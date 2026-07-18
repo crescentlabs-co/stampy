@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.p12
+*.p8
+*.log
+.DS_Store
+# The public Apple WWDR cert (certs/wwdr.pem) IS committed on purpose.
