@@ -54,9 +54,9 @@ async function main() {
   const landing = await get("/");
   expect(landing.status === 200 && landing.body.includes("Kopi Corner"), "landing renders café from DB");
 
-  // Dashboard bootstrap: state → signup → overview
+  // Dashboard: state → first signup claims the seeded default café
   const state1 = JSON.parse((await get("/dashboard/api/state")).body);
-  expect(state1.needsSignup === true, "state: needs signup on fresh DB");
+  expect(state1.loggedIn === false, "state: not logged in on fresh visit");
 
   const signup = await fetch(base + "/dashboard/api/signup", {
     method: "POST",
@@ -66,12 +66,29 @@ async function main() {
   const cookie = signup.headers.get("set-cookie")?.split(";")[0] ?? "";
   expect(signup.status === 200 && cookie.startsWith("stampy_session="), "signup sets session cookie");
 
+  // Self-serve signup: a second owner gets their OWN isolated starter card
   const signup2 = await fetch(base + "/dashboard/api/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "intruder@evil.com", password: "password123" }),
+    body: JSON.stringify({ email: "second@cafe.my", password: "password123", cafeName: "Second Owner Café" }),
   });
-  expect(signup2.status === 403, "second signup is closed");
+  const cookie2 = signup2.headers.get("set-cookie")?.split(";")[0] ?? "";
+  expect(signup2.status === 200 && cookie2.startsWith("stampy_session="), "self-serve signup is open");
+  const ov2nd = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookie2 } })).body);
+  expect(
+    ov2nd.cafes.length === 1 &&
+      ov2nd.cafes[0].name === "Second Owner Café" &&
+      ov2nd.cafes[0].id !== "default",
+    "second owner sees only their own starter card (not the default café)",
+  );
+  expect(ov2nd.cafes[0].staffPin !== "1234", "starter card gets a random PIN, not the shared default");
+
+  const dupSignup = await fetch(base + "/dashboard/api/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "owner@test.my", password: "password123" }),
+  });
+  expect(dupSignup.status === 409, "signup with an existing email → 409 email-taken");
 
   const badLogin = await fetch(base + "/dashboard/api/login", {
     method: "POST",

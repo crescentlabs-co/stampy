@@ -2,18 +2,20 @@
  * Owner dashboard: login, café metrics, edit card content, add cafés.
  *
  *   GET  /dashboard                 the dashboard page (login or app)
- *   POST /dashboard/api/signup      first-owner bootstrap (only while no owners exist)
+ *   POST /dashboard/api/signup      open self-serve signup → owner + their own card
  *   POST /dashboard/api/login       { email, password } → session cookie
  *   POST /dashboard/api/logout
  *   GET  /dashboard/api/overview    cafés + metrics for the logged-in owner
  *   POST /dashboard/api/cafes       create a new café
  *   POST /dashboard/api/cafe/:id    update café fields (name, reward, target, PIN…)
  *
- * Signup is intentionally closed after the first owner (they can invite/add
- * partners later — deferred). This avoids strangers claiming the dashboard.
+ * Signup is open (Stage 2): any café owner can create an account and gets a
+ * fresh, isolated starter card. The very first signup on a deployment instead
+ * claims the env-seeded default café (bootstrap). Owners only ever see cafés
+ * linked to them via owner_cafes.
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import {
   clearSessionCookie,
   hashPassword,
@@ -62,23 +64,52 @@ dashboardRouter.get("/", (_req, res) => {
   res.type("html").send(dashboardPage());
 });
 
-/** Tells the page whether to show signup (first boot) or login. */
+/** Tells the page whether a session is already active. */
 dashboardRouter.get("/api/state", async (req, res) => {
-  const owners = await countOwners();
   const ownerId = sessionOwnerId(req);
-  res.json({ needsSignup: owners === 0, loggedIn: Boolean(ownerId && (await getOwner(ownerId))) });
+  res.json({ loggedIn: Boolean(ownerId && (await getOwner(ownerId))) });
 });
 
 dashboardRouter.post("/api/signup", async (req, res) => {
-  const { email, password } = (req.body ?? {}) as { email?: string; password?: string };
+  const { email, password, cafeName } = (req.body ?? {}) as {
+    email?: string;
+    password?: string;
+    cafeName?: string;
+  };
   if (!email?.includes("@") || !password || password.length < 8) {
     return void res.status(400).json({ error: "need-valid-email-and-8-char-password" });
   }
-  if ((await countOwners()) > 0) {
-    return void res.status(403).json({ error: "signup-closed" });
+  // Unlike login (which stays enumeration-safe), signup legitimately reveals
+  // that an email is taken — the alternative is a confusing duplicate-key 500.
+  if (await getOwnerByEmail(email)) {
+    return void res.status(409).json({ error: "email-taken" });
   }
+
+  const isFirstOwner = (await countOwners()) === 0;
   const owner = await createOwner(randomUUID(), email, hashPassword(password));
-  await linkOwnerCafe(owner.id, DEFAULT_CAFE_ID); // first owner manages the default café
+
+  if (isFirstOwner) {
+    // Bootstrap: the first account on a deployment claims the env-seeded café.
+    await linkOwnerCafe(owner.id, DEFAULT_CAFE_ID);
+  } else {
+    // Every later signup gets its own isolated starter card with a random PIN
+    // (never the shared default "1234").
+    const cafe = await createCafe({
+      name: (cafeName ?? "").trim().slice(0, 60) || "My Café",
+      reward: "Free coffee",
+      stampsTarget: 10,
+      stampsStart: 2,
+      staffPin: String(randomInt(0, 10000)).padStart(4, "0"),
+    });
+    await linkOwnerCafe(owner.id, cafe.id);
+    // Mirror the new card into Google's system (graceful no-op until configured).
+    void ensureClass(cafe).then((r) => {
+      if (!r.ok && r.reason !== "google-not-configured") {
+        console.error("[signup] google class sync failed:", r);
+      }
+    });
+  }
+
   setSessionCookie(res, owner.id);
   res.json({ ok: true });
 });

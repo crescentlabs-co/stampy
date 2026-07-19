@@ -347,19 +347,28 @@ export function dashboardPage(): string {
 
     function authForm(mode) {
       $("#app").innerHTML = \`
-        <h1>\${mode === "signup" ? "Create your owner account" : "Owner login"}</h1>
+        <h1>\${mode === "signup" ? "Create your account" : "Owner login"}</h1>
         <p class="sub">\${mode === "signup"
-          ? "First-time setup: this account manages your café."
-          : "Log in to see your café’s numbers."}</p>
+          ? "Free to start: you’ll get your own loyalty card to design."
+          : "Log in to manage your cards."}</p>
+        \${mode === "signup" ? '<label>Café name</label><input id="cafename" placeholder="e.g. Kopi Corner">' : ""}
         <label>Email</label><input id="email" type="email" autocomplete="username">
         <label>Password\${mode === "signup" ? " (min 8 characters)" : ""}</label>
         <input id="pw" type="password" autocomplete="\${mode === "signup" ? "new-password" : "current-password"}">
-        <button class="btn btn-dark" style="margin-top:14px" id="go">\${mode === "signup" ? "Create account" : "Log in"}</button>\`;
+        <button class="btn btn-dark" style="margin-top:14px" id="go">\${mode === "signup" ? "Create account" : "Log in"}</button>
+        <p class="muted" style="margin-top:14px;text-align:center">
+          \${mode === "signup"
+            ? 'Already have an account? <a href="#" id="switch">Log in</a>'
+            : 'New here? <a href="#" id="switch">Create an account</a>'}
+        </p>\`;
+      $("#switch").onclick = (e) => { e.preventDefault(); authForm(mode === "signup" ? "login" : "signup"); };
       $("#go").onclick = async () => {
-        const { status, body } = await api("/" + mode, { method: "POST",
-          body: JSON.stringify({ email: $("#email").value.trim(), password: $("#pw").value }) });
+        const payload = { email: $("#email").value.trim(), password: $("#pw").value };
+        if (mode === "signup") payload.cafeName = $("#cafename").value.trim();
+        const { status, body } = await api("/" + mode, { method: "POST", body: JSON.stringify(payload) });
         if (body.ok) location.reload();
-        else toast(body.error || ("Failed (" + status + ")"));
+        else toast(body.error === "email-taken" ? "That email already has an account — log in instead."
+                 : body.error || ("Failed (" + status + ")"));
       };
     }
 
@@ -537,8 +546,7 @@ export function dashboardPage(): string {
 
     (async () => {
       const { body } = await api("/state");
-      if (body.needsSignup) authForm("signup");
-      else if (body.loggedIn) app();
+      if (body.loggedIn) app();
       else authForm("login");
     })();
   `;
