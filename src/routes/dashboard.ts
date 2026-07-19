@@ -22,20 +22,25 @@ import {
   verifyPassword,
 } from "../auth.js";
 import {
+  cafeLogoVersion,
   cafeMetrics,
   cafesForOwner,
   countOwners,
   createCafe,
   createOwner,
   DEFAULT_CAFE_ID,
+  deleteCafeLogo,
   getOwner,
   getOwnerByEmail,
   linkOwnerCafe,
   ownerHasCafe,
+  setCafeLogo,
   updateCafe,
   type OwnerRow,
 } from "../db.js";
+import { hexToRgb, rgbToHex } from "../color.js";
 import { ensureClass } from "../googleWallet.js";
+import { validateLogoPng } from "../imageValidate.js";
 import { dashboardPage } from "../pages.js";
 
 export const dashboardRouter = Router();
@@ -99,6 +104,7 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   const cafes = await cafesForOwner(req.owner!.id);
   const out = [];
   for (const cafe of cafes) {
+    const logoVersion = await cafeLogoVersion(cafe.id);
     out.push({
       id: cafe.id,
       name: cafe.name,
@@ -106,6 +112,11 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       stampsTarget: cafe.stamps_target,
       stampsStart: cafe.stamps_start,
       staffPin: cafe.staff_pin,
+      // Colours cross the API as hex — that's what <input type="color"> speaks.
+      bg: rgbToHex(cafe.background_color),
+      fg: rgbToHex(cafe.foreground_color),
+      label: rgbToHex(cafe.label_color),
+      logoVersion, // 0 = no upload; used to cache-bust the preview image
       metrics: await cafeMetrics(cafe.id),
     });
   }
@@ -146,6 +157,10 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
   if (typeof body.staffPin === "string" && body.staffPin.trim()) {
     fields.staff_pin = body.staffPin.trim().slice(0, 12);
   }
+  // Colours arrive as hex from the pickers; stored as rgb(...) for PassKit.
+  if (typeof body.bg === "string") fields.background_color = hexToRgb(body.bg);
+  if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
+  if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
   const cafe = await updateCafe(cafeId, fields);
   if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
   // Mirror branding/name changes into the Google-hosted card class (no-op
@@ -155,6 +170,57 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
       console.error("[dashboard] google class sync failed:", r);
     }
   });
+  res.json({ ok: true });
+});
+
+/**
+ * Logo upload. The dashboard canvas-normalises every image to a ~320×320 PNG
+ * and sends it base64-encoded in JSON; the server re-checks magic bytes + size
+ * before storing. Google's hosted card re-syncs via ensureClass (the logo URL
+ * is version-stamped, so Google re-fetches). Apple cards pick the logo up on
+ * their next pass re-fetch.
+ */
+dashboardRouter.post("/api/cafe/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  const { png } = (req.body ?? {}) as { png?: string };
+  if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(png, "base64");
+  } catch {
+    return void res.status(400).json({ error: "bad-base64" });
+  }
+  const reject = validateLogoPng(bytes);
+  if (reject) return void res.status(400).json({ error: reject });
+  await setCafeLogo(cafeId, bytes);
+  const cafe = await updateCafe(cafeId, {}); // fetch fresh row
+  if (cafe) {
+    void ensureClass(cafe).then((r) => {
+      if (!r.ok && r.reason !== "google-not-configured") {
+        console.error("[dashboard] google logo sync failed:", r);
+      }
+    });
+  }
+  res.json({ ok: true });
+});
+
+dashboardRouter.delete("/api/cafe/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  await deleteCafeLogo(cafeId);
+  const cafe = await updateCafe(cafeId, {});
+  if (cafe) {
+    void ensureClass(cafe).then((r) => {
+      if (!r.ok && r.reason !== "google-not-configured") {
+        console.error("[dashboard] google logo sync failed:", r);
+      }
+    });
+  }
   res.json({ ok: true });
 });
 

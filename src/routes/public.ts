@@ -22,6 +22,7 @@ import {
   DEFAULT_CAFE_ID,
   generateShortCode,
   getCafe,
+  getCafeLogo,
   logEvent,
   type CafeRow,
   type Platform,
@@ -75,7 +76,8 @@ async function enroll(cafeId: string, res: import("express").Response): Promise<
 
   const row = await newPass(cafe, "apple");
   try {
-    const pkpass = buildPkpass(row, cafe);
+    const logo = await getCafeLogo(cafe.id).catch(() => null);
+    const pkpass = buildPkpass(row, cafe, logo?.png);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")
@@ -133,12 +135,26 @@ publicRouter.get("/qr", (_req, res) => qrPng(DEFAULT_CAFE_ID, res));
 publicRouter.get("/c/:cafeId/qr", (req, res) => qrPng(req.params.cafeId!, res));
 
 // Publicly served logo — Google Wallet requires a hosted programLogo URL.
-let logoCache: Buffer | null = null;
-publicRouter.get("/art/logo.png", (_req, res) => {
-  if (!logoCache) {
-    logoCache = readFileSync(
+// Per-café: an uploaded logo from the database, else the bundled default.
+let defaultLogoCache: Buffer | null = null;
+function defaultLogo(): Buffer {
+  if (!defaultLogoCache) {
+    defaultLogoCache = readFileSync(
       fileURLToPath(new URL("../../assets/pass/logo@2x.png", import.meta.url)),
     );
   }
-  res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(logoCache);
-});
+  return defaultLogoCache;
+}
+
+async function serveLogo(cafeId: string, res: import("express").Response): Promise<void> {
+  // Any failure (no DB yet, no upload) falls back to the default art — the
+  // route must work in setup mode too.
+  const uploaded = await getCafeLogo(cafeId).catch(() => null);
+  res
+    .set("Content-Type", "image/png")
+    .set("Cache-Control", "public, max-age=86400")
+    .send(uploaded?.png ?? defaultLogo());
+}
+
+publicRouter.get("/art/logo.png", (_req, res) => serveLogo(DEFAULT_CAFE_ID, res));
+publicRouter.get("/c/:cafeId/art/logo.png", (req, res) => serveLogo(req.params.cafeId!, res));

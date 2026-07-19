@@ -29,17 +29,27 @@ function loadArt(): Record<string, Buffer> {
 
 export class NotConfiguredError extends Error {}
 
-/** Builds and signs the .pkpass for a card. Throws NotConfiguredError until certs exist. */
-export function buildPkpass(row: PassRow, cafe: CafeRow): Buffer {
+/**
+ * Builds and signs the .pkpass for a card. Throws NotConfiguredError until
+ * certs exist. When the café has an uploaded logo (`logoPng`), it replaces the
+ * bundled default artwork in every slot — Wallet scales each to fit, so one
+ * canvas-normalised square PNG covers icon and logo alike.
+ */
+export function buildPkpass(row: PassRow, cafe: CafeRow, logoPng?: Buffer | null): Buffer {
   if (!setupStatus().canSignPasses) {
     throw new NotConfiguredError(
       "Apple certificates are not configured yet — check /setup for what's missing.",
     );
   }
 
+  const art = { ...loadArt() };
+  if (logoPng) {
+    for (const slot of Object.keys(art)) art[slot] = logoPng;
+  }
+
   const pass = new PKPass(
     {
-      ...loadArt(),
+      ...art,
       "pass.json": Buffer.from(JSON.stringify(buildPassJson(row, cafe))),
     },
     {

@@ -9,17 +9,10 @@
  * when notifyPreference is NOTIFY_ON_UPDATE) to the device itself. No device
  * registrations, no push tokens.
  */
+import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
-import type { CafeRow, PassRow } from "./db.js";
+import { DEFAULT_CAFE_ID, type CafeRow, type PassRow } from "./db.js";
 import { isRewardReady, stampDots } from "./passModel.js";
-
-/** "rgb(59, 32, 22)" (our DB format, per PassKit) → "#3b2016" (Google's format). */
-export function rgbToHex(rgb: string): string {
-  const m = /rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/.exec(rgb);
-  if (!m) return "#3b2016";
-  const hex = (s: string) => Number(s).toString(16).padStart(2, "0");
-  return `#${hex(m[1]!)}${hex(m[2]!)}${hex(m[3]!)}`;
-}
 
 /** One LoyaltyClass per café: `<issuerId>.stampy-<cafeId>`. */
 export function classId(cafe: Pick<CafeRow, "id">): string {
@@ -31,13 +24,19 @@ export function objectId(row: Pick<PassRow, "serial">): string {
   return `${config.googleIssuerId}.${row.serial}`;
 }
 
-export function buildLoyaltyClass(cafe: CafeRow): Record<string, unknown> {
+/** The café's hosted logo URL (per-café route; ?v= makes Google re-fetch after an upload). */
+export function logoUrl(cafe: Pick<CafeRow, "id">, logoVersion = 0): string {
+  const base = cafe.id === DEFAULT_CAFE_ID ? "" : `/c/${cafe.id}`;
+  return `${config.baseUrl}${base}/art/logo.png${logoVersion ? `?v=${logoVersion}` : ""}`;
+}
+
+export function buildLoyaltyClass(cafe: CafeRow, logoVersion = 0): Record<string, unknown> {
   return {
     id: classId(cafe),
     issuerName: cafe.name,
     programName: `${cafe.name} — Loyalty Card`,
     programLogo: {
-      sourceUri: { uri: `${config.baseUrl}/art/logo.png` },
+      sourceUri: { uri: logoUrl(cafe, logoVersion) },
       contentDescription: {
         defaultValue: { language: "en", value: `${cafe.name} logo` },
       },

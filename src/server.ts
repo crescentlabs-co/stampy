@@ -12,7 +12,9 @@ import { staffRouter } from "./routes/staff.js";
 import { walletRouter } from "./routes/wallet.js";
 
 const app = express();
-app.use(express.json());
+// 600kb: room for a base64-encoded café logo (≤256KB binary → ~342KB JSON);
+// everything else stays tiny. Express still hard-rejects bodies beyond this.
+app.use(express.json({ limit: "600kb" }));
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/setup", (_req, res) => res.type("html").send(setupPage(setupStatus(), config.baseUrl)));

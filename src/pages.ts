@@ -305,6 +305,28 @@ export function dashboardPage(): string {
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
     .row2 { display: flex; gap: 8px; }
     .row2 > div { flex: 1; }
+    /* --- live wallet-card preview --- */
+    .pv { border-radius: 14px; padding: 16px; margin: 10px 0 4px; box-shadow: 0 4px 16px rgba(43,29,21,.18); }
+    .pv-top { display: flex; align-items: center; gap: 10px; }
+    .pv-logo { width: 34px; height: 34px; border-radius: 8px; object-fit: contain; background: rgba(255,255,255,.14); }
+    .pv-name { font-weight: 700; font-size: 1.02rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pv-hdr { text-align: right; }
+    .pv-lbl { font-size: .62rem; letter-spacing: .08em; font-weight: 600; }
+    .pv-progress { font-size: 1.05rem; font-weight: 700; }
+    .pv-dots { font-size: 1.25rem; letter-spacing: 3px; margin: 2px 0 10px; }
+    .pv-reward { font-size: .95rem; font-weight: 600; }
+    .pv-qr { background: #fff; color: #1d1d1f; width: 74px; height: 74px; border-radius: 8px;
+             margin: 14px auto 2px; display: flex; align-items: center; justify-content: center;
+             font-weight: 700; font-size: .8rem; letter-spacing: 1px; }
+    .pv-note { text-align: center; font-size: .72rem; margin-top: 6px; opacity: .75; }
+    /* --- designer controls --- */
+    .colors { display: flex; gap: 8px; margin-top: 4px; }
+    .colors > label { flex: 1; margin: 0; }
+    .colors input[type=color] { width: 100%; height: 38px; padding: 2px; border: 1px solid #d9cbbb;
+                                border-radius: 10px; background: #fff; cursor: pointer; }
+    .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+    .logorow input[type=file] { display: none; }
+    .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -340,8 +362,9 @@ export function dashboardPage(): string {
     function cafeCard(c) {
       const div = document.createElement("div");
       div.className = "cafe";
-      const landing = c.id === "default" ? "/" : "/c/" + c.id;
-      const qr = c.id === "default" ? "/qr" : "/c/" + c.id + "/qr";
+      const base = c.id === "default" ? "" : "/c/" + c.id;
+      const landing = base || "/";
+      const logoSrc = base + "/art/logo.png" + (c.logoVersion ? "?v=" + c.logoVersion : "");
       div.innerHTML = \`
         <h2 style="margin-top:0">\${c.name}</h2>
         <div class="metrics">
@@ -350,26 +373,107 @@ export function dashboardPage(): string {
           <div class="metric"><b>\${c.metrics.redemptions}</b><span class="muted">rewards claimed</span></div>
           <div class="metric"><b>\${c.metrics.redemptions30d}</b><span class="muted">claimed in 30d</span></div>
         </div>
+
+        <label>Card preview <span class="muted">(live — updates as you type)</span></label>
+        <div class="pv" data-pv>
+          <div class="pv-top">
+            <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="">
+            <span class="pv-name" data-pv-name></span>
+            <div class="pv-hdr"><div class="pv-lbl">STAMPS</div><div class="pv-progress" data-pv-progress></div></div>
+          </div>
+          <div class="pv-lbl" style="margin-top:10px">YOUR STAMPS</div>
+          <div class="pv-dots" data-pv-dots></div>
+          <div class="pv-lbl">REWARD</div>
+          <div class="pv-reward" data-pv-reward></div>
+          <div class="pv-qr">QR</div>
+          <div class="pv-note">Code ABC123 · updates by itself</div>
+        </div>
+        <div class="logorow">
+          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+        </div>
+
         <label>Café name</label><input data-f="name" value="\${c.name}">
         <label>Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
           <div><label>Free starting stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
         </div>
+        <div class="colors">
+          <label>Card colour<input data-f="bg" type="color" value="\${c.bg}"></label>
+          <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
+          <label>Labels<input data-f="label" type="color" value="\${c.label}"></label>
+        </div>
         <label>Staff PIN</label><input data-f="staffPin" value="\${c.staffPin}">
         <button class="btn btn-dark" style="margin-top:12px" data-a="save">Save changes</button>
         <div class="links">
           <a href="\${landing}" target="_blank">Customer page</a>
-          <a href="\${qr}" target="_blank">Counter QR</a>
+          <a href="\${base + "/qr"}" target="_blank">Counter QR</a>
           <a href="/staff?c=\${c.id}" target="_blank">Staff stamper</a>
         </div>
         <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward.</p>\`;
-      div.querySelector('[data-a=save]').onclick = async () => {
-        const f = (k) => div.querySelector('[data-f=' + k + ']').value;
+
+      const f = (k) => div.querySelector('[data-f=' + k + ']');
+      const q = (s) => div.querySelector(s);
+
+      // Live preview: pure client-side re-render from the form fields.
+      function renderPreview() {
+        const target = Math.max(1, Math.min(30, Number(f("stampsTarget").value) || 10));
+        const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
+        const pv = q("[data-pv]");
+        pv.style.background = f("bg").value;
+        pv.style.color = f("fg").value;
+        q("[data-pv-name]").textContent = f("name").value || "Your café";
+        q("[data-pv-progress]").textContent = start + "/" + target;
+        q("[data-pv-dots]").textContent = "●".repeat(start) + "○".repeat(target - start);
+        q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
+        for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
+      }
+      for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
+      renderPreview();
+
+      // Logo upload: normalise any image to a 320×320 PNG in-browser, preview
+      // immediately, then send the base64 to the server.
+      q("[data-logo]").onchange = () => {
+        const file = q("[data-logo]").files[0];
+        if (!file) return;
+        const img = new Image();
+        img.onload = async () => {
+          URL.revokeObjectURL(img.src);
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 320;
+          const ctx = canvas.getContext("2d");
+          const s = Math.min(320 / img.width, 320 / img.height);
+          ctx.drawImage(img, (320 - img.width * s) / 2, (320 - img.height * s) / 2,
+                        img.width * s, img.height * s);
+          const dataUrl = canvas.toDataURL("image/png");
+          const { body } = await api("/cafe/" + c.id + "/logo", {
+            method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+          });
+          if (body.ok) {
+            q("[data-pv-logo]").src = dataUrl;
+            q("[data-a=rmlogo]").style.display = "";
+            toast("Logo saved ✓");
+          } else toast(body.error || "Upload failed");
+        };
+        img.onerror = () => toast("Couldn't read that image");
+        img.src = URL.createObjectURL(file);
+      };
+      q("[data-a=rmlogo]").onclick = async () => {
+        const { body } = await api("/cafe/" + c.id + "/logo", { method: "DELETE" });
+        if (body.ok) {
+          q("[data-pv-logo]").src = base + "/art/logo.png?v=" + Date.now();
+          q("[data-a=rmlogo]").style.display = "none";
+          toast("Logo removed — using the default");
+        } else toast(body.error || "Failed");
+      };
+
+      q("[data-a=save]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
-          name: f("name"), reward: f("reward"),
-          stampsTarget: Number(f("stampsTarget")), stampsStart: Number(f("stampsStart")),
-          staffPin: f("staffPin"),
+          name: f("name").value, reward: f("reward").value,
+          stampsTarget: Number(f("stampsTarget").value), stampsStart: Number(f("stampsStart").value),
+          staffPin: f("staffPin").value,
+          bg: f("bg").value, fg: f("fg").value, label: f("label").value,
         })});
         toast(body.ok ? "Saved ✓" : (body.error || "Save failed"));
       };

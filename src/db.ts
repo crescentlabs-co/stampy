@@ -147,6 +147,13 @@ export async function migrate(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_events_cafe_time ON events(cafe_id, created_at);
     -- v0.3: pre-existing deployments get the platform column added in place.
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS platform text NOT NULL DEFAULT 'apple';
+    -- v0.4: per-café uploaded logos. Bytes live in Postgres (Railway's disk is
+    -- ephemeral) and in their own table so SELECTs on cafes stay lightweight.
+    CREATE TABLE IF NOT EXISTS cafe_logos (
+      cafe_id    text PRIMARY KEY REFERENCES cafes(id) ON DELETE CASCADE,
+      png        bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -218,6 +225,40 @@ export async function updateCafe(
     [id, ...keys.map((k) => fields[k])],
   );
   return res.rows[0] ?? null;
+}
+
+// ----------------------------------------------------------- café logos ----
+
+export async function getCafeLogo(
+  cafeId: string,
+): Promise<{ png: Buffer; updated_at: Date } | null> {
+  const res = await getPool().query<{ png: Buffer; updated_at: Date }>(
+    `SELECT png, updated_at FROM cafe_logos WHERE cafe_id = $1`,
+    [cafeId],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function setCafeLogo(cafeId: string, png: Buffer): Promise<void> {
+  await getPool().query(
+    `INSERT INTO cafe_logos (cafe_id, png, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (cafe_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
+    [cafeId, png],
+  );
+}
+
+export async function deleteCafeLogo(cafeId: string): Promise<void> {
+  await getPool().query(`DELETE FROM cafe_logos WHERE cafe_id = $1`, [cafeId]);
+}
+
+/** Epoch-ms of the logo's last change, or 0 when none — used to cache-bust Google's fetch. */
+export async function cafeLogoVersion(cafeId: string): Promise<number> {
+  const res = await getPool().query<{ updated_at: Date }>(
+    `SELECT updated_at FROM cafe_logos WHERE cafe_id = $1`,
+    [cafeId],
+  );
+  const row = res.rows[0];
+  return row ? new Date(row.updated_at).getTime() : 0;
 }
 
 // ---------------------------------------------------------------- owners ----

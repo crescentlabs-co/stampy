@@ -215,6 +215,65 @@ async function main() {
   const logo = await get("/art/logo.png");
   expect(logo.status === 200, "hosted logo for Google class is served");
 
+  // --- Self-serve branding: colours (hex↔rgb boundary) + logo upload ---
+  const ov3 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  const dflt = ov3.cafes.find((c: any) => c.id === "default");
+  expect(dflt.bg === "#3b2016" && dflt.logoVersion === 0, "overview exposes hex colours + no logo yet");
+
+  const colorEdit = await fetch(base + "/dashboard/api/cafe/default", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ bg: "#112233", label: "#abc" }),
+  });
+  expect(colorEdit.status === 200, "colour edit saves");
+  const cafeColored = await getCafe("default");
+  expect(
+    cafeColored!.background_color === "rgb(17, 34, 51)" &&
+      cafeColored!.label_color === "rgb(170, 187, 204)",
+    "hex colours stored as rgb() for PassKit (incl. #abc shorthand)",
+  );
+  const ov4 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  expect(ov4.cafes.find((c: any) => c.id === "default").bg === "#112233", "overview returns the saved hex back");
+
+  // 1×1 transparent PNG
+  const pngB64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  const upload = await fetch(base + "/dashboard/api/cafe/default/logo", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ png: pngB64 }),
+  });
+  expect(upload.status === 200, "logo upload accepted");
+  const servedLogo = Buffer.from(await (await fetch(base + "/art/logo.png")).arrayBuffer());
+  expect(servedLogo.equals(Buffer.from(pngB64, "base64")), "uploaded logo bytes served back at /art/logo.png");
+  const ov5 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  expect(ov5.cafes.find((c: any) => c.id === "default").logoVersion > 0, "overview reports the logo version");
+
+  const badUpload = await fetch(base + "/dashboard/api/cafe/default/logo", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ png: Buffer.from("definitely not a png").toString("base64") }),
+  });
+  expect(badUpload.status === 400, "non-PNG upload rejected");
+
+  const noAuthUpload = await fetch(base + "/dashboard/api/cafe/default/logo", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ png: pngB64 }),
+  });
+  expect(noAuthUpload.status === 401, "logo upload requires owner login");
+
+  const otherCafeLogo = Buffer.from(
+    await (await fetch(base + "/c/" + newCafeOut.id + "/art/logo.png")).arrayBuffer(),
+  );
+  expect(
+    otherCafeLogo.length > 0 && !otherCafeLogo.equals(servedLogo),
+    "café without an upload still serves the default logo (per-café isolation)",
+  );
+
+  const rmLogo = await fetch(base + "/dashboard/api/cafe/default/logo", {
+    method: "DELETE", headers: { cookie },
+  });
+  expect(rmLogo.status === 200, "logo delete works");
+  const revertedLogo = Buffer.from(await (await fetch(base + "/art/logo.png")).arrayBuffer());
+  expect(!revertedLogo.equals(servedLogo), "after delete the default logo is served again");
+
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);
 }

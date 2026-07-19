@@ -7,9 +7,10 @@ import type { CafeRow, PassRow } from "../src/db.js";
 process.env.GOOGLE_ISSUER_ID = "3388000000012345678";
 process.env.BASE_URL = "https://stampy.example.test";
 
-const { buildLoyaltyClass, buildLoyaltyObject, buildSaveJwtClaims, rgbToHex } = await import(
+const { buildLoyaltyClass, buildLoyaltyObject, buildSaveJwtClaims, logoUrl } = await import(
   "../src/googleModel.js"
 );
+const { rgbToHex } = await import("../src/color.js");
 
 function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
   return {
@@ -62,6 +63,18 @@ describe("buildLoyaltyClass", () => {
     expect(cls.hexBackgroundColor).toBe("#3b2016");
     expect(cls.programLogo.sourceUri.uri).toBe("https://stampy.example.test/art/logo.png");
     expect(cls.reviewStatus).toBe("UNDER_REVIEW");
+  });
+
+  it("points the logo at the café's own route, version-stamped after an upload", () => {
+    expect(logoUrl(cafe())).toBe("https://stampy.example.test/art/logo.png");
+    expect(logoUrl(cafe({ id: "kopi2" }))).toBe("https://stampy.example.test/c/kopi2/art/logo.png");
+    expect(logoUrl(cafe({ id: "kopi2" }), 1700000000000)).toBe(
+      "https://stampy.example.test/c/kopi2/art/logo.png?v=1700000000000",
+    );
+    const cls = buildLoyaltyClass(cafe({ id: "kopi2" }), 42) as any;
+    expect(cls.programLogo.sourceUri.uri).toBe(
+      "https://stampy.example.test/c/kopi2/art/logo.png?v=42",
+    );
   });
 });
 

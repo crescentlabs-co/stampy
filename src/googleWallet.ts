@@ -10,7 +10,7 @@
  */
 import jwt from "jsonwebtoken";
 import { config, setupStatus } from "./config.js";
-import type { CafeRow, PassRow } from "./db.js";
+import { cafeLogoVersion, type CafeRow, type PassRow } from "./db.js";
 import {
   buildLoyaltyClass,
   buildLoyaltyObject,
@@ -112,11 +112,13 @@ function toResult(res: { status: number; text: string }): GoogleResult {
   return { ok, status: res.status, reason: ok ? undefined : res.text.slice(0, 200) };
 }
 
-/** Insert-or-update the café's LoyaltyClass (called on enroll and café edits). */
+/** Insert-or-update the café's LoyaltyClass (called on enroll, café edits, logo upload). */
 export async function ensureClass(cafe: CafeRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const cls = buildLoyaltyClass(cafe);
+    // Version-stamp the logo URL so Google re-fetches it after an upload.
+    const logoVersion = await cafeLogoVersion(cafe.id).catch(() => 0);
+    const cls = buildLoyaltyClass(cafe, logoVersion);
     const inserted = await api("POST", "/loyaltyClass", cls);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyClass/${cls.id as string}`, cls));
