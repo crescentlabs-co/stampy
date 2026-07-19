@@ -4,4 +4,5 @@ node_modules/
 *.p8
 *.log
 .DS_Store
+credentials/
 # The public Apple WWDR cert (certs/wwdr.pem) IS committed on purpose.
