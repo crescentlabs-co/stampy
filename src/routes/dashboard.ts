@@ -36,6 +36,7 @@ import {
   ownerHasCafe,
   setCafeLogo,
   updateCafe,
+  updateOwnerPassword,
   type OwnerRow,
 } from "../db.js";
 import { hexToRgb, rgbToHex } from "../color.js";
@@ -97,6 +98,19 @@ dashboardRouter.post("/api/login", async (req, res) => {
 
 dashboardRouter.post("/api/logout", (_req, res) => {
   clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+/** Change the logged-in owner's password (verifies the current one first). */
+dashboardRouter.post("/api/change-password", requireOwner, async (req: OwnerRequest, res) => {
+  const { current, next } = (req.body ?? {}) as { current?: string; next?: string };
+  if (!next || next.length < 8) {
+    return void res.status(400).json({ error: "new-password-needs-8-chars" });
+  }
+  if (!current || !verifyPassword(current, req.owner!.password_hash)) {
+    return void res.status(401).json({ error: "current-password-wrong" });
+  }
+  await updateOwnerPassword(req.owner!.id, hashPassword(next));
   res.json({ ok: true });
 });
 

@@ -274,6 +274,36 @@ async function main() {
   const revertedLogo = Buffer.from(await (await fetch(base + "/art/logo.png")).arrayBuffer());
   expect(!revertedLogo.equals(servedLogo), "after delete the default logo is served again");
 
+  // --- Change password (verifies current, then updates) ---
+  const chWrong = await fetch(base + "/dashboard/api/change-password", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ current: "not-my-password", next: "brandnewpass1" }),
+  });
+  expect(chWrong.status === 401, "change-password rejects a wrong current password");
+
+  const chShort = await fetch(base + "/dashboard/api/change-password", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ current: "password123", next: "short" }),
+  });
+  expect(chShort.status === 400, "change-password rejects a too-short new password");
+
+  const chOk = await fetch(base + "/dashboard/api/change-password", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ current: "password123", next: "brandnewpass1" }),
+  });
+  expect(chOk.status === 200, "change-password succeeds with the right current password");
+
+  const oldLogin = await fetch(base + "/dashboard/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "owner@test.my", password: "password123" }),
+  });
+  expect(oldLogin.status === 401, "old password no longer works after change");
+  const newLogin = await fetch(base + "/dashboard/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "owner@test.my", password: "brandnewpass1" }),
+  });
+  expect(newLogin.status === 200, "new password works after change");
+
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);
 }

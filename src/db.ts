@@ -289,6 +289,10 @@ export async function countOwners(): Promise<number> {
   return Number(res.rows[0]?.n ?? 0);
 }
 
+export async function updateOwnerPassword(ownerId: string, passwordHash: string): Promise<void> {
+  await getPool().query(`UPDATE owners SET password_hash = $2 WHERE id = $1`, [ownerId, passwordHash]);
+}
+
 export async function linkOwnerCafe(ownerId: string, cafeId: string): Promise<void> {
   await getPool().query(
     `INSERT INTO owner_cafes (owner_id, cafe_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

@@ -327,6 +327,10 @@ export function dashboardPage(): string {
     .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
     .logorow input[type=file] { display: none; }
     .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    .copyrow { display: flex; gap: 8px; margin-top: 4px; }
+    .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: #f6f1ea; }
+    .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    .account { border-top: 1px solid #eee2d5; margin-top: 20px; padding-top: 14px; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -411,6 +415,12 @@ export function dashboardPage(): string {
           <a href="\${base + "/qr"}" target="_blank">Counter QR</a>
           <a href="/staff?c=\${c.id}" target="_blank">Staff stamper</a>
         </div>
+        <label style="margin-top:12px">Program an NFC tag <span class="muted">(optional — a tap opens sign-up, same as the QR)</span></label>
+        <div class="copyrow">
+          <input data-nfc readonly value="\${location.origin}\${landing}">
+          <button class="btn btn-ghost" data-a="copynfc">Copy link</button>
+        </div>
+        <p class="muted" style="margin-top:6px">Write this link onto a blank NFC sticker with a free app like “NFC Tools”. The QR always works too.</p>
         <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward.</p>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
@@ -423,7 +433,7 @@ export function dashboardPage(): string {
         const pv = q("[data-pv]");
         pv.style.background = f("bg").value;
         pv.style.color = f("fg").value;
-        q("[data-pv-name]").textContent = f("name").value || "Your café";
+        q("[data-pv-name]").textContent = f("name").value || "Your card";
         q("[data-pv-progress]").textContent = start + "/" + target;
         q("[data-pv-dots]").textContent = "●".repeat(start) + "○".repeat(target - start);
         q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
@@ -468,6 +478,12 @@ export function dashboardPage(): string {
         } else toast(body.error || "Failed");
       };
 
+      q("[data-a=copynfc]").onclick = async () => {
+        const url = q("[data-nfc]").value;
+        try { await navigator.clipboard.writeText(url); toast("Link copied ✓"); }
+        catch { q("[data-nfc]").select(); toast("Select + copy the link"); }
+      };
+
       q("[data-a=save]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
           name: f("name").value, reward: f("reward").value,
@@ -483,18 +499,38 @@ export function dashboardPage(): string {
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
+      const many = body.cafes.length > 1;
       $("#app").innerHTML = \`
-        <h1>Your cafés</h1>
+        <h1>Your \${many ? "cards" : "card"}</h1>
         <p class="sub">\${body.email}</p>
         <div id="cafes"></div>
-        <button class="btn btn-ghost" style="margin-top:14px" id="add">+ Add another café</button>
-        <button class="btn btn-ghost" style="margin-top:8px" id="out">Log out</button>\`;
+        <button class="btn btn-ghost" style="margin-top:14px" id="add">+ Add another card</button>
+        <div class="account">
+          <button class="btn btn-ghost" id="chpw">Change password</button>
+          <div id="pwform" style="display:none">
+            <label>Current password</label><input id="pwcur" type="password" autocomplete="current-password">
+            <label>New password (min 8 characters)</label><input id="pwnew" type="password" autocomplete="new-password">
+            <button class="btn btn-dark" style="margin-top:12px" id="pwsave">Update password</button>
+          </div>
+          <button class="btn btn-ghost" style="margin-top:8px" id="out">Log out</button>
+        </div>\`;
       for (const c of body.cafes) $("#cafes").appendChild(cafeCard(c));
       $("#add").onclick = async () => {
-        const name = prompt("New café name:");
+        const name = prompt("New card name (e.g. your café, or a second card like “Pastry card”):");
         if (!name) return;
         const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
         if (r.ok) location.reload(); else toast(r.error || "Failed");
+      };
+      $("#chpw").onclick = () => {
+        const el = $("#pwform");
+        el.style.display = el.style.display === "none" ? "block" : "none";
+      };
+      $("#pwsave").onclick = async () => {
+        const { body: r } = await api("/change-password", { method: "POST", body: JSON.stringify({
+          current: $("#pwcur").value, next: $("#pwnew").value,
+        })});
+        if (r.ok) { toast("Password updated ✓"); $("#pwform").style.display = "none"; $("#pwcur").value = ""; $("#pwnew").value = ""; }
+        else toast(r.error || "Couldn’t update");
       };
       $("#out").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
     }
