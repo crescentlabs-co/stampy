@@ -7,6 +7,16 @@ import type { CafeRow } from "./db.js";
 import { DEFAULT_CAFE_ID } from "./db.js";
 
 const baseCss = /* css */ `
+  /* Font face is declared INLINE (not a separate cacheable stylesheet) so a
+     content change is never served stale behind an immutable cache. The woff2
+     has a unique filename, so it caches safely. */
+  @font-face {
+    font-family: "Space Grotesk";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/assets/fonts/space-grotesk-latin.woff2") format("woff2");
+  }
   :root {
     /* Stone & Sage: cool light neutral + muted sage accent, paired with Space Grotesk. */
     --bg: #f0f1ed; --surface: #ffffff; --ink: #20211d; --ink2: #2f312b;
@@ -66,7 +76,6 @@ function page(title: string, body: string, extraCss = "", script = ""): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
-<link rel="stylesheet" href="/assets/fonts.css">
 <style>${baseCss}${extraCss}</style>
 </head>
 <body>${body}${script ? `<script>${script}</script>` : ""}</body>

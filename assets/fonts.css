@@ -1,9 +1,0 @@
-/* Self-hosted webfont (no CDN). Space Grotesk — SIL Open Font License 1.1.
- * One latin-subset variable woff2 covers the 400–700 weight range. */
-@font-face {
-  font-family: "Space Grotesk";
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url("/assets/fonts/space-grotesk-latin.woff2") format("woff2");
-}

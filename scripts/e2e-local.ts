@@ -54,11 +54,9 @@ async function main() {
   // Landing shows café name from DB now
   const landing = await get("/");
   expect(landing.status === 200 && landing.body.includes("Kopi Corner"), "landing renders café from DB");
-  expect(landing.body.includes('href="/assets/fonts.css"'), "pages link the self-hosted font stylesheet");
-
-  // Self-hosted fonts serve over /assets (static)
-  const fontsCss = await get("/assets/fonts.css");
-  expect(fontsCss.status === 200 && fontsCss.body.includes("Space Grotesk"), "GET /assets/fonts.css serves the @font-face");
+  // Font face is inline in the page CSS (no separate cacheable stylesheet) and
+  // points at the uniquely-named woff2, which is served statically.
+  expect(landing.body.includes("/assets/fonts/space-grotesk-latin.woff2"), "pages declare the Space Grotesk @font-face inline");
   const woff = await get("/assets/fonts/space-grotesk-latin.woff2");
   expect(woff.status === 200, "GET /assets/fonts/*.woff2 serves the font file");
 
