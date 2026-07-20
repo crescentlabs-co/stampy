@@ -596,12 +596,59 @@ export function dashboardPage(): string {
       return div;
     }
 
-    // Customers tab is filled in by the win-back build (Phase 3).
-    let renderCustomers = (c) => {
-      const d = document.createElement("div");
-      d.innerHTML = '<p class="muted" style="margin-top:16px">Customer list &amp; win-back coming here.</p>';
-      return d;
-    };
+    // Customers tab: list, lapsing filter, per-customer + bulk win-back nudge.
+    function renderCustomers(c) {
+      const div = document.createElement("div");
+      div.innerHTML = \`
+        <label>Show customers not seen in</label>
+        <select data-lap>
+          <option value="0">everyone</option>
+          <option value="7">7+ days</option>
+          <option value="14" selected>14+ days (lapsing)</option>
+          <option value="30">30+ days</option>
+        </select>
+        <div data-list style="margin-top:10px"><p class="muted">Loading…</p></div>
+        <div class="account" style="margin-top:16px">
+          <label>Win-back message</label>
+          <input data-msg value="We miss you! Your next stamp is waiting ☕️" maxlength="200">
+          <button class="btn btn-dark" style="margin-top:10px" data-a="nudgeshown">Nudge everyone shown</button>
+          <p class="muted" style="margin-top:6px">Sends a lock-screen message. Google limits 3 messages per card per day.</p>
+        </div>\`;
+      const q = (s) => div.querySelector(s);
+      let shown = [];
+
+      async function sendNudge(serials) {
+        const message = q("[data-msg]").value.trim();
+        if (!message) return toast("Type a message first");
+        if (!serials.length) return toast("No customers to nudge");
+        const { body } = await api("/cafe/" + c.id + "/nudge", {
+          method: "POST", body: JSON.stringify({ message, target: serials }),
+        });
+        toast(body.ok ? ("Nudged " + body.sent + " of " + body.total + " (rest had no phone yet)") : (body.error || "Failed"));
+      }
+
+      async function load() {
+        const days = Number(q("[data-lap]").value);
+        const { body } = await api("/cafe/" + c.id + "/customers?lapsedDays=" + days);
+        const cust = body.customers || [];
+        shown = days === 0 ? cust : cust.filter((x) => x.lapsing);
+        const list = q("[data-list]"); list.innerHTML = "";
+        if (!cust.length) { list.innerHTML = '<p class="muted">No customers yet.</p>'; return; }
+        if (!shown.length) { list.innerHTML = '<p class="muted">Nobody is lapsing by that filter 🎉</p>'; return; }
+        for (const x of shown) {
+          const row = document.createElement("div"); row.className = "pass";
+          row.innerHTML = \`<strong>\${x.code}</strong>
+            <span class="muted"> · \${x.stamps}/\${x.target} · last seen \${x.lastDays}d ago\${x.lapsing ? " · lapsing" : ""}</span>
+            <div class="row"><button class="btn btn-ghost" data-a="n1">Nudge</button></div>\`;
+          row.querySelector('[data-a=n1]').onclick = () => sendNudge([x.serial]);
+          list.appendChild(row);
+        }
+      }
+      q("[data-lap]").onchange = load;
+      q("[data-a=nudgeshown]").onclick = () => sendNudge(shown.map((x) => x.serial));
+      load();
+      return div;
+    }
 
     // ---- app shell: card switcher + tabs ----
     const S = { cafes: [], sel: 0, tab: "design", email: "" };

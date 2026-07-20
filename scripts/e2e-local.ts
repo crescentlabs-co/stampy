@@ -324,6 +324,39 @@ async function main() {
     body: JSON.stringify({ email: "owner@test.my", password: "brandnewpass1" }),
   });
   expect(newLogin.status === 200, "new password works after change");
+  // the change-password test rotated the owner's password; refresh the cookie
+  const cookieNow = newLogin.headers.get("set-cookie")?.split(";")[0] ?? cookie;
+
+  // --- Win-back: customers list + owner nudge (single + all) ---
+  const custRes = JSON.parse((await get("/dashboard/api/cafe/default/customers?lapsedDays=0", { headers: { cookie: cookieNow } })).body);
+  expect(Array.isArray(custRes.customers) && custRes.customers.length >= 2, "customers list returns this café's cards");
+  expect(custRes.customers[0].code && typeof custRes.customers[0].lastDays === "number", "each customer has a code + last-seen days");
+
+  const nudgeOne = await fetch(base + "/dashboard/api/cafe/default/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "We miss you!", target: [p2.serial] }),
+  });
+  const nudgeOneOut = JSON.parse(await nudgeOne.text());
+  expect(nudgeOne.status === 200 && nudgeOneOut.total === 1, "owner nudges a single customer");
+
+  const nudgeAll = await fetch(base + "/dashboard/api/cafe/default/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "New menu!", target: "all" }),
+  });
+  const nudgeAllOut = JSON.parse(await nudgeAll.text());
+  expect(nudgeAll.status === 200 && nudgeAllOut.total === custRes.customers.length, "owner bulk-nudges all customers");
+
+  const nudgeEmpty = await fetch(base + "/dashboard/api/cafe/default/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "", target: "all" }),
+  });
+  expect(nudgeEmpty.status === 400, "nudge with no message → 400");
+
+  const nudgeNotMine = await fetch(base + "/dashboard/api/cafe/default/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookie2 },
+    body: JSON.stringify({ message: "hi", target: "all" }),
+  });
+  expect(nudgeNotMine.status === 403, "an owner can't nudge another owner's café");
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

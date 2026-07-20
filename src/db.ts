@@ -297,6 +297,36 @@ export async function cafeBannerVersion(cafeId: string): Promise<number> {
   return row ? new Date(row.updated_at).getTime() : 0;
 }
 
+// ------------------------------------------------------- customers / win-back ----
+
+export interface CustomerRow {
+  serial: string;
+  code: string;
+  stamps: number;
+  target: number;
+  updated_at: Date;
+}
+
+/** Every card of a café, most-recently-active first (for the Customers view). */
+export async function cafeCustomers(cafeId: string): Promise<CustomerRow[]> {
+  const res = await getPool().query<CustomerRow>(
+    `SELECT serial, short_code AS code, stamp_count AS stamps, stamps_target AS target, updated_at
+       FROM passes WHERE cafe_id = $1 ORDER BY updated_at DESC`,
+    [cafeId],
+  );
+  return res.rows;
+}
+
+/** Serials whose card hasn't changed (stamp/redeem) in `days` days — the lapsing set. */
+export async function lapsingSerials(cafeId: string, days: number): Promise<string[]> {
+  const res = await getPool().query<{ serial: string }>(
+    `SELECT serial FROM passes
+      WHERE cafe_id = $1 AND updated_at < now() - ($2 || ' days')::interval`,
+    [cafeId, String(Math.max(0, Math.trunc(days)))],
+  );
+  return res.rows.map((r) => r.serial);
+}
+
 // ---------------------------------------------------------------- owners ----
 
 export async function createOwner(id: string, email: string, passwordHash: string): Promise<OwnerRow> {

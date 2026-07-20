@@ -25,6 +25,7 @@ import {
 } from "../auth.js";
 import {
   cafeBannerVersion,
+  cafeCustomers,
   cafeLogoVersion,
   cafeMetrics,
   cafesForOwner,
@@ -34,16 +35,20 @@ import {
   DEFAULT_CAFE_ID,
   deleteCafeBanner,
   deleteCafeLogo,
+  getCafe,
   getOwner,
   getOwnerByEmail,
+  lapsingSerials,
   linkOwnerCafe,
   ownerHasCafe,
   setCafeBanner,
   setCafeLogo,
+  setMessage,
   updateCafe,
   updateOwnerPassword,
   type OwnerRow,
 } from "../db.js";
+import { applyAndPush } from "../cardActions.js";
 import { hexToRgb, rgbToHex } from "../color.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateLogoPng } from "../imageValidate.js";
@@ -293,6 +298,61 @@ dashboardRouter.delete("/api/cafe/:id/banner", requireOwner, async (req: OwnerRe
   await deleteCafeBanner(cafeId);
   await syncGoogle(cafeId);
   res.json({ ok: true });
+});
+
+/** Customers of a card, with days-since-last-activity + a lapsing flag. */
+dashboardRouter.get("/api/cafe/:id/customers", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  const lapsedDays = clampInt(req.query.lapsedDays, 0, 3650, 14);
+  const now = Date.now();
+  const customers = (await cafeCustomers(cafeId)).map((c) => {
+    const lastDays = Math.floor((now - new Date(c.updated_at).getTime()) / 86400000);
+    return {
+      serial: c.serial,
+      code: c.code,
+      stamps: c.stamps,
+      target: c.target,
+      lastDays,
+      lapsing: lapsedDays > 0 && lastDays >= lapsedDays,
+    };
+  });
+  res.json({ customers, lapsedDays });
+});
+
+/**
+ * Owner win-back nudge: sends a lock-screen message to one card, a list, all,
+ * or the lapsing set. Each goes through applyAndPush (same platform dispatch as
+ * a stamp). Reports counts; Google's 3/card/24h cap applies (best-effort).
+ */
+dashboardRouter.post("/api/cafe/:id/nudge", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  const body = (req.body ?? {}) as { message?: string; target?: string | string[]; lapsedDays?: number };
+  const message = (body.message ?? "").trim().slice(0, 200);
+  if (!message) return void res.status(400).json({ error: "missing-message" });
+
+  let serials: string[];
+  if (Array.isArray(body.target)) serials = body.target.slice(0, 500);
+  else if (body.target === "lapsing") serials = await lapsingSerials(cafeId, clampInt(body.lapsedDays, 1, 3650, 14));
+  else serials = (await cafeCustomers(cafeId)).map((c) => c.serial); // "all"
+  if (!serials.length) return void res.json({ ok: true, total: 0, sent: 0, failed: 0 });
+
+  const cafe = await getCafe(cafeId);
+  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
+
+  let sent = 0;
+  let failed = 0;
+  for (const serial of serials) {
+    const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, message), message);
+    if (r && r.push.sent > 0) sent++;
+    else failed++;
+  }
+  res.json({ ok: true, total: serials.length, sent, failed });
 });
 
 /** Re-sync a café's Google-hosted class after a branding/art change (graceful no-op unconfigured). */
