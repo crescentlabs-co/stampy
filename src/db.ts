@@ -154,6 +154,12 @@ export async function migrate(): Promise<void> {
       png        bytea NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+    -- v0.7: optional per-café banner image (Apple strip.png / Google heroImage).
+    CREATE TABLE IF NOT EXISTS cafe_banners (
+      cafe_id    text PRIMARY KEY REFERENCES cafes(id) ON DELETE CASCADE,
+      png        bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -255,6 +261,36 @@ export async function deleteCafeLogo(cafeId: string): Promise<void> {
 export async function cafeLogoVersion(cafeId: string): Promise<number> {
   const res = await getPool().query<{ updated_at: Date }>(
     `SELECT updated_at FROM cafe_logos WHERE cafe_id = $1`,
+    [cafeId],
+  );
+  const row = res.rows[0];
+  return row ? new Date(row.updated_at).getTime() : 0;
+}
+
+// Banner image (optional): Apple strip.png / Google heroImage. Same shape as logos.
+export async function getCafeBanner(cafeId: string): Promise<{ png: Buffer } | null> {
+  const res = await getPool().query<{ png: Buffer }>(
+    `SELECT png FROM cafe_banners WHERE cafe_id = $1`,
+    [cafeId],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function setCafeBanner(cafeId: string, png: Buffer): Promise<void> {
+  await getPool().query(
+    `INSERT INTO cafe_banners (cafe_id, png, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (cafe_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
+    [cafeId, png],
+  );
+}
+
+export async function deleteCafeBanner(cafeId: string): Promise<void> {
+  await getPool().query(`DELETE FROM cafe_banners WHERE cafe_id = $1`, [cafeId]);
+}
+
+export async function cafeBannerVersion(cafeId: string): Promise<number> {
+  const res = await getPool().query<{ updated_at: Date }>(
+    `SELECT updated_at FROM cafe_banners WHERE cafe_id = $1`,
     [cafeId],
   );
   const row = res.rows[0];

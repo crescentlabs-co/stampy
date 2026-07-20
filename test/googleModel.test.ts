@@ -76,6 +76,14 @@ describe("buildLoyaltyClass", () => {
       "https://stampy.example.test/c/kopi2/art/logo.png?v=42",
     );
   });
+
+  it("adds a heroImage only when a banner exists (version > 0)", () => {
+    expect((buildLoyaltyClass(cafe()) as any).heroImage).toBeUndefined();
+    const withBanner = buildLoyaltyClass(cafe({ id: "kopi2" }), 0, 99) as any;
+    expect(withBanner.heroImage.sourceUri.uri).toBe(
+      "https://stampy.example.test/c/kopi2/art/banner.png?v=99",
+    );
+  });
 });
 
 describe("buildLoyaltyObject", () => {

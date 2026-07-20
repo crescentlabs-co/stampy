@@ -24,6 +24,7 @@ import {
   verifyPassword,
 } from "../auth.js";
 import {
+  cafeBannerVersion,
   cafeLogoVersion,
   cafeMetrics,
   cafesForOwner,
@@ -31,11 +32,13 @@ import {
   createCafe,
   createOwner,
   DEFAULT_CAFE_ID,
+  deleteCafeBanner,
   deleteCafeLogo,
   getOwner,
   getOwnerByEmail,
   linkOwnerCafe,
   ownerHasCafe,
+  setCafeBanner,
   setCafeLogo,
   updateCafe,
   updateOwnerPassword,
@@ -149,7 +152,10 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   const cafes = await cafesForOwner(req.owner!.id);
   const out = [];
   for (const cafe of cafes) {
-    const logoVersion = await cafeLogoVersion(cafe.id);
+    const [logoVersion, bannerVersion] = await Promise.all([
+      cafeLogoVersion(cafe.id),
+      cafeBannerVersion(cafe.id),
+    ]);
     out.push({
       id: cafe.id,
       name: cafe.name,
@@ -162,6 +168,7 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       fg: rgbToHex(cafe.foreground_color),
       label: rgbToHex(cafe.label_color),
       logoVersion, // 0 = no upload; used to cache-bust the preview image
+      bannerVersion,
       metrics: await cafeMetrics(cafe.id),
     });
   }
@@ -258,16 +265,46 @@ dashboardRouter.delete("/api/cafe/:id/logo", requireOwner, async (req: OwnerRequ
     return void res.status(403).json({ error: "not-your-cafe" });
   }
   await deleteCafeLogo(cafeId);
-  const cafe = await updateCafe(cafeId, {});
-  if (cafe) {
-    void ensureClass(cafe).then((r) => {
-      if (!r.ok && r.reason !== "google-not-configured") {
-        console.error("[dashboard] google logo sync failed:", r);
-      }
-    });
-  }
+  await syncGoogle(cafeId);
   res.json({ ok: true });
 });
+
+/** Banner image (Apple strip / Google hero) — same upload contract as the logo. */
+dashboardRouter.post("/api/cafe/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  const { png } = (req.body ?? {}) as { png?: string };
+  if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
+  const bytes = Buffer.from(png, "base64");
+  const reject = validateLogoPng(bytes);
+  if (reject) return void res.status(400).json({ error: reject });
+  await setCafeBanner(cafeId, bytes);
+  await syncGoogle(cafeId);
+  res.json({ ok: true });
+});
+
+dashboardRouter.delete("/api/cafe/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  await deleteCafeBanner(cafeId);
+  await syncGoogle(cafeId);
+  res.json({ ok: true });
+});
+
+/** Re-sync a café's Google-hosted class after a branding/art change (graceful no-op unconfigured). */
+async function syncGoogle(cafeId: string): Promise<void> {
+  const cafe = await updateCafe(cafeId, {}); // fetch fresh row
+  if (!cafe) return;
+  void ensureClass(cafe).then((r) => {
+    if (!r.ok && r.reason !== "google-not-configured") {
+      console.error("[dashboard] google class sync failed:", r);
+    }
+  });
+}
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = typeof v === "number" ? Math.trunc(v) : Number.parseInt(String(v), 10);

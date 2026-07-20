@@ -35,7 +35,12 @@ export class NotConfiguredError extends Error {}
  * bundled default artwork in every slot — Wallet scales each to fit, so one
  * canvas-normalised square PNG covers icon and logo alike.
  */
-export function buildPkpass(row: PassRow, cafe: CafeRow, logoPng?: Buffer | null): Buffer {
+export function buildPkpass(
+  row: PassRow,
+  cafe: CafeRow,
+  logoPng?: Buffer | null,
+  bannerPng?: Buffer | null,
+): Buffer {
   if (!setupStatus().canSignPasses) {
     throw new NotConfiguredError(
       "Apple certificates are not configured yet — check /setup for what's missing.",
@@ -45,6 +50,11 @@ export function buildPkpass(row: PassRow, cafe: CafeRow, logoPng?: Buffer | null
   const art = { ...loadArt() };
   if (logoPng) {
     for (const slot of Object.keys(art)) art[slot] = logoPng;
+  }
+  // A banner shows as the storeCard "strip" image behind the top fields.
+  if (bannerPng) {
+    art["strip.png"] = bannerPng;
+    art["strip@2x.png"] = bannerPng;
   }
 
   const pass = new PKPass(

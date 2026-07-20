@@ -68,12 +68,29 @@ export function landingPage(
   const base = cafeId === DEFAULT_CAFE_ID ? "" : `/c/${cafeId}`;
   const buttons = [
     appleReady
-      ? `<a class="btn btn-dark" href="${base}/enroll">&#63743; Add to Apple Wallet</a>`
+      ? `<a class="btn btn-dark wbtn" data-w="apple" href="${base}/enroll">&#63743; Add to Apple Wallet</a>`
       : "",
     googleReady
-      ? `<a class="btn btn-dark" style="margin-top:10px" href="${base}/enroll/google">Add to Google Wallet</a>`
+      ? `<a class="btn btn-dark wbtn" data-w="google" style="margin-top:10px" href="${base}/enroll/google">Add to Google Wallet</a>`
       : "",
   ].join("");
+  // Lead with the wallet native to the phone (the other stays as a fallback),
+  // so scanning the QR lands the customer near-directly on the right Add sheet.
+  const script = /* js */ `
+    (function () {
+      var ua = navigator.userAgent || "";
+      var prefer = /iPhone|iPad|iPod/.test(ua) ? "apple" : /Android/.test(ua) ? "google" : "";
+      var btns = Array.prototype.slice.call(document.querySelectorAll(".wbtn"));
+      if (!prefer || btns.length < 2) return;
+      btns.sort(function (a, b) { return (b.dataset.w === prefer) - (a.dataset.w === prefer); });
+      btns.forEach(function (b, i) {
+        b.classList.toggle("btn-dark", i === 0);
+        b.classList.toggle("btn-ghost", i !== 0);
+        b.style.marginTop = i === 0 ? "0" : "10px";
+        b.parentNode.appendChild(b);
+      });
+    })();
+  `;
   return page(
     `${cafe.name} — Loyalty Card`,
     `<div class="card" style="text-align:center">
@@ -83,11 +100,13 @@ export function landingPage(
       Your card lives in your phone’s wallet — no app needed.</p>
       ${
         buttons
-          ? `${buttons}
-             <p class="muted" style="margin-top:14px">You start with stamps already on your card 🎁</p>`
+          ? `<div id="wallets">${buttons}</div>
+             <p class="muted" style="margin-top:14px">You start with a few free stamps as a welcome gift 🎁</p>`
           : `<p class="sub"><strong>Almost ready!</strong> Cards can’t be issued yet — the café is still being set up.</p>`
       }
     </div>`,
+    "",
+    buttons ? script : "",
   );
 }
 
@@ -338,7 +357,26 @@ export function dashboardPage(): string {
     .copyrow { display: flex; gap: 8px; margin-top: 4px; }
     .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: #f6f1ea; }
     .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
-    .account { border-top: 1px solid #eee2d5; margin-top: 20px; padding-top: 14px; }
+    .account { border-top: 1px solid #eee2d5; margin-top: 24px; padding-top: 14px; }
+    /* --- card switcher --- */
+    .switcher { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
+    .switcher button { border: 1px solid #d9cbbb; background: #fff; color: #3b2016; border-radius: 999px;
+                       padding: 6px 14px; font: inherit; font-size: .88rem; cursor: pointer; }
+    .switcher button.on { background: #3b2016; color: #fff; border-color: #3b2016; }
+    /* --- tabs --- */
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid #eee2d5; margin: 6px 0 14px; }
+    .tabs button { border: none; background: none; color: #7a6a5d; font: inherit; font-weight: 600;
+                   padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tabs button.on { color: #3b2016; border-bottom-color: #3b2016; }
+    /* --- colour presets --- */
+    .presets { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
+    .preset { width: 38px; height: 38px; border-radius: 10px; border: 2px solid #d9cbbb; cursor: pointer;
+              display: grid; place-items: center; font-size: .7rem; font-weight: 700; }
+    .preset:hover { border-color: #3b2016; }
+    /* --- banner --- */
+    .pv-banner { height: 46px; border-radius: 8px 8px 0 0; margin: -16px -16px 10px; background-size: cover;
+                 background-position: center; display: none; }
+    .pv-banner.on { display: block; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -380,23 +418,26 @@ export function dashboardPage(): string {
       };
     }
 
-    function cafeCard(c) {
+    // Curated palettes so a new card looks good without fiddling. [bg, text, label]
+    const PRESETS = [
+      { name: "Espresso", bg: "#3b2016", fg: "#fffaf0", label: "#d6b278" },
+      { name: "Matcha",   bg: "#2f4a34", fg: "#f3f8ef", label: "#b7d6a0" },
+      { name: "Berry",    bg: "#4a1f38", fg: "#fdeef6", label: "#e5a9cd" },
+      { name: "Ocean",    bg: "#123047", fg: "#eef7fc", label: "#8fc4e6" },
+      { name: "Charcoal", bg: "#1f2124", fg: "#f4f4f5", label: "#a9d0ff" },
+      { name: "Sunset",   bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f" },
+    ];
+
+    function designPanel(c) {
       const div = document.createElement("div");
-      div.className = "cafe";
       const base = c.id === "default" ? "" : "/c/" + c.id;
       const landing = base || "/";
-      const logoSrc = base + "/art/logo.png" + (c.logoVersion ? "?v=" + c.logoVersion : "");
+      const bust = (v) => v ? "?v=" + v : "";
+      const logoSrc = base + "/art/logo.png" + bust(c.logoVersion);
       div.innerHTML = \`
-        <h2 style="margin-top:0">\${c.name}</h2>
-        <div class="metrics">
-          <div class="metric"><b>\${c.metrics.cards}</b><span class="muted">cards issued</span></div>
-          <div class="metric"><b>\${c.metrics.stamps}</b><span class="muted">stamps (\${c.metrics.stamps30d} in 30d)</span></div>
-          <div class="metric"><b>\${c.metrics.redemptions}</b><span class="muted">rewards claimed</span></div>
-          <div class="metric"><b>\${c.metrics.redemptions30d}</b><span class="muted">claimed in 30d</span></div>
-        </div>
-
         <label>Card preview <span class="muted">(live — updates as you type)</span></label>
         <div class="pv" data-pv>
+          <div class="pv-banner" data-pv-banner></div>
           <div class="pv-top">
             <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="">
             <span class="pv-name" data-pv-name></span>
@@ -409,41 +450,57 @@ export function dashboardPage(): string {
           <div class="pv-qr">QR</div>
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
-        <div class="logorow">
-          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
-          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
-        </div>
 
-        <label>Café name</label><input data-f="name" value="\${c.name}">
-        <label>Reward</label><input data-f="reward" value="\${c.reward}">
-        <div class="row2">
-          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
-          <div><label>Free starting stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
-        </div>
+        <label style="margin-top:12px">Quick themes</label>
+        <div class="presets" data-presets></div>
+
         <div class="colors">
           <label>Card colour<input data-f="bg" type="color" value="\${c.bg}"></label>
           <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
           <label>Labels<input data-f="label" type="color" value="\${c.label}"></label>
         </div>
+        <div class="logorow" style="margin-top:8px">
+          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+        </div>
+        <div class="logorow">
+          <label class="btn btn-ghost" style="margin:0">Upload banner<input data-banner type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmbanner" style="\${c.bannerVersion ? "" : "display:none"}">Remove banner</button>
+        </div>
+        <p class="muted" style="margin-top:4px">Banner = a wide image behind the top of the card (a gradient or photo). Optional.</p>
+
+        <label style="margin-top:10px">Card name</label><input data-f="name" value="\${c.name}">
+        <label>Reward</label><input data-f="reward" value="\${c.reward}">
+        <div class="row2">
+          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
+          <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
+        </div>
         <label>Staff PIN</label><input data-f="staffPin" value="\${c.staffPin}">
         <button class="btn btn-dark" style="margin-top:12px" data-a="save">Save changes</button>
+
         <div class="links">
-          <a href="\${landing}" target="_blank">Customer page</a>
-          <a href="\${base + "/qr"}" target="_blank">Counter QR</a>
+          <a href="\${landing}" target="_blank">Add-to-Wallet page</a>
+          <a href="\${base + "/qr"}" target="_blank">Add-to-Wallet QR</a>
           <a href="/staff?c=\${c.id}" target="_blank">Staff stamper</a>
         </div>
-        <label style="margin-top:12px">Program an NFC tag <span class="muted">(optional — a tap opens sign-up, same as the QR)</span></label>
+        <label style="margin-top:12px">Add-to-Wallet NFC link <span class="muted">(optional — a tap opens the same page as the QR)</span></label>
         <div class="copyrow">
           <input data-nfc readonly value="\${location.origin}\${landing}">
           <button class="btn btn-ghost" data-a="copynfc">Copy link</button>
         </div>
-        <p class="muted" style="margin-top:6px">Write this link onto a blank NFC sticker with a free app like “NFC Tools”. The QR always works too.</p>
+        <p class="muted" style="margin-top:6px">Write this link onto a blank NFC sticker with a free app like “NFC Tools”. It never changes when you edit settings. The QR always works too.</p>
         <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward.</p>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
 
-      // Live preview: pure client-side re-render from the form fields.
+      // banner preview
+      if (c.bannerVersion) {
+        const b = q("[data-pv-banner]");
+        b.style.backgroundImage = "url(" + base + "/art/banner.png" + bust(c.bannerVersion) + ")";
+        b.classList.add("on");
+      }
+
       function renderPreview() {
         const target = Math.max(1, Math.min(30, Number(f("stampsTarget").value) || 10));
         const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
@@ -459,71 +516,114 @@ export function dashboardPage(): string {
       for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
       renderPreview();
 
-      // Logo upload: normalise any image to a 320×320 PNG in-browser, preview
-      // immediately, then send the base64 to the server.
-      q("[data-logo]").onchange = () => {
-        const file = q("[data-logo]").files[0];
-        if (!file) return;
-        const img = new Image();
-        img.onload = async () => {
-          URL.revokeObjectURL(img.src);
-          const canvas = document.createElement("canvas");
-          canvas.width = canvas.height = 320;
-          const ctx = canvas.getContext("2d");
-          const s = Math.min(320 / img.width, 320 / img.height);
-          ctx.drawImage(img, (320 - img.width * s) / 2, (320 - img.height * s) / 2,
-                        img.width * s, img.height * s);
-          const dataUrl = canvas.toDataURL("image/png");
-          const { body } = await api("/cafe/" + c.id + "/logo", {
-            method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
-          });
-          if (body.ok) {
-            q("[data-pv-logo]").src = dataUrl;
-            q("[data-a=rmlogo]").style.display = "";
-            toast("Logo saved ✓");
-          } else toast(body.error || "Upload failed");
+      // preset swatches
+      const pc = q("[data-presets]");
+      for (const p of PRESETS) {
+        const sw = document.createElement("div");
+        sw.className = "preset"; sw.title = p.name;
+        sw.style.background = p.bg; sw.style.color = p.label;
+        sw.textContent = p.name[0];
+        sw.onclick = () => { f("bg").value = p.bg; f("fg").value = p.fg; f("label").value = p.label; renderPreview(); };
+        pc.appendChild(sw);
+      }
+
+      // image upload helper: normalise to PNG (square logo, or wide banner) → POST
+      function wireUpload(inputSel, kind, w, h, onDone) {
+        q(inputSel).onchange = () => {
+          const file = q(inputSel).files[0]; if (!file) return;
+          const img = new Image();
+          img.onload = async () => {
+            URL.revokeObjectURL(img.src);
+            const canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            const s = Math.max(w / img.width, h / img.height); // cover
+            ctx.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
+            const dataUrl = canvas.toDataURL("image/png");
+            const { body } = await api("/cafe/" + c.id + "/" + kind, {
+              method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+            });
+            if (body.ok) { onDone(dataUrl); toast((kind === "logo" ? "Logo" : "Banner") + " saved ✓"); }
+            else toast(body.error || "Upload failed");
+          };
+          img.onerror = () => toast("Couldn't read that image");
+          img.src = URL.createObjectURL(file);
         };
-        img.onerror = () => toast("Couldn't read that image");
-        img.src = URL.createObjectURL(file);
-      };
+      }
+      wireUpload("[data-logo]", "logo", 320, 320, (url) => {
+        q("[data-pv-logo]").src = url; q("[data-a=rmlogo]").style.display = "";
+      });
+      wireUpload("[data-banner]", "banner", 640, 200, (url) => {
+        const b = q("[data-pv-banner]"); b.style.backgroundImage = "url(" + url + ")"; b.classList.add("on");
+        q("[data-a=rmbanner]").style.display = "";
+      });
       q("[data-a=rmlogo]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id + "/logo", { method: "DELETE" });
-        if (body.ok) {
-          q("[data-pv-logo]").src = base + "/art/logo.png?v=" + Date.now();
-          q("[data-a=rmlogo]").style.display = "none";
-          toast("Logo removed — using the default");
-        } else toast(body.error || "Failed");
+        if (body.ok) { q("[data-pv-logo]").src = base + "/art/logo.png?v=" + Date.now(); q("[data-a=rmlogo]").style.display = "none"; toast("Logo removed"); }
+      };
+      q("[data-a=rmbanner]").onclick = async () => {
+        const { body } = await api("/cafe/" + c.id + "/banner", { method: "DELETE" });
+        if (body.ok) { const b = q("[data-pv-banner]"); b.classList.remove("on"); b.style.backgroundImage = ""; q("[data-a=rmbanner]").style.display = "none"; toast("Banner removed"); }
       };
 
       q("[data-a=copynfc]").onclick = async () => {
-        const url = q("[data-nfc]").value;
-        try { await navigator.clipboard.writeText(url); toast("Link copied ✓"); }
+        try { await navigator.clipboard.writeText(q("[data-nfc]").value); toast("Link copied ✓"); }
         catch { q("[data-nfc]").select(); toast("Select + copy the link"); }
       };
-
       q("[data-a=save]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
           name: f("name").value, reward: f("reward").value,
           stampsTarget: Number(f("stampsTarget").value), stampsStart: Number(f("stampsStart").value),
-          staffPin: f("staffPin").value,
-          bg: f("bg").value, fg: f("fg").value, label: f("label").value,
+          staffPin: f("staffPin").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value,
         })});
-        toast(body.ok ? "Saved ✓" : (body.error || "Save failed"));
+        if (body.ok) { c.name = f("name").value; toast("Saved ✓"); renderSwitcher(); }
+        else toast(body.error || "Save failed");
       };
       return div;
     }
 
+    function metricsPanel(c) {
+      const div = document.createElement("div");
+      const m = c.metrics;
+      div.innerHTML = \`
+        <div class="metrics">
+          <div class="metric"><b>\${m.cards}</b><span class="muted">cards issued</span></div>
+          <div class="metric"><b>\${m.stamps}</b><span class="muted">stamps (\${m.stamps30d} in 30d)</span></div>
+          <div class="metric"><b>\${m.redemptions}</b><span class="muted">rewards claimed</span></div>
+          <div class="metric"><b>\${m.redemptions30d}</b><span class="muted">claimed in 30d</span></div>
+        </div>
+        <p class="muted" style="margin-top:10px">Numbers update as staff stamp and redeem cards.</p>\`;
+      return div;
+    }
+
+    // Customers tab is filled in by the win-back build (Phase 3).
+    let renderCustomers = (c) => {
+      const d = document.createElement("div");
+      d.innerHTML = '<p class="muted" style="margin-top:16px">Customer list &amp; win-back coming here.</p>';
+      return d;
+    };
+
+    // ---- app shell: card switcher + tabs ----
+    const S = { cafes: [], sel: 0, tab: "design", email: "" };
+
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
-      const many = body.cafes.length > 1;
+      S.cafes = body.cafes; S.email = body.email; S.sel = 0;
       $("#app").innerHTML = \`
-        <h1>Your \${many ? "cards" : "card"}</h1>
-        <p class="sub">\${body.email}</p>
-        <div id="cafes"></div>
-        <button class="btn btn-ghost" style="margin-top:14px" id="add">+ Add another card</button>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 0">\${S.email}</p></div>
+        </div>
+        <div class="switcher" id="switcher"></div>
+        <div class="tabs" id="tabs">
+          <button data-tab="design">Design</button>
+          <button data-tab="customers">Customers</button>
+          <button data-tab="metrics">Metrics</button>
+        </div>
+        <div id="panel"></div>
         <div class="account">
-          <button class="btn btn-ghost" id="chpw">Change password</button>
+          <button class="btn btn-ghost" id="add">+ Add another card</button>
+          <button class="btn btn-ghost" style="margin-top:8px" id="chpw">Change password</button>
           <div id="pwform" style="display:none">
             <label>Current password</label><input id="pwcur" type="password" autocomplete="current-password">
             <label>New password (min 8 characters)</label><input id="pwnew" type="password" autocomplete="new-password">
@@ -531,25 +631,43 @@ export function dashboardPage(): string {
           </div>
           <button class="btn btn-ghost" style="margin-top:8px" id="out">Log out</button>
         </div>\`;
-      for (const c of body.cafes) $("#cafes").appendChild(cafeCard(c));
+      $("#tabs").querySelectorAll("button").forEach((b) => {
+        b.onclick = () => { S.tab = b.dataset.tab; renderTabs(); renderPanel(); };
+      });
       $("#add").onclick = async () => {
         const name = prompt("New card name (e.g. your café, or a second card like “Pastry card”):");
         if (!name) return;
         const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
         if (r.ok) location.reload(); else toast(r.error || "Failed");
       };
-      $("#chpw").onclick = () => {
-        const el = $("#pwform");
-        el.style.display = el.style.display === "none" ? "block" : "none";
-      };
+      $("#chpw").onclick = () => { const el = $("#pwform"); el.style.display = el.style.display === "none" ? "block" : "none"; };
       $("#pwsave").onclick = async () => {
-        const { body: r } = await api("/change-password", { method: "POST", body: JSON.stringify({
-          current: $("#pwcur").value, next: $("#pwnew").value,
-        })});
+        const { body: r } = await api("/change-password", { method: "POST", body: JSON.stringify({ current: $("#pwcur").value, next: $("#pwnew").value }) });
         if (r.ok) { toast("Password updated ✓"); $("#pwform").style.display = "none"; $("#pwcur").value = ""; $("#pwnew").value = ""; }
         else toast(r.error || "Couldn’t update");
       };
       $("#out").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
+      renderSwitcher(); renderTabs(); renderPanel();
+    }
+
+    function renderSwitcher() {
+      const sw = $("#switcher"); if (!sw) return;
+      sw.style.display = S.cafes.length > 1 ? "flex" : "none";
+      sw.innerHTML = "";
+      S.cafes.forEach((c, i) => {
+        const b = document.createElement("button");
+        b.textContent = c.name; b.className = i === S.sel ? "on" : "";
+        b.onclick = () => { S.sel = i; renderSwitcher(); renderPanel(); };
+        sw.appendChild(b);
+      });
+    }
+    function renderTabs() {
+      $("#tabs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === S.tab));
+    }
+    function renderPanel() {
+      const panel = $("#panel"); const c = S.cafes[S.sel];
+      panel.innerHTML = "";
+      panel.appendChild(S.tab === "design" ? designPanel(c) : S.tab === "metrics" ? metricsPanel(c) : renderCustomers(c));
     }
 
     (async () => {

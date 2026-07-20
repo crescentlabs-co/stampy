@@ -15,6 +15,7 @@ import { timingSafeEqual } from "node:crypto";
 import {
   deleteRegistration,
   getCafe,
+  getCafeBanner,
   getCafeLogo,
   getPass,
   serialsUpdatedSince,
@@ -83,8 +84,11 @@ walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
   const cafe = await getCafe(row.cafe_id);
   if (!cafe) return void res.status(500).end();
   try {
-    const logo = await getCafeLogo(cafe.id).catch(() => null);
-    const pkpass = buildPkpass(row, cafe, logo?.png);
+    const [logo, banner] = await Promise.all([
+      getCafeLogo(cafe.id).catch(() => null),
+      getCafeBanner(cafe.id).catch(() => null),
+    ]);
+    const pkpass = buildPkpass(row, cafe, logo?.png, banner?.png);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")

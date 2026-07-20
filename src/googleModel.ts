@@ -24,14 +24,22 @@ export function objectId(row: Pick<PassRow, "serial">): string {
   return `${config.googleIssuerId}.${row.serial}`;
 }
 
-/** The café's hosted logo URL (per-café route; ?v= makes Google re-fetch after an upload). */
-export function logoUrl(cafe: Pick<CafeRow, "id">, logoVersion = 0): string {
+/** A café's hosted art URL (per-café route; ?v= makes Google re-fetch after an upload). */
+function artUrl(cafe: Pick<CafeRow, "id">, name: "logo" | "banner", version = 0): string {
   const base = cafe.id === DEFAULT_CAFE_ID ? "" : `/c/${cafe.id}`;
-  return `${config.baseUrl}${base}/art/logo.png${logoVersion ? `?v=${logoVersion}` : ""}`;
+  return `${config.baseUrl}${base}/art/${name}.png${version ? `?v=${version}` : ""}`;
 }
 
-export function buildLoyaltyClass(cafe: CafeRow, logoVersion = 0): Record<string, unknown> {
-  return {
+export function logoUrl(cafe: Pick<CafeRow, "id">, logoVersion = 0): string {
+  return artUrl(cafe, "logo", logoVersion);
+}
+
+export function buildLoyaltyClass(
+  cafe: CafeRow,
+  logoVersion = 0,
+  bannerVersion = 0,
+): Record<string, unknown> {
+  const cls: Record<string, unknown> = {
     id: classId(cafe),
     issuerName: cafe.name,
     programName: `${cafe.name} — Loyalty Card`,
@@ -45,6 +53,13 @@ export function buildLoyaltyClass(cafe: CafeRow, logoVersion = 0): Record<string
     countryCode: "MY",
     reviewStatus: "UNDER_REVIEW",
   };
+  if (bannerVersion) {
+    cls.heroImage = {
+      sourceUri: { uri: artUrl(cafe, "banner", bannerVersion) },
+      contentDescription: { defaultValue: { language: "en", value: `${cafe.name} banner` } },
+    };
+  }
+  return cls;
 }
 
 export function buildLoyaltyObject(row: PassRow, cafe: CafeRow): Record<string, unknown> {

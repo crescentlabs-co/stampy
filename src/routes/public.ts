@@ -22,6 +22,7 @@ import {
   DEFAULT_CAFE_ID,
   generateShortCode,
   getCafe,
+  getCafeBanner,
   getCafeLogo,
   logEvent,
   type CafeRow,
@@ -76,8 +77,11 @@ async function enroll(cafeId: string, res: import("express").Response): Promise<
 
   const row = await newPass(cafe, "apple");
   try {
-    const logo = await getCafeLogo(cafe.id).catch(() => null);
-    const pkpass = buildPkpass(row, cafe, logo?.png);
+    const [logo, banner] = await Promise.all([
+      getCafeLogo(cafe.id).catch(() => null),
+      getCafeBanner(cafe.id).catch(() => null),
+    ]);
+    const pkpass = buildPkpass(row, cafe, logo?.png, banner?.png);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")
@@ -158,3 +162,14 @@ async function serveLogo(cafeId: string, res: import("express").Response): Promi
 
 publicRouter.get("/art/logo.png", (_req, res) => serveLogo(DEFAULT_CAFE_ID, res));
 publicRouter.get("/c/:cafeId/art/logo.png", (req, res) => serveLogo(req.params.cafeId!, res));
+
+// Banner is optional — 404 when the café hasn't set one (Google only fetches
+// it when the class references it, which it only does when a banner exists).
+async function serveBanner(cafeId: string, res: import("express").Response): Promise<void> {
+  const banner = await getCafeBanner(cafeId).catch(() => null);
+  if (!banner) return void res.status(404).end();
+  res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(banner.png);
+}
+
+publicRouter.get("/art/banner.png", (_req, res) => serveBanner(DEFAULT_CAFE_ID, res));
+publicRouter.get("/c/:cafeId/art/banner.png", (req, res) => serveBanner(req.params.cafeId!, res));

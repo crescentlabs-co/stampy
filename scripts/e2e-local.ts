@@ -281,6 +281,20 @@ async function main() {
   const revertedLogo = Buffer.from(await (await fetch(base + "/art/logo.png")).arrayBuffer());
   expect(!revertedLogo.equals(servedLogo), "after delete the default logo is served again");
 
+  // --- Banner image (optional; 404 until set) ---
+  expect((await get("/art/banner.png")).status === 404, "no banner → 404 (optional art)");
+  const bannerUp = await fetch(base + "/dashboard/api/cafe/default/banner", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ png: pngB64 }),
+  });
+  expect(bannerUp.status === 200, "banner upload accepted");
+  const servedBanner = await get("/art/banner.png");
+  expect(servedBanner.status === 200, "banner served after upload");
+  const ovBanner = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  expect(ovBanner.cafes.find((c: any) => c.id === "default").bannerVersion > 0, "overview reports banner version");
+  const rmBanner = await fetch(base + "/dashboard/api/cafe/default/banner", { method: "DELETE", headers: { cookie } });
+  expect(rmBanner.status === 200 && (await get("/art/banner.png")).status === 404, "banner delete reverts to none");
+
   // --- Change password (verifies current, then updates) ---
   const chWrong = await fetch(base + "/dashboard/api/change-password", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },

@@ -10,7 +10,7 @@
  */
 import jwt from "jsonwebtoken";
 import { config, setupStatus } from "./config.js";
-import { cafeLogoVersion, type CafeRow, type PassRow } from "./db.js";
+import { cafeBannerVersion, cafeLogoVersion, type CafeRow, type PassRow } from "./db.js";
 import {
   buildLoyaltyClass,
   buildLoyaltyObject,
@@ -116,9 +116,12 @@ function toResult(res: { status: number; text: string }): GoogleResult {
 export async function ensureClass(cafe: CafeRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    // Version-stamp the logo URL so Google re-fetches it after an upload.
-    const logoVersion = await cafeLogoVersion(cafe.id).catch(() => 0);
-    const cls = buildLoyaltyClass(cafe, logoVersion);
+    // Version-stamp the art URLs so Google re-fetches them after an upload.
+    const [logoVersion, bannerVersion] = await Promise.all([
+      cafeLogoVersion(cafe.id).catch(() => 0),
+      cafeBannerVersion(cafe.id).catch(() => 0),
+    ]);
+    const cls = buildLoyaltyClass(cafe, logoVersion, bannerVersion);
     const inserted = await api("POST", "/loyaltyClass", cls);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyClass/${cls.id as string}`, cls));
