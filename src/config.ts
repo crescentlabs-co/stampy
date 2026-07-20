@@ -26,8 +26,12 @@ export const config = {
   port: intEnv("PORT", 3000),
   databaseUrl: process.env.DATABASE_URL ?? "",
 
-  /** The platform owner's email — this owner account can reach /admin. Unset ⇒ /admin is closed. */
-  adminEmail: (process.env.ADMIN_EMAIL ?? "").toLowerCase().trim(),
+  /** Platform-owner emails that can reach /admin. `ADMIN_EMAIL` may list several,
+   *  comma-separated (e.g. "me@x.com, partner@x.com"). Empty ⇒ /admin is closed. */
+  adminEmails: (process.env.ADMIN_EMAIL ?? "")
+    .split(",")
+    .map((e) => e.toLowerCase().trim())
+    .filter(Boolean),
 
   /** Resend API key + verified From address for transactional email (reset/welcome).
    *  Unset ⇒ email degrades gracefully; owners recover via the admin console instead. */

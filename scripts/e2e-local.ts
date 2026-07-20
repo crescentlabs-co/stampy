@@ -24,7 +24,7 @@ async function main() {
   await pg.createDatabase("stampy");
   process.env.DATABASE_URL = "postgresql://stampy:stampy@localhost:5499/stampy";
   process.env.BASE_URL = "http://localhost:3000";
-  process.env.ADMIN_EMAIL = "owner@test.my"; // first signup below becomes the platform admin
+  process.env.ADMIN_EMAIL = "owner@test.my, second@cafe.my"; // comma-listed: BOTH are admins
 
   const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken } =
     await import("../src/db.js");
@@ -54,6 +54,17 @@ async function main() {
   // Landing shows café name from DB now
   const landing = await get("/");
   expect(landing.status === 200 && landing.body.includes("Kopi Corner"), "landing renders café from DB");
+  expect(landing.body.includes('href="/assets/fonts.css"'), "pages link the self-hosted font stylesheet");
+
+  // Self-hosted fonts serve over /assets (static)
+  const fontsCss = await get("/assets/fonts.css");
+  expect(fontsCss.status === 200 && fontsCss.body.includes("Bricolage Grotesque"), "GET /assets/fonts.css serves the @font-face");
+  const woff = await get("/assets/fonts/bricolage-latin.woff2");
+  expect(woff.status === 200, "GET /assets/fonts/*.woff2 serves the font file");
+
+  // Dashboard uses the sliding segmented control (not the old underline tabs)
+  const dashShell = await get("/dashboard");
+  expect(dashShell.body.includes('class="seg" id="tabs"'), "dashboard renders the segmented tab control");
 
   // Dashboard: state → first signup claims the seeded default café
   const state1 = JSON.parse((await get("/dashboard/api/state")).body);
@@ -379,9 +390,19 @@ async function main() {
   });
   expect(nudgeNotMine.status === 403, "an owner can't nudge another owner's café");
 
-  // --- Admin console (ADMIN_EMAIL = owner@test.my) ---
-  const adminForbidden = await get("/admin/api/overview", { headers: { cookie: cookie2 } });
-  expect(adminForbidden.status === 403, "a normal owner can't reach the admin console");
+  // --- Admin console (ADMIN_EMAIL = "owner@test.my, second@cafe.my") ---
+  // A genuinely non-admin owner (not in the comma list) is refused.
+  const outsider = await fetch(base + "/dashboard/api/signup", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "outsider@cafe.my", password: "password123", cafeName: "Outsider" }),
+  });
+  const cookieOutsider = outsider.headers.get("set-cookie")?.split(";")[0] ?? "";
+  const adminForbidden = await get("/admin/api/overview", { headers: { cookie: cookieOutsider } });
+  expect(adminForbidden.status === 403, "a non-admin owner can't reach the admin console");
+
+  // The SECOND comma-listed email is also an admin (multi-admin support).
+  const adminSecond = await get("/admin/api/overview", { headers: { cookie: cookie2 } });
+  expect(adminSecond.status === 200, "a second comma-listed ADMIN_EMAIL is also an admin");
 
   const adminOk = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
   expect(adminOk.cafes.length >= 2, "admin sees every café on the platform");

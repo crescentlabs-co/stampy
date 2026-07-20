@@ -3,6 +3,8 @@
  * Boots with or without Apple secrets; /setup shows what's still missing.
  */
 import express from "express";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { config, setupStatus } from "./config.js";
 import { migrate } from "./db.js";
 import { setupPage } from "./pages.js";
@@ -16,6 +18,11 @@ const app = express();
 // 600kb: room for a base64-encoded café logo (≤256KB binary → ~342KB JSON);
 // everything else stays tiny. Express still hard-rejects bodies beyond this.
 app.use(express.json({ limit: "600kb" }));
+
+// Static assets (self-hosted fonts + their stylesheet). Long-cached; these are
+// public, content-hashed-by-name files — no secrets.
+const assetsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets");
+app.use("/assets", express.static(assetsDir, { maxAge: "30d", immutable: true }));
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/setup", (_req, res) => res.type("html").send(setupPage(setupStatus(), config.baseUrl)));

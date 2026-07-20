@@ -1,7 +1,8 @@
 /**
  * Platform-admin console — for the person who RUNS Stampy (not café owners).
- * Gated by the owner session AND `owner.email === config.adminEmail`; when
- * ADMIN_EMAIL is unset the whole console is closed (403).
+ * Gated by the owner session AND `owner.email` being in `config.adminEmails`
+ * (ADMIN_EMAIL may list several, comma-separated). When ADMIN_EMAIL is unset the
+ * whole console is closed (403).
  *
  *   GET  /admin                          the console page
  *   GET  /admin/api/overview             every café + owner email(s) + metrics
@@ -24,10 +25,10 @@ interface AdminRequest extends Request {
 }
 
 async function requireAdmin(req: AdminRequest, res: Response, next: NextFunction): Promise<void> {
-  if (!config.adminEmail) return void res.status(403).json({ error: "admin-closed" });
+  if (config.adminEmails.length === 0) return void res.status(403).json({ error: "admin-closed" });
   const ownerId = sessionOwnerId(req);
   const owner = ownerId ? await getOwner(ownerId) : null;
-  if (!owner || owner.email.toLowerCase() !== config.adminEmail) {
+  if (!owner || !config.adminEmails.includes(owner.email.toLowerCase())) {
     return void res.status(403).json({ error: "not-admin" });
   }
   req.admin = owner;

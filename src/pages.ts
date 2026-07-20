@@ -7,10 +7,19 @@ import type { CafeRow } from "./db.js";
 import { DEFAULT_CAFE_ID } from "./db.js";
 
 const baseCss = /* css */ `
+  :root {
+    --bg: #f6f1ea; --surface: #ffffff; --ink: #2b1d15; --ink2: #3b2016;
+    --muted: #9b8b7d; --line: #eee2d5; --accent: #c8863c;
+    --r: 14px; --r-lg: 20px;
+    --shadow: 0 10px 30px -12px rgba(43,29,21,.28), 0 2px 6px rgba(43,29,21,.10);
+    --display: "Bricolage Grotesque", "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --body: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
   * { box-sizing: border-box; margin: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f6f1ea; color: #2b1d15; min-height: 100vh;
+    font-family: var(--body);
+    background: var(--bg); color: var(--ink); min-height: 100vh;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     display: flex; flex-direction: column; align-items: center;
     padding: 24px 16px 48px;
   }
@@ -18,8 +27,8 @@ const baseCss = /* css */ `
     background: #fff; border-radius: 16px; padding: 24px;
     box-shadow: 0 2px 12px rgba(43,29,21,.08); width: 100%; max-width: 420px;
   }
-  h1 { font-size: 1.5rem; margin-bottom: 8px; }
-  h2 { font-size: 1.1rem; margin: 18px 0 6px; }
+  h1 { font-family: var(--display); font-weight: 800; font-size: 1.7rem; letter-spacing: -.02em; margin-bottom: 8px; text-wrap: balance; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 1.15rem; letter-spacing: -.01em; margin: 18px 0 6px; }
   p.sub { color: #7a6a5d; margin-bottom: 20px; }
   .btn {
     display: block; width: 100%; text-align: center; padding: 14px 20px;
@@ -29,6 +38,9 @@ const baseCss = /* css */ `
   .btn-dark { background: #1d1d1f; color: #fff; }
   .btn-stamp { background: #3b2016; color: #fff; }
   .btn-ghost { background: #efe7dd; color: #3b2016; }
+  .btn { transition: transform .09s ease, filter .15s ease; }
+  .btn:active { transform: scale(.985); }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
   .muted { color: #9b8b7d; font-size: .85rem; }
   input, textarea, select {
     width: 100%; padding: 12px; border: 1px solid #d9cbbb; border-radius: 10px;
@@ -51,6 +63,7 @@ function page(title: string, body: string, extraCss = "", script = ""): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
+<link rel="stylesheet" href="/assets/fonts.css">
 <style>${baseCss}${extraCss}</style>
 </head>
 <body>${body}${script ? `<script>${script}</script>` : ""}</body>
@@ -332,8 +345,12 @@ export function staffPage(): string {
 export function dashboardPage(): string {
   const css = /* css */ `
     .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
-    .metric { background: #f6f1ea; border-radius: 10px; padding: 10px; text-align: center; }
-    .metric b { font-size: 1.3rem; display: block; }
+    .metric { background: var(--surface); border-radius: var(--r); padding: 14px 14px 12px;
+              box-shadow: var(--shadow); text-align: left; }
+    .metric b { font-family: var(--display); font-weight: 800; font-size: 1.9rem; line-height: 1;
+                display: block; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
+    .metric span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
+                   letter-spacing: .05em; color: var(--muted); }
     .cafe { border: 1px solid #eee2d5; border-radius: 12px; padding: 16px; margin-top: 14px; }
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
     .row2 { display: flex; gap: 8px; }
@@ -370,12 +387,20 @@ export function dashboardPage(): string {
     .cardselect select { flex: 1; padding: 11px 12px; border: 1px solid #d9cbbb; border-radius: 10px;
                          font: inherit; font-weight: 600; background: #fff; color: #3b2016; }
     .cardselect .btn { width: auto; padding: 11px 14px; font-size: .9rem; white-space: nowrap; }
-    /* --- tabs --- */
-    .tabs { display: flex; gap: 2px; border-bottom: 1px solid #eee2d5; margin: 12px 0 16px; overflow-x: auto; }
-    .tabs button { border: none; background: none; color: #9b8b7d; font: inherit; font-weight: 600; font-size: .95rem;
-                   padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
-    .tabs button:hover { color: #3b2016; }
-    .tabs button.on { color: #3b2016; border-bottom-color: #3b2016; }
+    /* --- sliding segmented control (tabs + toggles) --- */
+    .seg { position: relative; display: flex; background: #efe7dd; border-radius: 999px; padding: 4px; gap: 2px; }
+    .seg button { position: relative; z-index: 1; flex: 1; border: none; background: none; font: inherit;
+                  font-weight: 600; font-size: .9rem; color: var(--muted); padding: 9px 8px; cursor: pointer;
+                  border-radius: 999px; white-space: nowrap; transition: color .2s; }
+    .seg button.on { color: var(--ink2); }
+    .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .seg .thumb { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: 0; background: var(--surface);
+                  border-radius: 999px; box-shadow: 0 2px 6px rgba(43,29,21,.16);
+                  transition: transform .28s cubic-bezier(.34,1.1,.4,1), width .28s cubic-bezier(.34,1.1,.4,1); }
+    #tabs { margin: 14px 0 18px; }
+    .segwrap { margin: 8px 0 4px; }
+    .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
+    @media (prefers-reduced-motion: reduce) { .seg .thumb { transition: none; } }
     /* --- colour presets --- */
     .presets { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
     .preset { width: 38px; height: 38px; border-radius: 10px; border: 2px solid #d9cbbb; cursor: pointer;
@@ -404,8 +429,9 @@ export function dashboardPage(): string {
     .sharelist a .arr { color: #9b8b7d; }
     .sharelist { margin-bottom: 6px; }
     /* --- home: totals + per-card breakdown --- */
-    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
-    .totals .metric b { font-size: 1.4rem; }
+    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+    .totals .metric { padding: 14px 12px 11px; }
+    .totals .metric b { font-size: clamp(1.35rem, 6.5vw, 1.95rem); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 4px; }
     .breakdown th { text-align: left; color: #9b8b7d; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px; border-bottom: 1px solid #eee2d5; }
     .breakdown td { padding: 8px; border-bottom: 1px solid #f0e8dd; }
@@ -700,21 +726,36 @@ export function dashboardPage(): string {
       const div = document.createElement("div");
       const sum = (k) => S.cafes.reduce((a, c) => a + (c.metrics[k] || 0), 0);
       const breakdown = S.cafes.length > 1
-        ? \`<label style="margin-top:14px">By card</label>
+        ? \`<label style="margin-top:16px">By card</label>
            <table class="breakdown"><tr><th>Card</th><th>Customers</th><th>Stamps</th><th>Claimed</th></tr>
            \${S.cafes.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.cards + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
            </table>\`
         : "";
       div.innerHTML = \`
-        <div class="totals">
-          <div class="metric"><b>\${sum("cards")}</b><span class="muted">customers</span></div>
-          <div class="metric"><b>\${sum("stamps")}</b><span class="muted">stamps (\${sum("stamps30d")} in 30d)</span></div>
-          <div class="metric"><b>\${sum("redemptions")}</b><span class="muted">rewards claimed</span></div>
+        <div class="segwrap">
+          <div class="seg" id="range" role="tablist">
+            <button data-r="all" class="on">All time</button>
+            <button data-r="30">Last 30 days</button>
+            <span class="thumb"></span>
+          </div>
         </div>
+        <div class="totals" data-totals></div>
         \${breakdown}
-        <label style="margin-top:14px">Customers</label>
+        <label style="margin-top:16px">Customers</label>
         <div data-cust><p class="muted">Loading…</p></div>
         <button class="btn btn-ghost viewall" data-viewall>View all customers →</button>\`;
+
+      // The All-time / 30-day toggle swaps the big numbers instantly (tactile).
+      function paintTotals(range) {
+        const stamps = range === "30" ? sum("stamps30d") : sum("stamps");
+        const claimed = range === "30" ? sum("redemptions30d") : sum("redemptions");
+        div.querySelector("[data-totals]").innerHTML = \`
+          <div class="metric"><b>\${sum("cards")}</b><span>customers</span></div>
+          <div class="metric"><b>\${stamps}</b><span>stamps\${range === "30" ? " · 30d" : ""}</span></div>
+          <div class="metric"><b>\${claimed}</b><span>rewards\${range === "30" ? " · 30d" : ""}</span></div>\`;
+      }
+      paintTotals("all");
+      wireSeg(div.querySelector("#range"), (btn) => paintTotals(btn.dataset.r));
       (async () => {
         const { body } = await api("/customers?lapsedDays=14");
         const cust = body.customers || [];
@@ -881,6 +922,27 @@ export function dashboardPage(): string {
       return div;
     }
 
+    // Slides a segmented control's thumb under its active button. Reused by the
+    // tab bar and the Home time toggle — this is the "tap across, watch it glide".
+    function moveThumb(seg) {
+      const on = seg.querySelector("button.on") || seg.querySelector("button");
+      const thumb = seg.querySelector(".thumb");
+      if (!on || !thumb) return;
+      thumb.style.width = on.offsetWidth + "px";
+      thumb.style.transform = "translateX(" + on.offsetLeft + "px)";
+    }
+    // Wires a segmented control: click → set .on, glide the thumb, run onPick(btn).
+    function wireSeg(seg, onPick) {
+      seg.querySelectorAll("button").forEach((b) => {
+        b.onclick = () => {
+          seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+          moveThumb(seg);
+          onPick && onPick(b);
+        };
+      });
+      requestAnimationFrame(() => moveThumb(seg)); // position once laid out
+    }
+
     // ---- app shell: owner-scoped tabs ----
     const S = { cafes: [], email: "", tab: "home", selCard: 0 };
 
@@ -890,11 +952,12 @@ export function dashboardPage(): string {
       S.cafes = body.cafes; S.email = body.email; S.selCard = 0; S.tab = "home";
       $("#app").innerHTML = \`
         <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">\${S.email}</p></div>
-        <div class="tabs" id="tabs">
-          <button data-tab="home">Home</button>
+        <div class="seg" id="tabs" role="tablist">
+          <button data-tab="home" class="on">Home</button>
           <button data-tab="cards">Cards</button>
           <button data-tab="share">Share</button>
           <button data-tab="account">Account</button>
+          <span class="thumb"></span>
         </div>
         <div id="panel"></div>\`;
       $("#tabs").querySelectorAll("button").forEach((b) => {
@@ -906,7 +969,9 @@ export function dashboardPage(): string {
     function renderTabs() {
       // The Customers view is a sub-page of Home, so keep Home highlighted there.
       const active = S.tab === "customers" ? "home" : S.tab;
-      $("#tabs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === active));
+      const seg = $("#tabs");
+      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === active));
+      moveThumb(seg);
     }
     function renderPanel() {
       const panel = $("#panel"); panel.innerHTML = "";
@@ -917,6 +982,12 @@ export function dashboardPage(): string {
         : homePanel();
       panel.appendChild(view);
     }
+
+    // Re-seat every segmented thumb when the layout shifts (window resize) or the
+    // webfont swaps in and changes button widths, so the highlight stays aligned.
+    const reseat = () => document.querySelectorAll(".seg").forEach((s) => moveThumb(s));
+    window.addEventListener("resize", reseat);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(reseat);
 
     (async () => {
       const { body } = await api("/state");
@@ -961,8 +1032,8 @@ export function adminPage(): string {
       if (status === 403) {
         // Tell the founder EXACTLY why it's closed rather than a vague bounce.
         const msg = body.error === "admin-closed"
-          ? 'The admin console is closed because <strong>ADMIN_EMAIL</strong> isn’t set. In Railway → your app service → Variables, add <strong>ADMIN_EMAIL</strong> = your dashboard login email, then redeploy.'
-          : 'You’re not signed in as the admin account. Log in at <a href="/dashboard">/dashboard</a> with the email set as <strong>ADMIN_EMAIL</strong>, then reopen this page.';
+          ? 'The admin console is closed because <strong>ADMIN_EMAIL</strong> isn’t set. In Railway → your app service → Variables, add <strong>ADMIN_EMAIL</strong> = your dashboard login email (you can list several, comma-separated, e.g. <em>you@x.com, partner@x.com</em>), then redeploy.'
+          : 'You’re not signed in as an admin account. Log in at <a href="/dashboard">/dashboard</a> with an email listed in <strong>ADMIN_EMAIL</strong>, then reopen this page.';
         $("#app").innerHTML = '<h1>Admin</h1><p class="sub">' + msg + '</p>';
         return;
       }
