@@ -32,8 +32,9 @@ card in the recent list.
 
 ## Key URLs (once deployed)
 
-- `/` — customer landing → "Add to Apple Wallet"
-- `/qr` — printable counter QR (points at `/`)
+- `/` — Stampy marketing landing page (CTAs → `/dashboard`)
+- `/c/default` — default café's customer Add-to-Wallet page (each café: `/c/<id>`)
+- `/qr` — printable counter QR (points at `/c/default`)
 - `/staff` — staff stamper (PIN lives in the café row; seeded from `STAFF_PIN`)
 - `/dashboard` — owner dashboard (first visit = create the owner account)
 - `/setup` — **green/red checklist of what's configured** — start here

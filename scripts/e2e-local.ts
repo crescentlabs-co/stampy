@@ -51,14 +51,20 @@ async function main() {
     console.log("OK:", label);
   };
 
-  // Landing shows café name from DB now
+  // `/` is now the product marketing landing page.
   const landing = await get("/");
-  expect(landing.status === 200 && landing.body.includes("Kopi Corner"), "landing renders café from DB");
+  expect(landing.status === 200 && landing.body.includes("Get early access"), "/ serves the marketing landing page");
   // Font face is inline in the page CSS (no separate cacheable stylesheet) and
   // points at the uniquely-named woff2, which is served statically.
   expect(landing.body.includes("/assets/fonts/space-grotesk-latin.woff2"), "pages declare the Space Grotesk @font-face inline");
   const woff = await get("/assets/fonts/space-grotesk-latin.woff2");
   expect(woff.status === 200, "GET /assets/fonts/*.woff2 serves the font file");
+
+  // The default café's Add-to-Wallet page moved to /c/default; its QR points there.
+  const cafeLanding = await get("/c/default");
+  expect(cafeLanding.status === 200 && cafeLanding.body.includes("Kopi Corner"), "default café Add-to-Wallet page renders at /c/default");
+  const qr = await get("/qr");
+  expect(qr.status === 200 && (qr.headers.get("content-type") || "").includes("image/png"), "/qr still serves the counter QR PNG");
 
   // Dashboard uses the sliding segmented control (not the old underline tabs)
   const dashShell = await get("/dashboard");

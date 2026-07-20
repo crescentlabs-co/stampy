@@ -1,12 +1,12 @@
 /**
- * Customer-facing routes. Multi-café: each café has its own landing/enroll/QR
- * under /c/:cafeId; the bare paths (/, /enroll, /qr) serve the default café so
- * v0.1 links and printed QRs keep working.
+ * Public routes. `/` is the product marketing page. Each café has its own
+ * Add-to-Wallet landing/enroll/QR under /c/:cafeId (the default café lives at
+ * /c/default); the bare /enroll and /qr still target the default café.
  *
- *   GET /            landing page for the default café
- *   GET /c/:cafeId   landing page for a café
+ *   GET /            Stampy marketing landing page
+ *   GET /c/:cafeId   Add-to-Wallet landing page for a café (default = /c/default)
  *   GET /enroll      issues a brand-new card and streams the signed .pkpass
- *   GET /qr          PNG QR code of the landing URL — print this for the counter
+ *   GET /qr          PNG QR code of the default café's Add-to-Wallet page
  *
  * Every enroll hit creates a fresh card (no dedupe; a returning customer just
  * keeps using the card already in their Wallet).
@@ -30,7 +30,7 @@ import {
 } from "../db.js";
 import { createObject, ensureClass, saveJwtUrl } from "../googleWallet.js";
 import { buildPkpass, NotConfiguredError } from "../passBuilder.js";
-import { landingPage, notReadyPage } from "../pages.js";
+import { landingPage, marketingPage, notReadyPage } from "../pages.js";
 
 export const publicRouter = Router();
 
@@ -118,7 +118,9 @@ async function enrollGoogle(cafeId: string, res: import("express").Response): Pr
 }
 
 async function qrPng(cafeId: string, res: import("express").Response): Promise<void> {
-  const path = cafeId === DEFAULT_CAFE_ID ? "/" : `/c/${cafeId}`;
+  // `/` is now the marketing page, so every café's counter QR (incl. the
+  // default) points at its own Add-to-Wallet page under /c/:id.
+  const path = `/c/${cafeId}`;
   const target = `${config.baseUrl || ""}${path}` || path;
   const png = await QRCode.toBuffer(target, {
     type: "png",
@@ -129,7 +131,7 @@ async function qrPng(cafeId: string, res: import("express").Response): Promise<v
   res.set("Content-Type", "image/png").send(png);
 }
 
-publicRouter.get("/", (_req, res) => landing(DEFAULT_CAFE_ID, res));
+publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage()));
 publicRouter.get("/c/:cafeId", (req, res) => landing(req.params.cafeId!, res));
 publicRouter.get("/enroll", (_req, res) => enroll(DEFAULT_CAFE_ID, res));
 publicRouter.get("/c/:cafeId/enroll", (req, res) => enroll(req.params.cafeId!, res));

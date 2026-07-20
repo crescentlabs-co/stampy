@@ -145,6 +145,202 @@ export function notReadyPage(): string {
   );
 }
 
+// ----------------------------------------------------------- marketing ----
+
+/**
+ * The product front door at `/` — a one-scroll, problem-first pitch for café
+ * owners. Static (boots with zero secrets); themed with the same tokens +
+ * Space Grotesk as the dashboard. Early-access framing (Apple/Google still
+ * finishing), so every CTA leads to the owner sign-up at /dashboard.
+ */
+export function marketingPage(): string {
+  const css = /* css */ `
+    :root { --ink-soft: #54574e; }
+    html { scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    body { display: block; padding: 0; align-items: stretch; }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+    a { color: var(--accent-dark); }
+    .cta { display: inline-block; background: var(--ink); color: #fff; text-decoration: none;
+           font-weight: 600; padding: 13px 22px; border-radius: 13px; font-size: 1rem;
+           transition: transform .09s ease, filter .15s ease; }
+    .cta:hover { filter: brightness(1.08); }
+    .cta:active { transform: scale(.985); }
+    .cta.ghost { background: var(--ghost-bg); color: var(--ink); }
+    .cta.sage { background: var(--accent); color: #fff; }
+    .cta.small { padding: 10px 16px; font-size: .92rem; border-radius: 11px; }
+    @media (prefers-reduced-motion: reduce) { .cta { transition: none; } .cta:active { transform: none; } }
+    /* nav */
+    .nav { position: sticky; top: 0; z-index: 20; background: rgba(240,241,237,.82);
+           backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+    .nav-in { display: flex; align-items: center; justify-content: space-between; height: 62px; }
+    .brand { font-family: var(--display); font-weight: 700; font-size: 1.2rem; letter-spacing: -.01em; color: var(--ink); text-decoration: none; }
+    .nav .links { display: flex; align-items: center; gap: 8px; }
+    .nav .login { color: var(--ink); text-decoration: none; font-weight: 600; font-size: .95rem; padding: 8px 12px; }
+    /* sections */
+    .sec { padding: 58px 0; }
+    .sec.alt { background: var(--surface); }
+    @media (min-width: 760px) { .sec { padding: 82px 0; } }
+    .h1 { font-family: var(--display); font-weight: 700; font-size: clamp(2.15rem, 6vw, 3.4rem);
+          line-height: 1.04; letter-spacing: -.03em; text-wrap: balance; }
+    .h2 { font-family: var(--display); font-weight: 700; font-size: clamp(1.6rem, 4vw, 2.25rem);
+          line-height: 1.1; letter-spacing: -.02em; text-wrap: balance; }
+    .h2sub { color: var(--ink-soft); margin-top: 10px; font-size: 1.06rem; max-width: 46ch; }
+    .lead { color: var(--ink-soft); font-size: clamp(1.06rem, 2.4vw, 1.28rem); margin-top: 18px; max-width: 44ch; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
+    .trust { margin-top: 22px; color: var(--muted); font-size: .9rem; font-weight: 600; }
+    /* hero */
+    .hero-grid { display: grid; gap: 40px; align-items: center; }
+    @media (min-width: 860px) { .hero-grid { grid-template-columns: 1.08fr .92fr; gap: 52px; } }
+    .eyebrow { display: inline-block; font-weight: 700; font-size: .74rem; letter-spacing: .08em;
+               text-transform: uppercase; color: var(--accent-dark); background: rgba(111,133,103,.14);
+               padding: 6px 12px; border-radius: 999px; margin-bottom: 20px; }
+    /* wallet-card mock */
+    .mock { background: var(--ink); color: #f4f2ec; border-radius: 22px; padding: 22px;
+            box-shadow: 0 26px 54px -22px rgba(32,33,29,.55); max-width: 340px; margin: 0 auto; }
+    .mock .top { display: flex; align-items: center; gap: 11px; }
+    .mock .logo { width: 42px; height: 42px; border-radius: 12px; background: rgba(255,255,255,.12);
+                  display: grid; place-items: center; font-size: 1.25rem; }
+    .mock .cn { font-weight: 700; font-size: 1.05rem; flex: 1; }
+    .mock .hd { text-align: right; }
+    .mock .lbl { font-size: .58rem; letter-spacing: .12em; font-weight: 700; text-transform: uppercase; color: var(--accent); }
+    .mock .num { font-family: var(--display); font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+    .mock .dots { font-size: 1.55rem; letter-spacing: 5px; margin: 18px 0 8px; }
+    .mock .dots .off { color: rgba(255,255,255,.26); }
+    .mock .rw { font-weight: 600; }
+    .mock .qr { margin: 20px auto 2px; width: 88px; height: 88px; border-radius: 12px; background: #fff; display: grid; place-items: center; }
+    .mock .note { text-align: center; font-size: .72rem; color: rgba(244,242,236,.6); margin-top: 8px; }
+    /* problem */
+    .pains, .steps, .feats { display: grid; gap: 16px; margin-top: 30px; }
+    @media (min-width: 760px) { .pains, .steps { grid-template-columns: repeat(3, 1fr); } }
+    .pain { background: var(--bg); border: 1px solid var(--line); border-radius: 18px; padding: 24px; }
+    .pain .ic { font-size: 1.7rem; }
+    .pain h3 { font-family: var(--display); font-weight: 700; font-size: 1.12rem; margin: 12px 0 6px; }
+    .pain p, .step p, .feat p { color: var(--ink-soft); font-size: .98rem; }
+    /* steps */
+    .step { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 26px; box-shadow: var(--shadow); }
+    .step .n { font-family: var(--display); font-weight: 700; font-size: 1.7rem; color: var(--accent-dark); line-height: 1; }
+    .step h3 { font-family: var(--display); font-weight: 700; font-size: 1.16rem; margin: 12px 0 8px; }
+    /* features */
+    @media (min-width: 620px) { .feats { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 940px) { .feats { grid-template-columns: repeat(3, 1fr); } }
+    .feat { padding: 22px; border-radius: 16px; background: var(--bg); }
+    .feat .ic { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 11px;
+                background: rgba(111,133,103,.16); color: var(--accent-dark); font-weight: 800; font-size: 1.05rem; }
+    .feat h3 { font-family: var(--display); font-weight: 700; font-size: 1.04rem; margin: 13px 0 5px; }
+    .feat p { font-size: .94rem; }
+    /* quote strip */
+    .quote { font-family: var(--display); font-weight: 600; font-size: clamp(1.35rem, 3.6vw, 2rem);
+             line-height: 1.28; letter-spacing: -.01em; max-width: 26ch; margin: 0 auto; text-align: center; }
+    /* final band */
+    .band { background: var(--ink); padding: 76px 0; text-align: center; }
+    .band .h2 { color: #f4f2ec; }
+    .band p { color: rgba(244,242,236,.72); max-width: 40ch; margin: 14px auto 0; }
+    /* footer */
+    .foot { border-top: 1px solid var(--line); padding: 30px 0; }
+    .foot-in { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; }
+    .foot a { color: var(--muted); text-decoration: none; font-weight: 600; margin-left: 18px; }
+    .foot a:first-child { margin-left: 0; }
+    .foot .fine { color: var(--muted); font-size: .85rem; }
+  `;
+  const qr = `
+    <svg width="72" height="72" viewBox="0 0 72 72" fill="#20211d" aria-hidden="true">
+      <g>
+        <rect x="6" y="6" width="18" height="18"/><rect x="9" y="9" width="12" height="12" fill="#fff"/><rect x="12" y="12" width="6" height="6"/>
+        <rect x="48" y="6" width="18" height="18"/><rect x="51" y="9" width="12" height="12" fill="#fff"/><rect x="54" y="12" width="6" height="6"/>
+        <rect x="6" y="48" width="18" height="18"/><rect x="9" y="51" width="12" height="12" fill="#fff"/><rect x="12" y="54" width="6" height="6"/>
+      </g>
+      <rect x="30" y="10" width="5" height="5"/><rect x="38" y="10" width="5" height="5"/><rect x="30" y="18" width="5" height="5"/>
+      <rect x="42" y="30" width="5" height="5"/><rect x="30" y="30" width="5" height="5"/><rect x="52" y="30" width="5" height="5"/>
+      <rect x="60" y="38" width="5" height="5"/><rect x="30" y="42" width="5" height="5"/><rect x="44" y="46" width="5" height="5"/>
+      <rect x="52" y="52" width="5" height="5"/><rect x="34" y="56" width="5" height="5"/><rect x="60" y="60" width="5" height="5"/>
+    </svg>`;
+  const body = `
+    <header class="nav"><div class="wrap nav-in">
+      <a class="brand" href="/">Stampy ☕️</a>
+      <div class="links">
+        <a class="login" href="/dashboard">Log in</a>
+        <a class="cta small" href="/dashboard">Get early access</a>
+      </div>
+    </div></header>
+
+    <section class="sec"><div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow">Loyalty in the wallet they already use</span>
+        <h1 class="h1">Your customers came once.<br>Bring them back.</h1>
+        <p class="lead">Stampy puts your loyalty stamp card straight into Apple &amp; Google Wallet — no app to download — and sends a gentle lock-screen nudge that pulls regulars back through the door.</p>
+        <div class="row">
+          <a class="cta" href="/dashboard">Get early access</a>
+          <a class="cta ghost" href="#how">See how it works</a>
+        </div>
+        <p class="trust">Works on iPhone &amp; Android · No app · No hardware</p>
+      </div>
+      <div>
+        <div class="mock" role="img" aria-label="A loyalty card in a phone wallet showing 3 of 10 stamps toward a free coffee">
+          <div class="top">
+            <div class="logo">☕️</div>
+            <div class="cn">Kopi Corner</div>
+            <div class="hd"><div class="lbl">Stamps</div><div class="num">3/10</div></div>
+          </div>
+          <div class="lbl" style="margin-top:16px">Your stamps</div>
+          <div class="dots">●●●<span class="off">○○○○○○○</span></div>
+          <div class="lbl">Reward</div>
+          <div class="rw">Free coffee</div>
+          <div class="qr">${qr}</div>
+          <div class="note">Updates by itself — no app needed</div>
+        </div>
+      </div>
+    </div></section>
+
+    <section class="sec alt"><div class="wrap">
+      <h2 class="h2">Loyalty shouldn’t be this leaky.</h2>
+      <div class="pains">
+        <div class="pain"><div class="ic">🗂️</div><h3>Paper cards get lost</h3><p>Forgotten in a drawer, soggy at the bottom of a bag, or just left at home. The tenth stamp never comes — and neither does the customer.</p></div>
+        <div class="pain"><div class="ic">📵</div><h3>Nobody downloads an app</h3><p>People won’t install an app for one café. You lose the sign-up before it even starts, and the loyalty program dies at the counter.</p></div>
+        <div class="pain"><div class="ic">👋</div><h3>Once they leave, they’re gone</h3><p>No number, no email, no way to say “we miss you.” A quiet week just stays quiet, and you never know who stopped coming.</p></div>
+      </div>
+    </div></section>
+
+    <section class="sec" id="how"><div class="wrap">
+      <h2 class="h2">How Stampy works</h2>
+      <p class="h2sub">From walk-in to regular — in three taps, no app in sight.</p>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h3>Add the card — no app</h3><p>The customer scans your counter QR and taps once to drop the card into Apple or Google Wallet. That’s the entire sign-up.</p></div>
+        <div class="step"><div class="n">2</div><h3>Stamp with a tap</h3><p>Your staff scan the customer’s card from any phone. The stamp count updates on their phone in seconds — with a little lock-screen buzz.</p></div>
+        <div class="step"><div class="n">3</div><h3>Win them back</h3><p>Haven’t seen someone in a while? Send a lock-screen nudge — “we miss you, here’s a bonus stamp” — straight to their wallet.</p></div>
+      </div>
+    </div></section>
+
+    <section class="sec alt"><div class="wrap">
+      <h2 class="h2">Built for cafés, not app stores.</h2>
+      <div class="feats">
+        <div class="feat"><span class="ic">✓</span><h3>No app to download</h3><p>It lives in the wallet your customers already have open.</p></div>
+        <div class="feat"><span class="ic">✓</span><h3>iPhone &amp; Android</h3><p>Apple Wallet and Google Wallet — one card, both phones.</p></div>
+        <div class="feat"><span class="ic">✓</span><h3>No hardware</h3><p>Any phone is the scanner. No POS, no card readers, nothing to buy.</p></div>
+        <div class="feat"><span class="ic">✓</span><h3>Automatic win-back</h3><p>Lock-screen nudges bring lapsed customers back on a slow day.</p></div>
+        <div class="feat"><span class="ic">✓</span><h3>You own your list</h3><p>Your customers and your data — not locked inside someone’s marketplace.</p></div>
+        <div class="feat"><span class="ic">✓</span><h3>Live in minutes</h3><p>Design your card in the dashboard, print a QR, and start stamping.</p></div>
+      </div>
+    </div></section>
+
+    <section class="sec"><div class="wrap">
+      <p class="quote">No app to download. No paper to reprint. Just a card that updates itself — and quietly brings people back.</p>
+    </div></section>
+
+    <section class="band"><div class="wrap">
+      <h2 class="h2">Give your regulars a reason to come back.</h2>
+      <p>Free during our beta — no card details. Design your card and print a QR in minutes.</p>
+      <div class="row" style="justify-content:center"><a class="cta sage" href="/dashboard">Get early access</a></div>
+    </div></section>
+
+    <footer class="foot"><div class="wrap foot-in">
+      <a class="brand" href="/">Stampy ☕️</a>
+      <nav><a href="#how">How it works</a><a href="/dashboard">Log in</a></nav>
+      <span class="fine">Made for cafés in Malaysia</span>
+    </div></footer>`;
+  return page("Stampy — loyalty cards in Apple &amp; Google Wallet, no app", body, css);
+}
+
 // ---------------------------------------------------------------- staff ----
 
 export function staffPage(): string {
@@ -903,8 +1099,9 @@ export function dashboardPage(): string {
       const div = document.createElement("div");
       div.innerHTML = '<p class="sub">Share these with customers and staff. They never change when you edit a card.</p>';
       for (const c of S.cafes) {
-        const base = c.id === "default" ? "" : "/c/" + c.id;
-        const landing = base || "/";
+        // Every card (incl. the default) uses /c/:id now that / is the marketing page.
+        const base = "/c/" + c.id;
+        const landing = base;
         const block = document.createElement("div");
         block.innerHTML = \`
           \${S.cafes.length > 1 ? '<label style="font-weight:700;color:var(--ink)">' + c.name + '</label>' : ""}
