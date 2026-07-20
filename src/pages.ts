@@ -358,25 +358,44 @@ export function dashboardPage(): string {
     .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: #f6f1ea; }
     .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
     .account { border-top: 1px solid #eee2d5; margin-top: 24px; padding-top: 14px; }
-    /* --- card switcher --- */
-    .switcher { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
-    .switcher button { border: 1px solid #d9cbbb; background: #fff; color: #3b2016; border-radius: 999px;
-                       padding: 6px 14px; font: inherit; font-size: .88rem; cursor: pointer; }
-    .switcher button.on { background: #3b2016; color: #fff; border-color: #3b2016; }
+    .card { max-width: 460px; }
+    /* --- card dropdown selector --- */
+    .cardselect { display: flex; gap: 8px; align-items: center; margin: 10px 0 6px; }
+    .cardselect select { flex: 1; padding: 11px 12px; border: 1px solid #d9cbbb; border-radius: 10px;
+                         font: inherit; font-weight: 600; background: #fff; color: #3b2016; }
+    .cardselect .btn { width: auto; padding: 11px 14px; font-size: .9rem; white-space: nowrap; }
     /* --- tabs --- */
-    .tabs { display: flex; gap: 4px; border-bottom: 1px solid #eee2d5; margin: 6px 0 14px; }
-    .tabs button { border: none; background: none; color: #7a6a5d; font: inherit; font-weight: 600;
-                   padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tabs { display: flex; gap: 2px; border-bottom: 1px solid #eee2d5; margin: 12px 0 16px; overflow-x: auto; }
+    .tabs button { border: none; background: none; color: #9b8b7d; font: inherit; font-weight: 600; font-size: .95rem;
+                   padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+    .tabs button:hover { color: #3b2016; }
     .tabs button.on { color: #3b2016; border-bottom-color: #3b2016; }
     /* --- colour presets --- */
     .presets { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
     .preset { width: 38px; height: 38px; border-radius: 10px; border: 2px solid #d9cbbb; cursor: pointer;
               display: grid; place-items: center; font-size: .7rem; font-weight: 700; }
-    .preset:hover { border-color: #3b2016; }
-    /* --- banner --- */
-    .pv-banner { height: 46px; border-radius: 8px 8px 0 0; margin: -16px -16px 10px; background-size: cover;
-                 background-position: center; display: none; }
+    .preset:hover { border-color: #3b2016; transform: translateY(-1px); }
+    /* --- banner templates --- */
+    .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
+    .bantpl .bt { width: 72px; height: 32px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+                  position: relative; overflow: hidden; background-size: cover; background-position: center;
+                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+    .bantpl .bt:hover { border-color: #3b2016; }
+    .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
+                       color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
+    /* --- premium card preview --- */
+    .pv { border-radius: 18px; padding: 16px; margin: 10px 0 4px; overflow: hidden;
+          box-shadow: 0 10px 30px -8px rgba(43,29,21,.35), 0 2px 6px rgba(43,29,21,.15); }
+    .pv-banner { height: 64px; margin: -16px -16px 12px; background-size: cover; background-position: center; display: none; }
     .pv-banner.on { display: block; }
+    /* --- share tab --- */
+    .sharelist { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 14px; }
+    .sharelist a { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+                   border: 1px solid #eee2d5; border-radius: 12px; padding: 14px 16px; text-decoration: none;
+                   color: #2b1d15; font-weight: 600; }
+    .sharelist a:hover { border-color: #3b2016; }
+    .sharelist a .sub2 { font-weight: 400; color: #9b8b7d; font-size: .82rem; }
+    .sharelist a .arr { color: #9b8b7d; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -463,33 +482,23 @@ export function dashboardPage(): string {
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
-        <div class="logorow">
-          <label class="btn btn-ghost" style="margin:0">Upload banner<input data-banner type="file" accept="image/*"></label>
+
+        <label style="margin-top:10px">Banner <span class="muted">(a wide image behind the top of the card)</span></label>
+        <div class="bantpl" data-bantpl></div>
+        <div class="logorow" style="margin-top:8px">
+          <label class="btn btn-ghost" style="margin:0">Upload your own<input data-banner type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmbanner" style="\${c.bannerVersion ? "" : "display:none"}">Remove banner</button>
         </div>
-        <p class="muted" style="margin-top:4px">Banner = a wide image behind the top of the card (a gradient or photo). Optional.</p>
 
-        <label style="margin-top:10px">Card name</label><input data-f="name" value="\${c.name}">
+        <label style="margin-top:12px">Card name</label><input data-f="name" value="\${c.name}">
         <label>Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
           <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
         </div>
         <label>Staff PIN</label><input data-f="staffPin" value="\${c.staffPin}">
-        <button class="btn btn-dark" style="margin-top:12px" data-a="save">Save changes</button>
-
-        <div class="links">
-          <a href="\${landing}" target="_blank">Add-to-Wallet page</a>
-          <a href="\${base + "/qr"}" target="_blank">Add-to-Wallet QR</a>
-          <a href="/staff?c=\${c.id}" target="_blank">Staff stamper</a>
-        </div>
-        <label style="margin-top:12px">Add-to-Wallet NFC link <span class="muted">(optional — a tap opens the same page as the QR)</span></label>
-        <div class="copyrow">
-          <input data-nfc readonly value="\${location.origin}\${landing}">
-          <button class="btn btn-ghost" data-a="copynfc">Copy link</button>
-        </div>
-        <p class="muted" style="margin-top:6px">Write this link onto a blank NFC sticker with a free app like “NFC Tools”. It never changes when you edit settings. The QR always works too.</p>
-        <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward.</p>\`;
+        <button class="btn btn-dark" style="margin-top:14px" data-a="save">Save changes</button>
+        <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward. Sharing links live in the <strong>Share</strong> tab.</p>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -540,6 +549,7 @@ export function dashboardPage(): string {
             const s = Math.max(w / img.width, h / img.height); // cover
             ctx.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
             const dataUrl = canvas.toDataURL("image/png");
+            if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
             const { body } = await api("/cafe/" + c.id + "/" + kind, {
               method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
             });
@@ -553,30 +563,81 @@ export function dashboardPage(): string {
       wireUpload("[data-logo]", "logo", 320, 320, (url) => {
         q("[data-pv-logo]").src = url; q("[data-a=rmlogo]").style.display = "";
       });
-      wireUpload("[data-banner]", "banner", 640, 200, (url) => {
-        const b = q("[data-pv-banner]"); b.style.backgroundImage = "url(" + url + ")"; b.classList.add("on");
-        q("[data-a=rmbanner]").style.display = "";
-      });
       q("[data-a=rmlogo]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id + "/logo", { method: "DELETE" });
         if (body.ok) { q("[data-pv-logo]").src = base + "/art/logo.png?v=" + Date.now(); q("[data-a=rmlogo]").style.display = "none"; toast("Logo removed"); }
       };
+
+      // Banner: pre-made templates (drawn on a canvas from the card's colours,
+      // so they stay on-brand) plus "upload your own". Both save the same way.
+      async function saveBanner(dataUrl) {
+        const { body } = await api("/cafe/" + c.id + "/banner", { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
+        if (!body.ok) return toast(body.error || "Banner failed");
+        const b = q("[data-pv-banner]"); b.style.backgroundImage = "url(" + dataUrl + ")"; b.classList.add("on");
+        q("[data-a=rmbanner]").style.display = ""; toast("Banner saved ✓");
+      }
+      wireUpload("[data-banner]", null, 1032, 336, saveBanner); // null kind → onDone handles the POST
       q("[data-a=rmbanner]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id + "/banner", { method: "DELETE" });
         if (body.ok) { const b = q("[data-pv-banner]"); b.classList.remove("on"); b.style.backgroundImage = ""; q("[data-a=rmbanner]").style.display = "none"; toast("Banner removed"); }
       };
 
-      q("[data-a=copynfc]").onclick = async () => {
-        try { await navigator.clipboard.writeText(q("[data-nfc]").value); toast("Link copied ✓"); }
-        catch { q("[data-nfc]").select(); toast("Select + copy the link"); }
-      };
+      function shade(hex, p) { // p in -1..1 → darken/lighten
+        const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
+        let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+        r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+      function drawBanner(style, c1, c2, w, h) {
+        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+        const x = cv.getContext("2d");
+        if (style === "diagonal") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
+        } else if (style === "glow") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          const g = x.createRadialGradient(w * .5, h * .5, 10, w * .5, h * .5, w * .6);
+          g.addColorStop(0, c2); g.addColorStop(1, c1); x.fillStyle = g; x.fillRect(0, 0, w, h);
+        } else if (style === "waves") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h); x.fillStyle = c2;
+          for (let k = 0; k < 3; k++) { x.globalAlpha = .18 + k * .12; x.beginPath(); x.moveTo(0, h * .4 + k * 34);
+            for (let px = 0; px <= w; px += 8) x.lineTo(px, h * .4 + k * 34 + Math.sin(px / 90 + k) * 26);
+            x.lineTo(w, h); x.lineTo(0, h); x.closePath(); x.fill(); } x.globalAlpha = 1;
+        } else { // gradient
+          const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, c1); g.addColorStop(1, c2);
+          x.fillStyle = g; x.fillRect(0, 0, w, h);
+        }
+        return cv.toDataURL("image/png");
+      }
+      const BANNERS = [
+        { name: "Gradient", style: "gradient", from: 1 },
+        { name: "Glow", style: "glow", from: 1 },
+        { name: "Diagonal", style: "diagonal", from: 1 },
+        { name: "Waves", style: "waves", from: 1 },
+        { name: "Slate", style: "gradient", c1: "#20242b", c2: "#3c434e" },
+        { name: "Sand", style: "gradient", c1: "#cdbfa3", c2: "#a98f66" },
+      ];
+      const btpl = q("[data-bantpl]");
+      for (const t of BANNERS) {
+        const c1 = t.from ? f("bg").value : t.c1;
+        const c2 = t.from ? shade(f("bg").value, 0.4) : t.c2;
+        const bt = document.createElement("div"); bt.className = "bt"; bt.title = t.name;
+        bt.style.backgroundImage = "url(" + drawBanner(t.style, c1, c2, 144, 64) + ")";
+        bt.innerHTML = "<span>" + t.name + "</span>";
+        bt.onclick = () => {
+          const a = t.from ? f("bg").value : t.c1, b = t.from ? shade(f("bg").value, 0.4) : t.c2;
+          saveBanner(drawBanner(t.style, a, b, 1032, 336));
+        };
+        btpl.appendChild(bt);
+      }
+
       q("[data-a=save]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
           name: f("name").value, reward: f("reward").value,
           stampsTarget: Number(f("stampsTarget").value), stampsStart: Number(f("stampsStart").value),
           staffPin: f("staffPin").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value,
         })});
-        if (body.ok) { c.name = f("name").value; toast("Saved ✓"); renderSwitcher(); }
+        if (body.ok) { c.name = f("name").value; toast("Saved ✓"); renderSelect(); }
         else toast(body.error || "Save failed");
       };
       return div;
@@ -650,27 +711,53 @@ export function dashboardPage(): string {
       return div;
     }
 
-    // ---- app shell: card switcher + tabs ----
-    const S = { cafes: [], sel: 0, tab: "design", email: "" };
+    function sharePanel(c) {
+      const div = document.createElement("div");
+      const base = c.id === "default" ? "" : "/c/" + c.id;
+      const landing = base || "/";
+      const full = location.origin + landing;
+      div.innerHTML = \`
+        <p class="sub">Share these with customers and staff. They never change when you edit the card.</p>
+        <div class="sharelist">
+          <a href="\${base + "/qr"}" target="_blank"><span>Add-to-Wallet QR <span class="sub2">print for the counter</span></span><span class="arr">open →</span></a>
+          <a href="\${landing}" target="_blank"><span>Add-to-Wallet page <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
+          <a href="/staff?c=\${c.id}" target="_blank"><span>Staff stamper <span class="sub2">PIN: \${c.staffPin}</span></span><span class="arr">open →</span></a>
+        </div>
+        <label>Add-to-Wallet NFC link <span class="muted">(optional)</span></label>
+        <div class="copyrow">
+          <input data-nfc readonly value="\${full}">
+          <button class="btn btn-ghost" data-a="copynfc">Copy</button>
+        </div>
+        <p class="muted" style="margin-top:6px">A tap opens the same page as the QR. Write it onto a blank sticker with a free app like “NFC Tools”. Some phones can’t tap, so the QR stays the reliable one.</p>\`;
+      div.querySelector("[data-a=copynfc]").onclick = async () => {
+        try { await navigator.clipboard.writeText(full); toast("Link copied ✓"); }
+        catch { div.querySelector("[data-nfc]").select(); toast("Select + copy the link"); }
+      };
+      return div;
+    }
+
+    // ---- app shell: card dropdown + tabs ----
+    const S = { cafes: [], sel: 0, tab: "metrics", email: "" };
 
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
       S.cafes = body.cafes; S.email = body.email; S.sel = 0;
       $("#app").innerHTML = \`
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-          <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 0">\${S.email}</p></div>
+        <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 0">\${S.email}</p></div>
+        <div class="cardselect">
+          <select id="cardsel"></select>
+          <button class="btn btn-ghost" id="add">+ Add card</button>
         </div>
-        <div class="switcher" id="switcher"></div>
         <div class="tabs" id="tabs">
-          <button data-tab="design">Design</button>
-          <button data-tab="customers">Customers</button>
           <button data-tab="metrics">Metrics</button>
+          <button data-tab="customers">Customers</button>
+          <button data-tab="design">Design</button>
+          <button data-tab="share">Share</button>
         </div>
         <div id="panel"></div>
         <div class="account">
-          <button class="btn btn-ghost" id="add">+ Add another card</button>
-          <button class="btn btn-ghost" style="margin-top:8px" id="chpw">Change password</button>
+          <button class="btn btn-ghost" id="chpw">Change password</button>
           <div id="pwform" style="display:none">
             <label>Current password</label><input id="pwcur" type="password" autocomplete="current-password">
             <label>New password (min 8 characters)</label><input id="pwnew" type="password" autocomplete="new-password">
@@ -678,11 +765,12 @@ export function dashboardPage(): string {
           </div>
           <button class="btn btn-ghost" style="margin-top:8px" id="out">Log out</button>
         </div>\`;
+      $("#cardsel").onchange = () => { S.sel = Number($("#cardsel").value); renderPanel(); };
       $("#tabs").querySelectorAll("button").forEach((b) => {
         b.onclick = () => { S.tab = b.dataset.tab; renderTabs(); renderPanel(); };
       });
       $("#add").onclick = async () => {
-        const name = prompt("New card name (e.g. your café, or a second card like “Pastry card”):");
+        const name = prompt("Name for the new card (e.g. “Coffee card” or “Pastry card”):");
         if (!name) return;
         const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
         if (r.ok) location.reload(); else toast(r.error || "Failed");
@@ -694,19 +782,15 @@ export function dashboardPage(): string {
         else toast(r.error || "Couldn’t update");
       };
       $("#out").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
-      renderSwitcher(); renderTabs(); renderPanel();
+      renderSelect(); renderTabs(); renderPanel();
     }
 
-    function renderSwitcher() {
-      const sw = $("#switcher"); if (!sw) return;
-      sw.style.display = S.cafes.length > 1 ? "flex" : "none";
-      sw.innerHTML = "";
-      S.cafes.forEach((c, i) => {
-        const b = document.createElement("button");
-        b.textContent = c.name; b.className = i === S.sel ? "on" : "";
-        b.onclick = () => { S.sel = i; renderSwitcher(); renderPanel(); };
-        sw.appendChild(b);
-      });
+    function renderSelect() {
+      const sel = $("#cardsel"); if (!sel) return;
+      sel.innerHTML = S.cafes.map((c, i) => '<option value="' + i + '">' + c.name + '</option>').join("");
+      sel.value = String(S.sel);
+      // hide just the dropdown when there's only one card (keep the Add button)
+      sel.style.display = S.cafes.length > 1 ? "" : "none";
     }
     function renderTabs() {
       $("#tabs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === S.tab));
@@ -714,7 +798,11 @@ export function dashboardPage(): string {
     function renderPanel() {
       const panel = $("#panel"); const c = S.cafes[S.sel];
       panel.innerHTML = "";
-      panel.appendChild(S.tab === "design" ? designPanel(c) : S.tab === "metrics" ? metricsPanel(c) : renderCustomers(c));
+      const view = S.tab === "design" ? designPanel(c)
+        : S.tab === "customers" ? renderCustomers(c)
+        : S.tab === "share" ? sharePanel(c)
+        : metricsPanel(c);
+      panel.appendChild(view);
     }
 
     (async () => {
