@@ -20,7 +20,9 @@ import {
   addStamps,
   DEFAULT_CAFE_ID,
   getCafe,
+  getPass,
   getPassByShortCode,
+  lastStampAt,
   listRecentPasses,
   redeemPass,
   type CafeRow,
@@ -32,8 +34,30 @@ import { staffPage } from "../pages.js";
 
 export const staffRouter = Router();
 
+/**
+ * Anti-spam: after a card is stamped, a repeat stamp on the SAME card inside
+ * this window is refused unless the staff explicitly confirm (force:true). Stops
+ * accidental/abusive rapid taps while still allowing a genuine "two coffees"
+ * with a deliberate second tap. Only stamping is throttled — redeem/nudge aren't.
+ */
+const STAMP_COOLDOWN_MS = 60_000;
+
 interface StaffRequest extends Request {
   cafe?: CafeRow;
+}
+
+/**
+ * Seconds left in the cooldown for this card, or 0 if it's clear. Returns 0 for
+ * a card that isn't this café's (or doesn't exist) so the stamp path proceeds to
+ * applyAndPush, which is the one place that maps that to a 404.
+ */
+async function stampCooldownLeft(serial: string, cafeId: string): Promise<number> {
+  const pass = await getPass(serial);
+  if (!pass || pass.cafe_id !== cafeId) return 0;
+  const last = await lastStampAt(serial);
+  if (!last) return 0;
+  const left = STAMP_COOLDOWN_MS - (Date.now() - new Date(last).getTime());
+  return left > 0 ? Math.ceil(left / 1000) : 0;
 }
 
 /** Looks up the request's café and verifies the PIN against its row (constant-time). */
@@ -102,17 +126,25 @@ async function updateAndPush(
 }
 
 staffRouter.post("/api/stamp", requirePin, async (req: StaffRequest, res) => {
-  const { serial } = (req.body ?? {}) as { serial?: string };
+  const { serial, force } = (req.body ?? {}) as { serial?: string; force?: boolean };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
+  if (!force) {
+    const secondsLeft = await stampCooldownLeft(serial, req.cafe!.id);
+    if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
+  }
   await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, 1));
 });
 
 /** Typed-code fallback: staff keys in the short code printed on the card. */
 staffRouter.post("/api/stamp-by-code", requirePin, async (req: StaffRequest, res) => {
-  const { code } = (req.body ?? {}) as { code?: string };
+  const { code, force } = (req.body ?? {}) as { code?: string; force?: boolean };
   if (!code?.trim()) return void res.status(400).json({ error: "missing-code" });
   const row = await getPassByShortCode(req.cafe!.id, code);
   if (!row) return void res.status(404).json({ error: "no-such-card" });
+  if (!force) {
+    const secondsLeft = await stampCooldownLeft(row.serial, req.cafe!.id);
+    if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
+  }
   await updateAndPush(req, res, row.serial, "stamp", () => addStamps(row.serial, 1));
 });
 

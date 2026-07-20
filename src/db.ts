@@ -37,6 +37,9 @@ export interface OwnerRow {
   email: string;
   password_hash: string;
   created_at: Date;
+  /** Set while a self-serve password reset is pending; both cleared on use/expiry. */
+  reset_token_hash?: string | null;
+  reset_expires?: Date | null;
 }
 
 export type Platform = "apple" | "google";
@@ -160,6 +163,10 @@ export async function migrate(): Promise<void> {
       png        bytea NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+    -- v0.8: self-serve password reset. The token is single-use and stored only
+    -- as a hash (like a password), so a DB leak can't be replayed to reset.
+    ALTER TABLE owners ADD COLUMN IF NOT EXISTS reset_token_hash text;
+    ALTER TABLE owners ADD COLUMN IF NOT EXISTS reset_expires timestamptz;
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -400,6 +407,34 @@ export async function updateOwnerPassword(ownerId: string, passwordHash: string)
   await getPool().query(`UPDATE owners SET password_hash = $2 WHERE id = $1`, [ownerId, passwordHash]);
 }
 
+/** Store a pending reset token (hashed) with an expiry. Replaces any prior one. */
+export async function setResetToken(
+  ownerId: string,
+  tokenHash: string,
+  expires: Date,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE owners SET reset_token_hash = $2, reset_expires = $3 WHERE id = $1`,
+    [ownerId, tokenHash, expires],
+  );
+}
+
+/** Look up an owner by an unexpired reset-token hash (single-use — caller clears it). */
+export async function getOwnerByResetToken(tokenHash: string): Promise<OwnerRow | null> {
+  const res = await getPool().query<OwnerRow>(
+    `SELECT * FROM owners WHERE reset_token_hash = $1 AND reset_expires > now()`,
+    [tokenHash],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function clearResetToken(ownerId: string): Promise<void> {
+  await getPool().query(
+    `UPDATE owners SET reset_token_hash = NULL, reset_expires = NULL WHERE id = $1`,
+    [ownerId],
+  );
+}
+
 export async function linkOwnerCafe(ownerId: string, cafeId: string): Promise<void> {
   await getPool().query(
     `INSERT INTO owner_cafes (owner_id, cafe_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -497,6 +532,15 @@ export async function setMessage(serial: string, message: string): Promise<PassR
 }
 
 // ---------------------------------------------------------------- events ----
+
+/** When this card was last stamped (for the staff anti-spam cooldown); null if never. */
+export async function lastStampAt(serial: string): Promise<Date | null> {
+  const res = await getPool().query<{ at: Date }>(
+    `SELECT max(created_at) AS at FROM events WHERE serial = $1 AND type = 'stamp'`,
+    [serial],
+  );
+  return res.rows[0]?.at ?? null;
+}
 
 export async function logEvent(cafeId: string, serial: string, type: EventType): Promise<void> {
   await getPool().query(

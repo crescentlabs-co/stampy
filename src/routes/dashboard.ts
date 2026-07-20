@@ -15,7 +15,7 @@
  * linked to them via owner_cafes.
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import {
   clearSessionCookie,
   hashPassword,
@@ -29,6 +29,7 @@ import {
   cafeLogoVersion,
   cafeMetrics,
   cafesForOwner,
+  clearResetToken,
   countOwners,
   createCafe,
   createOwner,
@@ -38,21 +39,26 @@ import {
   getCafe,
   getOwner,
   getOwnerByEmail,
+  getOwnerByResetToken,
   lapsingSerials,
   linkOwnerCafe,
   ownerHasCafe,
   setCafeBanner,
   setCafeLogo,
   setMessage,
+  setResetToken,
   updateCafe,
   updateOwnerPassword,
+  type CafeRow,
   type OwnerRow,
 } from "../db.js";
 import { applyAndPush } from "../cardActions.js";
+import { config } from "../config.js";
 import { hexToRgb, rgbToHex } from "../color.js";
+import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateLogoPng } from "../imageValidate.js";
-import { dashboardPage } from "../pages.js";
+import { dashboardPage, resetPage } from "../pages.js";
 
 export const dashboardRouter = Router();
 
@@ -119,6 +125,9 @@ dashboardRouter.post("/api/signup", async (req, res) => {
   }
 
   setSessionCookie(res, owner.id);
+  // Best-effort welcome email (no-op until Resend is configured; never blocks).
+  const dashUrl = (config.baseUrl || `${req.protocol}://${req.get("host")}`) + "/dashboard";
+  void sendEmail({ to: email, subject: "Welcome to Stampy", html: welcomeEmailHtml(dashUrl) });
   res.json({ ok: true });
 });
 
@@ -150,6 +159,54 @@ dashboardRouter.post("/api/change-password", requireOwner, async (req: OwnerRequ
     return void res.status(401).json({ error: "current-password-wrong" });
   }
   await updateOwnerPassword(req.owner!.id, hashPassword(next));
+  res.json({ ok: true });
+});
+
+// -------------------------------------------------- self-serve password reset ----
+
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
+
+/**
+ * Start a reset: emails a one-time link. Always returns 200 (never reveals
+ * whether the email is registered). The token is stored only as a sha256 hash.
+ */
+dashboardRouter.post("/api/forgot", async (req, res) => {
+  const { email } = (req.body ?? {}) as { email?: string };
+  const owner = email?.includes("@") ? await getOwnerByEmail(email) : null;
+  if (owner) {
+    const token = randomBytes(32).toString("hex");
+    await setResetToken(owner.id, hashToken(token), new Date(Date.now() + RESET_TTL_MS));
+    const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+    const link = `${base}/dashboard/reset?token=${token}`;
+    const r = await sendEmail({
+      to: owner.email,
+      subject: "Reset your Stampy password",
+      html: resetEmailHtml(link),
+    });
+    if (!r.ok && r.reason !== "email-not-configured") {
+      console.error("[dashboard] reset email failed:", r.reason);
+    }
+  }
+  res.json({ ok: true });
+});
+
+/** The page the reset link opens (set a new password). */
+dashboardRouter.get("/reset", (_req, res) => {
+  res.type("html").send(resetPage());
+});
+
+/** Complete a reset: consume the token, set the new password, log the owner in. */
+dashboardRouter.post("/api/reset", async (req, res) => {
+  const { token, password } = (req.body ?? {}) as { token?: string; password?: string };
+  if (!password || password.length < 8) {
+    return void res.status(400).json({ error: "new-password-needs-8-chars" });
+  }
+  const owner = token ? await getOwnerByResetToken(hashToken(token)) : null;
+  if (!owner) return void res.status(400).json({ error: "invalid-or-expired-link" });
+  await updateOwnerPassword(owner.id, hashPassword(password));
+  await clearResetToken(owner.id);
+  setSessionCookie(res, owner.id);
   res.json({ ok: true });
 });
 
@@ -348,6 +405,87 @@ dashboardRouter.post("/api/cafe/:id/nudge", requireOwner, async (req: OwnerReque
   let sent = 0;
   let failed = 0;
   for (const serial of serials) {
+    const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, message), message);
+    if (r && r.push.sent > 0) sent++;
+    else failed++;
+  }
+  res.json({ ok: true, total: serials.length, sent, failed });
+});
+
+// ----------------------------------------------- owner-level customers / nudge ----
+// The redesigned Customers view spans ALL of an owner's cards (not one selected
+// card), so these aggregate across cafesForOwner and let the owner target which
+// card(s) to message. Isolation still holds — only the owner's own cards.
+
+/** Which of the owner's cards a request targets: the given ids, filtered to owned; else all. */
+async function targetedCafes(ownerId: string, cardIds: unknown): Promise<CafeRow[]> {
+  const owned = await cafesForOwner(ownerId);
+  if (!Array.isArray(cardIds) || cardIds.length === 0) return owned;
+  const wanted = new Set(cardIds.map(String));
+  return owned.filter((c) => wanted.has(c.id));
+}
+
+/** GET /api/customers?cardId=all|<id>&lapsedDays=N — merged, card-tagged customer list. */
+dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, res) => {
+  const owned = await cafesForOwner(req.owner!.id);
+  const cardId = String(req.query.cardId ?? "all");
+  const cards = cardId === "all" ? owned : owned.filter((c) => c.id === cardId);
+  const lapsedDays = clampInt(req.query.lapsedDays, 0, 3650, 14);
+  const now = Date.now();
+  const customers = [];
+  for (const cafe of cards) {
+    for (const c of await cafeCustomers(cafe.id)) {
+      const lastDays = Math.floor((now - new Date(c.updated_at).getTime()) / 86400000);
+      customers.push({
+        serial: c.serial,
+        code: c.code,
+        cardId: cafe.id,
+        cardName: cafe.name,
+        stamps: c.stamps,
+        target: c.target,
+        lastDays,
+        lapsing: lapsedDays > 0 && lastDays >= lapsedDays,
+      });
+    }
+  }
+  customers.sort((a, b) => a.lastDays - b.lastDays);
+  res.json({ customers, lapsedDays, cards: owned.map((c) => ({ id: c.id, name: c.name })) });
+});
+
+/** POST /api/nudge { message, cardIds?:[], target:"all"|"lapsing"|serial[], lapsedDays? }. */
+dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) => {
+  const body = (req.body ?? {}) as {
+    message?: string;
+    cardIds?: string[];
+    target?: string | string[];
+    lapsedDays?: number;
+  };
+  const message = (body.message ?? "").trim().slice(0, 200);
+  if (!message) return void res.status(400).json({ error: "missing-message" });
+
+  const cafes = await targetedCafes(req.owner!.id, body.cardIds);
+  // Map every eligible serial → its café (also enforces ownership for serial[] targets).
+  const serialCafe = new Map<string, CafeRow>();
+  for (const cafe of cafes) {
+    const days = clampInt(body.lapsedDays, 1, 3650, 14);
+    const serials =
+      body.target === "lapsing"
+        ? await lapsingSerials(cafe.id, days)
+        : (await cafeCustomers(cafe.id)).map((c) => c.serial);
+    for (const s of serials) serialCafe.set(s, cafe);
+  }
+  let serials = [...serialCafe.keys()];
+  if (Array.isArray(body.target)) {
+    const wanted = new Set(body.target.map(String));
+    serials = serials.filter((s) => wanted.has(s)); // only owned serials survive
+  }
+  serials = serials.slice(0, 1000);
+  if (!serials.length) return void res.json({ ok: true, total: 0, sent: 0, failed: 0 });
+
+  let sent = 0;
+  let failed = 0;
+  for (const serial of serials) {
+    const cafe = serialCafe.get(serial)!;
     const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, message), message);
     if (r && r.push.sent > 0) sent++;
     else failed++;

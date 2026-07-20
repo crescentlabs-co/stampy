@@ -29,6 +29,11 @@ export const config = {
   /** The platform owner's email — this owner account can reach /admin. Unset ⇒ /admin is closed. */
   adminEmail: (process.env.ADMIN_EMAIL ?? "").toLowerCase().trim(),
 
+  /** Resend API key + verified From address for transactional email (reset/welcome).
+   *  Unset ⇒ email degrades gracefully; owners recover via the admin console instead. */
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  emailFrom: process.env.EMAIL_FROM ?? "",
+
   /** Apple Developer Team ID (10 chars, from developer.apple.com membership page). */
   teamId: process.env.APPLE_TEAM_ID ?? "",
   /** Pass Type identifier, e.g. pass.com.stampy.loyalty */
@@ -81,6 +86,8 @@ export interface SetupStatus {
   canPush: boolean;
   /** True when Google Wallet cards can be issued and updated. */
   canGoogleWallet: boolean;
+  /** True when transactional email (password reset / welcome) can be sent. */
+  canEmail: boolean;
 }
 
 export function setupStatus(): SetupStatus {
@@ -100,5 +107,6 @@ export function setupStatus(): SetupStatus {
     canSignPasses: signerCert && Boolean(config.teamId && config.passTypeId && config.baseUrl),
     canPush: apnsKey && Boolean(config.passTypeId),
     canGoogleWallet: googleIssuer && googleServiceAccount,
+    canEmail: Boolean(config.resendApiKey && config.emailFrom),
   };
 }

@@ -17,9 +17,11 @@ every working change with a meaningful message.
 
 1. **Boots with zero secrets.** The app must start and serve /setup with no env
    vars at all. Anything needing credentials degrades gracefully:
-   Apple signing throws `NotConfiguredError` (caught → 503 page); APNs and
-   Google Wallet clients return `{ok:false, reason:"…-not-configured"}` and
-   NEVER throw. Preserve this contract in new code.
+   Apple signing throws `NotConfiguredError` (caught → 503 page); APNs,
+   Google Wallet, and the email client (`src/email.ts`, Resend) return
+   `{ok:false, reason:"…-not-configured"}` and NEVER throw. Preserve this
+   contract in new code. Password reset degrades to the admin console when
+   email is unconfigured.
 2. **Secrets live in Railway's Variables UI only** — never in files, never
    committed. (`certs/wwdr.pem` is a public Apple cert, committed on purpose.)
 3. **One notification per event.** Apple: exactly two pass fields carry

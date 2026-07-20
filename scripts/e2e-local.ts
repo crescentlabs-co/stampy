@@ -26,9 +26,9 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my"; // first signup below becomes the platform admin
 
-  const { migrate, createPass, generateShortCode, getCafe, logEvent } = await import(
-    "../src/db.js"
-  );
+  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken } =
+    await import("../src/db.js");
+  const { createHash } = await import("node:crypto");
   await migrate();
   await migrate(); // idempotency check
   console.log("MIGRATE OK (x2, idempotent)");
@@ -157,10 +157,12 @@ async function main() {
   });
   expect(badCode.status === 404, "unknown code → 404");
 
-  // Fill to target and redeem
+  // Fill to target and redeem. These are deliberate repeat stamps within the
+  // anti-spam window, so they carry force:true (what the staff "add another"
+  // confirm sends) — otherwise the cooldown would block them.
   for (let i = 0; i < 10; i++) {
     await fetch(base + "/staff/api/stamp", {
-      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p1.serial }),
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p1.serial, force: true }),
     });
   }
   const listFull = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
@@ -172,6 +174,24 @@ async function main() {
   });
   expect(JSON.parse(await redeem.text()).pass.stamps === 0, "redeem resets to 0");
 
+  // --- Anti-spam cooldown: a fresh card stamps once, then blocks rapid repeats ---
+  const pc = await mk();
+  const cd1 = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: pc.serial }),
+  });
+  expect(cd1.status === 200 && JSON.parse(await cd1.text()).pass.stamps === 3, "cooldown: first stamp goes through (2 → 3)");
+  const cd2 = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: pc.serial }),
+  });
+  const cd2out = JSON.parse(await cd2.text());
+  expect(cd2.status === 409 && cd2out.error === "too-soon" && cd2out.secondsLeft > 0, "cooldown: immediate repeat is refused (too-soon)");
+  const cdList = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
+  expect(cdList.passes.find((p: any) => p.serial === pc.serial).stamps === 3, "cooldown: the refused stamp did NOT increment the card");
+  const cd3 = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: pc.serial, force: true }),
+  });
+  expect(cd3.status === 200 && JSON.parse(await cd3.text()).pass.stamps === 4, "cooldown: force:true overrides for a genuine repeat (3 → 4)");
+
   // Nudge is an owner action now — staff can no longer nudge
   const staffNudge = await fetch(base + "/staff/api/message", {
     method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p2.serial, message: "hi" }),
@@ -181,7 +201,7 @@ async function main() {
   // Metrics reflect the events
   const overview2 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
   const m = overview2.cafes[0].metrics;
-  expect(m.cards === 2, `metrics: 2 cards (got ${m.cards})`);
+  expect(m.cards === 3, `metrics: 3 cards incl. the cooldown-test card (got ${m.cards})`);
   expect(m.stamps >= 2 && m.redemptions === 1, `metrics: stamps=${m.stamps} redemptions=${m.redemptions}`);
 
   // New café via dashboard, isolated from default
@@ -382,6 +402,89 @@ async function main() {
     body: JSON.stringify({ email: "second@cafe.my", password: resetOut.tempPassword }),
   });
   expect(loginTemp.status === 200, "the reset temp password logs the owner in");
+
+  // --- Owner-level customers + nudge (span ALL of an owner's cards) ---
+  const ownerCust = JSON.parse((await get("/dashboard/api/customers?cardId=all&lapsedDays=0", { headers: { cookie: cookieNow } })).body);
+  expect(Array.isArray(ownerCust.customers) && ownerCust.customers.length >= 2, "owner customers span all their cards");
+  expect(ownerCust.customers.every((c: any) => c.cardId && c.cardName), "each customer row is tagged with its card");
+  expect(Array.isArray(ownerCust.cards) && ownerCust.cards.length >= 2, "customers response lists the owner's cards for filtering");
+  const filtered = JSON.parse((await get("/dashboard/api/customers?cardId=" + newCafeOut.id + "&lapsedDays=0", { headers: { cookie: cookieNow } })).body);
+  expect(filtered.customers.length === 0, "card filter narrows to a single (empty) card");
+
+  const oNudge = await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "Owner-level hello", target: [p2.serial] }),
+  });
+  const oNudgeOut = JSON.parse(await oNudge.text());
+  expect(oNudge.status === 200 && oNudgeOut.total === 1, "owner-level nudge messages a single customer");
+
+  const oNudgeAll = await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "Owner-level all", target: "all" }),
+  });
+  const oNudgeAllOut = JSON.parse(await oNudgeAll.text());
+  expect(oNudgeAll.status === 200 && oNudgeAllOut.total === ownerCust.customers.length, "owner-level nudge to all reaches every customer");
+
+  // A serial that isn't the owner's is silently dropped (only owned serials survive)
+  const oNudgeForeign = await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookie2 },
+    body: JSON.stringify({ message: "not mine", target: [p1.serial] }),
+  });
+  expect(JSON.parse(await oNudgeForeign.text()).total === 0, "owner-level nudge can't touch another owner's card");
+
+  // --- Share tab no longer surfaces the NFC link (moved to the admin console) ---
+  const dashHtml = (await get("/dashboard")).body;
+  expect(dashHtml.indexOf("NFC") === -1, "owner dashboard no longer mentions NFC (it lives in /admin now)");
+
+  // --- Self-serve password reset ---
+  const forgotUnknown = await fetch(base + "/dashboard/api/forgot", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "nobody@nowhere.my" }),
+  });
+  expect(forgotUnknown.status === 200, "forgot-password is enumeration-safe (200 for unknown email)");
+  const forgotKnown = await fetch(base + "/dashboard/api/forgot", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "owner@test.my" }),
+  });
+  expect(forgotKnown.status === 200, "forgot-password accepts a known email");
+
+  const ownerRow = (await getOwnerByEmail("owner@test.my"))!;
+  const rawToken = "e2e-reset-token-abc123";
+  const hashOf = (t: string) => createHash("sha256").update(t).digest("hex");
+  await setResetToken(ownerRow.id, hashOf(rawToken), new Date(Date.now() + 3600_000));
+
+  const resetBadToken = await fetch(base + "/dashboard/api/reset", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: "wrong-token", password: "freshpass99" }),
+  });
+  expect(resetBadToken.status === 400, "reset with a wrong token → 400");
+  const resetShort = await fetch(base + "/dashboard/api/reset", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: rawToken, password: "short" }),
+  });
+  expect(resetShort.status === 400, "reset with a too-short password → 400");
+  const resetOk = await fetch(base + "/dashboard/api/reset", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: rawToken, password: "freshpass99" }),
+  });
+  expect(resetOk.status === 200, "reset with the valid token succeeds");
+  const loginReset = await fetch(base + "/dashboard/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "owner@test.my", password: "freshpass99" }),
+  });
+  expect(loginReset.status === 200, "the new password works after reset");
+  const resetReuse = await fetch(base + "/dashboard/api/reset", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: rawToken, password: "anotherpass99" }),
+  });
+  expect(resetReuse.status === 400, "a reset token is single-use (reuse → 400)");
+
+  await setResetToken(ownerRow.id, hashOf("expired-token"), new Date(Date.now() - 1000));
+  const resetExpired = await fetch(base + "/dashboard/api/reset", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: "expired-token", password: "freshpass99" }),
+  });
+  expect(resetExpired.status === 400, "an expired reset token is rejected");
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

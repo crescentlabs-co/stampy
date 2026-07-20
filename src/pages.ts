@@ -164,7 +164,13 @@ export function staffPage(): string {
     async function act(path, body, doneMsg) {
       if (busy) return; busy = true;
       try {
-        const out = await api(path, { method: "POST", body: JSON.stringify(body) });
+        let out = await api(path, { method: "POST", body: JSON.stringify(body) });
+        // Anti-spam: same card stamped moments ago. Let staff override for a
+        // genuine repeat order, otherwise stop the double-stamp.
+        if (out.error === "too-soon") {
+          if (!confirm("This card was just stamped " + out.secondsLeft + "s ago. Add another stamp?")) return;
+          out = await api(path, { method: "POST", body: JSON.stringify({ ...body, force: true }) });
+        }
         if (out.error) toast("Error: " + out.error);
         else toast(doneMsg + (out.push.registeredDevices === 0
           ? " (card not opened on a phone yet — no push)"
@@ -396,6 +402,28 @@ export function dashboardPage(): string {
     .sharelist a:hover { border-color: #3b2016; }
     .sharelist a .sub2 { font-weight: 400; color: #9b8b7d; font-size: .82rem; }
     .sharelist a .arr { color: #9b8b7d; }
+    .sharelist { margin-bottom: 6px; }
+    /* --- home: totals + per-card breakdown --- */
+    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+    .totals .metric b { font-size: 1.4rem; }
+    .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 4px; }
+    .breakdown th { text-align: left; color: #9b8b7d; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px; border-bottom: 1px solid #eee2d5; }
+    .breakdown td { padding: 8px; border-bottom: 1px solid #f0e8dd; }
+    .breakdown td.n { text-align: right; font-variant-numeric: tabular-nums; }
+    .viewall { margin-top: 14px; }
+    /* --- card picker (Cards + Share) --- */
+    .cardpick { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
+    .cardpick button { width: auto; padding: 8px 14px; border-radius: 999px; border: 1px solid #d9cbbb;
+                       background: #fff; color: #3b2016; font: inherit; font-weight: 600; cursor: pointer; }
+    .cardpick button.on { background: #3b2016; color: #fffaf0; border-color: #3b2016; }
+    /* --- customers view --- */
+    .backlink { background: none; border: none; color: #7a6a5d; font: inherit; font-weight: 600;
+                cursor: pointer; padding: 0; margin-bottom: 8px; }
+    .custctl { display: flex; gap: 8px; flex-wrap: wrap; }
+    .custctl > div { flex: 1; min-width: 130px; }
+    /* --- show-password toggle --- */
+    .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: #7a6a5d; margin: 6px 0 0; }
+    .eye input { width: auto; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -410,6 +438,13 @@ export function dashboardPage(): string {
       setTimeout(() => t.classList.remove("show"), 2600);
     }
 
+    // Reveal/hide any password field via a "Show" checkbox (data-eye = its selector).
+    function wireEyes(root) {
+      root.querySelectorAll("[data-eye]").forEach((cb) => {
+        cb.onchange = () => { const i = root.querySelector(cb.dataset.eye); if (i) i.type = cb.checked ? "text" : "password"; };
+      });
+    }
+
     function authForm(mode) {
       $("#app").innerHTML = \`
         <h1>\${mode === "signup" ? "Create your account" : "Owner login"}</h1>
@@ -420,13 +455,26 @@ export function dashboardPage(): string {
         <label>Email</label><input id="email" type="email" autocomplete="username">
         <label>Password\${mode === "signup" ? " (min 8 characters)" : ""}</label>
         <input id="pw" type="password" autocomplete="\${mode === "signup" ? "new-password" : "current-password"}">
+        <label class="eye"><input type="checkbox" data-eye="#pw"> Show password</label>
         <button class="btn btn-dark" style="margin-top:14px" id="go">\${mode === "signup" ? "Create account" : "Log in"}</button>
+        \${mode === "login" ? '<p class="muted" style="margin-top:12px;text-align:center"><a href="#" id="forgot">Forgot password?</a></p><div id="forgotbox" style="display:none"><label>Your account email</label><input id="fmail" type="email"><button class="btn btn-ghost" style="margin-top:8px" id="fsend">Send reset link</button></div>' : ""}
         <p class="muted" style="margin-top:14px;text-align:center">
           \${mode === "signup"
             ? 'Already have an account? <a href="#" id="switch">Log in</a>'
             : 'New here? <a href="#" id="switch">Create an account</a>'}
         </p>\`;
+      wireEyes(document);
       $("#switch").onclick = (e) => { e.preventDefault(); authForm(mode === "signup" ? "login" : "signup"); };
+      if (mode === "login") {
+        $("#forgot").onclick = (e) => { e.preventDefault(); const b = $("#forgotbox"); b.style.display = b.style.display === "none" ? "block" : "none"; };
+        $("#fsend").onclick = async () => {
+          const email = $("#fmail").value.trim();
+          if (!email.includes("@")) return toast("Enter your account email");
+          await api("/forgot", { method: "POST", body: JSON.stringify({ email }) });
+          toast("If that email has an account, a reset link is on its way ✉️");
+          $("#forgotbox").style.display = "none";
+        };
+      }
       $("#go").onclick = async () => {
         const payload = { email: $("#email").value.trim(), password: $("#pw").value };
         if (mode === "signup") payload.cafeName = $("#cafename").value.trim();
@@ -496,7 +544,7 @@ export function dashboardPage(): string {
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
           <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
         </div>
-        <label>Staff PIN</label><input data-f="staffPin" value="\${c.staffPin}">
+        <label>Staff PIN <span class="muted">(staff type this to unlock the stamper)</span></label><input data-f="staffPin" value="\${c.staffPin}">
         <button class="btn btn-dark" style="margin-top:14px" data-a="save">Save changes</button>
         <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward. Sharing links live in the <strong>Share</strong> tab.</p>\`;
 
@@ -637,171 +685,236 @@ export function dashboardPage(): string {
           stampsTarget: Number(f("stampsTarget").value), stampsStart: Number(f("stampsStart").value),
           staffPin: f("staffPin").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value,
         })});
-        if (body.ok) { c.name = f("name").value; toast("Saved ✓"); renderSelect(); }
-        else toast(body.error || "Save failed");
+        if (body.ok) {
+          c.name = f("name").value; toast("Saved ✓");
+          // keep the card-picker chip labels in sync without resetting the form
+          const pk = document.querySelector("[data-pick]");
+          if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cafes[Number(b.dataset.ci)].name; });
+        } else toast(body.error || "Save failed");
       };
       return div;
     }
 
-    function metricsPanel(c) {
+    // ---- Home: totals across ALL cards + per-card breakdown + customer preview ----
+    function homePanel() {
       const div = document.createElement("div");
-      const m = c.metrics;
+      const sum = (k) => S.cafes.reduce((a, c) => a + (c.metrics[k] || 0), 0);
+      const breakdown = S.cafes.length > 1
+        ? \`<label style="margin-top:14px">By card</label>
+           <table class="breakdown"><tr><th>Card</th><th>Customers</th><th>Stamps</th><th>Claimed</th></tr>
+           \${S.cafes.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.cards + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
+           </table>\`
+        : "";
       div.innerHTML = \`
-        <div class="metrics">
-          <div class="metric"><b>\${m.cards}</b><span class="muted">cards issued</span></div>
-          <div class="metric"><b>\${m.stamps}</b><span class="muted">stamps (\${m.stamps30d} in 30d)</span></div>
-          <div class="metric"><b>\${m.redemptions}</b><span class="muted">rewards claimed</span></div>
-          <div class="metric"><b>\${m.redemptions30d}</b><span class="muted">claimed in 30d</span></div>
+        <div class="totals">
+          <div class="metric"><b>\${sum("cards")}</b><span class="muted">customers</span></div>
+          <div class="metric"><b>\${sum("stamps")}</b><span class="muted">stamps (\${sum("stamps30d")} in 30d)</span></div>
+          <div class="metric"><b>\${sum("redemptions")}</b><span class="muted">rewards claimed</span></div>
         </div>
-        <p class="muted" style="margin-top:10px">Numbers update as staff stamp and redeem cards.</p>\`;
+        \${breakdown}
+        <label style="margin-top:14px">Customers</label>
+        <div data-cust><p class="muted">Loading…</p></div>
+        <button class="btn btn-ghost viewall" data-viewall>View all customers →</button>\`;
+      (async () => {
+        const { body } = await api("/customers?lapsedDays=14");
+        const cust = body.customers || [];
+        const lapsing = cust.filter((x) => x.lapsing).length;
+        const host = div.querySelector("[data-cust]");
+        host.innerHTML = cust.length
+          ? '<p><strong>' + cust.length + '</strong> customers · <strong>' + lapsing + '</strong> lapsing (14+ days)</p>'
+          : '<p class="muted">No customers yet — they appear once a card is stamped.</p>';
+      })();
+      div.querySelector("[data-viewall]").onclick = () => { S.tab = "customers"; renderTabs(); renderPanel(); };
       return div;
     }
 
-    // Customers tab: list, lapsing filter, per-customer + bulk win-back nudge.
-    function renderCustomers(c) {
+    // ---- Customers view (opens from Home): search, filters, paging, nudge ----
+    function customersView() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <label>Show customers not seen in</label>
-        <select data-lap>
-          <option value="0">everyone</option>
-          <option value="7">7+ days</option>
-          <option value="14" selected>14+ days (lapsing)</option>
-          <option value="30">30+ days</option>
-        </select>
+        <button class="backlink" data-back>← Back to Home</button>
+        <div class="custctl">
+          <div><label>Card</label><select data-card><option value="all">All cards</option></select></div>
+          <div><label>Not seen in</label><select data-days>
+            <option value="0">everyone</option>
+            <option value="7">7+ days</option>
+            <option value="14" selected>14+ days</option>
+            <option value="30">30+ days</option>
+          </select></div>
+        </div>
+        <input data-search placeholder="🔍 Search by card code" autocomplete="off" style="text-transform:uppercase;margin-top:8px">
         <div data-list style="margin-top:10px"><p class="muted">Loading…</p></div>
+        <button class="btn btn-ghost" data-more style="display:none;margin-top:10px">Load more</button>
         <div class="account" style="margin-top:16px">
           <label>Win-back message</label>
           <input data-msg value="We miss you! Your next stamp is waiting ☕️" maxlength="200">
-          <button class="btn btn-dark" style="margin-top:10px" data-a="nudgeshown">Nudge everyone shown</button>
-          <p class="muted" style="margin-top:6px">Sends a lock-screen message. Google limits 3 messages per card per day.</p>
+          <button class="btn btn-dark" style="margin-top:10px" data-nudgeall>Nudge everyone shown</button>
+          <p class="muted" style="margin-top:6px">Messages the customers currently listed — narrow the card/lapsing filters to choose who. Google limits 3 messages per card per day.</p>
         </div>\`;
       const q = (s) => div.querySelector(s);
-      let shown = [];
+      let all = [], shown = [], limit = 50;
 
-      async function sendNudge(serials) {
+      q("[data-back]").onclick = () => { S.tab = "home"; renderTabs(); renderPanel(); };
+
+      async function nudge(serials) {
         const message = q("[data-msg]").value.trim();
         if (!message) return toast("Type a message first");
         if (!serials.length) return toast("No customers to nudge");
-        const { body } = await api("/cafe/" + c.id + "/nudge", {
-          method: "POST", body: JSON.stringify({ message, target: serials }),
-        });
-        toast(body.ok ? ("Nudged " + body.sent + " of " + body.total + " (rest had no phone yet)") : (body.error || "Failed"));
+        const { body } = await api("/nudge", { method: "POST", body: JSON.stringify({ message, target: serials }) });
+        toast(body.ok ? ("Nudged " + body.sent + " of " + body.total + " (rest have no phone yet)") : (body.error || "Failed"));
+      }
+
+      function renderRows() {
+        const search = (q("[data-search]").value || "").trim().toUpperCase();
+        shown = all.filter((x) => !search || x.code.toUpperCase().includes(search));
+        const list = q("[data-list]"); list.innerHTML = "";
+        if (!all.length) { list.innerHTML = '<p class="muted">Nobody matches that filter 🎉</p>'; q("[data-more]").style.display = "none"; return; }
+        if (!shown.length) { list.innerHTML = '<p class="muted">No card matches that code.</p>'; q("[data-more]").style.display = "none"; return; }
+        for (const x of shown.slice(0, limit)) {
+          const row = document.createElement("div"); row.className = "pass";
+          row.innerHTML = \`<strong>\${x.code}</strong>
+            <span class="muted"> · \${x.cardName} · \${x.stamps}/\${x.target} · last seen \${x.lastDays}d ago\${x.lapsing ? " · lapsing" : ""}</span>
+            <div class="row"><button class="btn btn-ghost" data-n>Nudge</button></div>\`;
+          row.querySelector("[data-n]").onclick = () => nudge([x.serial]);
+          list.appendChild(row);
+        }
+        q("[data-more]").style.display = shown.length > limit ? "" : "none";
       }
 
       async function load() {
-        const days = Number(q("[data-lap]").value);
-        const { body } = await api("/cafe/" + c.id + "/customers?lapsedDays=" + days);
-        const cust = body.customers || [];
-        shown = days === 0 ? cust : cust.filter((x) => x.lapsing);
-        const list = q("[data-list]"); list.innerHTML = "";
-        if (!cust.length) { list.innerHTML = '<p class="muted">No customers yet.</p>'; return; }
-        if (!shown.length) { list.innerHTML = '<p class="muted">Nobody is lapsing by that filter 🎉</p>'; return; }
-        for (const x of shown) {
-          const row = document.createElement("div"); row.className = "pass";
-          row.innerHTML = \`<strong>\${x.code}</strong>
-            <span class="muted"> · \${x.stamps}/\${x.target} · last seen \${x.lastDays}d ago\${x.lapsing ? " · lapsing" : ""}</span>
-            <div class="row"><button class="btn btn-ghost" data-a="n1">Nudge</button></div>\`;
-          row.querySelector('[data-a=n1]').onclick = () => sendNudge([x.serial]);
-          list.appendChild(row);
+        limit = 50;
+        const card = q("[data-card]").value, days = q("[data-days]").value;
+        const { body } = await api("/customers?cardId=" + encodeURIComponent(card) + "&lapsedDays=" + days);
+        let cust = body.customers || [];
+        if (Number(days) > 0) cust = cust.filter((x) => x.lapsing);
+        all = cust;
+        const sel = q("[data-card]");
+        if (!sel.dataset.filled) {
+          sel.insertAdjacentHTML("beforeend", (body.cards || []).map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join(""));
+          sel.dataset.filled = "1";
         }
+        renderRows();
       }
-      q("[data-lap]").onchange = load;
-      q("[data-a=nudgeshown]").onclick = () => sendNudge(shown.map((x) => x.serial));
+      q("[data-card]").onchange = load;
+      q("[data-days]").onchange = load;
+      q("[data-search]").oninput = renderRows;
+      q("[data-more]").onclick = () => { limit += 50; renderRows(); };
+      q("[data-nudgeall]").onclick = () => nudge(shown.map((x) => x.serial));
       load();
       return div;
     }
 
-    function sharePanel(c) {
+    // ---- Cards: pick a card (chips) + the designer for the selected one ----
+    function cardsPanel() {
       const div = document.createElement("div");
-      const base = c.id === "default" ? "" : "/c/" + c.id;
-      const landing = base || "/";
-      const full = location.origin + landing;
-      div.innerHTML = \`
-        <p class="sub">Share these with customers and staff. They never change when you edit the card.</p>
-        <div class="sharelist">
-          <a href="\${base + "/qr"}" target="_blank"><span>Add-to-Wallet QR <span class="sub2">print for the counter</span></span><span class="arr">open →</span></a>
-          <a href="\${landing}" target="_blank"><span>Add-to-Wallet page <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
-          <a href="/staff?c=\${c.id}" target="_blank"><span>Staff stamper <span class="sub2">PIN: \${c.staffPin}</span></span><span class="arr">open →</span></a>
-        </div>
-        <label>Add-to-Wallet NFC link <span class="muted">(optional)</span></label>
-        <div class="copyrow">
-          <input data-nfc readonly value="\${full}">
-          <button class="btn btn-ghost" data-a="copynfc">Copy</button>
-        </div>
-        <p class="muted" style="margin-top:6px">A tap opens the same page as the QR. Write it onto a blank sticker with a free app like “NFC Tools”. Some phones can’t tap, so the QR stays the reliable one.</p>\`;
-      div.querySelector("[data-a=copynfc]").onclick = async () => {
-        try { await navigator.clipboard.writeText(full); toast("Link copied ✓"); }
-        catch { div.querySelector("[data-nfc]").select(); toast("Select + copy the link"); }
-      };
+      div.innerHTML = \`<div class="cardpick" data-pick></div><div data-design></div>\`;
+      const pick = div.querySelector("[data-pick]");
+      const host = div.querySelector("[data-design]");
+      function draw() {
+        pick.innerHTML = "";
+        if (S.cafes.length > 1) {
+          S.cafes.forEach((c, i) => {
+            const b = document.createElement("button");
+            b.textContent = c.name; b.dataset.ci = String(i);
+            b.className = i === S.selCard ? "on" : "";
+            b.onclick = () => { S.selCard = i; draw(); };
+            pick.appendChild(b);
+          });
+        }
+        const add = document.createElement("button");
+        add.textContent = "+ Add card";
+        add.onclick = async () => {
+          const name = prompt("Name for the new card (e.g. “Coffee card” or “Pastry card”):");
+          if (!name) return;
+          const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
+          if (r.ok) location.reload(); else toast(r.error || "Failed");
+        };
+        pick.appendChild(add);
+        host.innerHTML = ""; host.appendChild(designPanel(S.cafes[S.selCard]));
+      }
+      draw();
       return div;
     }
 
-    // ---- app shell: card dropdown + tabs ----
-    const S = { cafes: [], sel: 0, tab: "metrics", email: "" };
+    // ---- Share: every card's Add-to-Wallet QR / page / staff stamper ----
+    // (the tap-tag link is owner-facing only in the admin console, not here)
+    function shareAll() {
+      const div = document.createElement("div");
+      div.innerHTML = '<p class="sub">Share these with customers and staff. They never change when you edit a card.</p>';
+      for (const c of S.cafes) {
+        const base = c.id === "default" ? "" : "/c/" + c.id;
+        const landing = base || "/";
+        const block = document.createElement("div");
+        block.innerHTML = \`
+          \${S.cafes.length > 1 ? '<label style="font-weight:700;color:#3b2016">' + c.name + '</label>' : ""}
+          <div class="sharelist">
+            <a href="\${base + "/qr"}" target="_blank"><span>Add-to-Wallet QR <span class="sub2">print for the counter</span></span><span class="arr">open →</span></a>
+            <a href="\${landing}" target="_blank"><span>Add-to-Wallet page <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
+            <a href="/staff?c=\${c.id}" target="_blank"><span>Staff stamper <span class="sub2">PIN: \${c.staffPin}</span></span><span class="arr">open →</span></a>
+          </div>\`;
+        div.appendChild(block);
+      }
+      return div;
+    }
+
+    // ---- Account: identity + change password + log out ----
+    function accountPanel() {
+      const div = document.createElement("div");
+      div.innerHTML = \`
+        <label>Signed in as</label>
+        <p style="font-weight:600;margin-bottom:6px">\${S.email}</p>
+        <label style="margin-top:10px">Change password</label>
+        <input data-cur type="password" placeholder="Current password" autocomplete="current-password">
+        <input data-new type="password" placeholder="New password (min 8)" autocomplete="new-password" style="margin-top:8px">
+        <label class="eye"><input type="checkbox" data-eye="[data-new]"> Show new password</label>
+        <button class="btn btn-dark" style="margin-top:10px" data-pwsave>Update password</button>
+        <button class="btn btn-ghost" style="margin-top:20px" data-out>Log out</button>\`;
+      wireEyes(div);
+      div.querySelector("[data-pwsave]").onclick = async () => {
+        const { body } = await api("/change-password", { method: "POST", body: JSON.stringify({
+          current: div.querySelector("[data-cur]").value, next: div.querySelector("[data-new]").value,
+        })});
+        if (body.ok) { toast("Password updated ✓"); div.querySelector("[data-cur]").value = ""; div.querySelector("[data-new]").value = ""; }
+        else toast(body.error || "Couldn’t update");
+      };
+      div.querySelector("[data-out]").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
+      return div;
+    }
+
+    // ---- app shell: owner-scoped tabs ----
+    const S = { cafes: [], email: "", tab: "home", selCard: 0 };
 
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
-      S.cafes = body.cafes; S.email = body.email; S.sel = 0;
+      S.cafes = body.cafes; S.email = body.email; S.selCard = 0; S.tab = "home";
       $("#app").innerHTML = \`
-        <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 0">\${S.email}</p></div>
-        <div class="cardselect">
-          <select id="cardsel"></select>
-          <button class="btn btn-ghost" id="add">+ Add card</button>
-        </div>
+        <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">\${S.email}</p></div>
         <div class="tabs" id="tabs">
-          <button data-tab="metrics">Metrics</button>
-          <button data-tab="customers">Customers</button>
-          <button data-tab="design">Design</button>
+          <button data-tab="home">Home</button>
+          <button data-tab="cards">Cards</button>
           <button data-tab="share">Share</button>
+          <button data-tab="account">Account</button>
         </div>
-        <div id="panel"></div>
-        <div class="account">
-          <button class="btn btn-ghost" id="chpw">Change password</button>
-          <div id="pwform" style="display:none">
-            <label>Current password</label><input id="pwcur" type="password" autocomplete="current-password">
-            <label>New password (min 8 characters)</label><input id="pwnew" type="password" autocomplete="new-password">
-            <button class="btn btn-dark" style="margin-top:12px" id="pwsave">Update password</button>
-          </div>
-          <button class="btn btn-ghost" style="margin-top:8px" id="out">Log out</button>
-        </div>\`;
-      $("#cardsel").onchange = () => { S.sel = Number($("#cardsel").value); renderPanel(); };
+        <div id="panel"></div>\`;
       $("#tabs").querySelectorAll("button").forEach((b) => {
         b.onclick = () => { S.tab = b.dataset.tab; renderTabs(); renderPanel(); };
       });
-      $("#add").onclick = async () => {
-        const name = prompt("Name for the new card (e.g. “Coffee card” or “Pastry card”):");
-        if (!name) return;
-        const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
-        if (r.ok) location.reload(); else toast(r.error || "Failed");
-      };
-      $("#chpw").onclick = () => { const el = $("#pwform"); el.style.display = el.style.display === "none" ? "block" : "none"; };
-      $("#pwsave").onclick = async () => {
-        const { body: r } = await api("/change-password", { method: "POST", body: JSON.stringify({ current: $("#pwcur").value, next: $("#pwnew").value }) });
-        if (r.ok) { toast("Password updated ✓"); $("#pwform").style.display = "none"; $("#pwcur").value = ""; $("#pwnew").value = ""; }
-        else toast(r.error || "Couldn’t update");
-      };
-      $("#out").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
-      renderSelect(); renderTabs(); renderPanel();
+      renderTabs(); renderPanel();
     }
 
-    function renderSelect() {
-      const sel = $("#cardsel"); if (!sel) return;
-      sel.innerHTML = S.cafes.map((c, i) => '<option value="' + i + '">' + c.name + '</option>').join("");
-      sel.value = String(S.sel);
-      // hide just the dropdown when there's only one card (keep the Add button)
-      sel.style.display = S.cafes.length > 1 ? "" : "none";
-    }
     function renderTabs() {
-      $("#tabs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === S.tab));
+      // The Customers view is a sub-page of Home, so keep Home highlighted there.
+      const active = S.tab === "customers" ? "home" : S.tab;
+      $("#tabs").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === active));
     }
     function renderPanel() {
-      const panel = $("#panel"); const c = S.cafes[S.sel];
-      panel.innerHTML = "";
-      const view = S.tab === "design" ? designPanel(c)
-        : S.tab === "customers" ? renderCustomers(c)
-        : S.tab === "share" ? sharePanel(c)
-        : metricsPanel(c);
+      const panel = $("#panel"); panel.innerHTML = "";
+      const view = S.tab === "cards" ? cardsPanel()
+        : S.tab === "share" ? shareAll()
+        : S.tab === "account" ? accountPanel()
+        : S.tab === "customers" ? customersView()
+        : homePanel();
       panel.appendChild(view);
     }
 
@@ -834,6 +947,8 @@ export function adminPage(): string {
     .rst select { width: auto; }
     .rst .btn { width: auto; padding: 10px 14px; }
     .temp { font-family: ui-monospace, Menlo, monospace; background: #f6f1ea; padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
+    .nfc { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+    .cbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -844,9 +959,15 @@ export function adminPage(): string {
     async function load() {
       const { status, body } = await api("/overview");
       if (status === 403) {
-        $("#app").innerHTML = '<h1>Admin</h1><p class="sub">Log in as the admin account at <a href="/dashboard">/dashboard</a> first. (If /admin stays closed, ADMIN_EMAIL isn’t set.)</p>';
+        // Tell the founder EXACTLY why it's closed rather than a vague bounce.
+        const msg = body.error === "admin-closed"
+          ? 'The admin console is closed because <strong>ADMIN_EMAIL</strong> isn’t set. In Railway → your app service → Variables, add <strong>ADMIN_EMAIL</strong> = your dashboard login email, then redeploy.'
+          : 'You’re not signed in as the admin account. Log in at <a href="/dashboard">/dashboard</a> with the email set as <strong>ADMIN_EMAIL</strong>, then reopen this page.';
+        $("#app").innerHTML = '<h1>Admin</h1><p class="sub">' + msg + '</p>';
         return;
       }
+      const origin = location.origin;
+      const nfcUrl = (id) => origin + (id === "default" ? "/" : "/c/" + id);
       const rows = body.cafes.map((c) => \`
         <tr>
           <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
@@ -855,15 +976,17 @@ export function adminPage(): string {
           <td>\${c.stamps}</td>
           <td>\${c.redemptions}</td>
           <td class="flags">\${c.has_logo ? "logo " : ""}\${c.has_banner ? "banner" : ""}\${!c.has_logo && !c.has_banner ? "—" : ""}<br>\${new Date(c.created_at).toLocaleDateString()}</td>
+          <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br><button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button></td>
         </tr>\`).join("");
       const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
       $("#app").innerHTML = \`
         <h1>Platform admin</h1>
         <p class="sub">\${body.cafes.length} cards · \${body.owners.length} owners. Read-only, plus password resets.</p>
         <div class="tw"><table>
-          <tr><th>Card</th><th>Owner(s)</th><th>Cards</th><th>Stamps</th><th>Redeemed</th><th>Art / created</th></tr>
+          <tr><th>Card</th><th>Owner(s)</th><th>Cards</th><th>Stamps</th><th>Redeemed</th><th>Art / created</th><th>Sign-up / NFC link</th></tr>
           \${rows}
         </table></div>
+        <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>
         <h2>Reset an owner's password</h2>
         <p class="muted">Passwords are stored scrambled and can never be viewed — this sets a NEW temporary one to hand over.</p>
         <div class="rst">
@@ -871,6 +994,12 @@ export function adminPage(): string {
           <button class="btn btn-dark" id="reset">Generate temp password</button>
         </div>
         <div id="tempout"></div>\`;
+      $("#app").querySelectorAll(".cbtn").forEach((b) => {
+        b.onclick = async () => {
+          try { await navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; }
+          catch { b.textContent = b.dataset.nfc; }
+        };
+      });
       $("#reset").onclick = async () => {
         const { body: r } = await api("/owner/" + $("#who").value + "/reset-password", { method: "POST" });
         if (r.ok) $("#tempout").innerHTML = '<div class="temp">New password for <strong>' + r.email + '</strong>: <strong>' + r.tempPassword + '</strong><br>Give it to them; they can change it in their dashboard.</div>';
@@ -909,11 +1038,13 @@ export function setupPage(s: SetupStatus, baseUrl: string): string {
         ${check(s.apnsKey, "Push key (APNS_KEY_B64 + APNS_KEY_ID)", "An APNs auth key (.p8) from developer.apple.com.")}
         ${check(s.googleIssuer, "Google Wallet Issuer ID (GOOGLE_ISSUER_ID)", "From the Google Wallet Business Console — needed for Android cards.")}
         ${check(s.googleServiceAccount, "Google service account (GOOGLE_SERVICE_ACCOUNT_B64)", "Produced by pnpm prepare-google from the downloaded JSON key.")}
+        ${check(s.canEmail, "Email for password resets (RESEND_API_KEY + EMAIL_FROM)", "Optional but recommended: make a free Resend account, verify a sender, then set both in Railway → Variables. Without it, owners recover via the admin console instead.")}
       </ul>
       <hr style="border:none;border-top:1px solid #eee2d5;margin:16px 0">
       <p><strong>Apple — can issue cards:</strong> ${s.canSignPasses ? "YES ✅" : "not yet"}</p>
       <p><strong>Apple — can push updates:</strong> ${s.canPush ? "YES ✅" : "not yet"}</p>
       <p><strong>Google Wallet (Android):</strong> ${s.canGoogleWallet ? "YES ✅" : "not yet"}</p>
+      <p><strong>Email (password resets):</strong> ${s.canEmail ? "YES ✅" : "not yet"}</p>
       <p style="margin-top:14px">Owner dashboard: <a href="/dashboard">${baseUrl || ""}/dashboard</a></p>
       ${
         s.canSignPasses
@@ -922,5 +1053,42 @@ export function setupPage(s: SetupStatus, baseUrl: string): string {
           : ""
       }
     </div>`,
+  );
+}
+
+// ------------------------------------------------------------ reset ----
+
+/** The page a password-reset email link opens: set a new password, then log in. */
+export function resetPage(): string {
+  const js = /* js */ `
+    const $ = (s) => document.querySelector(s);
+    const token = new URLSearchParams(location.search).get("token") || "";
+    function toast(msg) { const t = $(".toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2600); }
+    if (!token) {
+      $("#app").innerHTML = '<h1>Reset link invalid</h1><p class="sub">This link is missing its code. Request a new one from the <a href="/dashboard">login page</a>.</p>';
+    } else {
+      $("#app").innerHTML = \`
+        <h1>Set a new password</h1>
+        <p class="sub">Choose a new password for your Stampy account.</p>
+        <label>New password (min 8 characters)</label>
+        <input id="pw" type="password" autocomplete="new-password">
+        <label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:#7a6a5d;margin-top:6px"><input id="eye" type="checkbox" style="width:auto"> Show password</label>
+        <button class="btn btn-dark" style="margin-top:14px" id="go">Save new password</button>\`;
+      $("#eye").onchange = () => { $("#pw").type = $("#eye").checked ? "text" : "password"; };
+      $("#go").onclick = async () => {
+        const password = $("#pw").value;
+        if (!password || password.length < 8) return toast("Password needs at least 8 characters");
+        const r = await fetch("/dashboard/api/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password }) });
+        const body = await r.json().catch(() => ({}));
+        if (body.ok) { toast("Password set — signing you in…"); setTimeout(() => location.href = "/dashboard", 900); }
+        else toast(body.error === "invalid-or-expired-link" ? "This link has expired — request a new one." : (body.error || "Couldn’t reset"));
+      };
+    }
+  `;
+  return page(
+    "Stampy — Reset password",
+    `<div class="card" id="app"><p class="sub">Loading…</p></div><div class="toast"></div>`,
+    "",
+    js,
   );
 }
