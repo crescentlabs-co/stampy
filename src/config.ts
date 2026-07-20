@@ -26,6 +26,9 @@ export const config = {
   port: intEnv("PORT", 3000),
   databaseUrl: process.env.DATABASE_URL ?? "",
 
+  /** The platform owner's email — this owner account can reach /admin. Unset ⇒ /admin is closed. */
+  adminEmail: (process.env.ADMIN_EMAIL ?? "").toLowerCase().trim(),
+
   /** Apple Developer Team ID (10 chars, from developer.apple.com membership page). */
   teamId: process.env.APPLE_TEAM_ID ?? "",
   /** Pass Type identifier, e.g. pass.com.stampy.loyalty */

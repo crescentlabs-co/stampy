@@ -731,6 +731,74 @@ export function dashboardPage(): string {
   );
 }
 
+// ---------------------------------------------------------------- admin ----
+
+export function adminPage(): string {
+  const css = /* css */ `
+    body { max-width: none; }
+    .awrap { width: 100%; max-width: 960px; }
+    table { border-collapse: collapse; width: 100%; font-size: .9rem; margin-top: 12px; }
+    th { text-align: left; color: #7a6a5d; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid #eee2d5; }
+    td { padding: 10px; border-bottom: 1px solid #f0e8dd; vertical-align: top; }
+    .flags { font-size: .78rem; color: #9b8b7d; }
+    .tw { overflow-x: auto; }
+    .rst { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: end; }
+    .rst select { width: auto; }
+    .rst .btn { width: auto; padding: 10px 14px; }
+    .temp { font-family: ui-monospace, Menlo, monospace; background: #f6f1ea; padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
+  `;
+  const js = /* js */ `
+    const $ = (s, el=document) => el.querySelector(s);
+    async function api(p, o={}) {
+      const r = await fetch("/admin/api" + p, { ...o, headers: { "Content-Type": "application/json", ...(o.headers||{}) } });
+      return { status: r.status, body: await r.json().catch(() => ({})) };
+    }
+    async function load() {
+      const { status, body } = await api("/overview");
+      if (status === 403) {
+        $("#app").innerHTML = '<h1>Admin</h1><p class="sub">Log in as the admin account at <a href="/dashboard">/dashboard</a> first. (If /admin stays closed, ADMIN_EMAIL isn’t set.)</p>';
+        return;
+      }
+      const rows = body.cafes.map((c) => \`
+        <tr>
+          <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
+          <td>\${c.owners || "—"}</td>
+          <td>\${c.cards}</td>
+          <td>\${c.stamps}</td>
+          <td>\${c.redemptions}</td>
+          <td class="flags">\${c.has_logo ? "logo " : ""}\${c.has_banner ? "banner" : ""}\${!c.has_logo && !c.has_banner ? "—" : ""}<br>\${new Date(c.created_at).toLocaleDateString()}</td>
+        </tr>\`).join("");
+      const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
+      $("#app").innerHTML = \`
+        <h1>Platform admin</h1>
+        <p class="sub">\${body.cafes.length} cards · \${body.owners.length} owners. Read-only, plus password resets.</p>
+        <div class="tw"><table>
+          <tr><th>Card</th><th>Owner(s)</th><th>Cards</th><th>Stamps</th><th>Redeemed</th><th>Art / created</th></tr>
+          \${rows}
+        </table></div>
+        <h2>Reset an owner's password</h2>
+        <p class="muted">Passwords are stored scrambled and can never be viewed — this sets a NEW temporary one to hand over.</p>
+        <div class="rst">
+          <div><label>Owner</label><select id="who">\${opts}</select></div>
+          <button class="btn btn-dark" id="reset">Generate temp password</button>
+        </div>
+        <div id="tempout"></div>\`;
+      $("#reset").onclick = async () => {
+        const { body: r } = await api("/owner/" + $("#who").value + "/reset-password", { method: "POST" });
+        if (r.ok) $("#tempout").innerHTML = '<div class="temp">New password for <strong>' + r.email + '</strong>: <strong>' + r.tempPassword + '</strong><br>Give it to them; they can change it in their dashboard.</div>';
+        else $("#tempout").textContent = r.error || "Failed";
+      };
+    }
+    load();
+  `;
+  return page(
+    "Stampy — Admin",
+    `<div class="card awrap" id="app"><p class="sub">Loading…</p></div>`,
+    css,
+    js,
+  );
+}
+
 // ---------------------------------------------------------------- setup ----
 
 export function setupPage(s: SetupStatus, baseUrl: string): string {

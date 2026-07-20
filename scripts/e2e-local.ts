@@ -24,6 +24,7 @@ async function main() {
   await pg.createDatabase("stampy");
   process.env.DATABASE_URL = "postgresql://stampy:stampy@localhost:5499/stampy";
   process.env.BASE_URL = "http://localhost:3000";
+  process.env.ADMIN_EMAIL = "owner@test.my"; // first signup below becomes the platform admin
 
   const { migrate, createPass, generateShortCode, getCafe, logEvent } = await import(
     "../src/db.js"
@@ -357,6 +358,30 @@ async function main() {
     body: JSON.stringify({ message: "hi", target: "all" }),
   });
   expect(nudgeNotMine.status === 403, "an owner can't nudge another owner's café");
+
+  // --- Admin console (ADMIN_EMAIL = owner@test.my) ---
+  const adminForbidden = await get("/admin/api/overview", { headers: { cookie: cookie2 } });
+  expect(adminForbidden.status === 403, "a normal owner can't reach the admin console");
+
+  const adminOk = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
+  expect(adminOk.cafes.length >= 2, "admin sees every café on the platform");
+  expect(
+    adminOk.cafes.some((c: any) => (c.owners || "").includes("second@cafe.my")),
+    "admin sees which owner email is tied to each café",
+  );
+  expect(JSON.stringify(adminOk).indexOf("password") === -1, "admin overview never includes any password field");
+
+  const owner2 = adminOk.owners.find((o: any) => o.email === "second@cafe.my");
+  const reset = await fetch(base + "/admin/api/owner/" + owner2.id + "/reset-password", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  const resetOut = JSON.parse(await reset.text());
+  expect(reset.status === 200 && resetOut.tempPassword, "admin can mint a temp password (never sees the old)");
+  const loginTemp = await fetch(base + "/dashboard/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "second@cafe.my", password: resetOut.tempPassword }),
+  });
+  expect(loginTemp.status === 200, "the reset temp password logs the owner in");
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

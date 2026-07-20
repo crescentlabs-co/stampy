@@ -327,6 +327,47 @@ export async function lapsingSerials(cafeId: string, days: number): Promise<stri
   return res.rows.map((r) => r.serial);
 }
 
+// ----------------------------------------------------------------- admin ----
+
+export interface AdminCafeRow {
+  id: string;
+  name: string;
+  owners: string | null;
+  created_at: Date;
+  has_logo: boolean;
+  has_banner: boolean;
+  cards: number;
+  stamps: number;
+  redemptions: number;
+}
+
+/** Every café on the platform with its owner email(s), metrics, and art flags.
+ *  Never selects a password — only the hash exists and it is never surfaced. */
+export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
+  const res = await getPool().query<AdminCafeRow>(
+    `SELECT c.id, c.name, c.created_at,
+            (SELECT string_agg(o.email, ', ' ORDER BY o.email)
+               FROM owner_cafes oc JOIN owners o ON o.id = oc.owner_id
+              WHERE oc.cafe_id = c.id) AS owners,
+            EXISTS (SELECT 1 FROM cafe_logos l WHERE l.cafe_id = c.id) AS has_logo,
+            EXISTS (SELECT 1 FROM cafe_banners b WHERE b.cafe_id = c.id) AS has_banner,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id) AS cards,
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp') AS stamps,
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'redeem') AS redemptions
+       FROM cafes c
+      ORDER BY c.created_at DESC`,
+  );
+  return res.rows;
+}
+
+/** All owner accounts (id + email only) — for the admin's reset-password picker. */
+export async function allOwners(): Promise<{ id: string; email: string }[]> {
+  const res = await getPool().query<{ id: string; email: string }>(
+    `SELECT id, email FROM owners ORDER BY email`,
+  );
+  return res.rows;
+}
+
 // ---------------------------------------------------------------- owners ----
 
 export async function createOwner(id: string, email: string, passwordHash: string): Promise<OwnerRow> {
