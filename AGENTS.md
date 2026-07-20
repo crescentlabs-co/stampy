@@ -29,12 +29,10 @@ every working change with a meaningful message.
 4. **Both platforms share one scanner:** the pass barcode content is the serial
    (UUID) on Apple AND Google; `short_code` (6 chars, no 0/O/1/I/L) is the
    typed fallback. Don't diverge them.
-5. **Platform dispatch lives in `applyAndPush`** (src/cardActions.ts):
+5. **Platform dispatch lives in `updateAndPush`** (src/routes/staff.ts):
    `apple` → empty APNs push (device re-fetches); `google` → PATCH object /
-   addMessage. Both staff (stamp/redeem) and dashboard (nudge/win-back) go
-   through it — new card-mutating endpoints must too (it also logs the
-   `events` row that powers dashboard metrics). Nudges are an owner action
-   (dashboard), never staff.
+   addMessage. New card-mutating endpoints must go through it (it also logs
+   the `events` row that powers dashboard metrics).
 6. **Auth is hand-rolled on node:crypto** (scrypt + HMAC cookies, timing-safe
    compares everywhere). Don't add auth/session dependencies.
 7. **No build step.** tsx runs TypeScript directly; pages are template strings

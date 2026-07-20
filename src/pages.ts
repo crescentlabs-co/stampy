@@ -215,11 +215,23 @@ export function staffPage(): string {
     }
 
     // --------------------------------------------------------------- views ----
+    let allPasses = [];
     async function load() {
       const out = await api("/passes");
-      const list = $("#list"); list.innerHTML = "";
-      if (!out.passes.length) list.innerHTML = '<p class="muted" style="margin-top:16px">No cards yet — scan the counter QR with a phone to create the first one.</p>';
-      for (const p of out.passes) {
+      allPasses = out.passes;
+      renderList();
+    }
+    function renderList() {
+      const list = $("#list"); if (!list) return;
+      const q = ($("#search")?.value || "").trim().toUpperCase();
+      const rows = q ? allPasses.filter((p) => p.code.toUpperCase().includes(q)) : allPasses;
+      list.innerHTML = "";
+      if (!allPasses.length) {
+        list.innerHTML = '<p class="muted" style="margin-top:16px">No cards yet — a customer scans the Add-to-Wallet QR to create the first one.</p>';
+        return;
+      }
+      if (!rows.length) { list.innerHTML = '<p class="muted" style="margin-top:16px">No card matches that code.</p>'; return; }
+      for (const p of rows) {
         const div = document.createElement("div");
         div.className = "pass";
         div.innerHTML = \`
@@ -229,17 +241,11 @@ export function staffPage(): string {
           <div class="row">
             <button class="btn btn-stamp" data-a="stamp">+1 Stamp</button>
             \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">Redeem & reset</button>' : ""}
-            <button class="btn btn-ghost" data-a="nudge">Nudge</button>
           </div>\`;
         div.querySelector('[data-a=stamp]').onclick = () => act("/stamp", { serial: p.serial }, "Stamp added");
         const r = div.querySelector('[data-a=redeem]');
         if (r) r.onclick = () => confirm("Give the reward and reset this card to 0?") &&
           act("/redeem", { serial: p.serial }, "Redeemed & reset");
-        div.querySelector('[data-a=nudge]').onclick = () => {
-          const m = prompt("Message to send to this customer’s lock screen:",
-            "We miss you! Your next stamp is waiting ☕️");
-          if (m) act("/message", { serial: p.serial, message: m }, "Nudge sent");
-        };
         list.appendChild(div);
       }
     }
@@ -265,14 +271,16 @@ export function staffPage(): string {
             <input id="code" placeholder="CARD CODE" maxlength="8" autocomplete="off">
             <button class="btn btn-ghost" id="bycode">Stamp</button>
           </div>
-          <h2>Recent cards</h2>
-          <div id="list"></div>\`;
+          <h2>Cards</h2>
+          <input id="search" placeholder="🔍 Search by card code" autocomplete="off" style="text-transform:uppercase">
+          <div id="list" style="margin-top:10px"></div>\`;
         $("#scan").onclick = startScanner;
         $("#bycode").onclick = () => {
           const code = $("#code").value.trim();
           if (!code) return toast("Type the code shown on the customer’s card");
           act("/stamp-by-code", { code }, "Stamp added").then(() => { $("#code").value = ""; });
         };
+        $("#search").oninput = renderList;
         load();
         clearInterval(window.__poll); window.__poll = setInterval(load, 10000);
       }

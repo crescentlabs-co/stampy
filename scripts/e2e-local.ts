@@ -171,11 +171,11 @@ async function main() {
   });
   expect(JSON.parse(await redeem.text()).pass.stamps === 0, "redeem resets to 0");
 
-  // Nudge
-  const nudge = await fetch(base + "/staff/api/message", {
-    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p2.serial, message: "We miss you!" }),
+  // Nudge is an owner action now — staff can no longer nudge
+  const staffNudge = await fetch(base + "/staff/api/message", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p2.serial, message: "hi" }),
   });
-  expect(nudge.status === 200, "nudge accepted");
+  expect(staffNudge.status === 404, "staff nudge endpoint is gone (owner-only now)");
 
   // Metrics reflect the events
   const overview2 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
@@ -217,16 +217,6 @@ async function main() {
   expect(
     gStampOut.push.detail[0].reason === "google-not-configured",
     "google dispatch reports google-not-configured gracefully (no throw)",
-  );
-
-  const gNudge = await fetch(base + "/staff/api/message", {
-    method: "POST", headers: staffHeaders,
-    body: JSON.stringify({ serial: gp.serial, message: "Come back!" }),
-  });
-  const gNudgeOut = JSON.parse(await gNudge.text());
-  expect(
-    gNudge.status === 200 && gNudgeOut.push.detail[0].reason === "google-not-configured",
-    "google nudge path graceful without creds",
   );
 
   const logo = await get("/art/logo.png");
