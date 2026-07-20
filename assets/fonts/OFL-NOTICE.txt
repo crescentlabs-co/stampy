@@ -1,9 +1,7 @@
-These webfonts are used under the SIL Open Font License, Version 1.1.
+This webfont is used under the SIL Open Font License, Version 1.1.
 
-- Bricolage Grotesque — © The Bricolage Grotesque Project Authors
-  (https://github.com/ateliertriay/bricolage)
-- Hanken Grotesk — © The Hanken Grotesk Project Authors
-  (https://github.com/hanken-design/HankenGrotesk)
+- Space Grotesk — © 2020 The Space Grotesk Project Authors
+  (https://github.com/floriankarsten/space-grotesk)
 
-Files here are latin-subset woff2 builds obtained via Google Fonts.
+File here is a latin-subset woff2 build obtained via Google Fonts.
 Full OFL text: https://openfontlicense.org

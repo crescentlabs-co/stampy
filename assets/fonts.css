@@ -1,18 +1,9 @@
-/* Self-hosted webfonts (no CDN). Both are SIL Open Font License 1.1:
- *   Bricolage Grotesque — display / headings / big numbers
- *   Hanken Grotesk      — body / UI text
- * Latin-subset variable woff2, so one file covers each weight range. */
+/* Self-hosted webfont (no CDN). Space Grotesk — SIL Open Font License 1.1.
+ * One latin-subset variable woff2 covers the 400–700 weight range. */
 @font-face {
-  font-family: "Bricolage Grotesque";
-  font-style: normal;
-  font-weight: 600 800;
-  font-display: swap;
-  src: url("/assets/fonts/bricolage-latin.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Hanken Grotesk";
+  font-family: "Space Grotesk";
   font-style: normal;
   font-weight: 400 700;
   font-display: swap;
-  src: url("/assets/fonts/hanken-latin.woff2") format("woff2");
+  src: url("/assets/fonts/space-grotesk-latin.woff2") format("woff2");
 }

@@ -58,8 +58,8 @@ async function main() {
 
   // Self-hosted fonts serve over /assets (static)
   const fontsCss = await get("/assets/fonts.css");
-  expect(fontsCss.status === 200 && fontsCss.body.includes("Bricolage Grotesque"), "GET /assets/fonts.css serves the @font-face");
-  const woff = await get("/assets/fonts/bricolage-latin.woff2");
+  expect(fontsCss.status === 200 && fontsCss.body.includes("Space Grotesk"), "GET /assets/fonts.css serves the @font-face");
+  const woff = await get("/assets/fonts/space-grotesk-latin.woff2");
   expect(woff.status === 200, "GET /assets/fonts/*.woff2 serves the font file");
 
   // Dashboard uses the sliding segmented control (not the old underline tabs)

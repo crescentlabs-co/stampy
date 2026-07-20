@@ -8,48 +8,51 @@ import { DEFAULT_CAFE_ID } from "./db.js";
 
 const baseCss = /* css */ `
   :root {
-    --bg: #f6f1ea; --surface: #ffffff; --ink: #2b1d15; --ink2: #3b2016;
-    --muted: #9b8b7d; --line: #eee2d5; --accent: #c8863c;
-    --r: 14px; --r-lg: 20px;
-    --shadow: 0 10px 30px -12px rgba(43,29,21,.28), 0 2px 6px rgba(43,29,21,.10);
-    --display: "Bricolage Grotesque", "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --body: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* Stone & Sage: cool light neutral + muted sage accent, paired with Space Grotesk. */
+    --bg: #f0f1ed; --surface: #ffffff; --ink: #20211d; --ink2: #2f312b;
+    --muted: #888d83; --line: #e3e5df; --field-border: #cdd0c8; --ghost-bg: #e7e9e3;
+    --accent: #6f8567; --accent-dark: #5c7156;
+    --r: 16px; --r-lg: 22px;
+    --shadow: 0 10px 30px -14px rgba(32,33,29,.20), 0 2px 6px rgba(32,33,29,.07);
+    --display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --body: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
-    font-family: var(--body);
+    font-family: var(--body); line-height: 1.5;
     background: var(--bg); color: var(--ink); min-height: 100vh;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     display: flex; flex-direction: column; align-items: center;
-    padding: 24px 16px 48px;
+    padding: 28px 16px 56px;
   }
   .card {
-    background: #fff; border-radius: 16px; padding: 24px;
-    box-shadow: 0 2px 12px rgba(43,29,21,.08); width: 100%; max-width: 420px;
+    background: var(--surface); border-radius: var(--r-lg); padding: 28px 26px;
+    box-shadow: var(--shadow); width: 100%; max-width: 440px;
   }
-  h1 { font-family: var(--display); font-weight: 800; font-size: 1.7rem; letter-spacing: -.02em; margin-bottom: 8px; text-wrap: balance; }
-  h2 { font-family: var(--display); font-weight: 700; font-size: 1.15rem; letter-spacing: -.01em; margin: 18px 0 6px; }
-  p.sub { color: #7a6a5d; margin-bottom: 20px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: 1.7rem; letter-spacing: -.015em; margin-bottom: 10px; text-wrap: balance; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 1.15rem; letter-spacing: -.01em; margin: 24px 0 8px; }
+  p.sub { color: var(--muted); margin-bottom: 22px; }
   .btn {
-    display: block; width: 100%; text-align: center; padding: 14px 20px;
-    border-radius: 12px; border: none; font-size: 1.05rem; font-weight: 600;
+    display: block; width: 100%; text-align: center; padding: 15px 20px;
+    border-radius: 14px; border: none; font-size: 1.02rem; font-weight: 600;
     cursor: pointer; text-decoration: none;
   }
-  .btn-dark { background: #1d1d1f; color: #fff; }
-  .btn-stamp { background: #3b2016; color: #fff; }
-  .btn-ghost { background: #efe7dd; color: #3b2016; }
+  .btn-dark { background: var(--ink); color: #fff; }
+  .btn-stamp { background: var(--ink); color: #fff; }
+  .btn-ghost { background: var(--ghost-bg); color: var(--ink); }
   .btn { transition: transform .09s ease, filter .15s ease; }
   .btn:active { transform: scale(.985); }
   @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
-  .muted { color: #9b8b7d; font-size: .85rem; }
+  .muted { color: var(--muted); font-size: .85rem; }
   input, textarea, select {
-    width: 100%; padding: 12px; border: 1px solid #d9cbbb; border-radius: 10px;
-    font-size: 1rem; font-family: inherit; background: #fff;
+    width: 100%; padding: 13px 14px; border: 1px solid var(--field-border); border-radius: 12px;
+    font-size: 1rem; font-family: inherit; background: var(--surface); color: var(--ink);
   }
-  label { font-size: .8rem; color: #7a6a5d; display: block; margin: 10px 0 4px; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+  label { font-size: .8rem; color: var(--muted); display: block; margin: 14px 0 6px; }
   .toast {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: #1d1d1f; color: #fff; padding: 10px 18px; border-radius: 999px;
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 999px;
     font-size: .9rem; opacity: 0; transition: opacity .25s; pointer-events: none;
     max-width: 90vw; text-align: center; z-index: 50;
   }
@@ -137,7 +140,7 @@ export function notReadyPage(): string {
 
 export function staffPage(): string {
   const css = /* css */ `
-    .pass { border: 1px solid #eee2d5; border-radius: 12px; padding: 14px; margin-top: 12px; }
+    .pass { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
     .pass .dots { font-size: 1.15rem; letter-spacing: 2px; margin: 6px 0; }
     .row { display: flex; gap: 8px; margin-top: 8px; }
     .row .btn { padding: 10px 12px; font-size: .95rem; }
@@ -345,13 +348,13 @@ export function staffPage(): string {
 export function dashboardPage(): string {
   const css = /* css */ `
     .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
-    .metric { background: var(--surface); border-radius: var(--r); padding: 14px 14px 12px;
+    .metric { background: var(--surface); border-radius: var(--r); padding: 16px 16px 13px;
               box-shadow: var(--shadow); text-align: left; }
-    .metric b { font-family: var(--display); font-weight: 800; font-size: 1.9rem; line-height: 1;
+    .metric b { font-family: var(--display); font-weight: 700; font-size: 1.9rem; line-height: 1;
                 display: block; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
     .metric span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
                    letter-spacing: .05em; color: var(--muted); }
-    .cafe { border: 1px solid #eee2d5; border-radius: 12px; padding: 16px; margin-top: 14px; }
+    .cafe { border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 14px; }
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
     .row2 { display: flex; gap: 8px; }
     .row2 > div { flex: 1; }
@@ -372,46 +375,46 @@ export function dashboardPage(): string {
     /* --- designer controls --- */
     .colors { display: flex; gap: 8px; margin-top: 4px; }
     .colors > label { flex: 1; margin: 0; }
-    .colors input[type=color] { width: 100%; height: 38px; padding: 2px; border: 1px solid #d9cbbb;
+    .colors input[type=color] { width: 100%; height: 38px; padding: 2px; border: 1px solid var(--field-border);
                                 border-radius: 10px; background: #fff; cursor: pointer; }
     .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
     .logorow input[type=file] { display: none; }
     .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
     .copyrow { display: flex; gap: 8px; margin-top: 4px; }
-    .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: #f6f1ea; }
+    .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: var(--ghost-bg); }
     .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
-    .account { border-top: 1px solid #eee2d5; margin-top: 24px; padding-top: 14px; }
-    .card { max-width: 460px; }
+    .account { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 20px; }
+    .card { max-width: 480px; }
     /* --- card dropdown selector --- */
     .cardselect { display: flex; gap: 8px; align-items: center; margin: 10px 0 6px; }
-    .cardselect select { flex: 1; padding: 11px 12px; border: 1px solid #d9cbbb; border-radius: 10px;
-                         font: inherit; font-weight: 600; background: #fff; color: #3b2016; }
+    .cardselect select { flex: 1; padding: 11px 12px; border: 1px solid var(--field-border); border-radius: 10px;
+                         font: inherit; font-weight: 600; background: var(--surface); color: var(--ink); }
     .cardselect .btn { width: auto; padding: 11px 14px; font-size: .9rem; white-space: nowrap; }
     /* --- sliding segmented control (tabs + toggles) --- */
-    .seg { position: relative; display: flex; background: #efe7dd; border-radius: 999px; padding: 4px; gap: 2px; }
+    .seg { position: relative; display: flex; background: var(--ghost-bg); border-radius: 999px; padding: 5px; gap: 2px; }
     .seg button { position: relative; z-index: 1; flex: 1; border: none; background: none; font: inherit;
-                  font-weight: 600; font-size: .9rem; color: var(--muted); padding: 9px 8px; cursor: pointer;
+                  font-weight: 600; font-size: .9rem; color: var(--muted); padding: 10px 12px; cursor: pointer;
                   border-radius: 999px; white-space: nowrap; transition: color .2s; }
-    .seg button.on { color: var(--ink2); }
+    .seg button.on { color: var(--accent-dark); }
     .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .seg .thumb { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: 0; background: var(--surface);
-                  border-radius: 999px; box-shadow: 0 2px 6px rgba(43,29,21,.16);
+    .seg .thumb { position: absolute; z-index: 0; top: 5px; bottom: 5px; left: 0; width: 0; background: var(--surface);
+                  border-radius: 999px; box-shadow: 0 2px 6px rgba(32,33,29,.14);
                   transition: transform .28s cubic-bezier(.34,1.1,.4,1), width .28s cubic-bezier(.34,1.1,.4,1); }
-    #tabs { margin: 14px 0 18px; }
+    #tabs { margin: 18px 0 24px; }
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     @media (prefers-reduced-motion: reduce) { .seg .thumb { transition: none; } }
     /* --- colour presets --- */
     .presets { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
-    .preset { width: 38px; height: 38px; border-radius: 10px; border: 2px solid #d9cbbb; cursor: pointer;
+    .preset { width: 38px; height: 38px; border-radius: 10px; border: 2px solid var(--field-border); cursor: pointer;
               display: grid; place-items: center; font-size: .7rem; font-weight: 700; }
-    .preset:hover { border-color: #3b2016; transform: translateY(-1px); }
+    .preset:hover { border-color: var(--accent); transform: translateY(-1px); }
     /* --- banner templates --- */
     .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
     .bantpl .bt { width: 72px; height: 32px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
                   position: relative; overflow: hidden; background-size: cover; background-position: center;
                   box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
-    .bantpl .bt:hover { border-color: #3b2016; }
+    .bantpl .bt:hover { border-color: var(--accent); }
     .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
                        color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
     /* --- premium card preview --- */
@@ -420,35 +423,43 @@ export function dashboardPage(): string {
     .pv-banner { height: 64px; margin: -16px -16px 12px; background-size: cover; background-position: center; display: none; }
     .pv-banner.on { display: block; }
     /* --- share tab --- */
-    .sharelist { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 14px; }
+    .sharelist { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 16px; }
     .sharelist a { display: flex; justify-content: space-between; align-items: center; gap: 8px;
-                   border: 1px solid #eee2d5; border-radius: 12px; padding: 14px 16px; text-decoration: none;
-                   color: #2b1d15; font-weight: 600; }
-    .sharelist a:hover { border-color: #3b2016; }
-    .sharelist a .sub2 { font-weight: 400; color: #9b8b7d; font-size: .82rem; }
-    .sharelist a .arr { color: #9b8b7d; }
+                   border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; text-decoration: none;
+                   color: var(--ink); font-weight: 600; }
+    .sharelist a:hover { border-color: var(--accent); }
+    .sharelist a .sub2 { font-weight: 400; color: var(--muted); font-size: .82rem; }
+    .sharelist a .arr { color: var(--muted); }
     .sharelist { margin-bottom: 6px; }
     /* --- home: totals + per-card breakdown --- */
-    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
-    .totals .metric { padding: 14px 12px 11px; }
-    .totals .metric b { font-size: clamp(1.35rem, 6.5vw, 1.95rem); }
-    .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 4px; }
-    .breakdown th { text-align: left; color: #9b8b7d; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px; border-bottom: 1px solid #eee2d5; }
-    .breakdown td { padding: 8px; border-bottom: 1px solid #f0e8dd; }
+    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+    .totals .metric { padding: 16px 14px 13px; }
+    .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
+    .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
+    .breakdown th { text-align: left; color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .breakdown td { padding: 10px; border-bottom: 1px solid var(--line); }
     .breakdown td.n { text-align: right; font-variant-numeric: tabular-nums; }
-    .viewall { margin-top: 14px; }
+    .viewall { margin-top: 18px; }
     /* --- card picker (Cards + Share) --- */
-    .cardpick { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
-    .cardpick button { width: auto; padding: 8px 14px; border-radius: 999px; border: 1px solid #d9cbbb;
-                       background: #fff; color: #3b2016; font: inherit; font-weight: 600; cursor: pointer; }
-    .cardpick button.on { background: #3b2016; color: #fffaf0; border-color: #3b2016; }
+    .cardpick { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 20px; }
+    .cardpick button { width: auto; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--field-border);
+                       background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+    .cardpick button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    /* --- customer rows (Customers view) — the dashboard's own card style --- */
+    .pass { border: 1px solid var(--line); border-radius: 14px; padding: 15px 16px; margin-top: 12px;
+            background: var(--surface); box-shadow: var(--shadow); }
+    .pass strong { font-size: 1.02rem; }
+    .pass .row { display: flex; gap: 8px; margin-top: 12px; }
+    .pass .row .btn { width: auto; padding: 9px 16px; font-size: .9rem; }
+    .ready { color: #1a7f37; font-weight: 700; }
     /* --- customers view --- */
-    .backlink { background: none; border: none; color: #7a6a5d; font: inherit; font-weight: 600;
-                cursor: pointer; padding: 0; margin-bottom: 8px; }
-    .custctl { display: flex; gap: 8px; flex-wrap: wrap; }
+    .backlink { background: none; border: none; color: var(--muted); font: inherit; font-weight: 600;
+                cursor: pointer; padding: 4px 0; margin-bottom: 10px; }
+    .backlink:hover { color: var(--accent-dark); }
+    .custctl { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
     .custctl > div { flex: 1; min-width: 130px; }
     /* --- show-password toggle --- */
-    .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: #7a6a5d; margin: 6px 0 0; }
+    .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
   `;
   const js = /* js */ `
@@ -887,7 +898,7 @@ export function dashboardPage(): string {
         const landing = base || "/";
         const block = document.createElement("div");
         block.innerHTML = \`
-          \${S.cafes.length > 1 ? '<label style="font-weight:700;color:#3b2016">' + c.name + '</label>' : ""}
+          \${S.cafes.length > 1 ? '<label style="font-weight:700;color:var(--ink)">' + c.name + '</label>' : ""}
           <div class="sharelist">
             <a href="\${base + "/qr"}" target="_blank"><span>Add-to-Wallet QR <span class="sub2">print for the counter</span></span><span class="arr">open →</span></a>
             <a href="\${landing}" target="_blank"><span>Add-to-Wallet page <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
@@ -1010,14 +1021,14 @@ export function adminPage(): string {
     body { max-width: none; }
     .awrap { width: 100%; max-width: 960px; }
     table { border-collapse: collapse; width: 100%; font-size: .9rem; margin-top: 12px; }
-    th { text-align: left; color: #7a6a5d; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid #eee2d5; }
-    td { padding: 10px; border-bottom: 1px solid #f0e8dd; vertical-align: top; }
-    .flags { font-size: .78rem; color: #9b8b7d; }
+    th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .flags { font-size: .78rem; color: var(--muted); }
     .tw { overflow-x: auto; }
     .rst { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: end; }
     .rst select { width: auto; }
     .rst .btn { width: auto; padding: 10px 14px; }
-    .temp { font-family: ui-monospace, Menlo, monospace; background: #f6f1ea; padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
+    .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
     .nfc { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
     .cbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
   `;
@@ -1111,7 +1122,7 @@ export function setupPage(s: SetupStatus, baseUrl: string): string {
         ${check(s.googleServiceAccount, "Google service account (GOOGLE_SERVICE_ACCOUNT_B64)", "Produced by pnpm prepare-google from the downloaded JSON key.")}
         ${check(s.canEmail, "Email for password resets (RESEND_API_KEY + EMAIL_FROM)", "Optional but recommended: make a free Resend account, verify a sender, then set both in Railway → Variables. Without it, owners recover via the admin console instead.")}
       </ul>
-      <hr style="border:none;border-top:1px solid #eee2d5;margin:16px 0">
+      <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
       <p><strong>Apple — can issue cards:</strong> ${s.canSignPasses ? "YES ✅" : "not yet"}</p>
       <p><strong>Apple — can push updates:</strong> ${s.canPush ? "YES ✅" : "not yet"}</p>
       <p><strong>Google Wallet (Android):</strong> ${s.canGoogleWallet ? "YES ✅" : "not yet"}</p>
@@ -1143,7 +1154,7 @@ export function resetPage(): string {
         <p class="sub">Choose a new password for your Stampy account.</p>
         <label>New password (min 8 characters)</label>
         <input id="pw" type="password" autocomplete="new-password">
-        <label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:#7a6a5d;margin-top:6px"><input id="eye" type="checkbox" style="width:auto"> Show password</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);margin-top:6px"><input id="eye" type="checkbox" style="width:auto"> Show password</label>
         <button class="btn btn-dark" style="margin-top:14px" id="go">Save new password</button>\`;
       $("#eye").onchange = () => { $("#pw").type = $("#eye").checked ? "text" : "password"; };
       $("#go").onclick = async () => {
