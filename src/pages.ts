@@ -1066,11 +1066,17 @@ export function dashboardPage(): string {
     // Curated palettes so a new card looks good without fiddling. [bg, text, label]
     const PRESETS = [
       { name: "Espresso", bg: "#3b2016", fg: "#fffaf0", label: "#d6b278" },
+      { name: "Mocha",    bg: "#5b4033", fg: "#fff6ec", label: "#e6c9a8" },
       { name: "Matcha",   bg: "#2f4a34", fg: "#f3f8ef", label: "#b7d6a0" },
+      { name: "Forest",   bg: "#143a2b", fg: "#eefaf1", label: "#8fd6a8" },
       { name: "Berry",    bg: "#4a1f38", fg: "#fdeef6", label: "#e5a9cd" },
+      { name: "Rose",     bg: "#7d2144", fg: "#fff0f4", label: "#f4a9c0" },
       { name: "Ocean",    bg: "#123047", fg: "#eef7fc", label: "#8fc4e6" },
+      { name: "Grape",    bg: "#38265e", fg: "#f2eefb", label: "#b9a4ec" },
       { name: "Charcoal", bg: "#1f2124", fg: "#f4f4f5", label: "#a9d0ff" },
       { name: "Sunset",   bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f" },
+      { name: "Honey",    bg: "#8a5a12", fg: "#fff8ea", label: "#ffd98a" },
+      { name: "Ink",      bg: "#101418", fg: "#eef2f6", label: "#7fd1c4" },
     ];
 
     function designPanel(c) {
@@ -1096,9 +1102,10 @@ export function dashboardPage(): string {
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
 
-        <label style="margin-top:12px">Quick themes</label>
+        <label style="margin-top:12px">Pick a theme <span class="muted">(a good-looking colour set in one tap)</span></label>
         <div class="presets" data-presets></div>
 
+        <label style="margin-top:10px" class="muted">Or fine-tune the colours yourself</label>
         <div class="colors">
           <label>Card colour<input data-f="bg" type="color" value="\${c.bg}"></label>
           <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
@@ -1315,6 +1322,9 @@ export function dashboardPage(): string {
         { name: "Waves", style: "waves", from: 1 },
         { name: "Slate", style: "gradient", c1: "#20242b", c2: "#3c434e" },
         { name: "Sand", style: "gradient", c1: "#cdbfa3", c2: "#a98f66" },
+        { name: "Rose", style: "glow", c1: "#7d2144", c2: "#c85b86" },
+        { name: "Forest", style: "waves", c1: "#143a2b", c2: "#3f8a63" },
+        { name: "Dusk", style: "diagonal", c1: "#2b2140", c2: "#c98a5a" },
       ];
       const btpl = q("[data-bantpl]");
       for (const t of BANNERS) {
