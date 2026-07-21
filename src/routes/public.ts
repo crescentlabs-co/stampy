@@ -30,7 +30,7 @@ import {
 } from "../db.js";
 import { createObject, ensureClass, saveJwtUrl } from "../googleWallet.js";
 import { buildPkpass, NotConfiguredError } from "../passBuilder.js";
-import { landingPage, marketingPage, notReadyPage } from "../pages.js";
+import { landingPage, marketingPage, notReadyPage, privacyPage, termsPage } from "../pages.js";
 
 export const publicRouter = Router();
 
@@ -132,6 +132,8 @@ async function qrPng(cafeId: string, res: import("express").Response): Promise<v
 }
 
 publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage()));
+publicRouter.get("/privacy", (_req, res) => res.type("html").send(privacyPage(config.contactEmail)));
+publicRouter.get("/terms", (_req, res) => res.type("html").send(termsPage(config.contactEmail)));
 publicRouter.get("/c/:cafeId", (req, res) => landing(req.params.cafeId!, res));
 publicRouter.get("/enroll", (_req, res) => enroll(DEFAULT_CAFE_ID, res));
 publicRouter.get("/c/:cafeId/enroll", (req, res) => enroll(req.params.cafeId!, res));

@@ -26,7 +26,7 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@cafe.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken } =
+  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken, updateCafe, getPool } =
     await import("../src/db.js");
   const { createHash } = await import("node:crypto");
   await migrate();
@@ -510,6 +510,55 @@ async function main() {
     body: JSON.stringify({ token: "expired-token", password: "freshpass99" }),
   });
   expect(resetExpired.status === 400, "an expired reset token is rejected");
+
+  // --- Rate limiting (brute-force protection) ---
+  let loginStatus = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await fetch(base + "/dashboard/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "bruteforce@nowhere.my", password: "nope" }),
+    });
+    loginStatus = r.status;
+  }
+  expect(loginStatus === 429, "login rate-limits after repeated failures (8/15min)");
+
+  // Staff PIN limiter counts only WRONG PINs, keyed by café+IP. Hammer the second
+  // café (whose real PIN is 2222) with a wrong PIN — nothing after this uses it.
+  let firstPin = 0, lastPin = 0;
+  for (let i = 0; i < 22; i++) {
+    const r = await fetch(base + "/staff/api/passes", {
+      headers: { ...staffHeaders, "x-cafe-id": newCafeOut.id, "x-staff-pin": "0000" },
+    });
+    if (i === 0) firstPin = r.status;
+    lastPin = r.status;
+  }
+  expect(firstPin === 401, "a wrong staff PIN is rejected (401) before the limit trips");
+  expect(lastPin === 429, "staff PIN endpoint rate-limits repeated WRONG attempts (20/10min)");
+
+  // --- Legal pages + consent ---
+  const priv = await get("/privacy");
+  expect(priv.status === 200 && priv.body.includes("Privacy Policy") && priv.body.includes("PDPA"), "GET /privacy renders the PDPA-aware policy");
+  const terms = await get("/terms");
+  expect(terms.status === 200 && terms.body.includes("Terms of Service"), "GET /terms renders the terms");
+  expect((await get("/")).body.includes("/privacy"), "marketing footer links the Privacy page");
+  expect((await get("/dashboard")).body.includes('id="agree"'), "signup form has the Terms/Privacy consent checkbox");
+
+  // --- Automated win-back ---
+  const { runAutoWinback } = await import("../src/winback.js");
+  const lp = await mk(); // fresh pass on the default café
+  await getPool().query("UPDATE passes SET updated_at = now() - interval '30 days' WHERE serial = $1", [lp.serial]);
+  const nudgeCount = async () =>
+    (await getPool().query<{ n: number }>("SELECT count(*)::int AS n FROM events WHERE serial = $1 AND type = 'nudge'", [lp.serial])).rows[0]!.n;
+
+  await runAutoWinback(); // default café has auto-winback OFF → nobody nudged
+  expect((await nudgeCount()) === 0, "auto win-back sends nothing while the café hasn't opted in");
+
+  await updateCafe("default", { auto_winback_enabled: true, auto_winback_days: 14, auto_winback_message: "Auto: we miss you" });
+  await runAutoWinback();
+  expect((await nudgeCount()) === 1, "auto win-back nudges a lapsing customer once opted in");
+  await runAutoWinback(); // immediate re-run
+  expect((await nudgeCount()) === 1, "auto win-back does NOT re-nudge within the window");
+  await updateCafe("default", { auto_winback_enabled: false }); // leave it off for cleanliness
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

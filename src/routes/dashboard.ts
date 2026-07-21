@@ -53,6 +53,7 @@ import {
   type OwnerRow,
 } from "../db.js";
 import { applyAndPush } from "../cardActions.js";
+import { clear, hit, peek } from "../rateLimit.js";
 import { config } from "../config.js";
 import { hexToRgb, rgbToHex } from "../color.js";
 import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
@@ -90,6 +91,11 @@ dashboardRouter.post("/api/signup", async (req, res) => {
     password?: string;
     cafeName?: string;
   };
+  // Slow down automated account-spam from one source.
+  const rl = hit(`signup:${req.ip}`, 5, 60 * 60_000);
+  if (!rl.ok) {
+    return void res.status(429).json({ error: "too-many-attempts", retryAfterSeconds: rl.retryAfterSeconds });
+  }
   if (!email?.includes("@") || !password || password.length < 8) {
     return void res.status(400).json({ error: "need-valid-email-and-8-char-password" });
   }
@@ -133,13 +139,24 @@ dashboardRouter.post("/api/signup", async (req, res) => {
 
 dashboardRouter.post("/api/login", async (req, res) => {
   const { email, password } = (req.body ?? {}) as { email?: string; password?: string };
+  // Brute-force guard, keyed by email so one attacker can't lock out everyone.
+  // Failure-only: a correct password never counts and clears the counter.
+  const rlKey = `login:${(email ?? "").toLowerCase()}`;
+  const peeked = peek(rlKey, 8, 15 * 60_000);
+  if (!peeked.ok) {
+    return void res.status(429).json({ error: "too-many-attempts", retryAfterSeconds: peeked.retryAfterSeconds });
+  }
   const owner = email ? await getOwnerByEmail(email) : null;
   // Verify against a dummy hash when the owner doesn't exist so response time
   // doesn't reveal which emails are registered.
   const ok = owner
     ? verifyPassword(password ?? "", owner.password_hash)
     : (verifyPassword(password ?? "", hashPassword("dummy-password")), false);
-  if (!ok || !owner) return void res.status(401).json({ error: "wrong-email-or-password" });
+  if (!ok || !owner) {
+    hit(rlKey, 8, 15 * 60_000); // record only the failed attempt
+    return void res.status(401).json({ error: "wrong-email-or-password" });
+  }
+  clear(rlKey);
   setSessionCookie(res, owner.id);
   res.json({ ok: true });
 });
@@ -173,6 +190,10 @@ const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
  */
 dashboardRouter.post("/api/forgot", async (req, res) => {
   const { email } = (req.body ?? {}) as { email?: string };
+  // Rate-limited, but still returns ok:true when blocked so it leaks nothing —
+  // we simply stop sending further reset emails for this address for a while.
+  const rl = hit(`forgot:${(email ?? "").toLowerCase()}`, 3, 60 * 60_000);
+  if (!rl.ok) return void res.json({ ok: true });
   const owner = email?.includes("@") ? await getOwnerByEmail(email) : null;
   if (owner) {
     const token = randomBytes(32).toString("hex");
@@ -231,6 +252,9 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       label: rgbToHex(cafe.label_color),
       logoVersion, // 0 = no upload; used to cache-bust the preview image
       bannerVersion,
+      autoWinbackEnabled: cafe.auto_winback_enabled,
+      autoWinbackDays: cafe.auto_winback_days,
+      autoWinbackMessage: cafe.auto_winback_message,
       metrics: await cafeMetrics(cafe.id),
     });
   }
@@ -275,6 +299,12 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
   if (typeof body.bg === "string") fields.background_color = hexToRgb(body.bg);
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
   if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
+  // Automated win-back settings.
+  if (typeof body.autoWinbackEnabled === "boolean") fields.auto_winback_enabled = body.autoWinbackEnabled;
+  if (body.autoWinbackDays !== undefined) fields.auto_winback_days = clampInt(body.autoWinbackDays, 1, 3650, 14);
+  if (typeof body.autoWinbackMessage === "string" && body.autoWinbackMessage.trim()) {
+    fields.auto_winback_message = body.autoWinbackMessage.trim().slice(0, 200);
+  }
   const cafe = await updateCafe(cafeId, fields);
   if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
   // Mirror branding/name changes into the Google-hosted card class (no-op

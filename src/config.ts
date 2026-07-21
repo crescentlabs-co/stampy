@@ -38,6 +38,10 @@ export const config = {
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "",
 
+  /** Public contact email shown on the Privacy/Terms pages (PDPA requests).
+   *  Set CONTACT_EMAIL in Railway; when unset the pages say to use your dashboard account. */
+  contactEmail: process.env.CONTACT_EMAIL ?? "",
+
   /** Apple Developer Team ID (10 chars, from developer.apple.com membership page). */
   teamId: process.env.APPLE_TEAM_ID ?? "",
   /** Pass Type identifier, e.g. pass.com.stampy.loyalty */

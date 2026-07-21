@@ -16,6 +16,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { applyAndPush } from "../cardActions.js";
+import { clear, hit, peek } from "../rateLimit.js";
 import {
   addStamps,
   DEFAULT_CAFE_ID,
@@ -63,13 +64,24 @@ async function stampCooldownLeft(serial: string, cafeId: string): Promise<number
 /** Looks up the request's café and verifies the PIN against its row (constant-time). */
 async function requirePin(req: StaffRequest, res: Response, next: NextFunction): Promise<void> {
   const cafeId = req.get("x-cafe-id") || DEFAULT_CAFE_ID;
+  // Brute-force guard, deliberately loose and failure-only: only a WRONG PIN
+  // counts, so a busy shift stamping correctly never approaches the limit. A PIN
+  // is reachable only by someone at the counter, and a café's wifi often shares
+  // one IP across every staff phone — we just want to stop an automated script.
+  const rlKey = `pin:${cafeId}:${req.ip}`;
+  const peeked = peek(rlKey, 20, 10 * 60_000);
+  if (!peeked.ok) {
+    return void res.status(429).json({ error: "too-many-attempts", retryAfterSeconds: peeked.retryAfterSeconds });
+  }
   const cafe = await getCafe(cafeId);
   if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
   const given = Buffer.from(req.get("x-staff-pin") ?? "");
   const expected = Buffer.from(cafe.staff_pin);
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    hit(rlKey, 20, 10 * 60_000); // record only the failed attempt
     return void res.status(401).json({ error: "wrong-pin" });
   }
+  clear(rlKey); // a correct PIN clears the counter
   req.cafe = cafe;
   next();
 }

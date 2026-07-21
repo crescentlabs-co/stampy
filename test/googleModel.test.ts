@@ -24,6 +24,9 @@ function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
     label_color: "rgb(214, 178, 120)",
     staff_pin: "1234",
     created_at: new Date(),
+    auto_winback_enabled: false,
+    auto_winback_days: 14,
+    auto_winback_message: "We miss you!",
     ...overrides,
   };
 }

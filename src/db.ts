@@ -30,6 +30,10 @@ export interface CafeRow {
   label_color: string;
   staff_pin: string;
   created_at: Date;
+  /** Opt-in automated win-back: message customers idle for `auto_winback_days`. */
+  auto_winback_enabled: boolean;
+  auto_winback_days: number;
+  auto_winback_message: string;
 }
 
 export interface OwnerRow {
@@ -167,6 +171,11 @@ export async function migrate(): Promise<void> {
     -- as a hash (like a password), so a DB leak can't be replayed to reset.
     ALTER TABLE owners ADD COLUMN IF NOT EXISTS reset_token_hash text;
     ALTER TABLE owners ADD COLUMN IF NOT EXISTS reset_expires timestamptz;
+    -- v0.9: opt-in automated win-back — a background job messages customers who
+    -- haven't stamped in N days. Off by default so behaviour is unchanged.
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_enabled boolean NOT NULL DEFAULT false;
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_days integer NOT NULL DEFAULT 14;
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_message text NOT NULL DEFAULT 'We miss you! Your next stamp is waiting ☕️';
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -228,6 +237,9 @@ export async function updateCafe(
     background_color: string;
     foreground_color: string;
     label_color: string;
+    auto_winback_enabled: boolean;
+    auto_winback_days: number;
+    auto_winback_message: string;
   }>,
 ): Promise<CafeRow | null> {
   const keys = Object.keys(fields) as (keyof typeof fields)[];
@@ -540,6 +552,23 @@ export async function lastStampAt(serial: string): Promise<Date | null> {
     [serial],
   );
   return res.rows[0]?.at ?? null;
+}
+
+/** When this card was last nudged (auto OR manual) — so auto win-back doesn't re-message. */
+export async function lastNudgeAt(serial: string): Promise<Date | null> {
+  const res = await getPool().query<{ at: Date }>(
+    `SELECT max(created_at) AS at FROM events WHERE serial = $1 AND type = 'nudge'`,
+    [serial],
+  );
+  return res.rows[0]?.at ?? null;
+}
+
+/** Every café that has opted into automated win-back. */
+export async function cafesWithAutoWinback(): Promise<CafeRow[]> {
+  const res = await getPool().query<CafeRow>(
+    `SELECT * FROM cafes WHERE auto_winback_enabled = true`,
+  );
+  return res.rows;
 }
 
 export async function logEvent(cafeId: string, serial: string, type: EventType): Promise<void> {

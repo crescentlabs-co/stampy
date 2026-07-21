@@ -33,10 +33,17 @@ every working change with a meaningful message.
    typed fallback. Don't diverge them.
 5. **Platform dispatch lives in `applyAndPush`** (src/cardActions.ts):
    `apple` → empty APNs push (device re-fetches); `google` → PATCH object /
-   addMessage. Both staff (stamp/redeem) and dashboard (nudge/win-back) go
+   addMessage. Staff (stamp/redeem), dashboard (nudge/win-back), and the
+   automated win-back job (`src/winback.ts`, hourly from server.ts) all go
    through it — new card-mutating endpoints must too (it also logs the
    `events` row that powers dashboard metrics). Nudges are an owner action
-   (dashboard), never staff.
+   (dashboard or the auto job), never staff.
+8. **Brute-force limits live in `src/rateLimit.ts`** (in-memory, failure-only:
+   `peek()` to gate, `hit()` only on a failed attempt, `clear()` on success —
+   so real usage never trips it). Login 8/15min per-email, staff PIN 20/10min
+   per café+IP (deliberately loose — shared café wifi), signup 5/h + forgot
+   3/h. `trust proxy` is on so `req.ip` is the real client. Blocked = 429
+   `{error:"too-many-attempts", retryAfterSeconds}`.
 6. **Auth is hand-rolled on node:crypto** (scrypt + HMAC cookies, timing-safe
    compares everywhere). Don't add auth/session dependencies.
 7. **No build step.** tsx runs TypeScript directly; pages are template strings

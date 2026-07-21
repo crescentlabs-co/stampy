@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { config, setupStatus } from "./config.js";
 import { migrate } from "./db.js";
+import { runAutoWinback } from "./winback.js";
 import { setupPage } from "./pages.js";
 import { adminRouter } from "./routes/admin.js";
 import { dashboardRouter } from "./routes/dashboard.js";
@@ -15,6 +16,10 @@ import { staffRouter } from "./routes/staff.js";
 import { walletRouter } from "./routes/wallet.js";
 
 const app = express();
+// Railway terminates TLS at its edge proxy and forwards X-Forwarded-For, so
+// trust it — otherwise req.ip is the proxy for every request and IP-keyed rate
+// limits (signup, staff PIN) would bucket the whole platform together.
+app.set("trust proxy", true);
 // 600kb: room for a base64-encoded café logo (≤256KB binary → ~342KB JSON);
 // everything else stays tiny. Express still hard-rejects bodies beyond this.
 app.use(express.json({ limit: "600kb" }));
@@ -43,6 +48,11 @@ async function main(): Promise<void> {
   if (config.databaseUrl) {
     await migrate();
     console.log("Database ready.");
+    // Automated win-back: sweep once on boot, then hourly. Sends are throttled
+    // by the per-card "already nudged this window" guard, so this can't spam.
+    void runAutoWinback();
+    const wb = setInterval(() => void runAutoWinback(), 60 * 60_000);
+    if (typeof wb.unref === "function") wb.unref();
   } else {
     console.warn("DATABASE_URL not set — running without a database (setup mode).");
   }

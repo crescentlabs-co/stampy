@@ -52,6 +52,7 @@ const baseCss = /* css */ `
   .btn-ghost { background: var(--ghost-bg); color: var(--ink); }
   .btn { transition: transform .09s ease, filter .15s ease; }
   .btn:active { transform: scale(.985); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
   .muted { color: var(--muted); font-size: .85rem; }
   input, textarea, select {
@@ -555,13 +556,113 @@ export function marketingPage(): string {
 
       <section class="panel light"><div class="inner foot">
         <a class="brand" href="/">Stampy &#9749;</a>
-        <nav><a href="#how">How it works</a><a href="#features">Features</a><a href="/dashboard">Log in</a></nav>
+        <nav><a href="#how">How it works</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/dashboard">Log in</a></nav>
         <span class="fine">Made for caf&eacute;s in Malaysia</span>
       </div></section>
     </div>
 
     <a class="betapill" href="/dashboard">&#9749; Free during beta</a>`;
   return page("Stampy — loyalty cards in Apple & Google Wallet, no app", body, css, script);
+}
+
+// -------------------------------------------------------------- legal ----
+
+const legalCss = /* css */ `
+  body { display: block; padding: 0; align-items: stretch; }
+  .legal { max-width: 760px; margin: 0 auto; padding: 40px 22px 80px; }
+  .legal .back { color: var(--muted); text-decoration: none; font-weight: 600; font-size: .9rem; }
+  .legal h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); margin: 18px 0 6px; letter-spacing: -.02em; }
+  .legal .upd { color: var(--muted); font-size: .88rem; margin-bottom: 8px; }
+  .legal h2 { margin: 30px 0 8px; font-size: 1.2rem; }
+  .legal p, .legal li { color: #3f4139; font-size: 1rem; line-height: 1.65; }
+  .legal ul { margin: 6px 0 6px 20px; }
+  .legal li { margin: 4px 0; }
+  .legal .note { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-top: 28px; color: var(--ink-soft, #54574e); font-size: .92rem; }
+`;
+
+function contactLine(contactEmail: string): string {
+  return contactEmail
+    ? `email us at <a href="mailto:${contactEmail}">${contactEmail}</a>`
+    : `reach us through the account you signed up with in your <a href="/dashboard">dashboard</a>`;
+}
+
+const UPDATED = "21 July 2026";
+
+export function privacyPage(contactEmail = ""): string {
+  const body = `<article class="legal">
+    <a class="back" href="/">&larr; Back to Stampy</a>
+    <h1>Privacy Policy</h1>
+    <p class="upd">Last updated ${UPDATED}</p>
+    <p>Stampy provides digital loyalty stamp cards that live in Apple Wallet and Google Wallet. This policy explains what we collect and why, in plain language. We follow the spirit of Malaysia&rsquo;s Personal Data Protection Act (PDPA).</p>
+
+    <h2>What we collect</h2>
+    <p><strong>From café owners</strong> — your email address, a securely hashed password (we can never see your actual password), and the card details you enter: café name, reward, colours, and any logo or banner you upload.</p>
+    <p><strong>From customers</strong> — we do <strong>not</strong> ask your customers for their name, email, or phone number, and there is no customer account. When a customer adds a loyalty card, we store only a random card ID, a short card code, the current stamp count, and the times stamps were added or a reward was claimed. On its own this cannot identify a person.</p>
+    <p><strong>Wallet platforms</strong> — Apple and Google host the card on the customer&rsquo;s own device. We send them the card&rsquo;s content and updates so the card can refresh and show notifications; their handling of that data is governed by their own privacy policies.</p>
+
+    <h2>How we use it</h2>
+    <ul>
+      <li>To run the loyalty program: issue cards, add stamps, and show the reward.</li>
+      <li>To update a customer&rsquo;s card and send loyalty notifications (a new stamp, or a &ldquo;we miss you&rdquo; message) through their wallet.</li>
+      <li>To show café owners their own metrics (how many cards, stamps, and rewards).</li>
+    </ul>
+    <p>We do <strong>not</strong> sell your data or your customers&rsquo; data, and we don&rsquo;t use it for advertising.</p>
+
+    <h2>Where it&rsquo;s stored</h2>
+    <p>Data is held in a managed PostgreSQL database on our hosting provider (Railway) and transmitted over encrypted (HTTPS) connections. Passwords are one-way hashed and never stored in readable form.</p>
+
+    <h2>How long we keep it</h2>
+    <p>We keep data for as long as the café account is active. Close your account or ask us to delete it, and we remove your café&rsquo;s data.</p>
+
+    <h2>Your rights (PDPA)</h2>
+    <p>You may ask to access, correct, or delete the personal data we hold, or withdraw consent. To make a request, ${contactLine(contactEmail)}.</p>
+
+    <h2>Changes</h2>
+    <p>We may update this policy as the product grows. We&rsquo;ll change the date above when we do.</p>
+
+    <div class="note">Stampy is in beta. This policy is a plain-language starting point, not legal advice — please have it reviewed by a professional before relying on it at scale.</div>
+  </article>`;
+  return page("Stampy — Privacy Policy", body, legalCss);
+}
+
+export function termsPage(contactEmail = ""): string {
+  const body = `<article class="legal">
+    <a class="back" href="/">&larr; Back to Stampy</a>
+    <h1>Terms of Service</h1>
+    <p class="upd">Last updated ${UPDATED}</p>
+    <p>These terms cover your use of Stampy. By creating an account you agree to them.</p>
+
+    <h2>Beta service</h2>
+    <p>Stampy is currently in beta and free to use. It&rsquo;s provided &ldquo;as is,&rdquo; without warranties of uptime or availability, while we finish building and testing. Features may change or pause during this period.</p>
+
+    <h2>Your account</h2>
+    <ul>
+      <li>Keep your login and your café&rsquo;s staff PIN secure — you&rsquo;re responsible for activity under them.</li>
+      <li>Give accurate information when you sign up.</li>
+    </ul>
+
+    <h2>Acceptable use</h2>
+    <ul>
+      <li>Use Stampy only for a genuine loyalty program for your own café.</li>
+      <li>Don&rsquo;t misuse customer notifications to spam or mislead people.</li>
+      <li>Follow the laws that apply to you, including consumer and data-protection law.</li>
+    </ul>
+
+    <h2>Your customers, your relationship</h2>
+    <p>The customers who join your card are yours. Stampy processes their card data on your behalf to run the program; we don&rsquo;t market to them or take them elsewhere.</p>
+
+    <h2>Liability</h2>
+    <p>To the extent permitted by law, Stampy isn&rsquo;t liable for indirect or consequential losses arising from use of a beta service. Nothing here limits rights that can&rsquo;t be limited under Malaysian law.</p>
+
+    <h2>Ending it</h2>
+    <p>You can stop using Stampy and ask us to delete your account at any time. We may suspend accounts that break these terms.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about these terms? ${contactLine(contactEmail)}.</p>
+
+    <div class="note">Stampy is in beta. These terms are a plain-language starting point, not legal advice — please have them reviewed by a professional before relying on them at scale.</div>
+  </article>`;
+  return page("Stampy — Terms of Service", body, legalCss);
 }
 
 // ---------------------------------------------------------------- staff ----
@@ -595,6 +696,11 @@ export function staffPage(): string {
         headers: { "Content-Type": "application/json", "x-staff-pin": pin,
                    "x-cafe-id": cafeId, ...(opts.headers||{}) },
       });
+      if (res.status === 429) {
+        const b = await res.json().catch(() => ({}));
+        toast("Too many attempts — try again in " + (b.retryAfterSeconds || 60) + "s");
+        throw new Error("rate");
+      }
       if (res.status === 401) { localStorage.removeItem("staffPin:" + cafeId); pin = ""; render(); throw new Error("pin"); }
       return res.json();
     }
@@ -921,7 +1027,8 @@ export function dashboardPage(): string {
         <label>Password\${mode === "signup" ? " (min 8 characters)" : ""}</label>
         <input id="pw" type="password" autocomplete="\${mode === "signup" ? "new-password" : "current-password"}">
         <label class="eye"><input type="checkbox" data-eye="#pw"> Show password</label>
-        <button class="btn btn-dark" style="margin-top:14px" id="go">\${mode === "signup" ? "Create account" : "Log in"}</button>
+        \${mode === "signup" ? '<label class="eye" style="margin-top:12px"><input type="checkbox" id="agree"> I agree to the <a href="/terms" target="_blank">Terms</a>&nbsp;&amp;&nbsp;<a href="/privacy" target="_blank">Privacy Policy</a></label>' : ""}
+        <button class="btn btn-dark" style="margin-top:14px" id="go"\${mode === "signup" ? " disabled" : ""}>\${mode === "signup" ? "Create account" : "Log in"}</button>
         \${mode === "login" ? '<p class="muted" style="margin-top:12px;text-align:center"><a href="#" id="forgot">Forgot password?</a></p><div id="forgotbox" style="display:none"><label>Your account email</label><input id="fmail" type="email"><button class="btn btn-ghost" style="margin-top:8px" id="fsend">Send reset link</button></div>' : ""}
         <p class="muted" style="margin-top:14px;text-align:center">
           \${mode === "signup"
@@ -930,6 +1037,11 @@ export function dashboardPage(): string {
         </p>\`;
       wireEyes(document);
       $("#switch").onclick = (e) => { e.preventDefault(); authForm(mode === "signup" ? "login" : "signup"); };
+      if (mode === "signup") {
+        // Consent gates account creation.
+        const ag = $("#agree");
+        ag.onchange = () => { $("#go").disabled = !ag.checked; };
+      }
       if (mode === "login") {
         $("#forgot").onclick = (e) => { e.preventDefault(); const b = $("#forgotbox"); b.style.display = b.style.display === "none" ? "block" : "none"; };
         $("#fsend").onclick = async () => {
@@ -945,6 +1057,7 @@ export function dashboardPage(): string {
         if (mode === "signup") payload.cafeName = $("#cafename").value.trim();
         const { status, body } = await api("/" + mode, { method: "POST", body: JSON.stringify(payload) });
         if (body.ok) location.reload();
+        else if (status === 429) toast("Too many attempts — try again in " + (body.retryAfterSeconds || 60) + "s.");
         else toast(body.error === "email-taken" ? "That email already has an account — log in instead."
                  : body.error || ("Failed (" + status + ")"));
       };
@@ -1010,6 +1123,17 @@ export function dashboardPage(): string {
           <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
         </div>
         <label>Staff PIN <span class="muted">(staff type this to unlock the stamper)</span></label><input data-f="staffPin" value="\${c.staffPin}">
+
+        <label style="margin-top:16px">Automatic win-back <span class="muted">(bring quiet customers back on their own)</span></label>
+        <label class="eye"><input type="checkbox" data-wb="on" \${c.autoWinbackEnabled ? "checked" : ""}> Automatically nudge customers who go quiet</label>
+        <div data-wbfields style="\${c.autoWinbackEnabled ? "" : "display:none"}">
+          <label>Nudge after this many days with no stamp</label>
+          <input data-wb="days" type="number" min="1" max="365" value="\${c.autoWinbackDays}">
+          <label>Message</label>
+          <input data-wb="msg" maxlength="200" value="\${(c.autoWinbackMessage || "").replace(/"/g, "&quot;")}">
+          <p class="muted" style="margin-top:6px">Runs by itself. Each customer is nudged at most once per period, and Google caps messages at 3 per card per day.</p>
+        </div>
+
         <button class="btn btn-dark" style="margin-top:14px" data-a="save">Save changes</button>
         <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward. Sharing links live in the <strong>Share</strong> tab.</p>\`;
 
@@ -1144,11 +1268,18 @@ export function dashboardPage(): string {
         btpl.appendChild(bt);
       }
 
+      // Auto win-back: reveal the detail fields only when the toggle is on.
+      const wbOn = q("[data-wb=on]");
+      wbOn.addEventListener("change", () => { q("[data-wbfields]").style.display = wbOn.checked ? "" : "none"; });
+
       q("[data-a=save]").onclick = async () => {
         const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
           name: f("name").value, reward: f("reward").value,
           stampsTarget: Number(f("stampsTarget").value), stampsStart: Number(f("stampsStart").value),
           staffPin: f("staffPin").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value,
+          autoWinbackEnabled: q("[data-wb=on]").checked,
+          autoWinbackDays: Number(q("[data-wb=days]").value),
+          autoWinbackMessage: q("[data-wb=msg]").value,
         })});
         if (body.ok) {
           c.name = f("name").value; toast("Saved ✓");
