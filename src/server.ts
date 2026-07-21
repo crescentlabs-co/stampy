@@ -22,7 +22,10 @@ const app = express();
 app.set("trust proxy", true);
 // 600kb: room for a base64-encoded café logo (≤256KB binary → ~342KB JSON);
 // everything else stays tiny. Express still hard-rejects bodies beyond this.
-app.use(express.json({ limit: "600kb" }));
+// 2mb covers a full set of rendered stamp-grid strips (one PNG per count, up to
+// ~31) in one transactional POST; logo/banner uploads are far smaller. All
+// mutation routes are auth-gated + rate-limited, so the larger cap is low-risk.
+app.use(express.json({ limit: "2mb" }));
 
 // Static assets (self-hosted fonts + their stylesheet). Long-cached; these are
 // public, content-hashed-by-name files — no secrets.

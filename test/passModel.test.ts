@@ -17,6 +17,7 @@ function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
     auto_winback_enabled: false,
     auto_winback_days: 14,
     auto_winback_message: "We miss you!",
+    stamp_style: "",
     ...overrides,
   };
 }

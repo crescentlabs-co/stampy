@@ -10,7 +10,13 @@
  */
 import jwt from "jsonwebtoken";
 import { config, setupStatus } from "./config.js";
-import { cafeBannerVersion, cafeLogoVersion, type CafeRow, type PassRow } from "./db.js";
+import {
+  cafeBannerVersion,
+  cafeLogoVersion,
+  stampStripsVersion,
+  type CafeRow,
+  type PassRow,
+} from "./db.js";
 import {
   buildLoyaltyClass,
   buildLoyaltyObject,
@@ -136,7 +142,8 @@ export async function ensureClass(cafe: CafeRow): Promise<GoogleResult> {
 export async function createObject(row: PassRow, cafe: CafeRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const obj = buildLoyaltyObject(row, cafe);
+    const stripsV = await stampStripsVersion(cafe.id).catch(() => 0);
+    const obj = buildLoyaltyObject(row, cafe, stripsV);
     const inserted = await api("POST", "/loyaltyObject", obj);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyObject/${obj.id as string}`, obj));
@@ -165,8 +172,9 @@ export function saveJwtUrl(row: PassRow, cafe: CafeRow): string | null {
 export async function patchBalance(row: PassRow, cafe: CafeRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
+    const stripsV = await stampStripsVersion(cafe.id).catch(() => 0);
     const obj = {
-      ...buildLoyaltyObject(row, cafe),
+      ...buildLoyaltyObject(row, cafe, stripsV),
       notifyPreference: "NOTIFY_ON_UPDATE",
     };
     return toResult(await api("PATCH", `/loyaltyObject/${objectId(row)}`, obj));

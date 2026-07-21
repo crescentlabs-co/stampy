@@ -1116,6 +1116,13 @@ export function dashboardPage(): string {
           <button class="btn btn-ghost" data-a="rmbanner" style="\${c.bannerVersion ? "" : "display:none"}">Remove banner</button>
         </div>
 
+        <label style="margin-top:12px">Stamp style <span class="muted">(big stamps that fill in — replaces the small dots)</span></label>
+        <div class="bantpl" data-stamptpl></div>
+        <div class="logorow" style="margin-top:8px">
+          <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmstamp" style="\${c.stampsVersion ? "" : "display:none"}">Use plain dots</button>
+        </div>
+
         <label style="margin-top:12px">Card name</label><input data-f="name" value="\${c.name}">
         <label>Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2">
@@ -1140,6 +1147,51 @@ export function dashboardPage(): string {
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
 
+      // ---- Rich stamp grid engine (declared before renderPreview, which uses it) ----
+      // Big stamps that fill in (like a real punch card), rendered in the browser
+      // and stored server-side. Apple uses them as the strip image, Google as the
+      // hero image. Emoji glyphs bake in this device's emoji look.
+      let stampStyle = c.stampStyle || "";  // '' = plain dots, 'custom' = uploaded
+      let customStampUrl = null;             // dataURL of an uploaded stamp icon
+      const stampImg = new Image();          // holds that uploaded icon for drawing
+
+      // Draws the stamp grid for filled/target onto a wide strip → dataURL.
+      // Filled cells show the icon; empty cells show a faint "hole" of it.
+      function drawStampStrip(filled, target, icon) {
+        const W = 1032, H = 336;
+        const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+        const x = cv.getContext("2d");
+        x.fillStyle = f("bg").value; x.fillRect(0, 0, W, H); // strip sits on the card colour
+        const cols = Math.min(target, 5), rows = Math.ceil(target / 5);
+        const padX = 40, padY = 30;
+        const cw = (W - padX * 2) / cols, ch = (H - padY * 2) / rows;
+        const r = Math.min(cw, ch) * 0.34;
+        for (let i = 0; i < target; i++) {
+          const col = i % cols, rowN = Math.floor(i / cols);
+          const cx = padX + cw * col + cw / 2, cy = padY + ch * rowN + ch / 2;
+          const on = i < filled;
+          const customReady = customStampUrl && stampImg.complete && stampImg.naturalWidth > 0;
+          if (icon === "custom" && customReady) {
+            const s = r * 2;
+            x.globalAlpha = on ? 1 : .22;
+            x.drawImage(stampImg, cx - s / 2, cy - s / 2, s, s);
+            x.globalAlpha = 1;
+          } else if (icon === "dot" || icon === "custom") {
+            // "dot" style, or a custom stamp whose source isn't in memory (e.g.
+            // after a reload) — draw a clean filled/outlined circle either way.
+            x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2);
+            if (on) { x.fillStyle = f("label").value; x.fill(); }
+            else { x.strokeStyle = f("label").value; x.globalAlpha = .4; x.lineWidth = 4; x.stroke(); x.globalAlpha = 1; }
+          } else {
+            x.font = (r * 1.9) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle";
+            x.globalAlpha = on ? 1 : .2;
+            x.fillText(icon, cx, cy);
+            x.globalAlpha = 1;
+          }
+        }
+        return cv.toDataURL("image/png");
+      }
+
       // banner preview
       if (c.bannerVersion) {
         const b = q("[data-pv-banner]");
@@ -1155,9 +1207,19 @@ export function dashboardPage(): string {
         pv.style.color = f("fg").value;
         q("[data-pv-name]").textContent = f("name").value || "Your card";
         q("[data-pv-progress]").textContent = start + "/" + target;
-        q("[data-pv-dots]").textContent = "●".repeat(start) + "○".repeat(target - start);
         q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
         for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
+        // When a rich stamp style is active, show the rendered grid in the strip
+        // (it shares the slot with the banner — stamps win, matching the card).
+        const dots = q("[data-pv-dots]"), banner = q("[data-pv-banner]");
+        if (stampStyle) {
+          dots.style.display = "none";
+          banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
+          banner.classList.add("on");
+        } else {
+          dots.style.display = "";
+          dots.textContent = "●".repeat(start) + "○".repeat(target - start);
+        }
       }
       for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
       renderPreview();
@@ -1268,6 +1330,44 @@ export function dashboardPage(): string {
         btpl.appendChild(bt);
       }
 
+      const STAMP_ICONS = [
+        { name: "Dot", icon: "dot" }, { name: "Coffee", icon: "☕" },
+        { name: "Paw", icon: "🐾" }, { name: "Star", icon: "⭐" },
+        { name: "Heart", icon: "❤️" }, { name: "Donut", icon: "🍩" },
+        { name: "Boba", icon: "🧋" }, { name: "Croissant", icon: "🥐" },
+        { name: "Chicken", icon: "🍗" }, { name: "Flower", icon: "🌸" },
+      ];
+
+      // Renders the full 0..target set and stores it (immediate, like banners).
+      async function applyStamps(style) {
+        stampStyle = style;
+        const target = Math.max(1, Math.min(30, Number(f("stampsTarget").value) || 10));
+        const strips = [];
+        for (let n = 0; n <= target; n++) strips.push({ filled: n, png: drawStampStrip(n, target, style).split(",")[1] });
+        const { body } = await api("/cafe/" + c.id + "/stamps", { method: "POST", body: JSON.stringify({ style, strips }) });
+        if (!body.ok) return toast(body.error || "Couldn't save stamps");
+        q("[data-a=rmstamp]").style.display = "";
+        renderPreview(); toast("Stamp style saved ✓");
+      }
+
+      const stpl = q("[data-stamptpl]");
+      for (const t of STAMP_ICONS) {
+        const bt = document.createElement("div"); bt.className = "bt"; bt.title = t.name;
+        bt.style.backgroundImage = "url(" + drawStampStrip(Math.ceil((Number(f("stampsTarget").value) || 10) / 2), Number(f("stampsTarget").value) || 10, t.icon) + ")";
+        bt.innerHTML = "<span>" + t.name + "</span>";
+        bt.onclick = () => applyStamps(t.icon);
+        stpl.appendChild(bt);
+      }
+      // Upload your own stamp icon → normalise to a small square PNG → apply.
+      wireUpload("[data-stampimg]", null, 160, 160, (dataUrl) => {
+        customStampUrl = dataUrl; stampImg.src = dataUrl;
+        stampImg.onload = () => applyStamps("custom");
+      });
+      q("[data-a=rmstamp]").onclick = async () => {
+        const { body } = await api("/cafe/" + c.id + "/stamps", { method: "DELETE" });
+        if (body.ok) { stampStyle = ""; q("[data-a=rmstamp]").style.display = "none"; renderPreview(); toast("Back to plain dots"); }
+      };
+
       // Auto win-back: reveal the detail fields only when the toggle is on.
       const wbOn = q("[data-wb=on]");
       wbOn.addEventListener("change", () => { q("[data-wbfields]").style.display = wbOn.checked ? "" : "none"; });
@@ -1283,6 +1383,8 @@ export function dashboardPage(): string {
         })});
         if (body.ok) {
           c.name = f("name").value; toast("Saved ✓");
+          // Re-render stamp strips too, so colour/target changes reach the card.
+          if (stampStyle) await applyStamps(stampStyle);
           // keep the card-picker chip labels in sync without resetting the form
           const pk = document.querySelector("[data-pick]");
           if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cafes[Number(b.dataset.ci)].name; });
@@ -1477,6 +1579,7 @@ export function dashboardPage(): string {
         <p style="font-weight:600;margin-bottom:6px">\${S.email}</p>
         <label style="margin-top:10px">Change password</label>
         <input data-cur type="password" placeholder="Current password" autocomplete="current-password">
+        <label class="eye"><input type="checkbox" data-eye="[data-cur]"> Show current password</label>
         <input data-new type="password" placeholder="New password (min 8)" autocomplete="new-password" style="margin-top:8px">
         <label class="eye"><input type="checkbox" data-eye="[data-new]"> Show new password</label>
         <button class="btn btn-dark" style="margin-top:10px" data-pwsave>Update password</button>

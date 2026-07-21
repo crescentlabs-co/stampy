@@ -27,6 +27,7 @@ function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
     auto_winback_enabled: false,
     auto_winback_days: 14,
     auto_winback_message: "We miss you!",
+    stamp_style: "",
     ...overrides,
   };
 }
@@ -117,6 +118,13 @@ describe("buildLoyaltyObject", () => {
     expect(without.textModulesData.find((t: any) => t.id === "message")).toBeUndefined();
     const withMsg = buildLoyaltyObject(row({ message: "We miss you!" }), cafe()) as any;
     expect(withMsg.textModulesData.find((t: any) => t.id === "message").body).toBe("We miss you!");
+  });
+
+  it("adds a hero image pointing at the current-count stamp strip only when strips exist", () => {
+    const none = buildLoyaltyObject(row({ stamp_count: 3 }), cafe(), 0) as any;
+    expect(none.heroImage).toBeUndefined(); // 0 version = no rendered grid
+    const withStrips = buildLoyaltyObject(row({ stamp_count: 3 }), cafe(), 1720000000000) as any;
+    expect(withStrips.heroImage.sourceUri.uri).toContain("/art/stamps/3.png?v=1720000000000");
   });
 });
 

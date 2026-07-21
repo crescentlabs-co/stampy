@@ -34,12 +34,17 @@ export class NotConfiguredError extends Error {}
  * certs exist. When the café has an uploaded logo (`logoPng`), it replaces the
  * bundled default artwork in every slot — Wallet scales each to fit, so one
  * canvas-normalised square PNG covers icon and logo alike.
+ *
+ * The single `strip` image slot is shared: a rich rendered stamp grid
+ * (`stampStripPng`, one per stamp count) wins over a plain banner (`bannerPng`)
+ * because the stamp renderer already composites the banner in as its backdrop.
  */
 export function buildPkpass(
   row: PassRow,
   cafe: CafeRow,
   logoPng?: Buffer | null,
   bannerPng?: Buffer | null,
+  stampStripPng?: Buffer | null,
 ): Buffer {
   if (!setupStatus().canSignPasses) {
     throw new NotConfiguredError(
@@ -51,10 +56,12 @@ export function buildPkpass(
   if (logoPng) {
     for (const slot of Object.keys(art)) art[slot] = logoPng;
   }
-  // A banner shows as the storeCard "strip" image behind the top fields.
-  if (bannerPng) {
-    art["strip.png"] = bannerPng;
-    art["strip@2x.png"] = bannerPng;
+  // The storeCard "strip" image behind the top fields: the rendered stamp grid
+  // takes priority over the banner (both can't share the one slot).
+  const strip = stampStripPng ?? bannerPng;
+  if (strip) {
+    art["strip.png"] = strip;
+    art["strip@2x.png"] = strip;
   }
 
   const pass = new PKPass(

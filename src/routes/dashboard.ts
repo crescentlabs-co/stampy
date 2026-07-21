@@ -36,6 +36,7 @@ import {
   DEFAULT_CAFE_ID,
   deleteCafeBanner,
   deleteCafeLogo,
+  deleteStampStrips,
   getCafe,
   getOwner,
   getOwnerByEmail,
@@ -47,6 +48,8 @@ import {
   setCafeLogo,
   setMessage,
   setResetToken,
+  setStampStrips,
+  stampStripsVersion,
   updateCafe,
   updateOwnerPassword,
   type CafeRow,
@@ -235,9 +238,10 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   const cafes = await cafesForOwner(req.owner!.id);
   const out = [];
   for (const cafe of cafes) {
-    const [logoVersion, bannerVersion] = await Promise.all([
+    const [logoVersion, bannerVersion, stampsVersion] = await Promise.all([
       cafeLogoVersion(cafe.id),
       cafeBannerVersion(cafe.id),
+      stampStripsVersion(cafe.id),
     ]);
     out.push({
       id: cafe.id,
@@ -252,6 +256,8 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       label: rgbToHex(cafe.label_color),
       logoVersion, // 0 = no upload; used to cache-bust the preview image
       bannerVersion,
+      stampStyle: cafe.stamp_style,
+      stampsVersion, // 0 = no rendered stamp grid (plain text dots)
       autoWinbackEnabled: cafe.auto_winback_enabled,
       autoWinbackDays: cafe.auto_winback_days,
       autoWinbackMessage: cafe.auto_winback_message,
@@ -383,6 +389,51 @@ dashboardRouter.delete("/api/cafe/:id/banner", requireOwner, async (req: OwnerRe
     return void res.status(403).json({ error: "not-your-cafe" });
   }
   await deleteCafeBanner(cafeId);
+  await syncGoogle(cafeId);
+  res.json({ ok: true });
+});
+
+/**
+ * Rich stamp grid. The dashboard renders one strip PNG per stamp count in the
+ * browser (canvas) and posts the whole set here. `style` records which preset
+ * icon is selected (for restoring the designer); the PNGs are what the card
+ * shows. Stored transactionally so a card never has a half-updated grid.
+ */
+dashboardRouter.post("/api/cafe/:id/stamps", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  const { style, strips } = (req.body ?? {}) as {
+    style?: string;
+    strips?: { filled?: number; png?: string }[];
+  };
+  if (!Array.isArray(strips) || strips.length === 0) {
+    return void res.status(400).json({ error: "missing-strips" });
+  }
+  const decoded: { filled: number; png: Buffer }[] = [];
+  for (const s of strips) {
+    if (typeof s?.png !== "string" || typeof s?.filled !== "number") {
+      return void res.status(400).json({ error: "bad-strip" });
+    }
+    const bytes = Buffer.from(s.png, "base64");
+    const reject = validateLogoPng(bytes); // same magic-byte + size guard
+    if (reject) return void res.status(400).json({ error: reject });
+    decoded.push({ filled: Math.trunc(s.filled), png: bytes });
+  }
+  await setStampStrips(cafeId, decoded);
+  await updateCafe(cafeId, { stamp_style: (style ?? "").slice(0, 40) });
+  await syncGoogle(cafeId); // refresh the Google hero image (version-stamped)
+  res.json({ ok: true });
+});
+
+dashboardRouter.delete("/api/cafe/:id/stamps", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  await deleteStampStrips(cafeId);
+  await updateCafe(cafeId, { stamp_style: "" });
   await syncGoogle(cafeId);
   res.json({ ok: true });
 });

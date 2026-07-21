@@ -62,9 +62,20 @@ export function buildLoyaltyClass(
   return cls;
 }
 
-export function buildLoyaltyObject(row: PassRow, cafe: CafeRow): Record<string, unknown> {
+/**
+ * @param stampStripsVersion 0 ⇒ café has no rendered stamp grid (keep points +
+ *   dots only); >0 ⇒ show the grid for the current count as the hero image
+ *   (the version busts Google's cache so the image swaps on each stamp).
+ */
+export function buildLoyaltyObject(
+  row: PassRow,
+  cafe: CafeRow,
+  stampStripsVersion = 0,
+): Record<string, unknown> {
   const ready = isRewardReady(row);
-  return {
+  const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
+  const base = cafe.id === DEFAULT_CAFE_ID ? "" : `/c/${cafe.id}`;
+  const obj: Record<string, unknown> = {
     id: objectId(row),
     classId: classId(cafe),
     state: "ACTIVE",
@@ -95,6 +106,15 @@ export function buildLoyaltyObject(row: PassRow, cafe: CafeRow): Record<string, 
       ...(row.message ? [{ id: "message", header: cafe.name, body: row.message }] : []),
     ],
   };
+  if (stampStripsVersion) {
+    obj.heroImage = {
+      sourceUri: { uri: `${config.baseUrl}${base}/art/stamps/${filled}.png?v=${stampStripsVersion}` },
+      contentDescription: {
+        defaultValue: { language: "en", value: `${cafe.name} stamps: ${row.stamp_count} of ${row.stamps_target}` },
+      },
+    };
+  }
+  return obj;
 }
 
 /**

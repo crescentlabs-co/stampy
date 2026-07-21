@@ -34,6 +34,8 @@ export interface CafeRow {
   auto_winback_enabled: boolean;
   auto_winback_days: number;
   auto_winback_message: string;
+  /** Which stamp-grid icon preset is selected ('' = plain text dots, 'custom' = uploaded). */
+  stamp_style: string;
 }
 
 export interface OwnerRow {
@@ -176,6 +178,17 @@ export async function migrate(): Promise<void> {
     ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_enabled boolean NOT NULL DEFAULT false;
     ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_days integer NOT NULL DEFAULT 14;
     ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_message text NOT NULL DEFAULT 'We miss you! Your next stamp is waiting ☕️';
+    -- v1.0: rich rendered stamp grid. The owner's browser renders one strip PNG
+    -- per stamp count (0..target); Apple uses it as the strip image, Google as
+    -- the hero image. Bytes live in Postgres (ephemeral disk) keyed by count.
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS stamp_style text NOT NULL DEFAULT '';
+    CREATE TABLE IF NOT EXISTS cafe_stamp_strips (
+      cafe_id    text NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
+      filled     integer NOT NULL,
+      png        bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (cafe_id, filled)
+    );
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -240,6 +253,7 @@ export async function updateCafe(
     auto_winback_enabled: boolean;
     auto_winback_days: number;
     auto_winback_message: string;
+    stamp_style: string;
   }>,
 ): Promise<CafeRow | null> {
   const keys = Object.keys(fields) as (keyof typeof fields)[];
@@ -314,6 +328,63 @@ export async function cafeBannerVersion(cafeId: string): Promise<number> {
   );
   const row = res.rows[0];
   return row ? new Date(row.updated_at).getTime() : 0;
+}
+
+// ---- stamp strips: one rendered PNG per stamp count (rich stamp grid) ----
+
+/** The strip for a given filled count, clamped by the caller. null ⇒ fall back to text dots. */
+export async function getStampStrip(cafeId: string, filled: number): Promise<{ png: Buffer } | null> {
+  const res = await getPool().query<{ png: Buffer }>(
+    `SELECT png FROM cafe_stamp_strips WHERE cafe_id = $1 AND filled = $2`,
+    [cafeId, filled],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Replaces the whole set of strips for a café in one transaction (all counts change together). */
+export async function setStampStrips(
+  cafeId: string,
+  strips: { filled: number; png: Buffer }[],
+): Promise<void> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM cafe_stamp_strips WHERE cafe_id = $1`, [cafeId]);
+    for (const s of strips) {
+      await client.query(
+        `INSERT INTO cafe_stamp_strips (cafe_id, filled, png, updated_at) VALUES ($1, $2, $3, now())`,
+        [cafeId, s.filled, s.png],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteStampStrips(cafeId: string): Promise<void> {
+  await getPool().query(`DELETE FROM cafe_stamp_strips WHERE cafe_id = $1`, [cafeId]);
+}
+
+export async function hasStampStrips(cafeId: string): Promise<boolean> {
+  const res = await getPool().query(
+    `SELECT 1 FROM cafe_stamp_strips WHERE cafe_id = $1 LIMIT 1`,
+    [cafeId],
+  );
+  return res.rowCount! > 0;
+}
+
+/** Max updated_at epoch across a café's strips — feeds Google's ?v= cache-buster. */
+export async function stampStripsVersion(cafeId: string): Promise<number> {
+  const res = await getPool().query<{ updated_at: Date }>(
+    `SELECT max(updated_at) AS updated_at FROM cafe_stamp_strips WHERE cafe_id = $1`,
+    [cafeId],
+  );
+  const row = res.rows[0];
+  return row?.updated_at ? new Date(row.updated_at).getTime() : 0;
 }
 
 // ------------------------------------------------------- customers / win-back ----

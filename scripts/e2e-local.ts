@@ -331,6 +331,33 @@ async function main() {
   const rmBanner = await fetch(base + "/dashboard/api/cafe/default/banner", { method: "DELETE", headers: { cookie } });
   expect(rmBanner.status === 200 && (await get("/art/banner.png")).status === 404, "banner delete reverts to none");
 
+  // --- Rich stamp grid: one strip PNG per count (Apple strip / Google hero) ---
+  expect((await get("/art/stamps/2.png")).status === 404, "no stamp grid → strip 404 (falls back to text dots)");
+  const stampUp = await fetch(base + "/dashboard/api/cafe/default/stamps", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ style: "☕", strips: [
+      { filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }, { filled: 2, png: pngB64 },
+    ] }),
+  });
+  expect(stampUp.status === 200, "stamp-grid upload accepted");
+  const servedStrip = Buffer.from(await (await fetch(base + "/art/stamps/1.png")).arrayBuffer());
+  expect(servedStrip.equals(Buffer.from(pngB64, "base64")), "uploaded strip bytes served back at /art/stamps/1.png");
+  const ovStamp = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  const dfltStamp = ovStamp.cafes.find((c: any) => c.id === "default");
+  expect(dfltStamp.stampStyle === "☕" && dfltStamp.stampsVersion > 0, "overview reports stamp style + version");
+  const badStamp = await fetch(base + "/dashboard/api/cafe/default/stamps", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ style: "x", strips: [{ filled: 0, png: "bm90LWEtcG5n" }] }),
+  });
+  expect(badStamp.status === 400, "non-PNG strip rejected");
+  const noAuthStamp = await fetch(base + "/dashboard/api/cafe/default/stamps", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ style: "x", strips: [{ filled: 0, png: pngB64 }] }),
+  });
+  expect(noAuthStamp.status === 401, "stamp-grid upload requires owner login");
+  const rmStamp = await fetch(base + "/dashboard/api/cafe/default/stamps", { method: "DELETE", headers: { cookie } });
+  expect(rmStamp.status === 200 && (await get("/art/stamps/1.png")).status === 404, "stamp-grid delete reverts to text dots");
+
   // --- Change password (verifies current, then updates) ---
   const chWrong = await fetch(base + "/dashboard/api/change-password", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },

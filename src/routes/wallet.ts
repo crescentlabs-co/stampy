@@ -18,6 +18,7 @@ import {
   getCafeBanner,
   getCafeLogo,
   getPass,
+  getStampStrip,
   serialsUpdatedSince,
   upsertRegistration,
   type PassRow,
@@ -84,11 +85,13 @@ walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
   const cafe = await getCafe(row.cafe_id);
   if (!cafe) return void res.status(500).end();
   try {
-    const [logo, banner] = await Promise.all([
+    const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
+    const [logo, banner, strip] = await Promise.all([
       getCafeLogo(cafe.id).catch(() => null),
       getCafeBanner(cafe.id).catch(() => null),
+      getStampStrip(cafe.id, filled).catch(() => null),
     ]);
-    const pkpass = buildPkpass(row, cafe, logo?.png, banner?.png);
+    const pkpass = buildPkpass(row, cafe, logo?.png, banner?.png, strip?.png);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")

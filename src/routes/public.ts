@@ -24,6 +24,7 @@ import {
   getCafe,
   getCafeBanner,
   getCafeLogo,
+  getStampStrip,
   logEvent,
   type CafeRow,
   type Platform,
@@ -77,11 +78,13 @@ async function enroll(cafeId: string, res: import("express").Response): Promise<
 
   const row = await newPass(cafe, "apple");
   try {
-    const [logo, banner] = await Promise.all([
+    const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
+    const [logo, banner, strip] = await Promise.all([
       getCafeLogo(cafe.id).catch(() => null),
       getCafeBanner(cafe.id).catch(() => null),
+      getStampStrip(cafe.id, filled).catch(() => null),
     ]);
-    const pkpass = buildPkpass(row, cafe, logo?.png, banner?.png);
+    const pkpass = buildPkpass(row, cafe, logo?.png, banner?.png, strip?.png);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")
@@ -177,3 +180,17 @@ async function serveBanner(cafeId: string, res: import("express").Response): Pro
 
 publicRouter.get("/art/banner.png", (_req, res) => serveBanner(DEFAULT_CAFE_ID, res));
 publicRouter.get("/c/:cafeId/art/banner.png", (req, res) => serveBanner(req.params.cafeId!, res));
+
+// Rendered stamp-grid strip for a given filled count — Google fetches this as
+// the hero image (Apple embeds the bytes directly). 404 when the café hasn't
+// set a stamp style (Google only references it when strips exist).
+async function serveStampStrip(cafeId: string, filled: number, res: import("express").Response): Promise<void> {
+  const strip = await getStampStrip(cafeId, filled).catch(() => null);
+  if (!strip) return void res.status(404).end();
+  res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(strip.png);
+}
+
+publicRouter.get("/art/stamps/:filled.png", (req, res) =>
+  serveStampStrip(DEFAULT_CAFE_ID, Number(req.params.filled) || 0, res));
+publicRouter.get("/c/:cafeId/art/stamps/:filled.png", (req, res) =>
+  serveStampStrip(req.params.cafeId!, Number(req.params.filled) || 0, res));
