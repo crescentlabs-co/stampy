@@ -1102,6 +1102,9 @@ export function dashboardPage(): string {
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
 
+        <label style="margin-top:6px">Start from a template <span class="muted">(sets colours, banner, stamps & reward for your kind of shop)</span></label>
+        <div class="bantpl" data-vtpl></div>
+
         <label style="margin-top:12px">Pick a theme <span class="muted">(a good-looking colour set in one tap)</span></label>
         <div class="presets" data-presets></div>
 
@@ -1377,6 +1380,39 @@ export function dashboardPage(): string {
         const { body } = await api("/cafe/" + c.id + "/stamps", { method: "DELETE" });
         if (body.ok) { stampStyle = ""; q("[data-a=rmstamp]").style.display = "none"; renderPreview(); toast("Back to plain dots"); }
       };
+
+      // ---- Vertical templates: one tap sets a coordinated whole-card design ----
+      const VERTICALS = [
+        { name: "Coffee",      emoji: "☕", bg: "#3b2016", fg: "#fffaf0", label: "#d6b278", banner: "gradient", icon: "☕", reward: "Free coffee" },
+        { name: "Chicken rice", emoji: "🍗", bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f", banner: "diagonal", icon: "🍗", reward: "Free plate" },
+        { name: "Bubble tea",  emoji: "🧋", bg: "#38265e", fg: "#f2eefb", label: "#b9a4ec", banner: "glow",     icon: "🧋", reward: "Free drink" },
+        { name: "Bakery",      emoji: "🥐", bg: "#8a5a12", fg: "#fff8ea", label: "#ffd98a", banner: "gradient", icon: "🥐", reward: "Free pastry" },
+        { name: "Dessert",     emoji: "🍨", bg: "#7d2144", fg: "#fff0f4", label: "#f4a9c0", banner: "glow",     icon: "🍩", reward: "Free dessert" },
+        { name: "Anything",    emoji: "⭐", bg: "#1f2124", fg: "#f4f4f5", label: "#a9d0ff", banner: "waves",    icon: "⭐", reward: "Free reward" },
+      ];
+
+      // Applies the whole bundle: colours + reward (main save), banner, stamps.
+      async function applyVertical(v) {
+        f("bg").value = v.bg; f("fg").value = v.fg; f("label").value = v.label;
+        f("reward").value = v.reward;
+        renderPreview();
+        const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
+          reward: v.reward, bg: v.bg, fg: v.fg, label: v.label,
+        })});
+        if (!body.ok) return toast(body.error || "Couldn't apply template");
+        await saveBanner(drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 1032, 336));
+        await applyStamps(v.icon);
+        toast(v.name + " template applied ✓");
+      }
+
+      const vtpl = q("[data-vtpl]");
+      for (const v of VERTICALS) {
+        const bt = document.createElement("div"); bt.className = "bt"; bt.title = v.name;
+        bt.style.backgroundImage = "url(" + drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 144, 64) + ")";
+        bt.innerHTML = "<span>" + v.emoji + " " + v.name + "</span>";
+        bt.onclick = () => applyVertical(v);
+        vtpl.appendChild(bt);
+      }
 
       // Auto win-back: reveal the detail fields only when the toggle is on.
       const wbOn = q("[data-wb=on]");
