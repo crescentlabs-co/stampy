@@ -1740,6 +1740,17 @@ export function adminPage(): string {
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
     .nfc { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
     .cbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
+    .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
+    .bantpl .bt { width: 84px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+                  position: relative; overflow: hidden; background-size: cover; background-position: center;
+                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+    .bantpl .bt:hover { border-color: var(--accent); }
+    .bantpl .bt.sel { border-color: var(--accent); }
+    .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
+                       color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
+    #dfy label { display: block; margin-top: 10px; }
+    #dfy input { width: 100%; }
+    #dfy .btn { width: auto; padding: 10px 14px; margin-top: 12px; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -1747,6 +1758,69 @@ export function adminPage(): string {
       const r = await fetch("/admin/api" + p, { ...o, headers: { "Content-Type": "application/json", ...(o.headers||{}) } });
       return { status: r.status, body: await r.json().catch(() => ({})) };
     }
+
+    // ---- Client-side card renderers (same approach as the owner dashboard) ----
+    function shade(hex, p) {
+      const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
+      let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
+      return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    }
+    function drawBanner(style, c1, c2, w, h) {
+      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      const x = cv.getContext("2d");
+      if (style === "diagonal") {
+        x.fillStyle = c1; x.fillRect(0, 0, w, h);
+        x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
+      } else if (style === "glow") {
+        x.fillStyle = c1; x.fillRect(0, 0, w, h);
+        const g = x.createRadialGradient(w * .5, h * .5, 10, w * .5, h * .5, w * .6);
+        g.addColorStop(0, c2); g.addColorStop(1, c1); x.fillStyle = g; x.fillRect(0, 0, w, h);
+      } else if (style === "waves") {
+        x.fillStyle = c1; x.fillRect(0, 0, w, h); x.fillStyle = c2;
+        for (let k = 0; k < 3; k++) { x.globalAlpha = .18 + k * .12; x.beginPath(); x.moveTo(0, h * .4 + k * 34);
+          for (let px = 0; px <= w; px += 8) x.lineTo(px, h * .4 + k * 34 + Math.sin(px / 90 + k) * 26);
+          x.lineTo(w, h); x.lineTo(0, h); x.closePath(); x.fill(); } x.globalAlpha = 1;
+      } else {
+        const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, c1); g.addColorStop(1, c2);
+        x.fillStyle = g; x.fillRect(0, 0, w, h);
+      }
+      return cv.toDataURL("image/png");
+    }
+    function drawStampStrip(filled, target, icon, bg, label) {
+      const W = 1032, H = 336;
+      const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+      const x = cv.getContext("2d");
+      x.fillStyle = bg; x.fillRect(0, 0, W, H);
+      const cols = Math.min(target, 5), rows = Math.ceil(target / 5);
+      const padX = 40, padY = 30;
+      const cw = (W - padX * 2) / cols, ch = (H - padY * 2) / rows;
+      const r = Math.min(cw, ch) * 0.34;
+      for (let i = 0; i < target; i++) {
+        const col = i % cols, rowN = Math.floor(i / cols);
+        const cx = padX + cw * col + cw / 2, cy = padY + ch * rowN + ch / 2;
+        const on = i < filled;
+        if (icon === "dot") {
+          x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2);
+          if (on) { x.fillStyle = label; x.fill(); }
+          else { x.strokeStyle = label; x.globalAlpha = .4; x.lineWidth = 4; x.stroke(); x.globalAlpha = 1; }
+        } else {
+          x.font = (r * 1.9) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle";
+          x.globalAlpha = on ? 1 : .2; x.fillText(icon, cx, cy); x.globalAlpha = 1;
+        }
+      }
+      return cv.toDataURL("image/png");
+    }
+    const VERTICALS = [
+      { name: "Coffee",       emoji: "☕", bg: "#3b2016", fg: "#fffaf0", label: "#d6b278", banner: "gradient", icon: "☕", reward: "Free coffee" },
+      { name: "Chicken rice", emoji: "🍗", bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f", banner: "diagonal", icon: "🍗", reward: "Free plate" },
+      { name: "Bubble tea",   emoji: "🧋", bg: "#38265e", fg: "#f2eefb", label: "#b9a4ec", banner: "glow",     icon: "🧋", reward: "Free drink" },
+      { name: "Bakery",       emoji: "🥐", bg: "#8a5a12", fg: "#fff8ea", label: "#ffd98a", banner: "gradient", icon: "🥐", reward: "Free pastry" },
+      { name: "Dessert",      emoji: "🍨", bg: "#7d2144", fg: "#fff0f4", label: "#f4a9c0", banner: "glow",     icon: "🍩", reward: "Free dessert" },
+      { name: "Anything",     emoji: "⭐", bg: "#1f2124", fg: "#f4f4f5", label: "#a9d0ff", banner: "waves",    icon: "⭐", reward: "Free reward" },
+    ];
+    let picked = VERTICALS[0];
+
     async function load() {
       const { status, body } = await api("/overview");
       if (status === 403) {
@@ -1778,6 +1852,17 @@ export function adminPage(): string {
           \${rows}
         </table></div>
         <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>
+        <h2>Create a café (done-for-you)</h2>
+        <p class="muted">Design a card and set up the owner's account in one step. Pick their business type, and we build a matching card. They get a temp password to log in and take over.</p>
+        <div id="dfy">
+          <label>Business type</label>
+          <div class="bantpl" data-vpick></div>
+          <label>Café name</label><input id="dfy-name" placeholder="e.g. Nasi Lemak House">
+          <label>Owner email</label><input id="dfy-email" type="email" placeholder="owner@cafe.my">
+          <button class="btn btn-dark" id="dfy-create">Create café + account</button>
+        </div>
+        <div id="dfy-out"></div>
+
         <h2>Reset an owner's password</h2>
         <p class="muted">Passwords are stored scrambled and can never be viewed — this sets a NEW temporary one to hand over.</p>
         <div class="rst">
@@ -1785,6 +1870,38 @@ export function adminPage(): string {
           <button class="btn btn-dark" id="reset">Generate temp password</button>
         </div>
         <div id="tempout"></div>\`;
+
+      // Business-type swatches (click to select the design bundle).
+      const vpick = $("[data-vpick]");
+      VERTICALS.forEach((v, i) => {
+        const bt = document.createElement("div"); bt.className = "bt" + (i === 0 ? " sel" : ""); bt.title = v.name;
+        bt.style.backgroundImage = "url(" + drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 144, 64) + ")";
+        bt.innerHTML = "<span>" + v.emoji + " " + v.name + "</span>";
+        bt.onclick = () => { picked = v; vpick.querySelectorAll(".bt").forEach((x) => x.classList.remove("sel")); bt.classList.add("sel"); };
+        vpick.appendChild(bt);
+      });
+      $("#dfy-create").onclick = async () => {
+        const cafeName = $("#dfy-name").value.trim(), ownerEmail = $("#dfy-email").value.trim();
+        if (!cafeName) return void ($("#dfy-out").textContent = "Enter a café name.");
+        if (!ownerEmail.includes("@")) return void ($("#dfy-out").textContent = "Enter a valid owner email.");
+        $("#dfy-create").disabled = true; $("#dfy-out").textContent = "Creating…";
+        const strips = [];
+        for (let n = 0; n <= 10; n++) strips.push({ filled: n, png: drawStampStrip(n, 10, picked.icon, picked.bg, picked.label).split(",")[1] });
+        const banner = drawBanner(picked.banner, picked.bg, shade(picked.bg, 0.4), 1032, 336).split(",")[1];
+        const { body: r } = await api("/cafe", { method: "POST", body: JSON.stringify({
+          cafeName, ownerEmail, reward: picked.reward,
+          bg: picked.bg, fg: picked.fg, label: picked.label, stampStyle: picked.icon,
+          banner, strips,
+        })});
+        $("#dfy-create").disabled = false;
+        if (r.ok) {
+          $("#dfy-out").innerHTML = '<div class="temp">Created <strong>' + cafeName + '</strong> for <strong>' + r.ownerEmail + '</strong>.<br>Temp password: <strong>' + r.tempPassword + '</strong> — they log in at /dashboard and can change it.</div>';
+          $("#dfy-name").value = ""; $("#dfy-email").value = "";
+          setTimeout(load, 1500); // refresh the table to show the new café
+        } else {
+          $("#dfy-out").textContent = r.error === "email-taken" ? "That email already has an account." : (r.error || "Failed");
+        }
+      };
       $("#app").querySelectorAll(".cbtn").forEach((b) => {
         b.onclick = async () => {
           try { await navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; }

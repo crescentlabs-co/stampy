@@ -455,6 +455,35 @@ async function main() {
   });
   expect(loginTemp.status === 200, "the reset temp password logs the owner in");
 
+  // --- Done-for-you: admin creates a fully-designed café + owner account ---
+  const dfyForbidden = await fetch(base + "/admin/api/cafe", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieOutsider },
+    body: JSON.stringify({ cafeName: "Sneaky", ownerEmail: "x@y.my" }),
+  });
+  expect(dfyForbidden.status === 403, "a non-admin can't create a café via the admin console");
+  const dfy = await fetch(base + "/admin/api/cafe", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({
+      cafeName: "Nasi Lemak House", ownerEmail: "nasi@lemak.my", reward: "Free plate",
+      bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f", stampStyle: "🍗",
+      banner: pngB64, strips: [{ filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }],
+    }),
+  });
+  const dfyOut = JSON.parse(await dfy.text());
+  expect(dfy.status === 200 && dfyOut.cafeId && dfyOut.tempPassword, "admin creates a café + owner in one step");
+  const dfyLogin = await fetch(base + "/dashboard/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "nasi@lemak.my", password: dfyOut.tempPassword }),
+  });
+  expect(dfyLogin.status === 200, "the new owner logs in with their temp password");
+  const dfyDup = await fetch(base + "/admin/api/cafe", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ cafeName: "Dup", ownerEmail: "nasi@lemak.my" }),
+  });
+  expect(dfyDup.status === 409, "creating a café for an existing email → 409 email-taken");
+  // The created café carries its rendered stamp grid + isolation from other owners.
+  expect((await get("/c/" + dfyOut.cafeId + "/art/stamps/1.png")).status === 200, "the done-for-you café serves its rendered stamp strip");
+
   // --- Owner-level customers + nudge (span ALL of an owner's cards) ---
   const ownerCust = JSON.parse((await get("/dashboard/api/customers?cardId=all&lapsedDays=0", { headers: { cookie: cookieNow } })).body);
   expect(Array.isArray(ownerCust.customers) && ownerCust.customers.length >= 2, "owner customers span all their cards");

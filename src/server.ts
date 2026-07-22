@@ -5,8 +5,10 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { hashPassword } from "./auth.js";
 import { config, setupStatus } from "./config.js";
-import { migrate } from "./db.js";
+import { createOwner, getOwnerByEmail, migrate, updateOwnerPassword } from "./db.js";
 import { runAutoWinback } from "./winback.js";
 import { setupPage } from "./pages.js";
 import { adminRouter } from "./routes/admin.js";
@@ -20,8 +22,6 @@ const app = express();
 // trust it — otherwise req.ip is the proxy for every request and IP-keyed rate
 // limits (signup, staff PIN) would bucket the whole platform together.
 app.set("trust proxy", true);
-// 600kb: room for a base64-encoded café logo (≤256KB binary → ~342KB JSON);
-// everything else stays tiny. Express still hard-rejects bodies beyond this.
 // 2mb covers a full set of rendered stamp-grid strips (one PNG per count, up to
 // ~31) in one transactional POST; logo/banner uploads are far smaller. All
 // mutation routes are auth-gated + rate-limited, so the larger cap is low-risk.
@@ -47,10 +47,35 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ error: "internal" });
 });
 
+/**
+ * Break-glass account recovery, entirely through Railway's Variables UI (no
+ * terminal, no email needed). If BOTH BOOTSTRAP_OWNER_EMAIL and
+ * BOOTSTRAP_OWNER_PASSWORD are set, on boot we CREATE that owner — or reset its
+ * password if it already exists — to the given password. Use it to get back in
+ * when you're locked out and email isn't configured, then DELETE both variables
+ * (it re-runs harmlessly on every boot while they're present). To actually reach
+ * /admin the email must also be listed in ADMIN_EMAIL.
+ */
+async function bootstrapOwner(): Promise<void> {
+  const email = (process.env.BOOTSTRAP_OWNER_EMAIL ?? "").trim().toLowerCase();
+  const password = process.env.BOOTSTRAP_OWNER_PASSWORD ?? "";
+  if (!email.includes("@") || password.length < 8) return;
+  const existing = await getOwnerByEmail(email);
+  if (existing) {
+    await updateOwnerPassword(existing.id, hashPassword(password));
+    console.log(`[bootstrap] reset password for existing owner ${email}`);
+  } else {
+    await createOwner(randomUUID(), email, hashPassword(password));
+    console.log(`[bootstrap] created owner ${email}`);
+  }
+  console.log("[bootstrap] done — remove BOOTSTRAP_OWNER_EMAIL/PASSWORD from Railway now.");
+}
+
 async function main(): Promise<void> {
   if (config.databaseUrl) {
     await migrate();
     console.log("Database ready.");
+    await bootstrapOwner().catch((err) => console.error("[bootstrap] failed:", err));
     // Automated win-back: sweep once on boot, then hourly. Sends are throttled
     // by the per-card "already nudged this window" guard, so this can't spam.
     void runAutoWinback();
