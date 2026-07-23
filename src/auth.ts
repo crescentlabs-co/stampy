@@ -71,16 +71,20 @@ export function readCookie(req: Request, name = COOKIE): string | undefined {
   return undefined;
 }
 
+// Path=/ (not /dashboard): the same owner session also gates /admin for
+// platform-admin emails (src/routes/admin.ts requireAdmin), so the cookie must
+// reach both. Scoping it to /dashboard silently hid it from /admin requests —
+// an owner could be fully logged in yet /admin would see no cookie at all.
 export function setSessionCookie(res: Response, ownerId: string): void {
   const value = createSessionCookie(ownerId);
   res.append(
     "Set-Cookie",
-    `${COOKIE}=${encodeURIComponent(value)}; Path=/dashboard; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 24 * 60 * 60}`,
+    `${COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 24 * 60 * 60}`,
   );
 }
 
 export function clearSessionCookie(res: Response): void {
-  res.append("Set-Cookie", `${COOKIE}=; Path=/dashboard; HttpOnly; SameSite=Lax; Max-Age=0`);
+  res.append("Set-Cookie", `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
 /** The logged-in owner id, or null. */
