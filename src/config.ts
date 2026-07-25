@@ -43,9 +43,9 @@ export const config = {
   contactEmail: process.env.CONTACT_EMAIL ?? "",
 
   /** Apple Developer Team ID (10 chars, from developer.apple.com membership page). */
-  teamId: process.env.APPLE_TEAM_ID ?? "",
+  teamId: (process.env.APPLE_TEAM_ID ?? "").trim(),
   /** Pass Type identifier, e.g. pass.com.stampy.loyalty */
-  passTypeId: process.env.PASS_TYPE_ID ?? "",
+  passTypeId: (process.env.PASS_TYPE_ID ?? "").trim(),
 
   /** Pass signing certificate + key, base64-encoded PEM (from the founder's .p12). */
   signerCertB64: process.env.SIGNER_CERT_B64 ?? "",
@@ -54,10 +54,10 @@ export const config = {
 
   /** APNs auth key (.p8), base64-encoded, plus its Key ID. Used for push updates. */
   apnsKeyB64: process.env.APNS_KEY_B64 ?? "",
-  apnsKeyId: process.env.APNS_KEY_ID ?? "",
+  apnsKeyId: (process.env.APNS_KEY_ID ?? "").trim(),
 
   /** Google Wallet: Issuer ID (from the Wallet Business Console). */
-  googleIssuerId: process.env.GOOGLE_ISSUER_ID ?? "",
+  googleIssuerId: (process.env.GOOGLE_ISSUER_ID ?? "").trim(),
   /** Google Cloud service-account JSON, base64-encoded (from pnpm prepare-google). */
   googleServiceAccountB64: process.env.GOOGLE_SERVICE_ACCOUNT_B64 ?? "",
 
