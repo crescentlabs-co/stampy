@@ -8,7 +8,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { hashPassword } from "./auth.js";
 import { config, setupStatus } from "./config.js";
-import { createOwner, getOwnerByEmail, migrate, updateOwnerPassword } from "./db.js";
+import {
+  createOwner,
+  getOwnerByEmail,
+  migrate,
+  pruneAbandonedPasses,
+  updateOwnerPassword,
+} from "./db.js";
 import { runAutoWinback } from "./winback.js";
 import { setupPage } from "./pages.js";
 import { adminRouter } from "./routes/admin.js";
@@ -71,6 +77,15 @@ async function bootstrapOwner(): Promise<void> {
   console.log("[bootstrap] done — remove BOOTSTRAP_OWNER_EMAIL/PASSWORD from Railway now.");
 }
 
+async function runPrune(): Promise<void> {
+  try {
+    const removed = await pruneAbandonedPasses();
+    if (removed > 0) console.log(`[prune] removed ${removed} abandoned card(s)`);
+  } catch (err) {
+    console.error("[prune] failed:", err);
+  }
+}
+
 async function main(): Promise<void> {
   if (config.databaseUrl) {
     await migrate();
@@ -81,6 +96,11 @@ async function main(): Promise<void> {
     void runAutoWinback();
     const wb = setInterval(() => void runAutoWinback(), 60 * 60_000);
     if (typeof wb.unref === "function") wb.unref();
+    // Housekeeping: drop cards that never reached a wallet and were never
+    // stamped. They are already excluded from metrics; this just stops the
+    // table filling with prefetch/bot/cancelled-sheet rows.
+    const prune = setInterval(() => void runPrune(), 60 * 60_000);
+    if (typeof prune.unref === "function") prune.unref();
   } else {
     console.warn("DATABASE_URL not set — running without a database (setup mode).");
   }

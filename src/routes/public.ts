@@ -8,14 +8,16 @@
  *   GET /enroll      issues a brand-new card and streams the signed .pkpass
  *   GET /qr          PNG QR code of the default café's Add-to-Wallet page
  *
- * Every enroll hit creates a fresh card (no dedupe; a returning customer just
- * keeps using the card already in their Wallet).
+ * Enrolling twice from the same browser re-serves the SAME card (see
+ * reuseOrCreatePass) — Apple and Google key a pass on its serial, so reusing it
+ * refreshes the wallet card instead of adding a duplicate one.
  */
 import { Router } from "express";
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
+import { readEnrollCookie, setEnrollCookie } from "../auth.js";
 import { config, setupStatus } from "../config.js";
 import {
   createPass,
@@ -24,6 +26,7 @@ import {
   getCafe,
   getCafeBanner,
   getCafeLogo,
+  getPass,
   getStampStrip,
   logEvent,
   type CafeRow,
@@ -67,7 +70,38 @@ async function newPass(cafe: CafeRow, platform: Platform) {
   return row;
 }
 
-async function enroll(cafeId: string, res: import("express").Response): Promise<void> {
+/**
+ * The card to serve this browser: the one we already issued it for this café if
+ * the signed cookie still resolves to a live pass, otherwise a fresh one.
+ *
+ * Reuse deliberately logs no `enroll` event and re-grants no welcome stamps —
+ * it is the same card being handed back, not a new signup. Scoped per browser,
+ * so cleared cookies or another browser still mint a new card; this is data
+ * hygiene (and stops duplicate cards in one wallet), not fraud prevention.
+ */
+async function reuseOrCreatePass(
+  req: import("express").Request,
+  res: import("express").Response,
+  cafe: CafeRow,
+  platform: Platform,
+) {
+  const known = readEnrollCookie(req, cafe.id);
+  if (known) {
+    const existing = await getPass(known);
+    if (existing && existing.cafe_id === cafe.id && existing.platform === platform) {
+      return existing;
+    }
+  }
+  const row = await newPass(cafe, platform);
+  setEnrollCookie(res, cafe.id, row.serial);
+  return row;
+}
+
+async function enroll(
+  cafeId: string,
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<void> {
   if (!setupStatus().canSignPasses) {
     return void res.status(503).type("html").send(notReadyPage());
   }
@@ -76,7 +110,7 @@ async function enroll(cafeId: string, res: import("express").Response): Promise<
     return void res.status(cafe === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
 
-  const row = await newPass(cafe, "apple");
+  const row = await reuseOrCreatePass(req, res, cafe, "apple");
   try {
     const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
     const [logo, banner, strip] = await Promise.all([
@@ -100,7 +134,11 @@ async function enroll(cafeId: string, res: import("express").Response): Promise<
 
 /** Android path: create the pass, mirror it into Google's system, then redirect
  * the phone to the "Save to Google Wallet" URL. */
-async function enrollGoogle(cafeId: string, res: import("express").Response): Promise<void> {
+async function enrollGoogle(
+  cafeId: string,
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<void> {
   if (!setupStatus().canGoogleWallet) {
     return void res.status(503).type("html").send(notReadyPage());
   }
@@ -109,7 +147,7 @@ async function enrollGoogle(cafeId: string, res: import("express").Response): Pr
     return void res.status(cafe === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
 
-  const row = await newPass(cafe, "google");
+  const row = await reuseOrCreatePass(req, res, cafe, "google");
   const clsResult = await ensureClass(cafe);
   const objResult = await createObject(row, cafe);
   const url = saveJwtUrl(row, cafe);
@@ -138,10 +176,12 @@ publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage()));
 publicRouter.get("/privacy", (_req, res) => res.type("html").send(privacyPage(config.contactEmail)));
 publicRouter.get("/terms", (_req, res) => res.type("html").send(termsPage(config.contactEmail)));
 publicRouter.get("/c/:cafeId", (req, res) => landing(req.params.cafeId!, res));
-publicRouter.get("/enroll", (_req, res) => enroll(DEFAULT_CAFE_ID, res));
-publicRouter.get("/c/:cafeId/enroll", (req, res) => enroll(req.params.cafeId!, res));
-publicRouter.get("/enroll/google", (_req, res) => enrollGoogle(DEFAULT_CAFE_ID, res));
-publicRouter.get("/c/:cafeId/enroll/google", (req, res) => enrollGoogle(req.params.cafeId!, res));
+publicRouter.get("/enroll", (req, res) => enroll(DEFAULT_CAFE_ID, req, res));
+publicRouter.get("/c/:cafeId/enroll", (req, res) => enroll(req.params.cafeId!, req, res));
+publicRouter.get("/enroll/google", (req, res) => enrollGoogle(DEFAULT_CAFE_ID, req, res));
+publicRouter.get("/c/:cafeId/enroll/google", (req, res) =>
+  enrollGoogle(req.params.cafeId!, req, res),
+);
 publicRouter.get("/qr", (_req, res) => qrPng(DEFAULT_CAFE_ID, res));
 publicRouter.get("/c/:cafeId/qr", (req, res) => qrPng(req.params.cafeId!, res));
 

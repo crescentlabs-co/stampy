@@ -395,23 +395,47 @@ export interface CustomerRow {
   stamps: number;
   target: number;
   updated_at: Date;
+  /** Last real visit = last `stamp` event, falling back to when the card was created. */
+  last_visit: Date;
 }
 
-/** Every card of a café, most-recently-active first (for the Customers view). */
+// ---- shared SQL fragments (both assume the passes table is aliased `p`) ----
+
+// "Last visit" must be the last *stamp*, never passes.updated_at: setMessage()
+// bumps updated_at, so measuring lapse off it meant nudging a lapsed customer
+// marked them freshly-active — nobody ever appeared to lapse.
+const LAST_VISIT_SQL = `COALESCE(
+       (SELECT max(e.created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'stamp'),
+       p.created_at
+     )`;
+
+// A pass row alone proves nothing: it is written on the /enroll hit, before iOS
+// even shows the Add sheet, so prefetches, bots and cancelled sheets all left
+// permanent "customers". A real customer has either been stamped or is known to
+// be sitting in a wallet. Registrations are Apple-only, hence the OR.
+const ACTIVE_PASS_SQL = `(
+       EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')
+    OR EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
+     )`;
+
+/** Every card of a café, most-recently-visited first (for the Customers view). */
 export async function cafeCustomers(cafeId: string): Promise<CustomerRow[]> {
   const res = await getPool().query<CustomerRow>(
-    `SELECT serial, short_code AS code, stamp_count AS stamps, stamps_target AS target, updated_at
-       FROM passes WHERE cafe_id = $1 ORDER BY updated_at DESC`,
+    `SELECT p.serial, p.short_code AS code, p.stamp_count AS stamps,
+            p.stamps_target AS target, p.updated_at,
+            ${LAST_VISIT_SQL} AS last_visit
+       FROM passes p WHERE p.cafe_id = $1 ORDER BY last_visit DESC`,
     [cafeId],
   );
   return res.rows;
 }
 
-/** Serials whose card hasn't changed (stamp/redeem) in `days` days — the lapsing set. */
+/** Serials whose card hasn't been stamped in `days` days — the lapsing set. */
 export async function lapsingSerials(cafeId: string, days: number): Promise<string[]> {
   const res = await getPool().query<{ serial: string }>(
-    `SELECT serial FROM passes
-      WHERE cafe_id = $1 AND updated_at < now() - ($2 || ' days')::interval`,
+    `SELECT p.serial FROM passes p
+      WHERE p.cafe_id = $1
+        AND ${LAST_VISIT_SQL} < now() - ($2 || ' days')::interval`,
     [cafeId, String(Math.max(0, Math.trunc(days)))],
   );
   return res.rows.map((r) => r.serial);
@@ -426,6 +450,9 @@ export interface AdminCafeRow {
   created_at: Date;
   has_logo: boolean;
   has_banner: boolean;
+  /** Real customers (stamped at least once, or confirmed in a wallet). */
+  active: number;
+  /** Every pass row minted, including ones that never reached a wallet. */
   cards: number;
   stamps: number;
   redemptions: number;
@@ -441,6 +468,8 @@ export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
               WHERE oc.cafe_id = c.id) AS owners,
             EXISTS (SELECT 1 FROM cafe_logos l WHERE l.cafe_id = c.id) AS has_logo,
             EXISTS (SELECT 1 FROM cafe_banners b WHERE b.cafe_id = c.id) AS has_banner,
+            (SELECT count(*)::int FROM passes p
+              WHERE p.cafe_id = c.id AND ${ACTIVE_PASS_SQL}) AS active,
             (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id) AS cards,
             (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp') AS stamps,
             (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'redeem') AS redemptions
@@ -575,9 +604,13 @@ export async function getPassByShortCode(cafeId: string, shortCode: string): Pro
   return res.rows[0] ?? null;
 }
 
+/** Cards for the staff list, most-recently-active first (last stamp, else created)
+ *  — newest-enrolled ordering buried the customers staff actually serve. */
 export async function listRecentPasses(cafeId: string, limit = 20): Promise<PassRow[]> {
   const res = await getPool().query<PassRow>(
-    `SELECT * FROM passes WHERE cafe_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    `SELECT p.* FROM passes p
+      WHERE p.cafe_id = $1
+      ORDER BY ${LAST_VISIT_SQL} DESC LIMIT $2`,
     [cafeId, limit],
   );
   return res.rows;
@@ -597,9 +630,16 @@ export async function addStamps(serial: string, delta: number): Promise<PassRow 
 }
 
 /** Resets the card after redemption. */
+/** Redeeming restarts the card at the café's welcome-stamp count (not 0), so a
+ *  loyal returning customer is never worse off than a brand-new one. */
 export async function redeemPass(serial: string): Promise<PassRow | null> {
   const res = await getPool().query<PassRow>(
-    `UPDATE passes SET stamp_count = 0, updated_at = now() WHERE serial = $1 RETURNING *`,
+    `UPDATE passes p
+        SET stamp_count = LEAST(GREATEST(c.stamps_start, 0), p.stamps_target),
+            updated_at  = now()
+       FROM cafes c
+      WHERE p.serial = $1 AND c.id = p.cafe_id
+      RETURNING p.*`,
     [serial],
   );
   return res.rows[0] ?? null;
@@ -650,6 +690,9 @@ export async function logEvent(cafeId: string, serial: string, type: EventType):
 }
 
 export interface CafeMetrics {
+  /** Real customers: cards that were stamped at least once, or confirmed added to a wallet. */
+  active: number;
+  /** Every pass row ever minted, including ones that never reached a wallet. */
   cards: number;
   stamps: number;
   redemptions: number;
@@ -659,6 +702,7 @@ export interface CafeMetrics {
 
 export async function cafeMetrics(cafeId: string): Promise<CafeMetrics> {
   const res = await getPool().query<{
+    active: string;
     cards: string;
     stamps: string;
     redemptions: string;
@@ -666,6 +710,7 @@ export async function cafeMetrics(cafeId: string): Promise<CafeMetrics> {
     redemptions30d: string;
   }>(
     `SELECT
+       (SELECT count(*) FROM passes p WHERE p.cafe_id = $1 AND ${ACTIVE_PASS_SQL})::text AS active,
        (SELECT count(*) FROM passes WHERE cafe_id = $1)::text AS cards,
        count(*) FILTER (WHERE type = 'stamp')::text AS stamps,
        count(*) FILTER (WHERE type = 'redeem')::text AS redemptions,
@@ -676,12 +721,27 @@ export async function cafeMetrics(cafeId: string): Promise<CafeMetrics> {
   );
   const r = res.rows[0]!;
   return {
+    active: Number(r.active),
     cards: Number(r.cards),
     stamps: Number(r.stamps),
     redemptions: Number(r.redemptions),
     stamps30d: Number(r.stamps30d),
     redemptions30d: Number(r.redemptions30d),
   };
+}
+
+/** Housekeeping: drop pass rows that never reached a wallet and were never
+ *  stamped. 30 days is deliberately generous — Google never reports a wallet
+ *  add, so a real un-stamped Android card must not be pruned early. */
+export async function pruneAbandonedPasses(olderThanDays = 30): Promise<number> {
+  const res = await getPool().query(
+    `DELETE FROM passes p
+      WHERE p.created_at < now() - ($1 || ' days')::interval
+        AND NOT EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')
+        AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)`,
+    [String(Math.max(1, Math.trunc(olderThanDays)))],
+  );
+  return res.rowCount ?? 0;
 }
 
 // --------------------------------------------------------- registrations ----

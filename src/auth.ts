@@ -61,6 +61,53 @@ export function parseSessionCookie(value: string | undefined): string | null {
   return ownerId;
 }
 
+// ------------------------------------------------------ enrollment cookie ----
+
+/**
+ * Remembers which card we already issued this browser for a café, so a second
+ * scan of the counter QR re-serves the SAME pass instead of minting another.
+ * Apple and Google both key a pass on its serial, so reusing the serial makes
+ * the wallet refresh the existing card rather than add a duplicate.
+ *
+ * Signed for the same reason sessions are: the serial is the pass barcode, so
+ * an unsigned cookie would let anyone who saw a customer's barcode download
+ * that customer's pass (and its auth token). Forging needs the secret.
+ */
+const ENROLL_DAYS = 400;
+
+export function enrollCookieName(cafeId: string): string {
+  return `stampy_card_${cafeId.replace(/[^A-Za-z0-9_-]/g, "")}`;
+}
+
+export function createEnrollCookie(serial: string): string {
+  const expires = Date.now() + ENROLL_DAYS * 24 * 60 * 60 * 1000;
+  const payload = `${serial}.${expires}`;
+  return `${payload}.${sign(payload)}`;
+}
+
+/** The serial previously issued to this browser for `cafeId`, or null. */
+export function readEnrollCookie(req: Request, cafeId: string): string | null {
+  const value = readCookie(req, enrollCookieName(cafeId));
+  if (!value) return null;
+  const i = value.lastIndexOf(".");
+  if (i < 0) return null;
+  const payload = value.slice(0, i);
+  const sig = Buffer.from(value.slice(i + 1));
+  const expected = Buffer.from(sign(payload));
+  if (sig.length !== expected.length || !timingSafeEqual(sig, expected)) return null;
+  const [serial, expiresStr] = payload.split(".");
+  if (!serial || !expiresStr || Number(expiresStr) < Date.now()) return null;
+  return serial;
+}
+
+export function setEnrollCookie(res: Response, cafeId: string, serial: string): void {
+  const value = createEnrollCookie(serial);
+  res.append(
+    "Set-Cookie",
+    `${enrollCookieName(cafeId)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ENROLL_DAYS * 24 * 60 * 60}`,
+  );
+}
+
 /** Minimal cookie-header parser (we only ever read our own cookie). */
 export function readCookie(req: Request, name = COOKIE): string | undefined {
   const header = req.get("cookie") ?? "";

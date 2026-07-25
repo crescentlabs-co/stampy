@@ -791,6 +791,7 @@ export function staffPage(): string {
 
     // --------------------------------------------------------------- views ----
     let allPasses = [];
+    let found = []; // server-side search hits (cards outside the recent 20)
     async function load() {
       const out = await api("/passes");
       allPasses = out.passes;
@@ -799,13 +800,19 @@ export function staffPage(): string {
     function renderList() {
       const list = $("#list"); if (!list) return;
       const q = ($("#search")?.value || "").trim().toUpperCase();
-      const rows = q ? allPasses.filter((p) => p.code.toUpperCase().includes(q)) : allPasses;
+      // A search hit found on the server (found[]) wins over the recent list,
+      // which only holds 20 cards — a regular from last month isn't in it.
+      const rows = q ? (found.length ? found : allPasses.filter((p) => p.code.toUpperCase().includes(q))) : allPasses;
       list.innerHTML = "";
-      if (!allPasses.length) {
+      if (!allPasses.length && !found.length) {
         list.innerHTML = '<p class="muted" style="margin-top:16px">No cards yet — a customer scans the Add-to-Wallet QR to create the first one.</p>';
         return;
       }
-      if (!rows.length) { list.innerHTML = '<p class="muted" style="margin-top:16px">No card matches that code.</p>'; return; }
+      if (!rows.length) {
+        list.innerHTML = '<p class="muted" style="margin-top:16px">' +
+          (q.length >= 6 ? 'No card has the code ' + q + '.' : 'Type the full 6-character code to search every card.') + '</p>';
+        return;
+      }
       for (const p of rows) {
         const div = document.createElement("div");
         div.className = "pass";
@@ -819,10 +826,28 @@ export function staffPage(): string {
           </div>\`;
         div.querySelector('[data-a=stamp]').onclick = () => act("/stamp", { serial: p.serial }, "Stamp added");
         const r = div.querySelector('[data-a=redeem]');
-        if (r) r.onclick = () => confirm("Give the reward and reset this card to 0?") &&
+        if (r) r.onclick = () => confirm("Give the reward and start this card fresh?") &&
           act("/redeem", { serial: p.serial }, "Redeemed & reset");
         list.appendChild(div);
       }
+    }
+
+    // Codes are exactly 6 chars, so once that much is typed we can ask the
+    // server — that's the only way to reach a card outside the recent 20.
+    let searchTimer = null;
+    function onSearch() {
+      const q = ($("#search")?.value || "").trim().toUpperCase();
+      clearTimeout(searchTimer);
+      if (q.length < 6) { found = []; renderList(); return; }
+      searchTimer = setTimeout(async () => {
+        try {
+          const out = await api("/lookup?code=" + encodeURIComponent(q));
+          found = out.pass ? [out.pass] : [];
+        } catch (e) {
+          found = []; // 404 = no such code; renderList explains
+        }
+        renderList();
+      }, 250);
     }
 
     function render() {
@@ -855,7 +880,7 @@ export function staffPage(): string {
           if (!code) return toast("Type the code shown on the customer’s card");
           act("/stamp-by-code", { code }, "Stamp added").then(() => { $("#code").value = ""; });
         };
-        $("#search").oninput = renderList;
+        $("#search").oninput = onSearch;
         load();
         clearInterval(window.__poll); window.__poll = setInterval(load, 10000);
       }
@@ -1446,7 +1471,7 @@ export function dashboardPage(): string {
       const breakdown = S.cafes.length > 1
         ? \`<label style="margin-top:16px">By card</label>
            <table class="breakdown"><tr><th>Card</th><th>Customers</th><th>Stamps</th><th>Claimed</th></tr>
-           \${S.cafes.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.cards + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
+           \${S.cafes.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.active + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
            </table>\`
         : "";
       div.innerHTML = \`
@@ -1468,20 +1493,20 @@ export function dashboardPage(): string {
         const stamps = range === "30" ? sum("stamps30d") : sum("stamps");
         const claimed = range === "30" ? sum("redemptions30d") : sum("redemptions");
         div.querySelector("[data-totals]").innerHTML = \`
-          <div class="metric"><b>\${sum("cards")}</b><span>customers</span></div>
+          <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
           <div class="metric"><b>\${stamps}</b><span>stamps\${range === "30" ? " · 30d" : ""}</span></div>
           <div class="metric"><b>\${claimed}</b><span>rewards\${range === "30" ? " · 30d" : ""}</span></div>\`;
       }
       paintTotals("all");
       wireSeg(div.querySelector("#range"), (btn) => paintTotals(btn.dataset.r));
       (async () => {
-        const { body } = await api("/customers?lapsedDays=14");
+        const { body } = await api("/customers?lapsedDays=" + LAPSE_DAYS);
         const cust = body.customers || [];
         const lapsing = cust.filter((x) => x.lapsing).length;
         const host = div.querySelector("[data-cust]");
         host.innerHTML = cust.length
-          ? '<p><strong>' + cust.length + '</strong> customers · <strong>' + lapsing + '</strong> lapsing (14+ days)</p>'
-          : '<p class="muted">No customers yet — they appear once a card is stamped.</p>';
+          ? '<p><strong>' + cust.length + '</strong> customers · <strong>' + lapsing + '</strong> not seen in ' + LAPSE_DAYS + '+ days</p>'
+          : '<p class="muted">No customers yet — they appear once someone adds your card and gets their first stamp.</p>';
       })();
       div.querySelector("[data-viewall]").onclick = () => { S.tab = "customers"; renderTabs(); renderPanel(); };
       return div;
@@ -1665,6 +1690,9 @@ export function dashboardPage(): string {
 
     // ---- app shell: owner-scoped tabs ----
     const S = { cafes: [], email: "", tab: "home", selCard: 0 };
+    // One source of truth for "lapsing" — Home's summary and the Customers
+    // filter default must agree, or the two screens contradict each other.
+    const LAPSE_DAYS = 14;
 
     async function app() {
       const { status, body } = await api("/overview");
@@ -1837,6 +1865,7 @@ export function adminPage(): string {
         <tr>
           <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
           <td>\${c.owners || "—"}</td>
+          <td>\${c.active}</td>
           <td>\${c.cards}</td>
           <td>\${c.stamps}</td>
           <td>\${c.redemptions}</td>
@@ -1846,9 +1875,10 @@ export function adminPage(): string {
       const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
       $("#app").innerHTML = \`
         <h1>Platform admin</h1>
-        <p class="sub">\${body.cafes.length} cards · \${body.owners.length} owners. Read-only, plus password resets.</p>
+        <p class="sub">\${body.cafes.length} loyalty programmes · \${body.owners.length} owners. Read-only, plus password resets.</p>
+        <p class="muted" style="margin:-4px 0 10px"><strong>Customers</strong> = cards stamped at least once or confirmed in a wallet. <strong>Issued</strong> = every card ever handed out, including ones that never reached a wallet. Stamps exclude free welcome stamps.</p>
         <div class="tw"><table>
-          <tr><th>Card</th><th>Owner(s)</th><th>Cards</th><th>Stamps</th><th>Redeemed</th><th>Art / created</th><th>Sign-up / NFC link</th></tr>
+          <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Issued</th><th>Stamps</th><th>Redeemed</th><th>Art / created</th><th>Sign-up / NFC link</th></tr>
           \${rows}
         </table></div>
         <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>

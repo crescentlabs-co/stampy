@@ -187,7 +187,12 @@ async function main() {
   const redeem = await fetch(base + "/staff/api/redeem", {
     method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p1.serial }),
   });
-  expect(JSON.parse(await redeem.text()).pass.stamps === 0, "redeem resets to 0");
+  // Redeem restarts the card at the café's welcome-stamp count, NOT 0 — a
+  // returning customer must never be worse off than a brand-new one.
+  expect(
+    JSON.parse(await redeem.text()).pass.stamps === cafe.stamps_start,
+    `redeem restarts at the welcome-stamp count (${cafe.stamps_start})`,
+  );
 
   // --- Anti-spam cooldown: a fresh card stamps once, then blocks rapid repeats ---
   const pc = await mk();
@@ -601,8 +606,14 @@ async function main() {
 
   // --- Automated win-back ---
   const { runAutoWinback } = await import("../src/winback.js");
-  const lp = await mk(); // fresh pass on the default café
-  await getPool().query("UPDATE passes SET updated_at = now() - interval '30 days' WHERE serial = $1", [lp.serial]);
+  const lp = await mk(); // fresh pass on the default café, never stamped
+  // Lapse is measured from the last *visit* (last stamp event, else when the
+  // card was created) — NOT updated_at, which a nudge bumps. So age the card
+  // itself; backdating updated_at would no longer make it lapsing.
+  await getPool().query(
+    "UPDATE passes SET created_at = now() - interval '30 days', updated_at = now() - interval '30 days' WHERE serial = $1",
+    [lp.serial],
+  );
   const nudgeCount = async () =>
     (await getPool().query<{ n: number }>("SELECT count(*)::int AS n FROM events WHERE serial = $1 AND type = 'nudge'", [lp.serial])).rows[0]!.n;
 
@@ -615,6 +626,73 @@ async function main() {
   await runAutoWinback(); // immediate re-run
   expect((await nudgeCount()) === 1, "auto win-back does NOT re-nudge within the window");
   await updateCafe("default", { auto_winback_enabled: false }); // leave it off for cleanliness
+
+  // --- Lapse is measured from the last visit, not updated_at (regression) ---
+  // Nudging used to bump passes.updated_at, which lapse was measured from, so
+  // win-back messages silently un-lapsed the very customers being chased.
+  const { lapsingSerials, cafeMetrics, pruneAbandonedPasses, upsertRegistration, setMessage } =
+    await import("../src/db.js");
+  const lap = await mk();
+  await getPool().query(
+    "UPDATE passes SET created_at = now() - interval '40 days' WHERE serial = $1",
+    [lap.serial],
+  );
+  expect((await lapsingSerials("default", 14)).includes(lap.serial), "a card unseen for 40 days is lapsing");
+  await setMessage(lap.serial, "We miss you!"); // bumps updated_at, must NOT reset the clock
+  expect(
+    (await lapsingSerials("default", 14)).includes(lap.serial),
+    "a nudge does NOT clear the lapsing flag (updated_at regression)",
+  );
+  // A stamp is a real visit, so it does clear it.
+  await logEvent("default", lap.serial, "stamp");
+  expect(!(await lapsingSerials("default", 14)).includes(lap.serial), "an actual stamp clears the lapsing flag");
+
+  // --- "Customers" counts real cards only, not every minted pass row ---
+  const ghost = await mk(); // never stamped, never added to a wallet
+  const before = await cafeMetrics("default");
+  expect(before.cards > before.active, "issued count includes the phantom card, active count does not");
+  const ghostActive = async () =>
+    (await getPool().query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM passes p WHERE p.serial = $1
+         AND (EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')
+           OR EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial))`,
+      [ghost.serial],
+    )).rows[0]!.n;
+  expect((await ghostActive()) === 0, "a pass with no stamp and no wallet registration is not a customer");
+  // Registering it (what iOS does on a real Add) makes it real without any stamp.
+  await upsertRegistration("device-e2e-1", ghost.serial, "push-token-e2e");
+  expect((await ghostActive()) === 1, "a confirmed wallet add counts as a customer with zero stamps");
+
+  // --- Staff can look up a card that is NOT in the recent-20 list ---
+  const older = await mk();
+  await getPool().query("UPDATE passes SET created_at = now() - interval '200 days' WHERE serial = $1", [older.serial]);
+  for (let i = 0; i < 22; i++) await mk(); // push it well past the 20-row window
+  const recent = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
+  expect(
+    !recent.passes.some((p: any) => p.serial === older.serial),
+    "the older card is outside the recent list (so client-side filtering could never find it)",
+  );
+  const lookup = JSON.parse(
+    (await get("/staff/api/lookup?code=" + older.short_code, { headers: staffHeaders })).body,
+  );
+  expect(lookup.pass?.serial === older.serial, "staff lookup finds a card by code beyond the recent list");
+  const lookupMiss = await get("/staff/api/lookup?code=ZZZZZZ", { headers: staffHeaders });
+  expect(lookupMiss.status === 404, "staff lookup of an unknown code → 404");
+
+  // --- Housekeeping prune: only truly abandoned cards go ---
+  await getPool().query(
+    "UPDATE passes SET created_at = now() - interval '60 days' WHERE serial = ANY($1)",
+    [[ghost.serial, lap.serial]],
+  );
+  const orphan = await mk();
+  await getPool().query("UPDATE passes SET created_at = now() - interval '60 days' WHERE serial = $1", [orphan.serial]);
+  const removed = await pruneAbandonedPasses(30);
+  expect(removed >= 1, `prune removed the abandoned card(s) (got ${removed})`);
+  const stillThere = async (s: string) =>
+    (await getPool().query("SELECT 1 FROM passes WHERE serial = $1", [s])).rowCount === 1;
+  expect(!(await stillThere(orphan.serial)), "an old card never stamped and never in a wallet is pruned");
+  expect(await stillThere(ghost.serial), "an old card WITH a wallet registration survives the prune");
+  expect(await stillThere(lap.serial), "an old card WITH a stamp survives the prune");
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

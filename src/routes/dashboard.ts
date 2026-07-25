@@ -447,7 +447,8 @@ dashboardRouter.get("/api/cafe/:id/customers", requireOwner, async (req: OwnerRe
   const lapsedDays = clampInt(req.query.lapsedDays, 0, 3650, 14);
   const now = Date.now();
   const customers = (await cafeCustomers(cafeId)).map((c) => {
-    const lastDays = Math.floor((now - new Date(c.updated_at).getTime()) / 86400000);
+    // last_visit, not updated_at — a nudge must not reset the lapse clock.
+    const lastDays = Math.floor((now - new Date(c.last_visit).getTime()) / 86400000);
     return {
       serial: c.serial,
       code: c.code,
@@ -516,7 +517,8 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
   const customers = [];
   for (const cafe of cards) {
     for (const c of await cafeCustomers(cafe.id)) {
-      const lastDays = Math.floor((now - new Date(c.updated_at).getTime()) / 86400000);
+      // last_visit, not updated_at — a nudge must not reset the lapse clock.
+      const lastDays = Math.floor((now - new Date(c.last_visit).getTime()) / 86400000);
       customers.push({
         serial: c.serial,
         code: c.code,

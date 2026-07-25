@@ -124,6 +124,17 @@ staffRouter.get("/api/passes", requirePin, async (req: StaffRequest, res) => {
   res.json({ passes: rows.map(passView) });
 });
 
+/** Look a card up by its printed 6-char code, without stamping it. The staff
+ *  list only holds the 20 most recent cards, so filtering that list client-side
+ *  could never find an older regular — this searches every card of the café. */
+staffRouter.get("/api/lookup", requirePin, async (req: StaffRequest, res) => {
+  const code = String(req.query.code ?? "").trim();
+  if (!code) return void res.status(400).json({ error: "missing-code" });
+  const row = await getPassByShortCode(req.cafe!.id, code);
+  if (!row) return void res.status(404).json({ error: "no-such-card" });
+  res.json({ pass: passView(row) });
+});
+
 /** Thin HTTP wrapper over applyAndPush (src/cardActions.ts) for the staff routes. */
 async function updateAndPush(
   req: StaffRequest,
