@@ -12,7 +12,7 @@
  * Reset = replace the hash with a fresh temp password, returned once.
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { randomBytes, randomInt, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { hashPassword, sessionOwnerId } from "../auth.js";
 import { hexToRgb } from "../color.js";
 import { config } from "../config.js";
@@ -21,6 +21,7 @@ import {
   allOwners,
   createCafe,
   createOwner,
+  generateStaffPin,
   getOwner,
   getOwnerByEmail,
   linkOwnerCafe,
@@ -79,12 +80,16 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
   if (await getOwnerByEmail(ownerEmail)) return void res.status(409).json({ error: "email-taken" });
 
   const reward = (b.reward ?? "Free reward").trim().slice(0, 60) || "Free reward";
+  // Per-café, never the shared "1234". Only its hash is stored, so this response
+  // is the one chance to hand the PIN over — the console shows it beside the
+  // temp password.
+  const staffPin = generateStaffPin();
   const cafe = await createCafe({
     name: cafeName.slice(0, 60),
     reward,
     stampsTarget: 10,
     stampsStart: 2,
-    staffPin: String(randomInt(1000, 10000)), // per-café, not the shared 1234
+    staffPin,
   });
 
   // Apply the chosen design. Colours arrive as hex; stored as rgb(...) for PassKit.
@@ -119,7 +124,7 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
   void ensureClass(fresh ?? cafe).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });
-  res.json({ ok: true, cafeId: cafe.id, ownerEmail: owner.email, tempPassword });
+  res.json({ ok: true, cafeId: cafe.id, ownerEmail: owner.email, tempPassword, staffPin });
 });
 
 adminRouter.post("/api/owner/:id/reset-password", requireAdmin, async (req, res) => {

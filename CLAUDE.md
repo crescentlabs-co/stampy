@@ -9,9 +9,14 @@ them, and prefer browser UIs over files for anything they configure.
 ```sh
 pnpm typecheck && pnpm test && pnpm e2e
 ```
-`pnpm e2e` boots an embedded Postgres and runs the full HTTP flow (28+ checks).
+`pnpm e2e` boots an embedded Postgres and runs the full HTTP flow (160+ checks).
 All three must be green before any change is called complete. Commit after
 every working change with a meaningful message.
+
+`pnpm dev:local` runs the whole app on localhost:3010 with an embedded Postgres
+and seeded demo customers (no Railway, no secrets) — use it to actually look at
+a UI change in a browser, since the dashboard's ~1500 lines of in-page
+JavaScript are not covered by the test suites.
 
 ## Invariants — do not break these
 
@@ -33,22 +38,36 @@ every working change with a meaningful message.
    typed fallback. Don't diverge them.
 5. **Platform dispatch lives in `applyAndPush`** (src/cardActions.ts):
    `apple` → empty APNs push (device re-fetches); `google` → PATCH object /
-   addMessage. Staff (stamp/redeem), dashboard (nudge/win-back), and the
+   addMessage. Staff (stamp/undo/redeem), dashboard (nudge/win-back), and the
    automated win-back job (`src/winback.ts`, hourly from server.ts) all go
    through it — new card-mutating endpoints must too (it also logs the
-   `events` row that powers dashboard metrics). Nudges are an owner action
-   (dashboard or the auto job), never staff.
+   `events` row that powers dashboard metrics). Pass `{actor, forced}` so the
+   audit columns stay populated. Nudges are an owner action (dashboard or the
+   auto job), never staff.
 8. **Brute-force limits live in `src/rateLimit.ts`** (in-memory, failure-only:
    `peek()` to gate, `hit()` only on a failed attempt, `clear()` on success —
-   so real usage never trips it). Login 8/15min per-email, staff PIN 20/10min
-   per café+IP (deliberately loose — shared café wifi), signup 5/h + forgot
-   3/h. `trust proxy` is on so `req.ip` is the real client. Blocked = 429
+   so real usage never trips it). Login 8/15min per-email, staff sign-in
+   20/10min per café+IP (deliberately loose — shared café wifi), signup 5/h +
+   forgot 3/h. Only `POST /staff/api/login` is limited, not every staff
+   request, so a blocked attacker can't stop a signed-in phone mid-shift.
+   `trust proxy` is on so `req.ip` is the real client. Blocked = 429
    `{error:"too-many-attempts", retryAfterSeconds}`.
 6. **Auth is hand-rolled on node:crypto** (scrypt + HMAC cookies, timing-safe
-   compares everywhere). Don't add auth/session dependencies.
+   compares everywhere). Don't add auth/session dependencies. Three cookies,
+   all `payload.signature` via the shared `seal`/`unseal` in src/auth.ts:
+   owner session, per-café enrollment (dedup), and per-café staff session.
+   The **staff PIN is only ever stored as a scrypt hash** — nothing can read it
+   back, so the UI shows a new PIN once and otherwise only replaces it. Each
+   staff cookie carries the café's `staff_session_epoch`; `setStaffPin` bumps
+   it, which signs every staff phone out. Never reintroduce a PIN in an API
+   response, a page, or `localStorage`.
 7. **No build step.** tsx runs TypeScript directly; pages are template strings
    in src/pages.ts; the only browser lib is jsqr served from node_modules.
-   Don't introduce bundlers or frontend frameworks.
+   Don't introduce bundlers or frontend frameworks. Because the browser JS is
+   nested inside template literals, nothing type-checks it — `test/pages.test.ts`
+   compiles every inline `<script>` instead, so keep new pages listed there.
+   **Never put a backtick in a comment inside those template strings** — it ends
+   the literal. Run `pnpm typecheck` after editing src/pages.ts.
 
 ## Stack facts
 - pnpm (not npm), Node 22 from `~/.local/node22` (no Homebrew) — prefix

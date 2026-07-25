@@ -667,13 +667,19 @@ export function termsPage(contactEmail = ""): string {
 
 // ---------------------------------------------------------------- staff ----
 
-export function staffPage(): string {
+/**
+ * The stamper. `signedIn` comes from the staff session cookie — an unsigned-in
+ * device is only ever sent the PIN form, so the page itself leaks no café data.
+ */
+export function staffPage(signedIn: boolean): string {
   const css = /* css */ `
     .pass { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
     .pass .dots { font-size: 1.15rem; letter-spacing: 2px; margin: 6px 0; }
-    .row { display: flex; gap: 8px; margin-top: 8px; }
+    .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .row .btn { padding: 10px 12px; font-size: .95rem; }
     .ready { color: #1a7f37; font-weight: 700; }
+    .signout { background: none; border: none; color: var(--muted); font: inherit; font-size: .85rem;
+               cursor: pointer; padding: 4px 0; text-decoration: underline; }
     #scanner {
       position: fixed; inset: 0; background: #000; z-index: 40;
       display: none; flex-direction: column;
@@ -685,23 +691,25 @@ export function staffPage(): string {
     .codebox input { text-transform: uppercase; letter-spacing: 3px; font-weight: 700; text-align: center; }
     .codebox .btn { width: auto; padding: 12px 18px; }
   `;
-  const js = /* js */ `
+  // Shared by both states. Everything below it is emitted for one state only:
+  // an unsigned-in phone is never sent the stamper code, so the page is a gate
+  // rather than a hidden panel.
+  const sharedJs = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
     const cafeId = new URLSearchParams(location.search).get("c") || "default";
-    let pin = localStorage.getItem("staffPin:" + cafeId) || "";
 
     async function api(path, opts = {}) {
       const res = await fetch("/staff/api" + path, {
         ...opts,
-        headers: { "Content-Type": "application/json", "x-staff-pin": pin,
-                   "x-cafe-id": cafeId, ...(opts.headers||{}) },
+        headers: { "Content-Type": "application/json", "x-cafe-id": cafeId, ...(opts.headers||{}) },
       });
       if (res.status === 429) {
         const b = await res.json().catch(() => ({}));
         toast("Too many attempts — try again in " + (b.retryAfterSeconds || 60) + "s");
         throw new Error("rate");
       }
-      if (res.status === 401) { localStorage.removeItem("staffPin:" + cafeId); pin = ""; render(); throw new Error("pin"); }
+      // The session expired or was cleared — reload so the server serves the PIN form.
+      if (res.status === 401) { location.reload(); throw new Error("signed-out"); }
       return res.json();
     }
 
@@ -709,7 +717,28 @@ export function staffPage(): string {
       const t = $(".toast"); t.textContent = msg; t.classList.add("show");
       setTimeout(() => t.classList.remove("show"), 2600);
     }
+  `;
 
+  const loginJs = /* js */ `
+    $("#app").innerHTML = \`
+      <h1>Staff login</h1>
+      <p class="sub">Enter the staff PIN. This phone stays signed in for two weeks.</p>
+      <input id="pin" type="password" inputmode="numeric" placeholder="PIN">
+      <button class="btn btn-dark" style="margin-top:12px" id="go">Enter</button>\`;
+    async function signIn() {
+      const pin = $("#pin").value.trim();
+      if (!pin) return toast("Type the PIN");
+      // The PIN crosses the wire once, here — after this the phone is authorised
+      // by its session cookie instead of resending the PIN on every stamp.
+      const out = await api("/login", { method: "POST", body: JSON.stringify({ pin }) });
+      if (out.ok) location.reload();
+      else toast("Wrong PIN");
+    }
+    $("#go").onclick = signIn;
+    $("#pin").onkeydown = (e) => { if (e.key === "Enter") signIn(); };
+  `;
+
+  const stamperJs = /* js */ `
     let busy = false; // debounce: one tap/scan = one stamp
     async function act(path, body, doneMsg) {
       if (busy) return; busy = true;
@@ -822,12 +851,18 @@ export function staffPage(): string {
           <div class="dots">\${p.dots} <span class="muted">\${p.stamps}/\${p.target}</span></div>
           <div class="row">
             <button class="btn btn-stamp" data-a="stamp">+1 Stamp</button>
-            \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">Redeem & reset</button>' : ""}
+            \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">− Undo a stamp</button>' : ""}
+            \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">Give reward & restart</button>' : ""}
           </div>\`;
         div.querySelector('[data-a=stamp]').onclick = () => act("/stamp", { serial: p.serial }, "Stamp added");
+        // The fix for a mis-scan. Before this the only way back was to redeem,
+        // which handed out a free reward.
+        const u = div.querySelector('[data-a=undo]');
+        if (u) u.onclick = () => confirm("Take one stamp back off this card?") &&
+          act("/undo", { serial: p.serial }, "Stamp removed");
         const r = div.querySelector('[data-a=redeem]');
         if (r) r.onclick = () => confirm("Give the reward and start this card fresh?") &&
-          act("/redeem", { serial: p.serial }, "Redeemed & reset");
+          act("/redeem", { serial: p.serial }, "Reward given — card restarted");
         list.appendChild(div);
       }
     }
@@ -850,54 +885,47 @@ export function staffPage(): string {
       }, 250);
     }
 
-    function render() {
-      if (!pin) {
-        $("#app").innerHTML = \`
-          <h1>Staff login</h1>
-          <p class="sub">Enter the staff PIN.</p>
-          <input id="pin" type="password" inputmode="numeric" placeholder="PIN">
-          <button class="btn btn-dark" style="margin-top:12px" id="go">Enter</button>\`;
-        $("#go").onclick = async () => {
-          pin = $("#pin").value.trim();
-          try { await api("/passes"); localStorage.setItem("staffPin:" + cafeId, pin); render(); }
-          catch { toast("Wrong PIN"); }
-        };
-      } else {
-        $("#app").innerHTML = \`
-          <h1>Stamper</h1>
-          <p class="sub">Scan the customer’s card, or type its code.</p>
-          <button class="btn btn-stamp" id="scan">📷 Scan card</button>
-          <div class="codebox">
-            <input id="code" placeholder="CARD CODE" maxlength="8" autocomplete="off">
-            <button class="btn btn-ghost" id="bycode">Stamp</button>
-          </div>
-          <h2>Cards</h2>
-          <input id="search" placeholder="🔍 Search by card code" autocomplete="off" style="text-transform:uppercase">
-          <div id="list" style="margin-top:10px"></div>\`;
-        $("#scan").onclick = startScanner;
-        $("#bycode").onclick = () => {
-          const code = $("#code").value.trim();
-          if (!code) return toast("Type the code shown on the customer’s card");
-          act("/stamp-by-code", { code }, "Stamp added").then(() => { $("#code").value = ""; });
-        };
-        $("#search").oninput = onSearch;
-        load();
-        clearInterval(window.__poll); window.__poll = setInterval(load, 10000);
-      }
-    }
-    render();
+    $("#app").innerHTML = \`
+      <h1>Stamper</h1>
+      <p class="sub">Scan the customer’s card, or type its code.</p>
+      <button class="btn btn-stamp" id="scan">📷 Scan card</button>
+      <div class="codebox">
+        <input id="code" placeholder="CARD CODE" maxlength="8" autocomplete="off">
+        <button class="btn btn-ghost" id="bycode">Stamp</button>
+      </div>
+      <h2>Cards</h2>
+      <input id="search" placeholder="🔍 Search by card code" autocomplete="off" style="text-transform:uppercase">
+      <div id="list" style="margin-top:10px"></div>
+      <button class="signout" id="out">Sign this phone out</button>\`;
+    $("#scan").onclick = startScanner;
+    $("#bycode").onclick = () => {
+      const code = $("#code").value.trim();
+      if (!code) return toast("Type the code shown on the customer’s card");
+      act("/stamp-by-code", { code }, "Stamp added").then(() => { $("#code").value = ""; });
+    };
+    $("#search").oninput = onSearch;
+    $("#out").onclick = async () => {
+      if (!confirm("Sign out? You’ll need the PIN again on this phone.")) return;
+      await api("/logout", { method: "POST" });
+      location.reload();
+    };
+    load();
+    clearInterval(window.__poll); window.__poll = setInterval(load, 10000);
   `;
-  // jsQR loads first (camera fallback for browsers without BarcodeDetector,
-  // e.g. iPhone Safari); it's served locally from /staff/jsqr.js — no CDN.
+  // The camera overlay and jsQR (the BarcodeDetector fallback iPhone Safari
+  // needs) are only worth loading for a phone that can actually stamp.
+  const scanner = signedIn
+    ? `<div id="scanner"><video playsinline muted></video>
+         <div class="bar"><button class="btn btn-ghost" onclick="stopScanner()">Cancel</button></div>
+       </div>
+       <script src="/staff/jsqr.js"></script>`
+    : "";
   return page(
     "Stampy — Staff",
     `<div class="card" id="app"></div>
-     <div id="scanner"><video playsinline muted></video>
-       <div class="bar"><button class="btn btn-ghost" onclick="stopScanner()">Cancel</button></div>
-     </div>
+     ${scanner}
      <div class="toast"></div>
-     <script src="/staff/jsqr.js"></script>
-     <script>${js}</script>`,
+     <script>${sharedJs}${signedIn ? stamperJs : loginJs}</script>`,
     css,
   );
 }
@@ -959,7 +987,17 @@ export function dashboardPage(): string {
     .seg .thumb { position: absolute; z-index: 0; top: 5px; bottom: 5px; left: 0; width: 0; background: var(--surface);
                   border-radius: 999px; box-shadow: 0 2px 6px rgba(32,33,29,.14);
                   transition: transform .28s cubic-bezier(.34,1.1,.4,1), width .28s cubic-bezier(.34,1.1,.4,1); }
-    #tabs { margin: 18px 0 24px; }
+    /* Five tabs don't fit a 375px phone at the default size. Tighten them enough
+       that all five stay visible (a hidden tab is worse than small type), and
+       keep a scroll as the fallback for anything narrower still. */
+    #tabs { margin: 18px 0 24px; overflow-x: auto; scrollbar-width: none; }
+    #tabs::-webkit-scrollbar { display: none; }
+    #tabs button { padding: 10px 9px; font-size: .84rem; }
+    @media (max-width: 430px) {
+      #tabs { padding: 3px; gap: 0; }
+      #tabs button { padding: 10px 6px; font-size: .78rem; }
+      #tabs .thumb { top: 3px; bottom: 3px; }
+    }
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     @media (prefers-reduced-motion: reduce) { .seg .thumb { transition: none; } }
@@ -987,11 +1025,17 @@ export function dashboardPage(): string {
                    border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; text-decoration: none;
                    color: var(--ink); font-weight: 600; }
     .sharelist a:hover { border-color: var(--accent); }
-    .sharelist a .sub2 { font-weight: 400; color: var(--muted); font-size: .82rem; }
+    /* Block, not inline: on a phone the description otherwise wrapped between
+       the title and the "open →" and the row read as three broken fragments. */
+    .sharelist a .sub2 { display: block; font-weight: 400; color: var(--muted); font-size: .82rem; margin-top: 2px; }
+    .sharelist a .arr { white-space: nowrap; }
     .sharelist a .arr { color: var(--muted); }
     .sharelist { margin-bottom: 6px; }
     /* --- home: totals + per-card breakdown --- */
     .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+    /* With a spend figure there are four tiles: 2×2 on a phone beats 3-then-1. */
+    .totals.four { grid-template-columns: repeat(2, 1fr); }
+    @media (min-width: 560px) { .totals.four { grid-template-columns: repeat(4, 1fr); } }
     .totals .metric { padding: 16px 14px 13px; }
     .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
@@ -1011,12 +1055,34 @@ export function dashboardPage(): string {
     .pass .row { display: flex; gap: 8px; margin-top: 12px; }
     .pass .row .btn { width: auto; padding: 9px 16px; font-size: .9rem; }
     .ready { color: #1a7f37; font-weight: 700; }
-    /* --- customers view --- */
-    .backlink { background: none; border: none; color: var(--muted); font: inherit; font-weight: 600;
-                cursor: pointer; padding: 4px 0; margin-bottom: 10px; }
-    .backlink:hover { color: var(--accent-dark); }
+    /* --- customers view: one collapsible section per recency group --- */
     .custctl { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
     .custctl > div { flex: 1; min-width: 130px; }
+    .grp { border: 1px solid var(--line); border-radius: 14px; padding: 4px 14px 14px; margin-bottom: 10px; background: var(--surface); }
+    .grp summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer;
+                   padding: 12px 0; font-weight: 700; list-style: none; }
+    .grp summary::-webkit-details-marker { display: none; }
+    .grp summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
+    .grp[open] summary::before { transform: rotate(90deg); }
+    .grp .gc { background: var(--ghost-bg); border-radius: 999px; padding: 2px 10px; font-size: .8rem;
+               font-variant-numeric: tabular-nums; }
+    .grp .gh { color: var(--muted); font-weight: 400; font-size: .8rem; }
+    .grp .gnudge { width: auto; padding: 8px 14px; font-size: .85rem; margin-bottom: 4px; }
+    /* Rows sit inside a group box already, so they're separated by a rule rather
+       than being a second card-in-a-card. */
+    .crow { padding: 12px 0; border-top: 1px solid var(--line); }
+    .ctop { display: flex; align-items: center; gap: 8px; }
+    .ctop strong { font-size: 1rem; letter-spacing: .04em; }
+    .cprog { flex: 1; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+    .cn { width: auto; padding: 7px 14px; font-size: .82rem; }
+    .cmeta { color: var(--muted); font-size: .8rem; margin-top: 3px; }
+    .warn { color: #9a3412; font-weight: 600; }
+    /* --- a value shown exactly once (a new PIN) --- */
+    .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 10px 12px;
+            border-radius: 10px; margin-top: 10px; font-size: .85rem; line-height: 1.5; }
+    /* --- Card tab: Design / Rules section headings --- */
+    .sec { font-size: 1.1rem; margin: 28px 0 2px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .sec.first { margin-top: 4px; padding-top: 0; border-top: none; }
     /* --- show-password toggle --- */
     .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
@@ -1104,13 +1170,16 @@ export function dashboardPage(): string {
       { name: "Ink",      bg: "#101418", fg: "#eef2f6", label: "#7fd1c4" },
     ];
 
+    // The card editor: DESIGN (what it looks like) and RULES (how it behaves) as
+    // two sections with their own Save, because they're two different jobs — the
+    // old single panel mixed a colour picker with the staff PIN behind one button.
     function designPanel(c) {
       const div = document.createElement("div");
       const base = c.id === "default" ? "" : "/c/" + c.id;
-      const landing = base || "/";
       const bust = (v) => v ? "?v=" + v : "";
       const logoSrc = base + "/art/logo.png" + bust(c.logoVersion);
       div.innerHTML = \`
+        <h2 class="sec first">Design</h2>
         <label>Card preview <span class="muted">(live — updates as you type)</span></label>
         <div class="pv" data-pv>
           <div class="pv-banner" data-pv-banner></div>
@@ -1159,25 +1228,33 @@ export function dashboardPage(): string {
         </div>
 
         <label style="margin-top:12px">Card name</label><input data-f="name" value="\${c.name}">
+        <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
+        <p class="muted" style="margin-top:8px">Templates, banners and stamp styles save the moment you tap them. Colours and the name save with this button.</p>
+
+        <h2 class="sec">Rules</h2>
         <label>Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
           <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
         </div>
-        <label>Staff PIN <span class="muted">(staff type this to unlock the stamper)</span></label><input data-f="staffPin" value="\${c.staffPin}">
+        <div class="row2">
+          <div><label>Average spend per visit</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
+          <div><label>Currency</label><input data-f="currency" maxlength="4" value="\${c.currency}"></div>
+        </div>
+        <p class="muted" style="margin-top:-2px">Used on Home to turn stamps into a money figure. Leave at 0 to hide it.</p>
 
         <label style="margin-top:16px">Automatic win-back <span class="muted">(bring quiet customers back on their own)</span></label>
         <label class="eye"><input type="checkbox" data-wb="on" \${c.autoWinbackEnabled ? "checked" : ""}> Automatically nudge customers who go quiet</label>
         <div data-wbfields style="\${c.autoWinbackEnabled ? "" : "display:none"}">
           <label>Nudge after this many days with no stamp</label>
           <input data-wb="days" type="number" min="1" max="365" value="\${c.autoWinbackDays}">
-          <label>Message</label>
-          <input data-wb="msg" maxlength="200" value="\${(c.autoWinbackMessage || "").replace(/"/g, "&quot;")}">
-          <p class="muted" style="margin-top:6px">Runs by itself. Each customer is nudged at most once per period, and Google caps messages at 3 per card per day.</p>
         </div>
+        <label style="margin-top:10px">Win-back message</label>
+        <input data-wb="msg" maxlength="200" value="\${(c.autoWinbackMessage || "").replace(/"/g, "&quot;")}">
+        <p class="muted" style="margin-top:6px">One message, used by both the automatic nudges and the manual ones in <strong>Customers</strong> (you can edit it there before sending). Each customer is nudged at most once per period, we stop after 3 unanswered, and Google caps messages at 3 per card per day.</p>
 
-        <button class="btn btn-dark" style="margin-top:14px" data-a="save">Save changes</button>
-        <p class="muted" style="margin-top:8px">Changes apply to newly issued cards; existing cards keep their reward. Sharing links live in the <strong>Share</strong> tab.</p>\`;
+        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
+        <p class="muted" style="margin-top:8px">Reward and stamp counts apply to newly issued cards; existing cards keep theirs. Links and the staff PIN live in the <strong>Access</strong> tab.</p>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -1443,24 +1520,33 @@ export function dashboardPage(): string {
       const wbOn = q("[data-wb=on]");
       wbOn.addEventListener("change", () => { q("[data-wbfields]").style.display = wbOn.checked ? "" : "none"; });
 
-      q("[data-a=save]").onclick = async () => {
-        const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
-          name: f("name").value, reward: f("reward").value,
-          stampsTarget: Number(f("stampsTarget").value), stampsStart: Number(f("stampsStart").value),
-          staffPin: f("staffPin").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value,
-          autoWinbackEnabled: q("[data-wb=on]").checked,
-          autoWinbackDays: Number(q("[data-wb=days]").value),
-          autoWinbackMessage: q("[data-wb=msg]").value,
-        })});
-        if (body.ok) {
-          c.name = f("name").value; toast("Saved ✓");
-          // Re-render stamp strips too, so colour/target changes reach the card.
-          if (stampStyle) await applyStamps(stampStyle);
-          // keep the card-picker chip labels in sync without resetting the form
-          const pk = document.querySelector("[data-pick]");
-          if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cafes[Number(b.dataset.ci)].name; });
-        } else toast(body.error || "Save failed");
+      // Two saves, disjoint field sets. Both re-render the stamp strips, because
+      // a colour change (design) and a target change (rules) each alter them.
+      async function save(fields, label) {
+        const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify(fields) });
+        if (!body.ok) return toast(body.error || "Save failed");
+        Object.assign(c, fields);
+        if (stampStyle) await applyStamps(stampStyle);
+        toast(label + " saved ✓");
+      }
+
+      q("[data-a=savedesign]").onclick = async () => {
+        await save({ name: f("name").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value }, "Design");
+        // Keep the card-picker chip labels in sync without resetting the form.
+        const pk = document.querySelector("[data-pick]");
+        if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cafes[Number(b.dataset.ci)].name; });
       };
+
+      q("[data-a=saverules]").onclick = () => save({
+        reward: f("reward").value,
+        stampsTarget: Number(f("stampsTarget").value),
+        stampsStart: Number(f("stampsStart").value),
+        averageSpend: Number(f("averageSpend").value) || 0,
+        currency: f("currency").value,
+        autoWinbackEnabled: q("[data-wb=on]").checked,
+        autoWinbackDays: Number(q("[data-wb=days]").value),
+        autoWinbackMessage: q("[data-wb=msg]").value,
+      }, "Rules");
       return div;
     }
 
@@ -1488,17 +1574,35 @@ export function dashboardPage(): string {
         <div data-cust><p class="muted">Loading…</p></div>
         <button class="btn btn-ghost viewall" data-viewall>View all customers →</button>\`;
 
+      // Money influenced = stamps × that card's average spend, summed per card
+      // (each card can have a different basket). Hidden until a spend is set,
+      // because a confident "0" would read as a real answer.
+      const priced = S.cafes.filter((c) => c.averageSpend > 0);
+      const currency = (priced[0] || {}).currency || "";
+      function influenced(range) {
+        return priced.reduce((a, c) => a + (range === "30" ? c.metrics.stamps30d : c.metrics.stamps) * c.averageSpend, 0);
+      }
+      const money = (n) => currency + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
       // The All-time / 30-day toggle swaps the big numbers instantly (tactile).
       function paintTotals(range) {
+        const suffix = range === "30" ? " · 30d" : "";
         const stamps = range === "30" ? sum("stamps30d") : sum("stamps");
         const claimed = range === "30" ? sum("redemptions30d") : sum("redemptions");
-        div.querySelector("[data-totals]").innerHTML = \`
+        const host = div.querySelector("[data-totals]");
+        host.className = "totals" + (priced.length ? " four" : "");
+        host.innerHTML = \`
           <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
-          <div class="metric"><b>\${stamps}</b><span>stamps\${range === "30" ? " · 30d" : ""}</span></div>
-          <div class="metric"><b>\${claimed}</b><span>rewards\${range === "30" ? " · 30d" : ""}</span></div>\`;
+          <div class="metric"><b>\${stamps}</b><span>stamps\${suffix}</span></div>
+          <div class="metric"><b>\${claimed}</b><span>rewards\${suffix}</span></div>
+          \${priced.length ? '<div class="metric"><b>' + money(influenced(range)) + '</b><span>spend influenced' + suffix + '</span></div>' : ""}\`;
       }
       paintTotals("all");
       wireSeg(div.querySelector("#range"), (btn) => paintTotals(btn.dataset.r));
+      if (!priced.length) {
+        div.querySelector("[data-totals]").insertAdjacentHTML("afterend",
+          '<p class="muted" style="margin:-6px 0 4px">Set an <strong>average spend per visit</strong> in Card → Rules to also see the money your stamps influenced.</p>');
+      }
       (async () => {
         const { body } = await api("/customers?lapsedDays=" + LAPSE_DAYS);
         const cust = body.customers || [];
@@ -1508,82 +1612,133 @@ export function dashboardPage(): string {
           ? '<p><strong>' + cust.length + '</strong> customers · <strong>' + lapsing + '</strong> not seen in ' + LAPSE_DAYS + '+ days</p>'
           : '<p class="muted">No customers yet — they appear once someone adds your card and gets their first stamp.</p>';
       })();
-      div.querySelector("[data-viewall]").onclick = () => { S.tab = "customers"; renderTabs(); renderPanel(); };
+      div.querySelector("[data-viewall]").onclick = () => go("customers");
       return div;
     }
 
-    // ---- Customers view (opens from Home): search, filters, paging, nudge ----
-    function customersView() {
+    // ---- Customers: grouped by how long since they came in ----
+    // A flat wall of 6-character codes told the owner nothing. Recency is the
+    // only thing they can act on, so it decides the grouping.
+    // "bulk" decides whether the group gets a nudge-all button: messaging
+    // someone who came in today is a footgun, so those groups only offer the
+    // per-row nudge.
+    const GROUPS = [
+      { key: "new",     title: "New this week",       hint: "joined in the last 7 days",       open: true,  bulk: false },
+      { key: "active",  title: "Active",              hint: "came in within the last week",    open: false, bulk: false },
+      { key: "q7",      title: "Not seen in 7 days",  hint: "slipping — worth a nudge",        open: true,  bulk: true  },
+      { key: "q14",     title: "Not seen in 14 days", hint: "going quiet",                     open: true,  bulk: true  },
+      { key: "q30",     title: "Not seen in 30 days", hint: "last chance to win back",         open: true,  bulk: true  },
+      { key: "churned", title: "Churned",             hint: "90+ days, or ignored 3 messages", open: false, bulk: true  },
+    ];
+
+    /** Which group a customer belongs in. Order matters — the first match wins. */
+    function groupOf(x, nudgeCap) {
+      if (x.joinedDays < 7) return "new";
+      if (x.unanswered >= nudgeCap || x.lastDays >= 90) return "churned";
+      if (x.lastDays >= 30) return "q30";
+      if (x.lastDays >= 14) return "q14";
+      if (x.lastDays >= 7) return "q7";
+      return "active";
+    }
+
+    function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <button class="backlink" data-back>← Back to Home</button>
         <div class="custctl">
           <div><label>Card</label><select data-card><option value="all">All cards</option></select></div>
-          <div><label>Not seen in</label><select data-days>
-            <option value="0">everyone</option>
-            <option value="7">7+ days</option>
-            <option value="14" selected>14+ days</option>
-            <option value="30">30+ days</option>
-          </select></div>
         </div>
         <input data-search placeholder="🔍 Search by card code" autocomplete="off" style="text-transform:uppercase;margin-top:8px">
-        <div data-list style="margin-top:10px"><p class="muted">Loading…</p></div>
-        <button class="btn btn-ghost" data-more style="display:none;margin-top:10px">Load more</button>
-        <div class="account" style="margin-top:16px">
+        <div data-groups style="margin-top:14px"><p class="muted">Loading…</p></div>
+        <div class="account" style="margin-top:22px">
           <label>Win-back message</label>
-          <input data-msg value="We miss you! Your next stamp is waiting ☕️" maxlength="200">
-          <button class="btn btn-dark" style="margin-top:10px" data-nudgeall>Nudge everyone shown</button>
-          <p class="muted" style="margin-top:6px">Messages the customers currently listed — narrow the card/lapsing filters to choose who. Google limits 3 messages per card per day.</p>
+          <input data-msg maxlength="200">
+          <p class="muted" style="margin-top:6px">Starts from the message in Card → Rules. Edit it here to change just this send. Google limits 3 messages per card per day, and we stop chasing anyone who has ignored 3.</p>
         </div>\`;
       const q = (s) => div.querySelector(s);
-      let all = [], shown = [], limit = 50;
+      let all = [], cap = 3;
 
-      q("[data-back]").onclick = () => { S.tab = "home"; renderTabs(); renderPanel(); };
-
-      async function nudge(serials) {
+      async function nudge(people, what) {
         const message = q("[data-msg]").value.trim();
         if (!message) return toast("Type a message first");
-        if (!serials.length) return toast("No customers to nudge");
-        const { body } = await api("/nudge", { method: "POST", body: JSON.stringify({ message, target: serials }) });
+        if (!people.length) return toast("Nobody to nudge there");
+        const spent = people.filter((x) => x.unanswered >= cap).length;
+        if (spent && !confirm(spent + " of these " + people.length + " have already ignored " + cap +
+            " messages. Message them anyway?")) return;
+        if (!confirm("Send this message to " + people.length + " " + what + "?")) return;
+        const { body } = await api("/nudge", { method: "POST", body: JSON.stringify({ message, target: people.map((x) => x.serial) }) });
         toast(body.ok ? ("Nudged " + body.sent + " of " + body.total + " (rest have no phone yet)") : (body.error || "Failed"));
       }
 
-      function renderRows() {
+      // Code and progress on one line, the story underneath — the old single
+      // run-on line wrapped mid-sentence on a phone and read as noise.
+      function row(x) {
+        const el = document.createElement("div"); el.className = "crow";
+        const seen = x.lastDays === 0 ? "in today" : x.lastDays + " days ago";
+        const meta = [x.cardName, "last " + seen].join(" · ");
+        el.innerHTML = \`
+          <div class="ctop">
+            <strong>\${x.code}</strong>
+            <span class="cprog">\${x.stamps}/\${x.target}</span>
+            <button class="btn btn-ghost cn" data-n>Nudge</button>
+          </div>
+          <div class="cmeta">\${meta}\${x.unanswered ? ' · <span class="warn">' + x.unanswered + ' unanswered</span>' : ""}</div>\`;
+        el.querySelector("[data-n]").onclick = () => nudge([x], "customer");
+        return el;
+      }
+
+      function renderGroups() {
         const search = (q("[data-search]").value || "").trim().toUpperCase();
-        shown = all.filter((x) => !search || x.code.toUpperCase().includes(search));
-        const list = q("[data-list]"); list.innerHTML = "";
-        if (!all.length) { list.innerHTML = '<p class="muted">Nobody matches that filter 🎉</p>'; q("[data-more]").style.display = "none"; return; }
-        if (!shown.length) { list.innerHTML = '<p class="muted">No card matches that code.</p>'; q("[data-more]").style.display = "none"; return; }
-        for (const x of shown.slice(0, limit)) {
-          const row = document.createElement("div"); row.className = "pass";
-          row.innerHTML = \`<strong>\${x.code}</strong>
-            <span class="muted"> · \${x.cardName} · \${x.stamps}/\${x.target} · last seen \${x.lastDays}d ago\${x.lapsing ? " · lapsing" : ""}</span>
-            <div class="row"><button class="btn btn-ghost" data-n>Nudge</button></div>\`;
-          row.querySelector("[data-n]").onclick = () => nudge([x.serial]);
-          list.appendChild(row);
+        const shown = all.filter((x) => !search || x.code.toUpperCase().includes(search));
+        const host = q("[data-groups]"); host.innerHTML = "";
+        if (!all.length) {
+          host.innerHTML = '<p class="muted">No customers yet — they appear once someone adds your card and gets their first stamp.</p>';
+          return;
         }
-        q("[data-more]").style.display = shown.length > limit ? "" : "none";
+        if (!shown.length) { host.innerHTML = '<p class="muted">No card has that code.</p>'; return; }
+        for (const g of GROUPS) {
+          const people = shown.filter((x) => groupOf(x, cap) === g.key);
+          if (!people.length) continue;
+          const box = document.createElement("details");
+          box.className = "grp";
+          // A search is a hunt for one card — open everything so it can't hide.
+          if (g.open || search) box.open = true;
+          box.innerHTML = \`<summary><span class="gt">\${g.title}</span>
+            <span class="gc">\${people.length}</span>
+            <span class="gh">\${g.hint}</span></summary>
+            \${g.bulk ? '<button class="btn btn-ghost gnudge">Nudge all ' + people.length + '</button>' : ""}
+            <div class="grows"></div>\`;
+          const bulk = box.querySelector(".gnudge");
+          if (bulk) bulk.onclick = () => nudge(people, g.title.toLowerCase());
+          const rows = box.querySelector(".grows");
+          // 50 rows is plenty to act on; the search box reaches the rest.
+          for (const x of people.slice(0, 50)) rows.appendChild(row(x));
+          if (people.length > 50) {
+            rows.insertAdjacentHTML("beforeend",
+              '<p class="muted" style="margin-top:10px">Showing 50 of ' + people.length + ' — search by code to find a specific card.</p>');
+          }
+          host.appendChild(box);
+        }
       }
 
       async function load() {
-        limit = 50;
-        const card = q("[data-card]").value, days = q("[data-days]").value;
-        const { body } = await api("/customers?cardId=" + encodeURIComponent(card) + "&lapsedDays=" + days);
-        let cust = body.customers || [];
-        if (Number(days) > 0) cust = cust.filter((x) => x.lapsing);
-        all = cust;
+        const card = q("[data-card]").value;
+        const { body } = await api("/customers?cardId=" + encodeURIComponent(card) + "&lapsedDays=" + LAPSE_DAYS);
+        all = body.customers || [];
+        cap = body.nudgeCap || 3;
         const sel = q("[data-card]");
         if (!sel.dataset.filled) {
           sel.insertAdjacentHTML("beforeend", (body.cards || []).map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join(""));
           sel.dataset.filled = "1";
         }
-        renderRows();
+        // One message template, defined in Card → Rules — the old duplicate
+        // hard-coded default here meant two sources of truth for one message.
+        const src = card === "all" ? S.cafes[0] : S.cafes.find((c) => c.id === card);
+        if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (src && src.autoWinbackMessage) || "";
+        renderGroups();
       }
+      q("[data-msg]").oninput = (e) => { e.target.dataset.touched = "1"; };
       q("[data-card]").onchange = load;
-      q("[data-days]").onchange = load;
-      q("[data-search]").oninput = renderRows;
-      q("[data-more]").onclick = () => { limit += 50; renderRows(); };
-      q("[data-nudgeall]").onclick = () => nudge(shown.map((x) => x.serial));
+      q("[data-search]").oninput = renderGroups;
       load();
       return div;
     }
@@ -1611,7 +1766,11 @@ export function dashboardPage(): string {
           const name = prompt("Name for the new card (e.g. “Coffee card” or “Pastry card”):");
           if (!name) return;
           const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
-          if (r.ok) location.reload(); else toast(r.error || "Failed");
+          if (!r.ok) return toast(r.error || "Failed");
+          // The PIN is only stored hashed, so this is the one chance to read it.
+          alert("Card created.\\n\\nStaff PIN: " + r.staffPin +
+                "\\n\\nWrite it down — it can't be looked up later. You can change it any time in the Access tab.");
+          location.reload();
         };
         pick.appendChild(add);
         host.innerHTML = ""; host.appendChild(designPanel(S.cafes[S.selCard]));
@@ -1620,23 +1779,54 @@ export function dashboardPage(): string {
       return div;
     }
 
-    // ---- Share: every card's Add-to-Wallet QR / page / staff stamper ----
-    // (the tap-tag link is owner-facing only in the admin console, not here)
-    function shareAll() {
+    // ---- Access: the links you hand out, and the PIN that guards the stamper ----
+    // One home for both. The PIN used to be printed next to the staff link (so
+    // anyone shown the link got the PIN too) and was also editable over in the
+    // designer — two places, neither obviously about access.
+    function accessPanel() {
       const div = document.createElement("div");
-      div.innerHTML = '<p class="sub">Share these with customers and staff. They never change when you edit a card.</p>';
+      div.innerHTML = '<p class="sub">Links to share, and who can stamp. The links never change when you edit a card.</p>';
       for (const c of S.cafes) {
         // Every card (incl. the default) uses /c/:id now that / is the marketing page.
         const base = "/c/" + c.id;
-        const landing = base;
         const block = document.createElement("div");
         block.innerHTML = \`
           \${S.cafes.length > 1 ? '<label style="font-weight:700;color:var(--ink)">' + c.name + '</label>' : ""}
           <div class="sharelist">
-            <a href="\${base + "/qr"}" target="_blank"><span>Add-to-Wallet QR <span class="sub2">print for the counter</span></span><span class="arr">open →</span></a>
-            <a href="\${landing}" target="_blank"><span>Add-to-Wallet page <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
-            <a href="/staff?c=\${c.id}" target="_blank"><span>Staff stamper <span class="sub2">PIN: \${c.staffPin}</span></span><span class="arr">open →</span></a>
-          </div>\`;
+            <a href="\${base + "/qr"}" target="_blank"><span>Add-to-Wallet QR <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
+            <a href="\${base}" target="_blank"><span>Add-to-Wallet page <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
+            <a href="/staff?c=\${c.id}" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
+          </div>
+          <label style="margin-top:14px">Staff PIN</label>
+          <p class="muted" style="margin-top:-2px">Stored scrambled, so it can't be looked up — not even by us. If nobody remembers it, generate a new one.</p>
+          <div class="copyrow" style="margin-top:8px">
+            <input data-pin placeholder="Set your own PIN (4–12 digits)" inputmode="numeric" autocomplete="off">
+            <button class="btn btn-ghost" data-setpin>Set</button>
+          </div>
+          <button class="btn btn-ghost" style="margin-top:8px;width:auto;padding:10px 14px" data-newpin>Generate a new PIN</button>
+          <div data-pinout></div>
+          <div style="height:18px"></div>\`;
+
+        const out = block.querySelector("[data-pinout]");
+        // Shown once, right after it's set — there is no way back to it later.
+        const reveal = (pin) => {
+          out.innerHTML = '<div class="temp">New staff PIN: <strong>' + pin + '</strong><br>' +
+            'Write it down now. Every staff phone has to sign in again with it.</div>';
+        };
+        block.querySelector("[data-setpin]").onclick = async () => {
+          const pin = block.querySelector("[data-pin]").value.trim();
+          if (pin.length < 4) return toast("Use at least 4 digits");
+          const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({ staffPin: pin }) });
+          if (!body.ok) return toast(body.error || "Couldn’t set the PIN");
+          block.querySelector("[data-pin]").value = "";
+          reveal(pin);
+        };
+        block.querySelector("[data-newpin]").onclick = async () => {
+          if (!confirm("Generate a new PIN? The current one stops working and staff phones must sign in again.")) return;
+          const { body } = await api("/cafe/" + c.id + "/rotate-pin", { method: "POST" });
+          if (body.ok) reveal(body.staffPin);
+          else toast(body.error || "Couldn’t change the PIN");
+        };
         div.appendChild(block);
       }
       return div;
@@ -1675,6 +1865,9 @@ export function dashboardPage(): string {
       if (!on || !thumb) return;
       thumb.style.width = on.offsetWidth + "px";
       thumb.style.transform = "translateX(" + on.offsetLeft + "px)";
+      // On a very narrow phone the bar scrolls; bring the active tab into view.
+      // block:"nearest" so this never scrolls the page itself.
+      if (seg.scrollWidth > seg.clientWidth) on.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
     // Wires a segmented control: click → set .on, glide the thumb, run onPick(btn).
     function wireSeg(seg, onPick) {
@@ -1698,35 +1891,40 @@ export function dashboardPage(): string {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
       S.cafes = body.cafes; S.email = body.email; S.selCard = 0; S.tab = "home";
+      // Five tabs, each one job: how it's going · who they are · what the card
+      // is · who can reach it · your login. Customers is a real tab now, not an
+      // unreachable sub-page of Home.
       $("#app").innerHTML = \`
         <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">\${S.email}</p></div>
         <div class="seg" id="tabs" role="tablist">
           <button data-tab="home" class="on">Home</button>
-          <button data-tab="cards">Cards</button>
-          <button data-tab="share">Share</button>
+          <button data-tab="customers">Customers</button>
+          <button data-tab="card">Card</button>
+          <button data-tab="access">Access</button>
           <button data-tab="account">Account</button>
           <span class="thumb"></span>
         </div>
         <div id="panel"></div>\`;
       $("#tabs").querySelectorAll("button").forEach((b) => {
-        b.onclick = () => { S.tab = b.dataset.tab; renderTabs(); renderPanel(); };
+        b.onclick = () => go(b.dataset.tab);
       });
       renderTabs(); renderPanel();
     }
 
+    /** Switch tabs from anywhere (the tab bar, or a link inside a panel). */
+    function go(tab) { S.tab = tab; renderTabs(); renderPanel(); window.scrollTo(0, 0); }
+
     function renderTabs() {
-      // The Customers view is a sub-page of Home, so keep Home highlighted there.
-      const active = S.tab === "customers" ? "home" : S.tab;
       const seg = $("#tabs");
-      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === active));
+      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === S.tab));
       moveThumb(seg);
     }
     function renderPanel() {
       const panel = $("#panel"); panel.innerHTML = "";
-      const view = S.tab === "cards" ? cardsPanel()
-        : S.tab === "share" ? shareAll()
+      const view = S.tab === "card" ? cardsPanel()
+        : S.tab === "access" ? accessPanel()
         : S.tab === "account" ? accountPanel()
-        : S.tab === "customers" ? customersView()
+        : S.tab === "customers" ? customersPanel()
         : homePanel();
       panel.appendChild(view);
     }
@@ -1872,6 +2070,21 @@ export function adminPage(): string {
           <td class="flags">\${c.has_logo ? "logo " : ""}\${c.has_banner ? "banner" : ""}\${!c.has_logo && !c.has_banner ? "—" : ""}<br>\${new Date(c.created_at).toLocaleDateString()}</td>
           <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br><button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button></td>
         </tr>\`).join("");
+      // Did chasing quiet customers actually work, and is anyone leaning on the
+      // override at the counter? Both are only answerable now that events record
+      // who did what.
+      const wbRows = body.cafes.map((c) => {
+        const rate = c.nudged ? Math.round((c.nudge_returned / c.nudged) * 100) + "%" : "—";
+        return \`<tr>
+          <td><strong>\${c.name}</strong></td>
+          <td>\${c.nudged}</td>
+          <td>\${c.nudge_returned}</td>
+          <td>\${Math.max(0, c.nudged - c.nudge_returned)}</td>
+          <td>\${rate}</td>
+          <td>\${c.forced_stamps}</td>
+          <td>\${c.undos}</td>
+        </tr>\`;
+      }).join("");
       const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
       $("#app").innerHTML = \`
         <h1>Platform admin</h1>
@@ -1882,6 +2095,14 @@ export function adminPage(): string {
           \${rows}
         </table></div>
         <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>
+
+        <h2>Win-back &amp; counter audit</h2>
+        <p class="muted"><strong>Came back</strong> = a stamp after the last message, so the nudge worked. Auto win-back gives up after 3 unanswered messages. <strong>Forced</strong> = staff confirmed past the "just stamped" warning; <strong>Undone</strong> = stamps taken back. Both are normal in small numbers — a spike is worth a call.</p>
+        <div class="tw"><table>
+          <tr><th>Programme</th><th>Nudged</th><th>Came back</th><th>No return</th><th>Return rate</th><th>Forced</th><th>Undone</th></tr>
+          \${wbRows}
+        </table></div>
+
         <h2>Create a café (done-for-you)</h2>
         <p class="muted">Design a card and set up the owner's account in one step. Pick their business type, and we build a matching card. They get a temp password to log in and take over.</p>
         <div id="dfy">
@@ -1925,7 +2146,9 @@ export function adminPage(): string {
         })});
         $("#dfy-create").disabled = false;
         if (r.ok) {
-          $("#dfy-out").innerHTML = '<div class="temp">Created <strong>' + cafeName + '</strong> for <strong>' + r.ownerEmail + '</strong>.<br>Temp password: <strong>' + r.tempPassword + '</strong> — they log in at /dashboard and can change it.</div>';
+          // The PIN is only ever stored hashed, so this is the one time it can be
+          // read — after this it can only be replaced from the owner's dashboard.
+          $("#dfy-out").innerHTML = '<div class="temp">Created <strong>' + cafeName + '</strong> for <strong>' + r.ownerEmail + '</strong>.<br>Temp password: <strong>' + r.tempPassword + '</strong> — they log in at /dashboard and can change it.<br>Staff PIN: <strong>' + r.staffPin + '</strong> — write this down now, it can’t be looked up later.</div>';
           $("#dfy-name").value = ""; $("#dfy-email").value = "";
           setTimeout(load, 1500); // refresh the table to show the new café
         } else {

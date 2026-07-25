@@ -13,6 +13,7 @@
     "dev": "tsx watch src/server.ts",
     "test": "vitest run",
     "e2e": "tsx scripts/e2e-local.ts",
+    "dev:local": "tsx scripts/dev-local.ts",
     "typecheck": "tsc --noEmit",
     "art": "tsx scripts/generate-art.ts",
     "prepare-certs": "tsx scripts/prepare-certs.ts",

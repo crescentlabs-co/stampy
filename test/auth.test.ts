@@ -3,10 +3,14 @@ import type { Request } from "express";
 import {
   createEnrollCookie,
   createSessionCookie,
+  createStaffCookie,
   enrollCookieName,
   hashPassword,
+  newStaffDeviceId,
   parseSessionCookie,
   readEnrollCookie,
+  readStaffCookie,
+  staffCookieName,
   verifyPassword,
 } from "../src/auth.js";
 import { generateShortCode } from "../src/db.js";
@@ -80,6 +84,54 @@ describe("enrollment cookie", () => {
 
   it("keeps the cookie name safe for a Set-Cookie header", () => {
     expect(enrollCookieName("has space/and;semi")).toBe("stampy_card_hasspaceandsemi");
+  });
+});
+
+describe("staff session cookie", () => {
+  const reqWith = (cookieHeader: string) =>
+    ({ get: (h: string) => (h.toLowerCase() === "cookie" ? cookieHeader : undefined) }) as unknown as Request;
+
+  const cookieFor = (nameCafe: string, signedCafe: string, device: string, epoch: number) =>
+    `${staffCookieName(nameCafe)}=${encodeURIComponent(createStaffCookie(signedCafe, device, epoch))}`;
+
+  it("round-trips the device id and epoch", () => {
+    expect(readStaffCookie(reqWith(cookieFor("default", "default", "abc123", 7)), "default")).toEqual({
+      deviceId: "abc123",
+      epoch: 7,
+    });
+  });
+
+  it("mints a distinct device id each time, so events are attributable per phone", () => {
+    const ids = new Set(Array.from({ length: 20 }, newStaffDeviceId));
+    expect(ids.size).toBe(20);
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f]{10}$/);
+  });
+
+  // The café id is signed as well as being in the cookie name, so a cookie for
+  // one café can't be renamed and replayed against another.
+  it("rejects a cookie whose signed café doesn't match the café asked about", () => {
+    expect(readStaffCookie(reqWith(cookieFor("other", "default", "abc123", 1)), "other")).toBeNull();
+    expect(readStaffCookie(reqWith(cookieFor("default", "default", "abc123", 1)), "other")).toBeNull();
+  });
+
+  it("rejects a forged, tampered or absent cookie", () => {
+    const cookie = cookieFor("default", "default", "abc123", 1);
+    expect(readStaffCookie(reqWith(cookie.replace("abc123", "beef99")), "default")).toBeNull();
+    expect(readStaffCookie(reqWith(`${staffCookieName("default")}=default.abc123.1.99999999999999.nope`), "default")).toBeNull();
+    expect(readStaffCookie(reqWith(""), "default")).toBeNull();
+  });
+
+  it("rejects a cookie whose expiry has been rewritten", () => {
+    const rewritten = createStaffCookie("default", "abc123", 1).replace(/\.\d{10,}\./, ".1.");
+    expect(readStaffCookie(reqWith(`${staffCookieName("default")}=${encodeURIComponent(rewritten)}`), "default")).toBeNull();
+  });
+
+  // The epoch is returned rather than enforced here — requireStaff compares it
+  // against the café row, which is what makes a PIN change revoke every phone.
+  it("returns the epoch it was issued with so a PIN change can strand it", () => {
+    const old = readStaffCookie(reqWith(cookieFor("default", "default", "abc123", 3)), "default");
+    expect(old?.epoch).toBe(3);
+    expect(old?.epoch).not.toBe(4);
   });
 });
 

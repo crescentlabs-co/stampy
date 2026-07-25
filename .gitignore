@@ -5,4 +5,10 @@ node_modules/
 *.log
 .DS_Store
 credentials/
+# Downloaded Apple signing material (.p12/.p8, the CSR, and the plaintext
+# password note). These live in Railway's Variables UI, never in the repo —
+# ignored as a whole folder so a `git add -A` can't sweep them in.
+apple_certs/
+*.certSigningRequest
+*-pw.txt
 # The public Apple WWDR cert (certs/wwdr.pem) IS committed on purpose.

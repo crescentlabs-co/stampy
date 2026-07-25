@@ -15,6 +15,7 @@
  */
 import pg from "pg";
 import { randomInt } from "node:crypto";
+import { hashPassword, verifyPassword } from "./auth.js";
 import { config, seedCafe } from "./config.js";
 
 const { Pool } = pg;
@@ -28,8 +29,17 @@ export interface CafeRow {
   background_color: string;
   foreground_color: string;
   label_color: string;
+  /** Legacy plaintext column — blanked by the migration once hashed. Never read. */
   staff_pin: string;
+  /** scrypt hash of the staff PIN (same format as a password hash). */
+  staff_pin_hash: string;
+  /** Bumped on every PIN change; invalidates all existing staff sessions. */
+  staff_session_epoch: number;
   created_at: Date;
+  /** Typical spend per visit, in cents — turns stamps into a money figure. */
+  average_spend_cents: number;
+  /** Currency symbol shown beside that figure (owner-editable, e.g. "RM", "$"). */
+  currency: string;
   /** Opt-in automated win-back: message customers idle for `auto_winback_days`. */
   auto_winback_enabled: boolean;
   auto_winback_days: number;
@@ -73,7 +83,19 @@ export interface RegistrationRow {
   serial: string;
 }
 
-export type EventType = "enroll" | "stamp" | "redeem" | "nudge";
+export type EventType = "enroll" | "stamp" | "redeem" | "nudge" | "undo";
+
+/**
+ * Who caused an event, and whether a stamp was forced past the anti-spam
+ * cooldown. Recorded so abuse at the counter is attributable after the fact —
+ * the deliberate trade-off is "detectable", not "locked down".
+ */
+export interface EventMeta {
+  /** `staff:<deviceId>`, `owner:<ownerId>`, `auto` (win-back job) or `customer` (self sign-up). */
+  actor?: string;
+  /** True when staff confirmed past the "just stamped" refusal. */
+  forced?: boolean;
+}
 
 /** Default café id — seeded from env on first boot so v0.1 behavior is unchanged. */
 export const DEFAULT_CAFE_ID = "default";
@@ -189,6 +211,24 @@ export async function migrate(): Promise<void> {
       updated_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (cafe_id, filled)
     );
+    -- v1.1: the staff PIN is stored only as a scrypt hash, like a password, so a
+    -- database leak can't be replayed at the counter. The old plaintext column
+    -- stays (additive migrations only) but is blanked by the backfill below.
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS staff_pin_hash text NOT NULL DEFAULT '';
+    -- Bumped whenever the PIN changes. It is baked into each staff session
+    -- cookie, so changing the PIN signs every staff phone out — that's the
+    -- break-glass control when a stamper link or PIN gets out.
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS staff_session_epoch integer NOT NULL DEFAULT 1;
+    -- v1.1: value tracking — stamps × average spend gives the owner a money figure.
+    -- Cents, not numeric: pg returns numeric as a string, integers as numbers.
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS average_spend_cents integer NOT NULL DEFAULT 0;
+    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'RM';
+    -- v1.1: audit trail — who caused each event, and whether a stamp was forced
+    -- past the anti-spam cooldown. Empty actor = written before this existed.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS actor text NOT NULL DEFAULT '';
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS forced boolean NOT NULL DEFAULT false;
+    -- Every "last stamp / last nudge for this card" lookup hits this.
+    CREATE INDEX IF NOT EXISTS idx_events_serial_type ON events(serial, type);
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -205,6 +245,21 @@ export async function migrate(): Promise<void> {
       config.staffPin,
     ],
   );
+
+  // One-time backfill: hash any PIN still sitting in plaintext (including the
+  // seed row just inserted), then blank the plaintext so it stops existing.
+  // Hashing needs scrypt, so it can't be done in SQL. Runs on every boot but
+  // matches nothing once every café is migrated.
+  const stale = await getPool().query<{ id: string; staff_pin: string }>(
+    `SELECT id, staff_pin FROM cafes WHERE staff_pin_hash = '' AND staff_pin <> ''`,
+  );
+  for (const row of stale.rows) {
+    await getPool().query(`UPDATE cafes SET staff_pin_hash = $2, staff_pin = '' WHERE id = $1`, [
+      row.id,
+      hashPassword(row.staff_pin),
+    ]);
+  }
+  if (stale.rows.length) console.log(`[migrate] hashed ${stale.rows.length} staff PIN(s)`);
 }
 
 // ----------------------------------------------------------------- cafes ----
@@ -232,11 +287,35 @@ export async function createCafe(row: {
 }): Promise<CafeRow> {
   const id = generateShortCode(8).toLowerCase();
   const res = await getPool().query<CafeRow>(
-    `INSERT INTO cafes (id, name, reward, stamps_target, stamps_start, staff_pin)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [id, row.name, row.reward, row.stampsTarget, row.stampsStart, row.staffPin],
+    `INSERT INTO cafes (id, name, reward, stamps_target, stamps_start, staff_pin, staff_pin_hash)
+     VALUES ($1, $2, $3, $4, $5, '', $6) RETURNING *`,
+    [id, row.name, row.reward, row.stampsTarget, row.stampsStart, hashPassword(row.staffPin)],
   );
   return res.rows[0]!;
+}
+
+/** Verifies a PIN typed at the counter against the café's stored hash (timing-safe). */
+export function verifyStaffPin(cafe: CafeRow, given: string): boolean {
+  return verifyPassword(given, cafe.staff_pin_hash);
+}
+
+/**
+ * Replaces a café's staff PIN. Stores only the hash; the caller shows the PIN
+ * once. Bumping the epoch signs every staff phone out, so a changed PIN really
+ * does revoke access rather than just changing what new devices must type.
+ */
+export async function setStaffPin(cafeId: string, pin: string): Promise<void> {
+  await getPool().query(
+    `UPDATE cafes SET staff_pin_hash = $2, staff_pin = '',
+            staff_session_epoch = staff_session_epoch + 1
+      WHERE id = $1`,
+    [cafeId, hashPassword(pin)],
+  );
+}
+
+/** A fresh 6-digit PIN — longer than the old 4 digits, still fast to type. */
+export function generateStaffPin(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 export async function updateCafe(
@@ -246,7 +325,6 @@ export async function updateCafe(
     reward: string;
     stamps_target: number;
     stamps_start: number;
-    staff_pin: string;
     background_color: string;
     foreground_color: string;
     label_color: string;
@@ -254,6 +332,8 @@ export async function updateCafe(
     auto_winback_days: number;
     auto_winback_message: string;
     stamp_style: string;
+    average_spend_cents: number;
+    currency: string;
   }>,
 ): Promise<CafeRow | null> {
   const keys = Object.keys(fields) as (keyof typeof fields)[];
@@ -395,8 +475,11 @@ export interface CustomerRow {
   stamps: number;
   target: number;
   updated_at: Date;
+  created_at: Date;
   /** Last real visit = last `stamp` event, falling back to when the card was created. */
   last_visit: Date;
+  /** Nudges sent since this card's last visit — how many messages went unanswered. */
+  unanswered_nudges: number;
 }
 
 // ---- shared SQL fragments (both assume the passes table is aliased `p`) ----
@@ -418,12 +501,30 @@ const ACTIVE_PASS_SQL = `(
     OR EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
      )`;
 
+// Stamps actually given. A staff `undo` corrects a mis-scan, so it has to come
+// back off the total — otherwise the headline number overstates real activity.
+// Assumes the cafes table is aliased `c`.
+const NET_STAMPS_SQL = `(
+       SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
+                     - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
+         FROM events e WHERE e.cafe_id = c.id
+     )`;
+
+// How many nudges have gone out since this card's last visit. Non-zero means we
+// messaged someone who then didn't come in — the signal for "stop chasing".
+const UNANSWERED_NUDGES_SQL = `(
+       SELECT count(*)::int FROM events e
+        WHERE e.serial = p.serial AND e.type = 'nudge'
+          AND e.created_at > ${LAST_VISIT_SQL}
+     )`;
+
 /** Every card of a café, most-recently-visited first (for the Customers view). */
 export async function cafeCustomers(cafeId: string): Promise<CustomerRow[]> {
   const res = await getPool().query<CustomerRow>(
     `SELECT p.serial, p.short_code AS code, p.stamp_count AS stamps,
-            p.stamps_target AS target, p.updated_at,
-            ${LAST_VISIT_SQL} AS last_visit
+            p.stamps_target AS target, p.updated_at, p.created_at,
+            ${LAST_VISIT_SQL} AS last_visit,
+            ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges
        FROM passes p WHERE p.cafe_id = $1 ORDER BY last_visit DESC`,
     [cafeId],
   );
@@ -456,10 +557,16 @@ export interface AdminCafeRow {
   cards: number;
   stamps: number;
   redemptions: number;
+  /** Cards that have been nudged at least once, and how many then came back. */
+  nudged: number;
+  nudge_returned: number;
+  /** Audit counters: stamps confirmed past the cooldown, and corrections made. */
+  forced_stamps: number;
+  undos: number;
 }
 
 /** Every café on the platform with its owner email(s), metrics, and art flags.
- *  Never selects a password — only the hash exists and it is never surfaced. */
+ *  Never selects a password or a PIN — only hashes exist and neither is surfaced. */
 export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
   const res = await getPool().query<AdminCafeRow>(
     `SELECT c.id, c.name, c.created_at,
@@ -471,8 +578,16 @@ export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
             (SELECT count(*)::int FROM passes p
               WHERE p.cafe_id = c.id AND ${ACTIVE_PASS_SQL}) AS active,
             (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id) AS cards,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp') AS stamps,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'redeem') AS redemptions
+            ${NET_STAMPS_SQL} AS stamps,
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'redeem') AS redemptions,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+              AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'nudge')) AS nudged,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+              AND EXISTS (SELECT 1 FROM events s WHERE s.serial = p.serial AND s.type = 'stamp'
+                            AND s.created_at > (SELECT max(n.created_at) FROM events n
+                                                 WHERE n.serial = p.serial AND n.type = 'nudge'))) AS nudge_returned,
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.forced) AS forced_stamps,
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'undo') AS undos
        FROM cafes c
       ORDER BY c.created_at DESC`,
   );
@@ -682,11 +797,57 @@ export async function cafesWithAutoWinback(): Promise<CafeRow[]> {
   return res.rows;
 }
 
-export async function logEvent(cafeId: string, serial: string, type: EventType): Promise<void> {
+export async function logEvent(
+  cafeId: string,
+  serial: string,
+  type: EventType,
+  meta: EventMeta = {},
+): Promise<void> {
   await getPool().query(
-    `INSERT INTO events (cafe_id, serial, type) VALUES ($1, $2, $3)`,
-    [cafeId, serial, type],
+    `INSERT INTO events (cafe_id, serial, type, actor, forced) VALUES ($1, $2, $3, $4, $5)`,
+    [cafeId, serial, type, meta.actor ?? "", meta.forced === true],
   );
+}
+
+/** How many nudges this card has had since its last visit (0 = it answered, or was never nudged). */
+export async function unansweredNudges(serial: string): Promise<number> {
+  const res = await getPool().query<{ n: number }>(
+    `SELECT ${UNANSWERED_NUDGES_SQL} AS n FROM passes p WHERE p.serial = $1`,
+    [serial],
+  );
+  return res.rows[0]?.n ?? 0;
+}
+
+export interface NudgeOutcomes {
+  /** Nudged, then came in — the win-back worked. */
+  returned: number;
+  /** Nudged and still hasn't been back. */
+  noReturn: number;
+  /** Never messaged at all. */
+  neverNudged: number;
+}
+
+/** Did win-back messages actually bring people back? Per café, all time. */
+export async function nudgeOutcomes(cafeId: string): Promise<NudgeOutcomes> {
+  const res = await getPool().query<{ returned: number; no_return: number; never_nudged: number }>(
+    `WITH x AS (
+       SELECT (SELECT max(created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'nudge') AS last_nudge,
+              (SELECT max(created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'stamp') AS last_stamp
+         FROM passes p WHERE p.cafe_id = $1
+     )
+     SELECT
+       count(*) FILTER (WHERE last_nudge IS NOT NULL AND last_stamp IS NOT NULL AND last_stamp > last_nudge)::int AS returned,
+       count(*) FILTER (WHERE last_nudge IS NOT NULL AND (last_stamp IS NULL OR last_stamp <= last_nudge))::int AS no_return,
+       count(*) FILTER (WHERE last_nudge IS NULL)::int AS never_nudged
+     FROM x`,
+    [cafeId],
+  );
+  const r = res.rows[0];
+  return {
+    returned: r?.returned ?? 0,
+    noReturn: r?.no_return ?? 0,
+    neverNudged: r?.never_nudged ?? 0,
+  };
 }
 
 export interface CafeMetrics {
@@ -712,9 +873,11 @@ export async function cafeMetrics(cafeId: string): Promise<CafeMetrics> {
     `SELECT
        (SELECT count(*) FROM passes p WHERE p.cafe_id = $1 AND ${ACTIVE_PASS_SQL})::text AS active,
        (SELECT count(*) FROM passes WHERE cafe_id = $1)::text AS cards,
-       count(*) FILTER (WHERE type = 'stamp')::text AS stamps,
+       GREATEST(count(*) FILTER (WHERE type = 'stamp')
+              - count(*) FILTER (WHERE type = 'undo'), 0)::text AS stamps,
        count(*) FILTER (WHERE type = 'redeem')::text AS redemptions,
-       count(*) FILTER (WHERE type = 'stamp' AND created_at > now() - interval '30 days')::text AS "stamps30d",
+       GREATEST(count(*) FILTER (WHERE type = 'stamp' AND created_at > now() - interval '30 days')
+              - count(*) FILTER (WHERE type = 'undo'  AND created_at > now() - interval '30 days'), 0)::text AS "stamps30d",
        count(*) FILTER (WHERE type = 'redeem' AND created_at > now() - interval '30 days')::text AS "redemptions30d"
      FROM events WHERE cafe_id = $1`,
     [cafeId],

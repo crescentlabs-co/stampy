@@ -26,7 +26,7 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@cafe.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken, updateCafe, getPool } =
+  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken, updateCafe, getPool, verifyStaffPin } =
     await import("../src/db.js");
   const { createHash } = await import("node:crypto");
   await migrate();
@@ -97,7 +97,12 @@ async function main() {
       ov2nd.cafes[0].id !== "default",
     "second owner sees only their own starter card (not the default café)",
   );
-  expect(ov2nd.cafes[0].staffPin !== "1234", "starter card gets a random PIN, not the shared default");
+  // The PIN is stored only as a scrypt hash, so there is nothing for the API to
+  // hand back — the dashboard can set or replace it, never read it.
+  expect(ov2nd.cafes[0].staffPin === undefined, "the overview API never returns a staff PIN");
+  const starter = (await getCafe(ov2nd.cafes[0].id))!;
+  expect(starter.staff_pin === "" && starter.staff_pin_hash.startsWith("scrypt$"), "a new card's PIN is stored hashed, never in plaintext");
+  expect(!verifyStaffPin(starter, "1234"), "starter card gets a random PIN, not the shared default");
 
   const dupSignup = await fetch(base + "/dashboard/api/signup", {
     method: "POST",
@@ -126,7 +131,12 @@ async function main() {
   });
   expect(edit.status === 200, "café edit saves");
   const cafeAfter = await getCafe("default");
-  expect(cafeAfter!.reward === "Free latte" && cafeAfter!.staff_pin === "9876", "edit persisted");
+  expect(cafeAfter!.reward === "Free latte", "café edit persisted");
+  expect(
+    verifyStaffPin(cafeAfter!, "9876") && cafeAfter!.staff_pin === "",
+    "a PIN set from the dashboard is hashed, and the plaintext column stays empty",
+  );
+  expect(!verifyStaffPin(cafeAfter!, "9875"), "a near-miss PIN does not verify");
 
   // Create two passes directly (enroll route would 503 without Apple certs)
   const mk = async (platform: "apple" | "google" = "apple") =>
@@ -145,10 +155,49 @@ async function main() {
   await logEvent("default", p1.serial, "enroll");
   await logEvent("default", p2.serial, "enroll");
 
-  const staffHeaders = { "Content-Type": "application/json", "x-staff-pin": "9876", "x-cafe-id": "default" };
+  // --- Staff auth: the PIN is exchanged once for a session, not replayed ---
+  const staffLogin = async (cafeId: string, pin: string) => {
+    const r = await fetch(base + "/staff/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-cafe-id": cafeId },
+      body: JSON.stringify({ pin }),
+    });
+    return { status: r.status, cookie: r.headers.get("set-cookie")?.split(";")[0] ?? "" };
+  };
 
-  const wrongPin = await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-staff-pin": "1111" } });
-  expect(wrongPin.status === 401, "staff wrong PIN rejected (per-café PIN from DB)");
+  const noSession = await fetch(base + "/staff/api/passes", {
+    headers: { "Content-Type": "application/json", "x-cafe-id": "default" },
+  });
+  expect(noSession.status === 401, "staff API refuses a device with no session");
+  const oldWay = await fetch(base + "/staff/api/passes", {
+    headers: { "Content-Type": "application/json", "x-cafe-id": "default", "x-staff-pin": "9876" },
+  });
+  expect(oldWay.status === 401, "the old x-staff-pin bearer header is no longer accepted");
+
+  expect((await staffLogin("default", "1111")).status === 401, "staff sign-in with the wrong PIN is rejected");
+  const staff1 = await staffLogin("default", "9876");
+  expect(
+    staff1.status === 200 && staff1.cookie.startsWith("stampy_staff_default="),
+    "the right PIN issues a staff session cookie",
+  );
+  const staffHeaders = { "Content-Type": "application/json", "x-cafe-id": "default", cookie: staff1.cookie };
+  expect(
+    (await staffLogin("default", "9876")).cookie !== staff1.cookie,
+    "each sign-in mints a distinct device session (so events are attributable per phone)",
+  );
+
+  // A leaked /staff link on its own reveals nothing: no card list, no codes.
+  const staffAnon = await get("/staff");
+  expect(
+    staffAnon.body.includes("Staff login") && !staffAnon.body.includes("Scan card"),
+    "GET /staff without a session serves only the PIN form",
+  );
+  const staffSignedIn = await get("/staff", { headers: { cookie: staff1.cookie } });
+  expect(staffSignedIn.body.includes("Scan card"), "GET /staff with a session serves the stamper");
+  expect(
+    !staffAnon.body.includes("localStorage"),
+    "the staff page no longer keeps a credential in localStorage",
+  );
 
   const list = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
   expect(list.passes.length === 2 && list.passes[0].code.length === 6, "staff list shows cards with short codes");
@@ -231,14 +280,20 @@ async function main() {
   });
   const newCafeOut = JSON.parse(await newCafe.text());
   expect(newCafeOut.ok && newCafeOut.id, "second café created");
-  const otherList = await fetch(base + "/staff/api/passes", {
-    headers: { ...staffHeaders, "x-cafe-id": newCafeOut.id, "x-staff-pin": "2222" },
+  // A session is scoped to one café: the default café's cookie is not accepted
+  // for the new one, even with its x-cafe-id.
+  const wrongCafe = await fetch(base + "/staff/api/passes", {
+    headers: { ...staffHeaders, "x-cafe-id": newCafeOut.id },
   });
+  expect(wrongCafe.status === 401, "a staff session for one café is refused for another");
+
+  const staff2 = await staffLogin(newCafeOut.id, "2222");
+  expect(staff2.status === 200, "the second café's own PIN signs in");
+  const staff2Headers = { "Content-Type": "application/json", "x-cafe-id": newCafeOut.id, cookie: staff2.cookie };
+  const otherList = await fetch(base + "/staff/api/passes", { headers: staff2Headers });
   expect(JSON.parse(await otherList.text()).passes.length === 0, "cafés are isolated (no cross-café cards)");
   const crossStamp = await fetch(base + "/staff/api/stamp", {
-    method: "POST",
-    headers: { ...staffHeaders, "x-cafe-id": newCafeOut.id, "x-staff-pin": "2222" },
-    body: JSON.stringify({ serial: p1.serial }),
+    method: "POST", headers: staff2Headers, body: JSON.stringify({ serial: p1.serial }),
   });
   expect(crossStamp.status === 404, "cannot stamp another café's card");
 
@@ -395,36 +450,17 @@ async function main() {
   // the change-password test rotated the owner's password; refresh the cookie
   const cookieNow = newLogin.headers.get("set-cookie")?.split(";")[0] ?? cookie;
 
-  // --- Win-back: customers list + owner nudge (single + all) ---
-  const custRes = JSON.parse((await get("/dashboard/api/cafe/default/customers?lapsedDays=0", { headers: { cookie: cookieNow } })).body);
-  expect(Array.isArray(custRes.customers) && custRes.customers.length >= 2, "customers list returns this café's cards");
-  expect(custRes.customers[0].code && typeof custRes.customers[0].lastDays === "number", "each customer has a code + last-seen days");
-
-  const nudgeOne = await fetch(base + "/dashboard/api/cafe/default/nudge", {
+  // The per-café customers/nudge endpoints are gone — the Customers tab spans
+  // every card the owner has, so the owner-level pair below replaced them.
+  expect(
+    (await get("/dashboard/api/cafe/default/customers", { headers: { cookie: cookieNow } })).status === 404,
+    "the superseded per-café customers endpoint is gone",
+  );
+  const deadNudge = await fetch(base + "/dashboard/api/cafe/default/nudge", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ message: "We miss you!", target: [p2.serial] }),
-  });
-  const nudgeOneOut = JSON.parse(await nudgeOne.text());
-  expect(nudgeOne.status === 200 && nudgeOneOut.total === 1, "owner nudges a single customer");
-
-  const nudgeAll = await fetch(base + "/dashboard/api/cafe/default/nudge", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ message: "New menu!", target: "all" }),
-  });
-  const nudgeAllOut = JSON.parse(await nudgeAll.text());
-  expect(nudgeAll.status === 200 && nudgeAllOut.total === custRes.customers.length, "owner bulk-nudges all customers");
-
-  const nudgeEmpty = await fetch(base + "/dashboard/api/cafe/default/nudge", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ message: "", target: "all" }),
-  });
-  expect(nudgeEmpty.status === 400, "nudge with no message → 400");
-
-  const nudgeNotMine = await fetch(base + "/dashboard/api/cafe/default/nudge", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookie2 },
     body: JSON.stringify({ message: "hi", target: "all" }),
   });
-  expect(nudgeNotMine.status === 403, "an owner can't nudge another owner's café");
+  expect(deadNudge.status === 404, "the superseded per-café nudge endpoint is gone");
 
   // --- Admin console (ADMIN_EMAIL = "owner@test.my, second@cafe.my") ---
   // A genuinely non-admin owner (not in the comma list) is refused.
@@ -496,6 +532,18 @@ async function main() {
   expect(Array.isArray(ownerCust.cards) && ownerCust.cards.length >= 2, "customers response lists the owner's cards for filtering");
   const filtered = JSON.parse((await get("/dashboard/api/customers?cardId=" + newCafeOut.id + "&lapsedDays=0", { headers: { cookie: cookieNow } })).body);
   expect(filtered.customers.length === 0, "card filter narrows to a single (empty) card");
+
+  expect(
+    ownerCust.customers.every((c: any) => typeof c.joinedDays === "number" && typeof c.unanswered === "number"),
+    "each customer row carries joined-days and unanswered-nudge counts (the grouping inputs)",
+  );
+  expect(ownerCust.nudgeCap >= 1, "the customers response states the unanswered-nudge cap");
+
+  const nudgeEmpty = await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "", target: "all" }),
+  });
+  expect(nudgeEmpty.status === 400, "nudge with no message → 400");
 
   const oNudge = await fetch(base + "/dashboard/api/nudge", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
@@ -587,14 +635,18 @@ async function main() {
   // café (whose real PIN is 2222) with a wrong PIN — nothing after this uses it.
   let firstPin = 0, lastPin = 0;
   for (let i = 0; i < 22; i++) {
-    const r = await fetch(base + "/staff/api/passes", {
-      headers: { ...staffHeaders, "x-cafe-id": newCafeOut.id, "x-staff-pin": "0000" },
-    });
+    const r = await staffLogin(newCafeOut.id, "0000");
     if (i === 0) firstPin = r.status;
     lastPin = r.status;
   }
   expect(firstPin === 401, "a wrong staff PIN is rejected (401) before the limit trips");
-  expect(lastPin === 429, "staff PIN endpoint rate-limits repeated WRONG attempts (20/10min)");
+  expect(lastPin === 429, "staff sign-in rate-limits repeated WRONG attempts (20/10min)");
+  // The limiter guards sign-in only — an already-signed-in phone keeps working
+  // through the block, so one bad actor can't stop the shift.
+  expect(
+    (await fetch(base + "/staff/api/passes", { headers: staff2Headers })).status === 200,
+    "a signed-in phone still works while sign-in is rate-limited",
+  );
 
   // --- Legal pages + consent ---
   const priv = await get("/privacy");
@@ -693,6 +745,120 @@ async function main() {
   expect(!(await stillThere(orphan.serial)), "an old card never stamped and never in a wallet is pruned");
   expect(await stillThere(ghost.serial), "an old card WITH a wallet registration survives the prune");
   expect(await stillThere(lap.serial), "an old card WITH a stamp survives the prune");
+
+  // --- Undo a stamp: the fix for a mis-scan ---
+  // Before this, the only way to take a stamp back was to redeem the card, which
+  // handed out a free reward for a staff typo.
+  const post = (p: string, body: unknown, headers: Record<string, string> = staffHeaders) =>
+    fetch(base + "/staff/api" + p, { method: "POST", headers, body: JSON.stringify(body) });
+  const un = await mk();
+  await post("/stamp", { serial: un.serial });
+  const undo1 = await post("/undo", { serial: un.serial });
+  expect(undo1.status === 200 && JSON.parse(await undo1.text()).pass.stamps === 2, "undo takes one stamp back (3 → 2)");
+  for (let i = 0; i < 5; i++) await post("/undo", { serial: un.serial });
+  const floored = JSON.parse((await get("/staff/api/lookup?code=" + un.short_code, { headers: staffHeaders })).body);
+  expect(floored.pass.stamps === 0, "undo floors at 0 rather than going negative");
+  expect((await post("/undo", { serial: un.serial }, staff2Headers)).status === 404, "cannot undo another café's card");
+
+  // --- Audit trail: who did it, and was the cooldown overridden ---
+  const events = async (serial: string) =>
+    (await getPool().query<{ type: string; actor: string; forced: boolean }>(
+      "SELECT type, actor, forced FROM events WHERE serial = $1 ORDER BY id", [serial],
+    )).rows;
+  const unEvents = await events(un.serial);
+  expect(unEvents.some((e) => e.type === "undo"), "undo is logged as its own event type");
+  expect(
+    unEvents.filter((e) => e.type !== "enroll").every((e) => /^staff:[0-9a-f]{10}$/.test(e.actor)),
+    "every staff action names the phone that did it",
+  );
+  const fr = await mk();
+  await post("/stamp", { serial: fr.serial });
+  await post("/stamp", { serial: fr.serial, force: true });
+  const frStamps = (await events(fr.serial)).filter((e) => e.type === "stamp");
+  expect(
+    frStamps.length === 2 && frStamps[0]!.forced === false && frStamps[1]!.forced === true,
+    "a stamp confirmed past the cooldown is flagged as forced, a normal one isn't",
+  );
+
+  // Net stamp count: an undone stamp must not inflate the headline number.
+  const netBefore = (await cafeMetrics("default")).stamps;
+  const nz = await mk();
+  await post("/stamp", { serial: nz.serial });
+  await post("/undo", { serial: nz.serial });
+  expect((await cafeMetrics("default")).stamps === netBefore, "a stamp that is undone doesn't inflate the stamp count");
+
+  // --- Win-back effectiveness + the churn stop-rule ---
+  const { nudgeOutcomes, unansweredNudges } = await import("../src/db.js");
+  const ch = await mk();
+  await getPool().query("UPDATE passes SET created_at = now() - interval '60 days' WHERE serial = $1", [ch.serial]);
+  await updateCafe("default", { auto_winback_enabled: true, auto_winback_days: 14 });
+  for (let i = 0; i < 5; i++) {
+    // Each pass re-opens the "already nudged this window" guard so the stop-rule
+    // is what limits us, not the throttle.
+    await runAutoWinback();
+    await getPool().query("UPDATE events SET created_at = now() - interval '30 days' WHERE serial = $1 AND type = 'nudge'", [ch.serial]);
+  }
+  const sent = await unansweredNudges(ch.serial);
+  expect(sent === 3, `auto win-back gives up after 3 unanswered messages (sent ${sent})`);
+  const outBefore = await nudgeOutcomes("default");
+  expect(outBefore.noReturn >= 1, "a nudged customer who hasn't been back counts as no-return");
+  await logEvent("default", ch.serial, "stamp"); // they finally came in
+  const outAfter = await nudgeOutcomes("default");
+  expect(outAfter.returned === outBefore.returned + 1, "a stamp after the last nudge counts as a win-back that worked");
+  expect((await unansweredNudges(ch.serial)) === 0, "a visit resets the unanswered-nudge counter");
+  await updateCafe("default", { auto_winback_enabled: false });
+
+  const adminWb = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
+  const defRow = adminWb.cafes.find((c: any) => c.id === "default");
+  expect(
+    defRow.nudged >= 1 && defRow.nudge_returned >= 1 && defRow.forced_stamps >= 1 && defRow.undos >= 1,
+    "admin surfaces win-back outcomes and the counter-audit counters",
+  );
+
+  // --- Value tracking: average spend turns stamps into a money figure ---
+  const spend = await fetch(base + "/dashboard/api/cafe/default", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ averageSpend: 4.5, currency: "RM" }),
+  });
+  expect(spend.status === 200, "average spend saves");
+  const ovSpend = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  const defCard = ovSpend.cafes.find((c: any) => c.id === "default");
+  expect(defCard.averageSpend === 4.5 && defCard.currency === "RM", "average spend round-trips through cents without float drift");
+
+  // --- Dashboard IA: five tabs, each one job ---
+  const dashIa = (await get("/dashboard")).body;
+  for (const tab of ["home", "customers", "card", "access", "account"]) {
+    expect(dashIa.includes('data-tab="' + tab + '"'), `dashboard has the ${tab} tab`);
+  }
+  expect(!dashIa.includes('data-tab="share"'), "the old Share tab is gone (replaced by Access)");
+  expect(!dashIa.includes('data-f="staffPin"'), "the PIN is no longer a field in the card designer");
+
+  // --- Rotating the PIN signs every staff phone out (break-glass) ---
+  // Last, because it invalidates the sessions used above.
+  const beforeRotate = await fetch(base + "/staff/api/passes", { headers: staffHeaders });
+  expect(beforeRotate.status === 200, "the staff session works before the PIN is rotated");
+  const rot = await fetch(base + "/dashboard/api/cafe/default/rotate-pin", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  const rotOut = JSON.parse(await rot.text());
+  expect(rot.status === 200 && /^\d{6}$/.test(rotOut.staffPin), "rotate-pin returns a fresh 6-digit PIN once");
+  const cafeRot = (await getCafe("default"))!;
+  expect(verifyStaffPin(cafeRot, rotOut.staffPin), "the rotated PIN verifies");
+  expect(!verifyStaffPin(cafeRot, "9876"), "the old PIN stops working");
+  const afterRotate = await fetch(base + "/staff/api/passes", { headers: staffHeaders });
+  expect(afterRotate.status === 401, "rotating the PIN revokes every existing staff session");
+  expect((await get("/staff", { headers: { cookie: staff1.cookie } })).body.includes("Staff login"),
+    "a revoked device is shown the PIN form again (no reload loop)");
+  const staffRot = await staffLogin("default", rotOut.staffPin);
+  expect(staffRot.status === 200, "staff sign back in with the new PIN");
+  expect(
+    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, cookie: staffRot.cookie } })).status === 200,
+    "the new session works",
+  );
+  const rotForeign = await fetch(base + "/dashboard/api/cafe/default/rotate-pin", {
+    method: "POST", headers: { cookie: cookie2 },
+  });
+  expect(rotForeign.status === 403, "an owner can't rotate another owner's PIN");
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

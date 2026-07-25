@@ -37,7 +37,7 @@ import {
   deleteCafeBanner,
   deleteCafeLogo,
   deleteStampStrips,
-  getCafe,
+  generateStaffPin,
   getOwner,
   getOwnerByEmail,
   getOwnerByResetToken,
@@ -48,6 +48,7 @@ import {
   setCafeLogo,
   setMessage,
   setResetToken,
+  setStaffPin,
   setStampStrips,
   stampStripsVersion,
   updateCafe,
@@ -63,6 +64,7 @@ import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateLogoPng } from "../imageValidate.js";
 import { dashboardPage, resetPage } from "../pages.js";
+import { MAX_UNANSWERED_NUDGES } from "../winback.js";
 
 export const dashboardRouter = Router();
 
@@ -249,7 +251,10 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       reward: cafe.reward,
       stampsTarget: cafe.stamps_target,
       stampsStart: cafe.stamps_start,
-      staffPin: cafe.staff_pin,
+      // The PIN is never sent back: only its scrypt hash is stored, so there is
+      // nothing to reveal. A forgotten PIN is replaced via /rotate-pin.
+      averageSpend: cafe.average_spend_cents / 100,
+      currency: cafe.currency,
       // Colours cross the API as hex — that's what <input type="color"> speaks.
       bg: rgbToHex(cafe.background_color),
       fg: rgbToHex(cafe.foreground_color),
@@ -276,15 +281,33 @@ dashboardRouter.post("/api/cafes", requireOwner, async (req: OwnerRequest, res) 
     staffPin?: string;
   };
   if (!name?.trim()) return void res.status(400).json({ error: "missing-name" });
+  // A random PIN by default — never the shared, guessable "1234". Returned once
+  // here because the hash is all we keep; after this it can only be replaced.
+  const pin = (staffPin ?? "").trim().slice(0, 12) || generateStaffPin();
   const cafe = await createCafe({
     name: name.trim().slice(0, 60),
     reward: (reward ?? "Free coffee").trim().slice(0, 60),
     stampsTarget: clampInt(stampsTarget, 1, 30, 10),
     stampsStart: clampInt(stampsStart, 0, 29, 2),
-    staffPin: (staffPin ?? "1234").trim().slice(0, 12) || "1234",
+    staffPin: pin,
   });
   await linkOwnerCafe(req.owner!.id, cafe.id);
-  res.json({ ok: true, id: cafe.id });
+  res.json({ ok: true, id: cafe.id, staffPin: pin });
+});
+
+/**
+ * Replace a card's staff PIN. Returns the new PIN once — it is stored only as a
+ * scrypt hash, so this response is the single chance to write it down. Every
+ * staff phone has to sign in again with it.
+ */
+dashboardRouter.post("/api/cafe/:id/rotate-pin", requireOwner, async (req: OwnerRequest, res) => {
+  const cafeId = req.params.id!;
+  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
+    return void res.status(403).json({ error: "not-your-cafe" });
+  }
+  const pin = generateStaffPin();
+  await setStaffPin(cafeId, pin);
+  res.json({ ok: true, staffPin: pin });
 });
 
 dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, res) => {
@@ -298,9 +321,14 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
   if (typeof body.reward === "string" && body.reward.trim()) fields.reward = body.reward.trim().slice(0, 60);
   if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 30, 10);
   if (body.stampsStart !== undefined) fields.stamps_start = clampInt(body.stampsStart, 0, 29, 2);
-  if (typeof body.staffPin === "string" && body.staffPin.trim()) {
-    fields.staff_pin = body.staffPin.trim().slice(0, 12);
+  // Average spend crosses the API in major units ("4.50") and is stored in cents.
+  if (body.averageSpend !== undefined) {
+    const major = Number(body.averageSpend);
+    fields.average_spend_cents = Number.isFinite(major)
+      ? Math.max(0, Math.min(1_000_000, Math.round(major * 100)))
+      : 0;
   }
+  if (typeof body.currency === "string") fields.currency = body.currency.trim().slice(0, 4) || "RM";
   // Colours arrive as hex from the pickers; stored as rgb(...) for PassKit.
   if (typeof body.bg === "string") fields.background_color = hexToRgb(body.bg);
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
@@ -310,6 +338,11 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
   if (body.autoWinbackDays !== undefined) fields.auto_winback_days = clampInt(body.autoWinbackDays, 1, 3650, 14);
   if (typeof body.autoWinbackMessage === "string" && body.autoWinbackMessage.trim()) {
     fields.auto_winback_message = body.autoWinbackMessage.trim().slice(0, 200);
+  }
+  // The PIN is stored only as a hash, so it goes through its own helper rather
+  // than the generic field updater.
+  if (typeof body.staffPin === "string" && body.staffPin.trim()) {
+    await setStaffPin(cafeId, body.staffPin.trim().slice(0, 12));
   }
   const cafe = await updateCafe(cafeId, fields);
   if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
@@ -438,62 +471,6 @@ dashboardRouter.delete("/api/cafe/:id/stamps", requireOwner, async (req: OwnerRe
   res.json({ ok: true });
 });
 
-/** Customers of a card, with days-since-last-activity + a lapsing flag. */
-dashboardRouter.get("/api/cafe/:id/customers", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
-  }
-  const lapsedDays = clampInt(req.query.lapsedDays, 0, 3650, 14);
-  const now = Date.now();
-  const customers = (await cafeCustomers(cafeId)).map((c) => {
-    // last_visit, not updated_at — a nudge must not reset the lapse clock.
-    const lastDays = Math.floor((now - new Date(c.last_visit).getTime()) / 86400000);
-    return {
-      serial: c.serial,
-      code: c.code,
-      stamps: c.stamps,
-      target: c.target,
-      lastDays,
-      lapsing: lapsedDays > 0 && lastDays >= lapsedDays,
-    };
-  });
-  res.json({ customers, lapsedDays });
-});
-
-/**
- * Owner win-back nudge: sends a lock-screen message to one card, a list, all,
- * or the lapsing set. Each goes through applyAndPush (same platform dispatch as
- * a stamp). Reports counts; Google's 3/card/24h cap applies (best-effort).
- */
-dashboardRouter.post("/api/cafe/:id/nudge", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
-  }
-  const body = (req.body ?? {}) as { message?: string; target?: string | string[]; lapsedDays?: number };
-  const message = (body.message ?? "").trim().slice(0, 200);
-  if (!message) return void res.status(400).json({ error: "missing-message" });
-
-  let serials: string[];
-  if (Array.isArray(body.target)) serials = body.target.slice(0, 500);
-  else if (body.target === "lapsing") serials = await lapsingSerials(cafeId, clampInt(body.lapsedDays, 1, 3650, 14));
-  else serials = (await cafeCustomers(cafeId)).map((c) => c.serial); // "all"
-  if (!serials.length) return void res.json({ ok: true, total: 0, sent: 0, failed: 0 });
-
-  const cafe = await getCafe(cafeId);
-  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
-
-  let sent = 0;
-  let failed = 0;
-  for (const serial of serials) {
-    const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, message), message);
-    if (r && r.push.sent > 0) sent++;
-    else failed++;
-  }
-  res.json({ ok: true, total: serials.length, sent, failed });
-});
-
 // ----------------------------------------------- owner-level customers / nudge ----
 // The redesigned Customers view spans ALL of an owner's cards (not one selected
 // card), so these aggregate across cafesForOwner and let the owner target which
@@ -527,12 +504,21 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
         stamps: c.stamps,
         target: c.target,
         lastDays,
+        /** Days since the card was issued — how "New" is decided, independent of visits. */
+        joinedDays: Math.floor((now - new Date(c.created_at).getTime()) / 86400000),
+        /** Messages sent since their last visit; at the cap they count as churned. */
+        unanswered: c.unanswered_nudges,
         lapsing: lapsedDays > 0 && lastDays >= lapsedDays,
       });
     }
   }
   customers.sort((a, b) => a.lastDays - b.lastDays);
-  res.json({ customers, lapsedDays, cards: owned.map((c) => ({ id: c.id, name: c.name })) });
+  res.json({
+    customers,
+    lapsedDays,
+    nudgeCap: MAX_UNANSWERED_NUDGES,
+    cards: owned.map((c) => ({ id: c.id, name: c.name })),
+  });
 });
 
 /** POST /api/nudge { message, cardIds?:[], target:"all"|"lapsing"|serial[], lapsedDays? }. */
@@ -569,7 +555,10 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   let failed = 0;
   for (const serial of serials) {
     const cafe = serialCafe.get(serial)!;
-    const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, message), message);
+    const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, message), {
+      nudgeText: message,
+      actor: `owner:${req.owner!.id}`,
+    });
     if (r && r.push.sent > 0) sent++;
     else failed++;
   }

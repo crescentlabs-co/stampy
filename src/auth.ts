@@ -42,13 +42,17 @@ function sign(payload: string): string {
   return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
-export function createSessionCookie(ownerId: string): string {
-  const expires = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
-  const payload = `${ownerId}.${expires}`;
+/** Wraps a payload as "payload.signature". Every cookie we issue has this shape. */
+function seal(payload: string): string {
   return `${payload}.${sign(payload)}`;
 }
 
-export function parseSessionCookie(value: string | undefined): string | null {
+/**
+ * Checks the signature on a "payload.signature" cookie and returns the payload,
+ * or null if it was forged or tampered with. The expiry lives INSIDE the payload
+ * so rewriting it invalidates the signature — callers check it after unsealing.
+ */
+function unseal(value: string | undefined): string | null {
   if (!value) return null;
   const i = value.lastIndexOf(".");
   if (i < 0) return null;
@@ -56,8 +60,23 @@ export function parseSessionCookie(value: string | undefined): string | null {
   const sig = Buffer.from(value.slice(i + 1));
   const expected = Buffer.from(sign(payload));
   if (sig.length !== expected.length || !timingSafeEqual(sig, expected)) return null;
+  return payload;
+}
+
+/** True when an expiry field from a payload is present and still in the future. */
+function fresh(expiresStr: string | undefined): boolean {
+  return Boolean(expiresStr) && Number(expiresStr) >= Date.now();
+}
+
+export function createSessionCookie(ownerId: string): string {
+  return seal(`${ownerId}.${Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000}`);
+}
+
+export function parseSessionCookie(value: string | undefined): string | null {
+  const payload = unseal(value);
+  if (payload === null) return null;
   const [ownerId, expiresStr] = payload.split(".");
-  if (!ownerId || !expiresStr || Number(expiresStr) < Date.now()) return null;
+  if (!ownerId || !fresh(expiresStr)) return null;
   return ownerId;
 }
 
@@ -75,28 +94,25 @@ export function parseSessionCookie(value: string | undefined): string | null {
  */
 const ENROLL_DAYS = 400;
 
+/** Strips anything unsafe in a Set-Cookie name; café ids are alphanumeric anyway. */
+function safeId(cafeId: string): string {
+  return cafeId.replace(/[^A-Za-z0-9_-]/g, "");
+}
+
 export function enrollCookieName(cafeId: string): string {
-  return `stampy_card_${cafeId.replace(/[^A-Za-z0-9_-]/g, "")}`;
+  return `stampy_card_${safeId(cafeId)}`;
 }
 
 export function createEnrollCookie(serial: string): string {
-  const expires = Date.now() + ENROLL_DAYS * 24 * 60 * 60 * 1000;
-  const payload = `${serial}.${expires}`;
-  return `${payload}.${sign(payload)}`;
+  return seal(`${serial}.${Date.now() + ENROLL_DAYS * 24 * 60 * 60 * 1000}`);
 }
 
 /** The serial previously issued to this browser for `cafeId`, or null. */
 export function readEnrollCookie(req: Request, cafeId: string): string | null {
-  const value = readCookie(req, enrollCookieName(cafeId));
-  if (!value) return null;
-  const i = value.lastIndexOf(".");
-  if (i < 0) return null;
-  const payload = value.slice(0, i);
-  const sig = Buffer.from(value.slice(i + 1));
-  const expected = Buffer.from(sign(payload));
-  if (sig.length !== expected.length || !timingSafeEqual(sig, expected)) return null;
+  const payload = unseal(readCookie(req, enrollCookieName(cafeId)));
+  if (payload === null) return null;
   const [serial, expiresStr] = payload.split(".");
-  if (!serial || !expiresStr || Number(expiresStr) < Date.now()) return null;
+  if (!serial || !fresh(expiresStr)) return null;
   return serial;
 }
 
@@ -106,6 +122,68 @@ export function setEnrollCookie(res: Response, cafeId: string, serial: string): 
     "Set-Cookie",
     `${enrollCookieName(cafeId)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ENROLL_DAYS * 24 * 60 * 60}`,
   );
+}
+
+// ---------------------------------------------------------- staff session ----
+
+/**
+ * A staff device's proof that it typed the PIN, replacing the old scheme where
+ * the PIN itself was replayed in a header on every request and kept in
+ * localStorage forever. Three things change:
+ *
+ *  - the PIN crosses the wire once, at sign-in, instead of on every stamp;
+ *  - the cookie is HttpOnly, so page scripts can't read it back out;
+ *  - it expires, so a phone that leaves the café stops working on its own.
+ *
+ * The payload carries a per-device id, which becomes the `actor` on every event
+ * that device causes — that's what makes counter abuse attributable — plus the
+ * café's session epoch, so changing the PIN signs every phone out at once.
+ */
+const STAFF_DAYS = 14;
+
+export interface StaffSession {
+  deviceId: string;
+  /** Must still match the café's `staff_session_epoch`; the caller checks it. */
+  epoch: number;
+}
+
+export function staffCookieName(cafeId: string): string {
+  return `stampy_staff_${safeId(cafeId)}`;
+}
+
+/** A short, non-guessable id for one staff phone. Recorded on its events. */
+export function newStaffDeviceId(): string {
+  return randomBytes(5).toString("hex");
+}
+
+export function createStaffCookie(cafeId: string, deviceId: string, epoch: number): string {
+  return seal(`${cafeId}.${deviceId}.${epoch}.${Date.now() + STAFF_DAYS * 24 * 60 * 60 * 1000}`);
+}
+
+/**
+ * This device's staff session for `cafeId`, or null. The café id is inside the
+ * signed payload as well as the cookie name, so a valid cookie for one café
+ * can't be renamed and replayed against another.
+ */
+export function readStaffCookie(req: Request, cafeId: string): StaffSession | null {
+  const payload = unseal(readCookie(req, staffCookieName(cafeId)));
+  if (payload === null) return null;
+  const [signedCafeId, deviceId, epochStr, expiresStr] = payload.split(".");
+  if (signedCafeId !== cafeId || !deviceId || !epochStr || !fresh(expiresStr)) return null;
+  const epoch = Number(epochStr);
+  return Number.isInteger(epoch) ? { deviceId, epoch } : null;
+}
+
+export function setStaffCookie(res: Response, cafeId: string, deviceId: string, epoch: number): void {
+  const value = createStaffCookie(cafeId, deviceId, epoch);
+  res.append(
+    "Set-Cookie",
+    `${staffCookieName(cafeId)}=${encodeURIComponent(value)}; Path=/staff; HttpOnly; SameSite=Lax; Max-Age=${STAFF_DAYS * 24 * 60 * 60}`,
+  );
+}
+
+export function clearStaffCookie(res: Response, cafeId: string): void {
+  res.append("Set-Cookie", `${staffCookieName(cafeId)}=; Path=/staff; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
 /** Minimal cookie-header parser (we only ever read our own cookie). */

@@ -12,13 +12,26 @@
  */
 import { pushPassUpdate } from "./apns.js";
 import { addMessage, patchBalance } from "./googleWallet.js";
-import { getPass, logEvent, pushTokensForSerial, type CafeRow, type EventType, type PassRow } from "./db.js";
+import {
+  getPass,
+  logEvent,
+  pushTokensForSerial,
+  type CafeRow,
+  type EventMeta,
+  type EventType,
+  type PassRow,
+} from "./db.js";
 
 export interface PushSummary {
   sent: number;
   failed: number;
   registeredDevices: number;
   detail: { status?: number; reason?: string }[];
+}
+
+/** Per-call extras: the nudge body (Google shows it as a message) plus audit fields. */
+export interface ApplyOptions extends EventMeta {
+  nudgeText?: string;
 }
 
 /**
@@ -32,13 +45,14 @@ export async function applyAndPush(
   serial: string,
   eventType: EventType,
   update: () => Promise<PassRow | null>,
-  nudgeText?: string,
+  opts: ApplyOptions = {},
 ): Promise<{ row: PassRow; push: PushSummary } | null> {
+  const { nudgeText, ...meta } = opts;
   const existing = await getPass(serial);
   if (!existing || existing.cafe_id !== cafe.id) return null;
   const row = await update();
   if (!row) return null;
-  await logEvent(cafe.id, serial, eventType);
+  await logEvent(cafe.id, serial, eventType, meta);
 
   let push: PushSummary;
   if (row.platform === "google") {
