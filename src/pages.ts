@@ -932,7 +932,23 @@ export function staffPage(signedIn: boolean): string {
 
 // ------------------------------------------------------------ dashboard ----
 
-export function dashboardPage(): string {
+/**
+ * The owner dashboard. `canEmail` says whether transactional email is actually
+ * configured — with no email service, offering to "send a reset link" would be
+ * a lie, and the owner would sit waiting for mail that never arrives. The honest
+ * alternative is rendered server-side so the wrong promise never reaches the page.
+ */
+export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
+  // Strict allowlist: this value is an env var that ends up inside an inline
+  // script, and a stray backtick or ${ would break the whole page.
+  const contact = contactEmail.replace(/[^A-Za-z0-9._%+@-]/g, "");
+  const resetBox = canEmail
+    ? `<label>Your account email</label><input id="fmail" type="email"><button class="btn btn-ghost" style="margin-top:8px" id="fsend">Send reset link</button>`
+    : `<p class="muted" style="margin:0">Password resets by email aren’t set up yet — ${
+        contact
+          ? `<a href="mailto:${contact}">email us at ${contact}</a>`
+          : "message whoever set up your Stampy account"
+      } and we’ll set a new password for you.</p>`;
   const css = /* css */ `
     .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
     .metric { background: var(--surface); border-radius: var(--r); padding: 16px 16px 13px;
@@ -1089,6 +1105,9 @@ export function dashboardPage(): string {
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
+    // Decided by the server from whether an email service is configured.
+    const RESET_BY_EMAIL = ${canEmail ? "true" : "false"};
+    const RESET_BOX = ${JSON.stringify(resetBox)};
     async function api(path, opts = {}) {
       const res = await fetch("/dashboard/api" + path, {
         ...opts, headers: { "Content-Type": "application/json", ...(opts.headers||{}) },
@@ -1120,7 +1139,7 @@ export function dashboardPage(): string {
         <label class="eye"><input type="checkbox" data-eye="#pw"> Show password</label>
         \${mode === "signup" ? '<label class="eye" style="margin-top:12px"><input type="checkbox" id="agree"> I agree to the <a href="/terms" target="_blank">Terms</a>&nbsp;&amp;&nbsp;<a href="/privacy" target="_blank">Privacy Policy</a></label>' : ""}
         <button class="btn btn-dark" style="margin-top:14px" id="go"\${mode === "signup" ? " disabled" : ""}>\${mode === "signup" ? "Create account" : "Log in"}</button>
-        \${mode === "login" ? '<p class="muted" style="margin-top:12px;text-align:center"><a href="#" id="forgot">Forgot password?</a></p><div id="forgotbox" style="display:none"><label>Your account email</label><input id="fmail" type="email"><button class="btn btn-ghost" style="margin-top:8px" id="fsend">Send reset link</button></div>' : ""}
+        \${mode === "login" ? '<p class="muted" style="margin-top:12px;text-align:center"><a href="#" id="forgot">Forgot password?</a></p><div id="forgotbox" style="display:none">' + RESET_BOX + '</div>' : ""}
         <p class="muted" style="margin-top:14px;text-align:center">
           \${mode === "signup"
             ? 'Already have an account? <a href="#" id="switch">Log in</a>'
@@ -1135,7 +1154,9 @@ export function dashboardPage(): string {
       }
       if (mode === "login") {
         $("#forgot").onclick = (e) => { e.preventDefault(); const b = $("#forgotbox"); b.style.display = b.style.display === "none" ? "block" : "none"; };
-        $("#fsend").onclick = async () => {
+        // Without an email service there is no form to wire — the box just
+        // explains how to actually get a reset.
+        if (RESET_BY_EMAIL) $("#fsend").onclick = async () => {
           const email = $("#fmail").value.trim();
           if (!email.includes("@")) return toast("Enter your account email");
           await api("/forgot", { method: "POST", body: JSON.stringify({ email }) });

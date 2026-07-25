@@ -21,7 +21,9 @@ const pages: [string, string][] = [
   ["marketing", marketingPage()],
   ["staff (signed out)", staffPage(false)],
   ["staff (signed in)", staffPage(true)],
-  ["dashboard", dashboardPage()],
+  ["dashboard (email on)", dashboardPage(true, "hello@stampy.test")],
+  ["dashboard (email off)", dashboardPage(false, "hello@stampy.test")],
+  ["dashboard (email off, no contact)", dashboardPage(false, "")],
   ["admin", adminPage()],
   ["reset", resetPage()],
   [
@@ -76,8 +78,44 @@ describe("staff page is a gate, not a hidden panel", () => {
   });
 });
 
+// Promising a reset link with no email service configured left owners waiting
+// for mail that never came. The page must only make the promise it can keep.
+describe("forgot-password offer matches what the deployment can do", () => {
+  it("offers to send a reset link when email is configured", () => {
+    const html = dashboardPage(true, "hello@stampy.test");
+    expect(html).toContain("Send reset link");
+    expect(html).not.toContain("aren’t set up yet");
+  });
+
+  it("points at a human when email is not configured", () => {
+    const html = dashboardPage(false, "hello@stampy.test");
+    expect(html).toContain("aren’t set up yet");
+    expect(html).toContain("mailto:hello@stampy.test");
+    expect(html).not.toContain("Send reset link");
+  });
+
+  it("still explains what to do when no contact address is set", () => {
+    const html = dashboardPage(false, "");
+    expect(html).toContain("message whoever set up your Stampy account");
+    expect(html).not.toContain("mailto:");
+  });
+
+  // The address is an env var interpolated into an inline script, so a stray
+  // backtick or ${ would break every screen on the page.
+  it("strips anything unsafe from the contact address", () => {
+    const html = dashboardPage(false, 'a@b.com`;alert(1);//${x}');
+    expect(html).not.toContain("alert(1)");
+    expect(html).toContain("mailto:a@b.com");
+  });
+
+  it("keeps the reset flow enumeration-safe when it is offered", () => {
+    // Still no hint about whether the address exists — only that mail was sent.
+    expect(dashboardPage(true, "")).toContain("If that email has an account");
+  });
+});
+
 describe("dashboard information architecture", () => {
-  const html = dashboardPage();
+  const html = dashboardPage(true, "");
 
   it("has one tab per job", () => {
     for (const tab of ["home", "customers", "card", "access", "account"]) {

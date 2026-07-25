@@ -58,7 +58,7 @@ import {
 } from "../db.js";
 import { applyAndPush } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
-import { config } from "../config.js";
+import { config, setupStatus } from "../config.js";
 import { hexToRgb, rgbToHex } from "../color.js";
 import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
@@ -81,7 +81,9 @@ async function requireOwner(req: OwnerRequest, res: Response, next: NextFunction
 }
 
 dashboardRouter.get("/", (_req, res) => {
-  res.type("html").send(dashboardPage());
+  // The page needs to know whether email works, so it can offer a reset link or
+  // point the owner at a human instead of promising mail that won't arrive.
+  res.type("html").send(dashboardPage(setupStatus().canEmail, config.contactEmail));
 });
 
 /** Tells the page whether a session is already active. */

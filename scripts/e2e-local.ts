@@ -582,6 +582,14 @@ async function main() {
   });
   expect(forgotKnown.status === 200, "forgot-password accepts a known email");
 
+  // This deployment has no Resend key, so the login screen must NOT offer to
+  // send a reset link — an owner would wait for mail that never arrives.
+  const loginHtml = (await get("/dashboard")).body;
+  expect(
+    loginHtml.includes("aren’t set up yet") && !loginHtml.includes("Send reset link"),
+    "with no email service, the login screen points at a human instead of promising a reset link",
+  );
+
   const ownerRow = (await getOwnerByEmail("owner@test.my"))!;
   const rawToken = "e2e-reset-token-abc123";
   const hashOf = (t: string) => createHash("sha256").update(t).digest("hex");
