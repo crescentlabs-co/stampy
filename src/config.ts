@@ -22,7 +22,7 @@ export const seedCafe = {
 
 export const config = {
   /** Public HTTPS base URL of this server, e.g. https://stampy.up.railway.app */
-  baseUrl: (process.env.BASE_URL ?? "").replace(/\/+$/, ""),
+  baseUrl: (process.env.BASE_URL ?? "").trim().replace(/\/+$/, ""),
   port: intEnv("PORT", 3000),
   databaseUrl: process.env.DATABASE_URL ?? "",
 
