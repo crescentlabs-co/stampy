@@ -1,7 +1,9 @@
-This webfont is used under the SIL Open Font License, Version 1.1.
+These webfonts are used under the SIL Open Font License, Version 1.1.
 
 - Space Grotesk — © 2020 The Space Grotesk Project Authors
   (https://github.com/floriankarsten/space-grotesk)
+- Space Mono — © 2016 Google Inc. (Colophon Foundry)
+  (https://github.com/googlefonts/spacemono)
 
-File here is a latin-subset woff2 build obtained via Google Fonts.
+Files here are latin-subset woff2 builds obtained via Google Fonts.
 Full OFL text: https://openfontlicense.org

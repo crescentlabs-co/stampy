@@ -156,30 +156,61 @@ export function notReadyPage(): string {
  */
 export function marketingPage(): string {
   const css = /* css */ `
+    /* Space Mono carries every small label, tag and receipt on this page.
+       Same inline-declaration rationale as the base font: unique filenames
+       cache safely behind the immutable assets mount. */
+    @font-face {
+      font-family: "Space Mono";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/assets/fonts/space-mono-latin-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Space Mono";
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url("/assets/fonts/space-mono-latin-700.woff2") format("woff2");
+    }
     :root {
-      --canvas: #17140f; --panel-d: #20211d; --panel-d2: #2b2c26;
-      --cream: #f4f2ec; --cream-soft: rgba(244,242,236,.66); --cream-line: rgba(244,242,236,.13);
+      --canvas: #131109; --panel-d: #1d2316; --panel-d2: #2b341d;
+      --cream: #f4f2ec; --cream-soft: rgba(244,242,236,.64); --cream-line: rgba(244,242,236,.14);
+      --lime: #c9e792; --lime-soft: rgba(201,231,146,.13); --lime-line: rgba(201,231,146,.28);
       --sage: #6f8567; --sage-dark: #5c7156; --sage-br: #a9c398; --ink-soft: #54574e;
+      --paper: #efe8d7; --paper-ink: #57503f; --paper-line: #c9bfa4;
+      --mono: "Space Mono", ui-monospace, "SF Mono", Menlo, monospace;
     }
     html { scroll-behavior: smooth; }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
     body { display: block; padding: 0; align-items: stretch; background: var(--canvas); }
     ::selection { background: var(--sage); color: #fff; }
-    .stack { max-width: 1180px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    /* registration ticks on the page edges, like a print sheet */
+    body::before, body::after {
+      content: ""; position: fixed; top: 0; bottom: 0; width: 12px; z-index: 1; pointer-events: none;
+      background: repeating-linear-gradient(to bottom, transparent 0 13px, rgba(244,242,236,.22) 13px 14px);
+    }
+    body::before { left: 6px; } body::after { right: 6px; }
+    @media (max-width: 1279px) { body::before, body::after { display: none; } }
+    .stack { max-width: 1180px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 2; }
     .panel { border-radius: 30px; overflow: hidden; position: relative; }
     .panel.light { background: var(--surface); }
     .panel.stone { background: var(--bg); }
-    .panel.dark { background: radial-gradient(120% 120% at 80% 0%, var(--panel-d2), var(--panel-d) 60%); color: var(--cream); }
-    .inner { padding: clamp(30px, 5.5vw, 76px); }
+    .panel.cream { background: #f6f4ed; }
+    .panel.dark { background: radial-gradient(130% 130% at 78% -10%, var(--panel-d2), var(--panel-d) 58%); color: var(--cream); }
+    .inner { padding: clamp(34px, 5.5vw, 84px); }
+    /* faint technical dot-grid on pale panels (painted straight into the
+       panel background so it can never sit above content) */
+    .dotted-bg { background-image: radial-gradient(rgba(32,33,29,.07) 1px, transparent 1.4px); background-size: 26px 26px; }
     /* reveal */
-    .reveal { opacity: 0; transform: translateY(20px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
+    .reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
     .reveal.in { opacity: 1; transform: none; }
     @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
     /* nav */
     .nav { position: sticky; top: 12px; z-index: 60; display: flex; justify-content: center; padding: 4px 12px 0; }
-    .navbar { display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,.85);
+    .navbar { display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,.86);
               backdrop-filter: saturate(1.5) blur(14px); border: 1px solid rgba(0,0,0,.06); border-radius: 999px;
-              padding: 6px 6px 6px 6px; box-shadow: 0 14px 34px -14px rgba(0,0,0,.6); max-width: 100%; }
+              padding: 6px; box-shadow: 0 14px 34px -14px rgba(0,0,0,.65); max-width: 100%; }
     .navbar .brand { font-family: var(--display); font-weight: 700; font-size: 1.02rem; letter-spacing: -.01em;
                      color: var(--ink); text-decoration: none; padding: 8px 14px; white-space: nowrap; }
     .navlinks { display: none; }
@@ -188,163 +219,254 @@ export function marketingPage(): string {
     .navlinks a:hover { background: rgba(0,0,0,.05); color: var(--ink); }
     .navcta { background: var(--ink); color: #fff; text-decoration: none; font-weight: 600; font-size: .9rem;
               padding: 10px 16px; border-radius: 999px; white-space: nowrap; margin-left: 2px; transition: transform .09s, filter .15s; }
-    .navcta:hover { filter: brightness(1.12); } .navcta:active { transform: scale(.97); }
-    /* pills / ctas */
-    .eyebrow { display: inline-block; font-weight: 700; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
-               color: var(--sage-br); background: rgba(169,195,152,.12); border: 1px solid rgba(169,195,152,.2);
-               padding: 7px 13px; border-radius: 999px; }
-    .cta { display: inline-block; text-decoration: none; font-weight: 600; font-size: 1.02rem; padding: 14px 24px;
+    .navcta:hover { filter: brightness(1.15); } .navcta:active { transform: scale(.97); }
+    /* type helpers */
+    .brkt { font-family: var(--mono); font-weight: 700; font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; color: var(--sage-dark); }
+    .panel.dark .brkt { color: var(--lime); }
+    .chip { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-weight: 700;
+            font-size: .66rem; letter-spacing: .13em; text-transform: uppercase; color: var(--sage-dark); }
+    .chip .ic { width: 27px; height: 27px; border-radius: 8px; display: grid; place-items: center; font-size: .85rem;
+                background: rgba(111,133,103,.12); border: 1px solid rgba(111,133,103,.22); }
+    .panel.dark .chip { color: var(--cream-soft); }
+    .panel.dark .chip .ic { background: var(--lime-soft); border-color: var(--lime-line); }
+    .h2 { font-family: var(--display); font-weight: 700; font-size: clamp(1.85rem, 4.4vw, 2.9rem); line-height: 1.05;
+          letter-spacing: -.025em; text-wrap: balance; margin-top: 14px; }
+    .h2 .lime { color: var(--lime); }
+    .h2 .accent { color: var(--sage-dark); }
+    .h2sub { color: var(--ink-soft); margin-top: 14px; font-size: 1.06rem; max-width: 52ch; }
+    .panel.dark .h2sub { color: var(--cream-soft); }
+    .stmt { text-align: center; display: flex; flex-direction: column; align-items: center; }
+    .stmt .h2 { max-width: 24ch; }
+    .stmt .h2sub { text-align: center; }
+    /* ctas + mono spec chips */
+    .cta { display: inline-block; text-decoration: none; font-weight: 600; font-size: 1.02rem; padding: 15px 26px;
            border-radius: 14px; transition: transform .09s ease, filter .15s ease; }
     .cta:active { transform: scale(.985); } .cta:hover { filter: brightness(1.06); }
-    .cta.cream { background: var(--cream); color: var(--ink); }
-    .cta.sage { background: var(--sage); color: #fff; }
     .cta.dark { background: var(--ink); color: #fff; }
+    .cta.lime { background: var(--lime); color: #26310f; }
+    .cta.ghost-l { background: rgba(32,33,29,.06); color: var(--ink); border: 1px solid rgba(32,33,29,.1); }
     .cta.ghost-d { background: rgba(244,242,236,.08); color: var(--cream); border: 1px solid var(--cream-line); }
-    .cta.ghost-l { background: var(--ghost-bg); color: var(--ink); }
     @media (prefers-reduced-motion: reduce) { .cta, .navcta { transition: none; } .cta:active { transform: none; } }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; align-items: center; }
-    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
-    .badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(244,242,236,.06);
-             border: 1px solid var(--cream-line); color: var(--cream-soft); border-radius: 999px;
-             padding: 8px 14px; font-size: .82rem; font-weight: 600; }
-    .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage-br); }
-    /* hero */
-    .hero { display: grid; gap: 40px; align-items: center; }
-    @media (min-width: 900px) { .hero { grid-template-columns: 1.04fr .96fr; gap: 52px; } }
-    .hero h1 { font-family: var(--display); font-weight: 700; font-size: clamp(2.35rem, 6.4vw, 3.9rem);
-               line-height: 1.02; letter-spacing: -.03em; text-wrap: balance; }
-    .hero h1 .accent { color: var(--sage-br); }
-    .hero .lead { color: var(--cream-soft); font-size: clamp(1.06rem, 2.2vw, 1.3rem); margin-top: 20px; max-width: 42ch; }
-    .heroart { position: relative; display: grid; place-items: center; padding: 10px; }
-    .glow { position: absolute; width: 78%; height: 70%; background: radial-gradient(circle, rgba(169,195,152,.22), transparent 70%); filter: blur(30px); z-index: 0; }
-    /* loyalty card mock */
-    .lcard { position: relative; z-index: 1; width: 320px; max-width: 84vw; background: var(--cream); color: var(--ink);
-             border-radius: 22px; padding: 20px; box-shadow: 0 40px 80px -28px rgba(0,0,0,.7);
-             transform: rotate(-3deg); }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; align-items: center; justify-content: center; }
+    .specs { display: flex; flex-wrap: wrap; gap: 8px 10px; justify-content: center; margin-top: 26px;
+             font-family: var(--mono); font-weight: 700; font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; }
+    .specs span { padding: 8px 13px; border-radius: 999px; border: 1px dashed rgba(32,33,29,.28); color: var(--ink-soft); }
+    .panel.dark .specs span { border-color: var(--cream-line); color: var(--cream-soft); }
+    /* floating receipt cards */
+    .rcpt { background: #fff; color: var(--ink); border-radius: 13px; padding: 11px 14px; min-width: 178px;
+            box-shadow: 0 24px 48px -18px rgba(0,0,0,.5); font-family: var(--mono); font-size: .66rem; text-align: left; }
+    .rcpt .rrow { display: flex; align-items: center; gap: 9px; }
+    .rcpt .rlg { width: 26px; height: 26px; border-radius: 8px; background: var(--sage); color: #fff; display: grid; place-items: center; font-size: .8rem; flex: none; }
+    .rcpt .rname { font-family: var(--display); font-weight: 700; font-size: .86rem; flex: 1; letter-spacing: -.01em; }
+    .rcpt .ramt { font-weight: 700; white-space: nowrap; }
+    .rcpt .ramt.plus { color: var(--sage-dark); }
+    .rcpt .rmeta { color: var(--muted); margin-top: 7px; letter-spacing: .04em; }
+    /* dashed technical boxes */
+    .tbox { font-family: var(--mono); font-size: .6rem; font-weight: 400; letter-spacing: .07em; text-transform: uppercase;
+            line-height: 1.7; border: 1px dashed rgba(32,33,29,.32); border-radius: 9px; padding: 9px 12px;
+            color: var(--ink-soft); background: rgba(255,255,255,.55); text-align: left; }
+    .tbox b { display: block; font-weight: 700; color: var(--ink); }
+    .panel.dark .tbox { border-color: var(--cream-line); color: var(--cream-soft); background: rgba(244,242,236,.04); }
+    .panel.dark .tbox b { color: var(--cream); }
+    /* ------------------------------------------------------------- hero -- */
+    .hero { text-align: center; display: flex; flex-direction: column; align-items: center; }
+    .hero h1 { font-family: var(--display); font-weight: 700; font-size: clamp(2.5rem, 7vw, 4.5rem);
+               line-height: .99; letter-spacing: -.035em; text-wrap: balance; margin-top: 26px; max-width: 15ch; }
+    .hero h1 .accent { color: var(--sage-dark); }
+    .hero .lead { color: var(--ink-soft); font-size: clamp(1.04rem, 2.1vw, 1.22rem); margin-top: 20px; max-width: 46ch; }
+    .heroart { position: relative; margin-top: clamp(34px, 5vw, 56px); width: 100%; display: grid; place-items: center; }
+    .lcard { position: relative; z-index: 1; width: 340px; max-width: 86vw; background: var(--ink); color: var(--cream);
+             border-radius: 24px; padding: 22px; box-shadow: 0 48px 90px -30px rgba(32,33,29,.55);
+             transform: rotate(-2deg); text-align: left; }
     @media (prefers-reduced-motion: reduce) { .lcard { transform: none; } }
-    .lcard .lt { display: flex; align-items: center; gap: 11px; }
+    .lcard .lt { display: flex; align-items: center; gap: 12px; }
     .lcard .llogo { width: 42px; height: 42px; border-radius: 12px; background: var(--sage); color: #fff; display: grid; place-items: center; font-size: 1.2rem; }
-    .lcard .lname { font-family: var(--display); font-weight: 700; font-size: 1.08rem; flex: 1; }
-    .lcard .lhd { text-align: right; }
-    .lcard .llbl { font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--muted); }
-    .lcard .lnum { font-family: var(--display); font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
-    .lcard .ldots { font-size: 1.6rem; letter-spacing: 5px; margin: 16px 0 8px; color: var(--sage); }
-    .lcard .ldots .off { color: #d8d5cc; }
-    .lcard .lrw { font-weight: 600; }
-    .lcard .lqr { margin: 16px auto 0; width: 78px; height: 78px; border-radius: 12px; background: var(--bg); display: grid; place-items: center; }
-    .spec { position: absolute; z-index: 2; background: rgba(255,255,255,.9); color: var(--ink); border-radius: 999px;
-            padding: 8px 13px; font-size: .78rem; font-weight: 700; box-shadow: 0 10px 24px -10px rgba(0,0,0,.5); white-space: nowrap; }
-    .spec.s1 { top: 6%; right: 4%; } .spec.s2 { bottom: 12%; left: 2%; } .spec.s3 { bottom: 30%; right: 0%; }
-    @media (max-width: 640px) { .spec { display: none; } }
-    /* section headings */
-    .kicker { color: var(--sage-dark); font-weight: 700; font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; }
-    .panel.dark .kicker { color: var(--sage-br); }
-    .h2 { font-family: var(--display); font-weight: 700; font-size: clamp(1.7rem, 4.2vw, 2.5rem); line-height: 1.08;
-          letter-spacing: -.02em; text-wrap: balance; margin-top: 12px; }
-    .h2sub { color: var(--ink-soft); margin-top: 12px; font-size: 1.08rem; max-width: 48ch; }
-    .panel.dark .h2sub { color: var(--cream-soft); }
-    /* problem cards */
-    .pains { display: grid; gap: 14px; margin-top: 34px; }
-    @media (min-width: 760px) { .pains { grid-template-columns: repeat(3, 1fr); } }
-    .pain { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 26px; }
-    .pain .pn { font-family: var(--display); font-weight: 700; color: var(--sage-dark); font-size: .9rem; }
-    .pain h3 { font-family: var(--display); font-weight: 700; font-size: 1.16rem; margin: 14px 0 8px; letter-spacing: -.01em; }
-    .pain p { color: var(--ink-soft); font-size: .97rem; }
-    /* how it works */
-    .steps { display: grid; gap: 16px; margin-top: 36px; }
-    @media (min-width: 820px) { .steps { grid-template-columns: repeat(3, 1fr); } }
-    .step { background: var(--bg); border: 1px solid var(--line); border-radius: 22px; padding: 24px; }
-    .step .sn { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
-                background: var(--ink); color: #fff; font-family: var(--display); font-weight: 700; }
-    .step h3 { font-family: var(--display); font-weight: 700; font-size: 1.14rem; margin: 16px 0 8px; letter-spacing: -.01em; }
-    .step p { color: var(--ink-soft); font-size: .96rem; }
-    .mini { margin-top: 18px; height: 120px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line);
-            display: grid; place-items: center; overflow: hidden; }
-    .mini .mcard { width: 130px; background: var(--ink); color: var(--cream); border-radius: 12px; padding: 11px 12px; transform: rotate(-4deg); }
-    .mini .mcard .md { font-size: .95rem; letter-spacing: 3px; color: var(--sage-br); }
-    .mini .mstamp { background: var(--sage); color: #fff; font-weight: 700; padding: 12px 20px; border-radius: 12px; font-size: .95rem; }
-    .mini .mnote { width: 82%; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; box-shadow: var(--shadow); }
-    .mini .mnote b { font-size: .74rem; } .mini .mnote span { display: block; color: var(--ink-soft); font-size: .82rem; margin-top: 3px; }
-    /* feature switcher */
-    .featwrap { display: grid; gap: 34px; align-items: center; margin-top: 34px; }
-    @media (min-width: 880px) { .featwrap { grid-template-columns: .92fr 1.08fr; gap: 40px; } }
-    .fpills { display: flex; flex-direction: column; gap: 10px; }
-    .fpill { text-align: left; background: rgba(244,242,236,.05); border: 1px solid var(--cream-line); color: var(--cream);
-             border-radius: 16px; padding: 16px 18px; cursor: pointer; font: inherit; transition: background .2s, border-color .2s, transform .09s; }
-    .fpill:hover { background: rgba(244,242,236,.09); } .fpill:active { transform: scale(.99); }
-    .fpill.on { background: var(--cream); color: var(--ink); border-color: var(--cream); }
-    .fpill .fn { font-family: var(--display); font-weight: 700; font-size: 1.06rem; letter-spacing: -.01em; }
-    .fpill .fd { font-size: .9rem; opacity: .72; margin-top: 3px; }
-    @media (prefers-reduced-motion: reduce) { .fpill { transition: none; } }
-    .stage { position: relative; min-height: 560px; display: grid; place-items: center; }
-    .phone { position: relative; width: 272px; aspect-ratio: 272 / 562; background: #0e0d0b; border-radius: 46px;
-             padding: 11px; box-shadow: 0 50px 90px -34px rgba(0,0,0,.75), 0 0 0 1px rgba(244,242,236,.07); }
-    .phone .notch { position: absolute; top: 11px; left: 50%; transform: translateX(-50%); width: 98px; height: 26px;
-                    background: #0e0d0b; border-radius: 0 0 16px 16px; z-index: 6; }
-    .screen { position: absolute; inset: 11px; border-radius: 35px; overflow: hidden; background: #fff; color: var(--ink);
-              opacity: 0; transform: scale(.985); transition: opacity .45s ease, transform .45s ease; pointer-events: none; }
-    .screen.on { opacity: 1; transform: none; pointer-events: auto; }
-    @media (prefers-reduced-motion: reduce) { .screen { transition: opacity .001s; } }
-    .sc { position: absolute; inset: 0; padding: 22px 18px; display: flex; flex-direction: column; }
-    .sc .stat { padding-top: 22px; font-size: .72rem; color: var(--muted); font-weight: 600; text-align: center; }
-    /* screen: wallet */
-    .sc-wallet { background: #e9eae4; }
-    .sc-wallet .wc { margin-top: 14px; background: var(--ink); color: var(--cream); border-radius: 18px; padding: 15px; box-shadow: 0 16px 30px -14px rgba(0,0,0,.5); }
-    .sc-wallet .wc .top { display: flex; align-items: center; gap: 9px; }
-    .sc-wallet .wc .lg { width: 34px; height: 34px; border-radius: 10px; background: var(--sage); display: grid; place-items: center; font-size: 1rem; }
-    .sc-wallet .wc .nm { font-family: var(--display); font-weight: 700; font-size: .95rem; flex: 1; }
-    .sc-wallet .wc .pg { font-family: var(--display); font-weight: 700; font-size: .9rem; }
-    .sc-wallet .wc .dots { font-size: 1.15rem; letter-spacing: 3px; margin: 12px 0 6px; color: var(--sage-br); }
-    .sc-wallet .wc .dots .off { color: rgba(255,255,255,.28); }
-    .sc-wallet .wc .rw { font-size: .82rem; }
-    .sc-wallet .wc .qr { margin: 12px auto 2px; width: 60px; height: 60px; background: #fff; border-radius: 9px; display: grid; place-items: center; }
-    .sc-wallet .cap { text-align: center; color: #8a8d84; font-size: .72rem; font-weight: 600; margin-top: 14px; }
-    /* screen: stamper */
-    .sc-stamp { background: #fff; }
-    .sc-stamp h4 { font-family: var(--display); font-weight: 700; font-size: 1.2rem; margin-top: 8px; }
-    .sc-stamp .sub { color: var(--ink-soft); font-size: .82rem; margin-top: 3px; }
-    .sc-stamp .scan { margin-top: 16px; background: var(--sage); color: #fff; text-align: center; font-weight: 700; padding: 15px; border-radius: 14px; font-size: .95rem; }
-    .sc-stamp .cardrow { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
-    .sc-stamp .cardrow .cc { font-weight: 700; }
-    .sc-stamp .cardrow .dd { color: var(--muted); font-size: .8rem; margin: 4px 0 10px; }
-    .sc-stamp .cardrow .plus { background: var(--ink); color: #fff; text-align: center; font-weight: 700; padding: 11px; border-radius: 11px; font-size: .88rem; }
-    /* screen: dashboard */
-    .sc-dash { background: #fff; }
-    .sc-dash h4 { font-family: var(--display); font-weight: 700; font-size: 1.15rem; }
-    .sc-dash .seg2 { display: flex; gap: 2px; background: var(--ghost-bg); border-radius: 999px; padding: 4px; margin-top: 12px; }
-    .sc-dash .seg2 span { flex: 1; text-align: center; font-size: .74rem; font-weight: 600; color: var(--muted); padding: 7px 0; border-radius: 999px; }
-    .sc-dash .seg2 span.on { background: #fff; color: var(--ink); box-shadow: 0 2px 5px rgba(0,0,0,.1); }
-    .sc-dash .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin-top: 14px; }
-    .sc-dash .st { background: var(--bg); border-radius: 12px; padding: 11px 9px; }
-    .sc-dash .st b { font-family: var(--display); font-weight: 700; font-size: 1.25rem; display: block; letter-spacing: -.02em; }
-    .sc-dash .st i { font-style: normal; font-size: .56rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-    .sc-dash .brow { margin-top: 12px; display: flex; justify-content: space-between; font-size: .78rem; padding: 9px 2px; border-top: 1px solid var(--line); color: var(--ink-soft); }
-    /* screen: lockscreen nudge */
-    .sc-lock { background: linear-gradient(180deg, #2b3a2c, #1a2119); color: #fff; align-items: center; text-align: center; }
-    .sc-lock .clock { font-family: var(--display); font-weight: 700; font-size: 3.6rem; letter-spacing: -.03em; margin-top: 34px; }
-    .sc-lock .date { opacity: .8; font-size: .85rem; margin-top: -4px; }
-    .sc-lock .noti { margin-top: auto; width: 100%; background: rgba(255,255,255,.14); backdrop-filter: blur(8px);
-                     border-radius: 16px; padding: 13px; text-align: left; display: flex; gap: 10px; }
-    .sc-lock .noti .ic { width: 30px; height: 30px; border-radius: 8px; background: var(--sage); display: grid; place-items: center; font-size: .9rem; flex: none; }
-    .sc-lock .noti .mt { font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
-    .sc-lock .noti .tt { font-weight: 700; font-size: .84rem; margin-top: 1px; }
-    .sc-lock .noti .bd { font-size: .8rem; opacity: .92; margin-top: 2px; }
-    /* value strip */
-    .quote { font-family: var(--display); font-weight: 600; font-size: clamp(1.5rem, 4vw, 2.35rem); line-height: 1.24;
-             letter-spacing: -.015em; max-width: 24ch; text-wrap: balance; }
-    .quote .accent { color: var(--sage-br); }
-    /* final band specs */
-    .band-specs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 26px; }
-    .band-specs .badge { background: rgba(244,242,236,.08); }
-    /* footer */
-    .foot { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; justify-content: space-between; }
-    .foot .brand { font-family: var(--display); font-weight: 700; font-size: 1.1rem; color: var(--ink); text-decoration: none; }
-    .foot nav a { color: var(--muted); text-decoration: none; font-weight: 600; margin-left: 18px; }
-    .foot .fine { color: var(--muted); font-size: .84rem; }
-    /* persistent beta pill */
-    .betapill { position: fixed; left: 16px; bottom: 16px; z-index: 70; background: var(--cream); color: var(--ink);
-                border-radius: 999px; padding: 10px 15px; font-size: .8rem; font-weight: 700; text-decoration: none;
-                box-shadow: 0 14px 30px -10px rgba(0,0,0,.6); border: 1px solid rgba(0,0,0,.06); }
+    .lcard .lname { font-family: var(--display); font-weight: 700; font-size: 1.12rem; flex: 1; }
+    .lcard .llbl { font-family: var(--mono); font-size: .56rem; letter-spacing: .14em; text-transform: uppercase; color: rgba(244,242,236,.55); }
+    .lcard .lnum { font-family: var(--mono); font-weight: 700; font-size: 1.05rem; text-align: right; }
+    .lcard .ldots { font-size: 1.5rem; margin: 14px 0 10px; color: var(--lime); letter-spacing: 0; }
+    .lcard .ldots .hd { display: inline-block; margin-right: 5px; }
+    .lcard .ldots .hd:not(.on) { color: rgba(244,242,236,.22); }
+    .lcard .ldots .hd.on { opacity: 0; animation: stampin .5s cubic-bezier(.2,1.5,.4,1) forwards; }
+    @keyframes stampin { from { opacity: 0; transform: scale(2.4); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .lcard .ldots .hd.on { animation: none; opacity: 1; } }
+    .lcard .lrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 4px; }
+    .lcard .lrw { font-weight: 600; font-size: .95rem; }
+    .lcard .lqr { margin: 16px auto 2px; width: 82px; height: 82px; border-radius: 12px; background: var(--cream); color: var(--ink); display: grid; place-items: center; }
+    .fl { position: absolute; z-index: 2; }
+    .fl1 { top: -6%; right: max(2%, calc(50% - 420px)); transform: rotate(3deg); }
+    .fl2 { bottom: 2%; left: max(1%, calc(50% - 430px)); transform: rotate(-4deg); }
+    .fl3 { top: 12%; left: max(2%, calc(50% - 400px)); }
+    .fl4 { bottom: 14%; right: max(1%, calc(50% - 400px)); }
+    @media (max-width: 899px) { .fl { display: none; } }
+    /* ---------------------------------------------------------- problem -- */
+    .papers { position: relative; margin: clamp(30px, 5vw, 52px) auto 0; width: min(760px, 100%); height: 300px; }
+    .paper { position: absolute; width: 196px; background: var(--paper); color: var(--paper-ink); border-radius: 10px;
+             padding: 14px 15px; box-shadow: 0 26px 50px -20px rgba(0,0,0,.55); }
+    .paper .ph { font-family: var(--mono); font-weight: 700; font-size: .56rem; letter-spacing: .12em; text-transform: uppercase; }
+    .paper .pg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 11px; }
+    .paper .pc { aspect-ratio: 1; border: 1.5px dashed var(--paper-line); border-radius: 50%; display: grid; place-items: center; font-size: .72rem; }
+    .paper .pc.in { border-style: solid; border-color: #8a7d5c; background: rgba(138,125,92,.14); }
+    .tornwrap { position: absolute; top: 12px; left: 50%; width: 196px; height: 130px; transform: translateX(-50%) rotate(2deg); }
+    .tornwrap .half { position: absolute; inset: 0; transition: transform .9s cubic-bezier(.2,.7,.2,1) .15s; }
+    .tornwrap .half.l { clip-path: polygon(0 0, 56% 0, 46% 18%, 57% 36%, 45% 55%, 56% 74%, 46% 100%, 0 100%); }
+    .tornwrap .half.r { clip-path: polygon(56% 0, 100% 0, 100% 100%, 46% 100%, 56% 74%, 45% 55%, 57% 36%, 46% 18%); }
+    .reveal.in .tornwrap .half.l { transform: translate(-30px, 4px) rotate(-7deg); }
+    .reveal.in .tornwrap .half.r { transform: translate(30px, -3px) rotate(6deg); }
+    @media (prefers-reduced-motion: reduce) {
+      .tornwrap .half { transition: none; }
+      .tornwrap .half.l { transform: translate(-30px, 4px) rotate(-7deg); }
+      .tornwrap .half.r { transform: translate(30px, -3px) rotate(6deg); }
+    }
+    .paper.p2 { left: 5%; bottom: 4%; transform: rotate(-8deg); opacity: .8; }
+    .paper.p3 { right: 6%; top: 26%; transform: rotate(6deg); opacity: .55; }
+    .paper .stain { position: absolute; width: 58px; height: 58px; border-radius: 50%; border: 8px solid rgba(122,84,40,.22); top: -14px; right: -12px; }
+    .gtag { position: absolute; font-family: var(--mono); font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; color: var(--cream); opacity: .38; white-space: nowrap; }
+    .gt1 { top: 8%; left: 2%; } .gt2 { top: 76%; right: 2%; } .gt3 { bottom: -4%; left: 34%; }
+    @media (max-width: 700px) {
+      .papers { height: 250px; }
+      .paper { width: 158px; } .tornwrap { width: 158px; height: 112px; }
+      .paper .pc { font-size: .6rem; } .gtag { display: none; }
+      .paper.p3 { display: none; }
+      .paper.p2 { left: 8%; bottom: 0; }
+    }
+    .painrow { display: grid; gap: 12px; margin-top: clamp(30px, 4.5vw, 46px); }
+    @media (min-width: 760px) { .painrow { grid-template-columns: repeat(3, 1fr); } }
+    .pain { border: 1px solid var(--cream-line); background: rgba(244,242,236,.04); border-radius: 16px; padding: 20px; }
+    .pain .pt { font-family: var(--mono); font-weight: 700; font-size: .62rem; letter-spacing: .14em; color: var(--lime); }
+    .pain p { color: var(--cream-soft); font-size: .93rem; margin-top: 9px; }
+    /* --------------------------------------------------------- solution -- */
+    .duo { position: relative; margin: clamp(34px, 5vw, 54px) auto 0; display: flex; justify-content: center; align-items: center; }
+    .wcard { width: 264px; border-radius: 20px; padding: 18px; text-align: left; }
+    .wcard .wt { display: flex; align-items: center; gap: 10px; }
+    .wcard .wlg { width: 32px; height: 32px; border-radius: 9px; background: var(--sage); color: #fff; display: grid; place-items: center; font-size: .95rem; }
+    .wcard .wnm { font-family: var(--display); font-weight: 700; font-size: .98rem; flex: 1; }
+    .wcard .wct { font-family: var(--mono); font-weight: 700; font-size: .82rem; }
+    .wcard .wdots { font-size: 1.06rem; letter-spacing: 4px; margin: 12px 0 4px; }
+    .wcard .wrw { font-family: var(--mono); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase; }
+    .wcard.apple { background: var(--ink); color: var(--cream); transform: rotate(-3.5deg) translate(6px, -10px); z-index: 1;
+                   box-shadow: 0 30px 60px -22px rgba(32,33,29,.5); }
+    .wcard.apple .wdots { color: var(--lime); } .wcard.apple .wdots .off { color: rgba(244,242,236,.24); }
+    .wcard.apple .wrw { color: rgba(244,242,236,.6); }
+    .wcard.gwal { background: #fff; color: var(--ink); border: 1px solid var(--line); transform: rotate(3deg) translate(-6px, 10px); z-index: 2;
+                  box-shadow: 0 30px 60px -24px rgba(32,33,29,.35); }
+    .wcard.gwal .wdots { color: var(--sage-dark); } .wcard.gwal .wdots .off { color: #d8d5cc; }
+    .wcard.gwal .wrw { color: var(--muted); }
+    .wtag { font-family: var(--mono); font-weight: 700; font-size: .56rem; letter-spacing: .14em; text-transform: uppercase;
+            padding: 6px 10px; border-radius: 999px; position: absolute; z-index: 3; box-shadow: 0 10px 24px -10px rgba(0,0,0,.35); }
+    .wtag.a { background: var(--ink); color: var(--cream); top: -12px; left: calc(50% - 218px); transform: rotate(-4deg); }
+    .wtag.g { background: #fff; color: var(--ink); border: 1px solid var(--line); bottom: -18px; right: calc(50% - 248px); transform: rotate(3deg); }
+    .duo .tbx-l { position: absolute; left: 0; top: 18%; } .duo .tbx-r { position: absolute; right: 0; bottom: 12%; }
+    @media (max-width: 899px) { .duo .tbx-l, .duo .tbx-r { display: none; } }
+    @media (max-width: 640px) {
+      .duo { flex-direction: column; gap: 18px; }
+      .wcard.apple { transform: rotate(-2deg); } .wcard.gwal { transform: rotate(2deg); }
+      .wtag { display: none; }
+    }
+    /* ----------------------------------------------------- feature rows -- */
+    .feat { display: grid; gap: 40px; align-items: center; }
+    @media (min-width: 900px) { .feat { grid-template-columns: 1fr 1fr; gap: clamp(40px, 5vw, 72px); } .feat.flip .fcopy { order: 2; } .feat.flip .fart { order: 1; } }
+    .feat .h2 { font-size: clamp(1.7rem, 3.6vw, 2.5rem); }
+    .callout { display: inline-block; font-family: var(--mono); font-weight: 700; font-size: .62rem; letter-spacing: .1em;
+               text-transform: uppercase; line-height: 1.8; border: 1px dashed var(--lime-line); background: var(--lime-soft);
+               color: var(--lime); border-radius: 10px; padding: 10px 14px; margin-top: 24px; }
+    .panel.light .callout, .panel.stone .callout { border-color: rgba(111,133,103,.4); background: rgba(111,133,103,.1); color: var(--sage-dark); }
+    .fart { display: flex; align-items: center; justify-content: center; gap: 24px; position: relative; }
+    /* phone + lock screen */
+    .phone { position: relative; width: 258px; aspect-ratio: 272 / 560; background: #0e0d0b; border-radius: 44px;
+             padding: 10px; box-shadow: 0 50px 90px -34px rgba(0,0,0,.75), 0 0 0 1px rgba(244,242,236,.08); }
+    .phone .notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 94px; height: 25px;
+                    background: #0e0d0b; border-radius: 0 0 15px 15px; z-index: 6; }
+    .lock { position: absolute; inset: 10px; border-radius: 34px; overflow: hidden;
+            background: linear-gradient(180deg, #2c3b2d, #171f16); color: #fff;
+            display: flex; flex-direction: column; align-items: center; padding: 22px 14px; }
+    .lock .clock { font-family: var(--display); font-weight: 700; font-size: 3.4rem; letter-spacing: -.03em; margin-top: 30px; }
+    .lock .date { opacity: .75; font-size: .8rem; margin-top: -2px; }
+    .lock .noti { margin-top: auto; width: 100%; background: rgba(255,255,255,.16); backdrop-filter: blur(8px);
+                  border-radius: 15px; padding: 12px; text-align: left; display: flex; gap: 10px;
+                  opacity: 0; transform: translateY(14px) scale(.97); transition: opacity .6s ease .5s, transform .6s cubic-bezier(.2,1.2,.3,1) .5s; }
+    .reveal.in .lock .noti { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) { .lock .noti { opacity: 1; transform: none; transition: none; } }
+    .lock .noti .ic { width: 30px; height: 30px; border-radius: 8px; background: var(--sage); display: grid; place-items: center; font-size: .9rem; flex: none; }
+    .lock .noti .mt { font-family: var(--mono); font-size: .52rem; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
+    .lock .noti .tt { font-weight: 700; font-size: .83rem; margin-top: 2px; }
+    .lock .noti .bd { font-size: .78rem; opacity: .92; margin-top: 2px; }
+    .trail { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; width: 178px; flex: none; }
+    .trail .arr { font-family: var(--mono); color: var(--cream-soft); opacity: .6; font-size: .75rem; margin-left: 18px; }
+    @media (max-width: 1060px) { .trail { display: none; } }
+    /* insights dashboard card */
+    .dashcard { width: min(470px, 100%); background: #fff; border: 1px solid var(--line); border-radius: 20px;
+                padding: 20px; box-shadow: var(--shadow); text-align: left; }
+    .dashcard .dh { display: flex; justify-content: space-between; align-items: center;
+                    font-family: var(--mono); font-weight: 700; font-size: .6rem; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
+    .dashcard .dh .live { color: var(--sage-dark); }
+    .dtiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+    .dtile { background: var(--bg); border-radius: 12px; padding: 12px 11px; }
+    .dtile b { font-family: var(--display); font-weight: 700; font-size: 1.45rem; display: block; letter-spacing: -.02em; }
+    .dtile i { font-style: normal; font-family: var(--mono); font-size: .52rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .drow { display: flex; align-items: center; gap: 10px; padding: 11px 2px; border-top: 1px solid var(--line);
+            font-family: var(--mono); font-size: .66rem; }
+    .drow:first-of-type { margin-top: 14px; }
+    .drow .did { font-weight: 700; }
+    .drow .ddots { letter-spacing: 2px; color: var(--sage-dark); flex: 1; } .drow .ddots .off { color: #d8d5cc; }
+    .drow .dwhen { color: var(--muted); white-space: nowrap; }
+    .dbdg { font-weight: 700; font-size: .54rem; letter-spacing: .08em; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+    .dbdg.ok { background: rgba(111,133,103,.14); color: var(--sage-dark); }
+    .dbdg.warn { background: rgba(197,141,56,.14); color: #9c6f1f; }
+    .dbdg.new { background: rgba(32,33,29,.08); color: var(--ink); }
+    .dfoot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px;
+             border-top: 1px solid var(--line); font-size: .82rem; color: var(--ink-soft); }
+    .dfoot b { color: var(--sage-dark); }
+    /* -------------------------------------------------------- stat strip -- */
+    .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 26px 18px; }
+    @media (min-width: 800px) { .stats { grid-template-columns: repeat(4, 1fr); } }
+    .stat { border-left: 1px dashed rgba(32,33,29,.3); padding-left: 18px; }
+    .stat b { font-family: var(--display); font-weight: 700; font-size: clamp(2.3rem, 4.5vw, 3.4rem); letter-spacing: -.03em; line-height: 1; display: block; }
+    .stat b small { font-size: .45em; letter-spacing: 0; }
+    .stat i { font-style: normal; font-family: var(--mono); font-size: .6rem; font-weight: 700; letter-spacing: .12em;
+              text-transform: uppercase; color: var(--ink-soft); display: block; margin-top: 10px; line-height: 1.7; }
+    /* ------------------------------------------------------------ setup -- */
+    .steplist { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-direction: column; }
+    .steplist li { display: flex; align-items: baseline; gap: 14px; padding: 13px 2px; border-top: 1px dashed rgba(32,33,29,.25);
+                   font-family: var(--mono); font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); }
+    .steplist li:last-child { border-bottom: 1px dashed rgba(32,33,29,.25); }
+    .steplist .n { font-weight: 700; color: var(--sage-dark); }
+    .steplist .s { flex: 1; font-weight: 700; color: var(--ink); }
+    .steplist .t { white-space: nowrap; }
+    /* laptop */
+    .laptop { width: min(540px, 100%); }
+    .lscr { background: #171c10; border: 9px solid #262b1e; border-bottom: none; border-radius: 16px 16px 0 0;
+            padding: 16px 16px 20px; color: var(--cream); text-align: left; box-shadow: 0 44px 80px -30px rgba(32,33,29,.5); }
+    .lbase { height: 15px; background: linear-gradient(180deg, #3d4433, #22261a); border-radius: 2px 2px 14px 14px; position: relative; }
+    .lbase::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 86px; height: 6px;
+                     background: rgba(0,0,0,.3); border-radius: 0 0 8px 8px; }
+    .lscr .lhd { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-weight: 700;
+                 font-size: .56rem; letter-spacing: .14em; text-transform: uppercase; color: rgba(244,242,236,.55); }
+    .lscr .lhd .lv { color: var(--lime); }
+    .ltiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .ltile { background: rgba(244,242,236,.06); border: 1px solid rgba(244,242,236,.08); border-radius: 11px; padding: 11px; }
+    .ltile b { font-family: var(--display); font-weight: 700; font-size: 1.35rem; color: var(--lime); display: block; letter-spacing: -.02em; }
+    .ltile i { font-style: normal; font-family: var(--mono); font-size: .5rem; letter-spacing: .1em; text-transform: uppercase; color: rgba(244,242,236,.5); }
+    .lbars { display: flex; align-items: flex-end; gap: 5px; height: 64px; margin-top: 14px; padding: 0 2px; }
+    .lbars i { flex: 1; background: var(--lime); opacity: .32; border-radius: 3px 3px 0 0; }
+    .lbars i:nth-child(3n) { opacity: .55; } .lbars i:last-child { opacity: 1; }
+    .lrow2 { display: flex; justify-content: space-between; font-family: var(--mono); font-size: .58rem; letter-spacing: .08em;
+             text-transform: uppercase; color: rgba(244,242,236,.55); margin-top: 12px; border-top: 1px dashed rgba(244,242,236,.14); padding-top: 11px; }
+    .lrow2 b { color: var(--lime); }
+    /* ------------------------------------------------------------ final -- */
+    .final { text-align: center; display: flex; flex-direction: column; align-items: center; }
+    .final .h2 { font-size: clamp(2.2rem, 5.6vw, 3.7rem); max-width: 16ch; }
+    .fgrid { display: grid; gap: 28px; width: 100%; margin-top: clamp(48px, 7vw, 84px); padding-top: 34px;
+             border-top: 1px solid var(--cream-line); text-align: left; }
+    @media (min-width: 760px) { .fgrid { grid-template-columns: 2fr 1fr 1fr 1fr; } }
+    .fbrand { font-family: var(--display); font-weight: 700; font-size: 1.2rem; color: var(--cream); text-decoration: none; }
+    .fblurb { color: var(--cream-soft); font-size: .86rem; margin-top: 10px; max-width: 26ch; }
+    .fcol h5 { font-family: var(--mono); font-weight: 700; font-size: .58rem; letter-spacing: .16em; text-transform: uppercase;
+               color: rgba(244,242,236,.45); margin: 0 0 12px; }
+    .fcol a { display: block; color: var(--cream-soft); text-decoration: none; font-size: .9rem; padding: 5px 0; }
+    .fcol a:hover { color: var(--cream); }
+    .fine { font-family: var(--mono); font-size: .58rem; letter-spacing: .1em; text-transform: uppercase;
+            color: rgba(244,242,236,.4); margin-top: 40px; width: 100%; text-align: left; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
   `;
   const qr = `<svg width="60" height="60" viewBox="0 0 72 72" aria-hidden="true"><g fill="currentColor">
     <rect x="6" y="6" width="18" height="18"/><rect x="9" y="9" width="12" height="12" fill="#fff"/><rect x="12" y="12" width="6" height="6"/>
@@ -356,212 +478,241 @@ export function marketingPage(): string {
     <rect x="52" y="52" width="5" height="5"/><rect x="34" y="56" width="5" height="5"/></g></svg>`;
   const dotsHtml = (on: number, total: number, offClass = "off") =>
     "●".repeat(on) + `<span class="${offClass}">` + "○".repeat(total - on) + "</span>";
+  // Hero dots are individual spans so each stamp can pop in with its own delay.
+  const heroDots = (on: number, total: number) => {
+    let out = "";
+    for (let i = 0; i < total; i++) {
+      out += i < on
+        ? `<span class="hd on" style="animation-delay:${(0.4 + i * 0.15).toFixed(2)}s">●</span>`
+        : `<span class="hd">○</span>`;
+    }
+    return out;
+  };
+  // A paper punch-card; rendered twice inside .tornwrap so the two clipped
+  // halves can drift apart on reveal.
+  const paperCard = (title: string, stamped: number, cls = "", extra = "") => {
+    let cells = "";
+    for (let i = 0; i < 10; i++) cells += `<span class="pc${i < stamped ? " in" : ""}">${i < stamped ? "&#9749;" : ""}</span>`;
+    return `<div class="paper${cls ? ` ${cls}` : ""}">${extra}<div class="ph">${title}</div><div class="pg">${cells}</div></div>`;
+  };
   const script = /* js */ `
     (function () {
       var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
       var reveals = [].slice.call(document.querySelectorAll('.reveal'));
       if (reduce || !('IntersectionObserver' in window)) {
         reveals.forEach(function (el) { el.classList.add('in'); });
-      } else {
-        var io = new IntersectionObserver(function (es) {
-          es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
-        }, { threshold: 0.14, rootMargin: '0px 0px -8% 0px' });
-        reveals.forEach(function (el) { io.observe(el); });
+        return;
       }
-      var pills = [].slice.call(document.querySelectorAll('[data-feat]'));
-      var screens = [].slice.call(document.querySelectorAll('[data-screen]'));
-      if (!pills.length) return;
-      var order = pills.map(function (p) { return p.dataset.feat; });
-      var idx = 0, timer = null;
-      function pick(name) {
-        idx = order.indexOf(name);
-        pills.forEach(function (p) { p.classList.toggle('on', p.dataset.feat === name); });
-        screens.forEach(function (s) { s.classList.toggle('on', s.dataset.screen === name); });
-      }
-      function next() { pick(order[(idx + 1) % order.length]); }
-      function stop() { if (timer) { clearInterval(timer); timer = null; } }
-      function start() { if (reduce) return; stop(); timer = setInterval(next, 4200); }
-      pills.forEach(function (p) { p.addEventListener('click', function () { pick(p.dataset.feat); stop(); start(); }); });
-      var wrap = document.querySelector('.featwrap');
-      if (wrap) { wrap.addEventListener('mouseenter', stop); wrap.addEventListener('mouseleave', start); }
-      pick(order[0]); start();
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+      }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+      reveals.forEach(function (el) { io.observe(el); });
     })();
   `;
+  const tornPaper = paperCard("Kopi Corner &middot; buy 10 get 1", 9);
   const body = `
     <div class="nav"><div class="navbar">
       <a class="brand" href="/">Stampy &#9749;</a>
       <div class="navlinks">
-        <a href="#problem">Why</a>
-        <a href="#how">How it works</a>
+        <a href="#why">Why</a>
         <a href="#features">Features</a>
+        <a href="#setup">Setup</a>
       </div>
       <a class="navcta" href="/dashboard">Get early access</a>
     </div></div>
 
     <div class="stack">
-      <section class="panel dark"><div class="inner hero">
-        <div class="reveal">
-          <span class="eyebrow">Loyalty in the wallet they already use</span>
-          <h1 style="margin-top:20px">Your customers came once.<br><span class="accent">Make them regulars.</span></h1>
-          <p class="lead">A loyalty stamp card that lives in Apple &amp; Google Wallet &mdash; no app to download &mdash; with a gentle lock-screen nudge that brings people back through your door.</p>
-          <div class="row">
-            <a class="cta cream" href="/dashboard">Get early access</a>
-            <a class="cta ghost-d" href="#how">See how it works</a>
-          </div>
-          <div class="badges">
-            <span class="badge"><span class="dot"></span>No app to download</span>
-            <span class="badge"><span class="dot"></span>iPhone &amp; Android</span>
-            <span class="badge"><span class="dot"></span>No hardware</span>
-          </div>
+
+      <section class="panel cream dotted-bg"><div class="inner hero reveal">
+        <span class="chip"><span class="ic">&#9749;</span>Loyalty, minus the paper</span>
+        <h1>The only loyalty card <span class="accent">you need.</span></h1>
+        <p class="lead">A stamp card that lives in Apple &amp; Google Wallet &mdash; no app to download, nothing to print, nothing to lose. And it quietly brings your customers back.</p>
+        <div class="row">
+          <a class="cta dark" href="/dashboard">Get early access</a>
+          <a class="cta ghost-l" href="#why">See how it works &darr;</a>
         </div>
-        <div class="heroart reveal">
-          <div class="glow"></div>
-          <div class="spec s1">Updates itself</div>
-          <div class="spec s2">One tap to add</div>
-          <div class="spec s3">Bring them back</div>
+        <div class="heroart">
+          <div class="fl fl1"><div class="rcpt">
+            <div class="rrow"><span class="rlg">&#9749;</span><span class="rname">Kopi Corner</span><span class="ramt plus">+1 &#9679;</span></div>
+            <div class="rmeta">09:41 &middot; STAMP ADDED</div>
+          </div></div>
+          <div class="fl fl2"><div class="rcpt">
+            <div class="rrow"><span class="rlg">&#127881;</span><span class="rname">Reward unlocked</span><span class="ramt">10/10</span></div>
+            <div class="rmeta">FREE COFFEE &middot; REDEEM AT COUNTER</div>
+          </div></div>
+          <div class="fl fl3"><div class="tbox">&#9656; Customer<b>CARD #7F3A</b>&#9656; Last visit<b>2 DAYS AGO</b></div></div>
+          <div class="fl fl4"><div class="tbox">&#9656; Platform<b>APPLE + GOOGLE WALLET</b>&#9656; App required<b>NONE</b></div></div>
           <div class="lcard">
             <div class="lt">
               <div class="llogo">&#9749;</div>
               <div class="lname">Kopi Corner</div>
-              <div class="lhd"><div class="llbl">Stamps</div><div class="lnum">3/10</div></div>
+              <div><div class="llbl">Stamps</div><div class="lnum">7/10</div></div>
             </div>
-            <div class="llbl" style="margin-top:16px">Your stamps</div>
-            <div class="ldots">${dotsHtml(3, 10)}</div>
-            <div class="llbl">Reward</div>
-            <div class="lrw">Free coffee</div>
-            <div class="lqr" style="color:var(--ink)">${qr}</div>
+            <div class="llbl" style="margin-top:18px">Your stamps</div>
+            <div class="ldots">${heroDots(7, 10)}</div>
+            <div class="lrow"><span class="llbl">Reward</span><span class="lrw">Free coffee</span></div>
+            <div class="lqr">${qr}</div>
           </div>
         </div>
       </div></section>
 
-      <section class="panel stone" id="problem"><div class="inner reveal">
-        <span class="kicker">The problem</span>
-        <h2 class="h2">Loyalty shouldn&rsquo;t be this leaky.</h2>
-        <div class="pains">
-          <div class="pain"><div class="pn">01</div><h3>Paper cards get lost</h3><p>Forgotten in a drawer, soggy at the bottom of a bag, or left at home. The tenth stamp never comes &mdash; and neither does the customer.</p></div>
-          <div class="pain"><div class="pn">02</div><h3>Nobody downloads an app</h3><p>People won&rsquo;t install an app for one caf&eacute;. You lose the sign-up before it starts, and the program dies at the counter.</p></div>
-          <div class="pain"><div class="pn">03</div><h3>Once they leave, they&rsquo;re gone</h3><p>No number, no email, no way to say &ldquo;we miss you.&rdquo; A quiet week just stays quiet &mdash; and you never know who stopped coming.</p></div>
+      <section class="panel dark" id="why"><div class="inner reveal stmt">
+        <span class="brkt">[ The paper problem ]</span>
+        <h2 class="h2">Paper cards don&rsquo;t fail because loyalty doesn&rsquo;t work. <span class="lime">They fail because they&rsquo;re paper.</span></h2>
+        <p class="h2sub">Thousands of caf&eacute;s have tried stamp cards. Most gave up &mdash; the cards, not the customers, kept disappearing.</p>
+        <div class="papers">
+          <span class="gtag gt1">&#9656; Lost in a drawer</span>
+          <span class="gtag gt2">&#9656; Washed with the jeans</span>
+          <span class="gtag gt3">&#9656; Never hit stamp 10</span>
+          <div class="tornwrap">
+            <div class="half l">${tornPaper}</div>
+            <div class="half r">${tornPaper}</div>
+          </div>
+          ${paperCard("Bean There &middot; loyalty", 4, "p2", `<span class="stain"></span>`)}
+          ${paperCard("Daily Grind &middot; card", 2, "p3")}
+        </div>
+        <div class="painrow">
+          <div class="pain"><div class="pt">&#9656; LOST</div><p>Nine stamps deep, then it vanishes into a drawer. The tenth visit never comes.</p></div>
+          <div class="pain"><div class="pt">&#9656; IGNORED</div><p>Nobody installs an app for one caf&eacute;. The sign-up dies right at the counter.</p></div>
+          <div class="pain"><div class="pt">&#9656; SILENT</div><p>Paper can&rsquo;t tell you who stopped coming &mdash; and it can&rsquo;t ask them back.</p></div>
         </div>
       </div></section>
 
-      <section class="panel light" id="how"><div class="inner reveal">
-        <span class="kicker">How it works</span>
-        <h2 class="h2">From walk-in to regular, in three taps.</h2>
-        <p class="h2sub">No app to install, no hardware to buy &mdash; just a QR at your counter and any phone behind it.</p>
-        <div class="steps">
-          <div class="step">
-            <div class="sn">1</div>
-            <h3>Add the card &mdash; no app</h3>
-            <p>The customer scans your counter QR and taps once to drop the card into Apple or Google Wallet. That&rsquo;s the whole sign-up.</p>
-            <div class="mini"><div class="mcard"><div style="font-size:.6rem;letter-spacing:.08em;opacity:.7">KOPI CORNER</div><div class="md">${dotsHtml(3, 6, "off")}</div></div></div>
+      <section class="panel light"><div class="inner reveal stmt">
+        <span class="brkt">[ The fix ]</span>
+        <h2 class="h2">Stampy makes sure that never happens again.</h2>
+        <p class="h2sub">One tap moves your stamp card into the wallet they already carry &mdash; as fast as paper at the counter, impossible to leave behind.</p>
+        <div class="duo">
+          <div class="tbox tbx-l">&#9656; Added at the counter<b>ONE SCAN &middot; ~4 SECONDS</b></div>
+          <span class="wtag a">Apple Wallet</span>
+          <div class="wcard apple">
+            <div class="wt"><span class="wlg">&#9749;</span><span class="wnm">Kopi Corner</span><span class="wct">7/10</span></div>
+            <div class="wdots">${dotsHtml(7, 10)}</div>
+            <div class="wrw">Reward &middot; Free coffee</div>
           </div>
-          <div class="step">
-            <div class="sn">2</div>
-            <h3>Stamp with a tap</h3>
-            <p>Your staff scan the customer&rsquo;s card from any phone. The stamp count updates on their phone in seconds &mdash; with a little lock-screen buzz.</p>
-            <div class="mini"><div class="mstamp">+1 Stamp</div></div>
+          <div class="wcard gwal">
+            <div class="wt"><span class="wlg">&#9749;</span><span class="wnm">Kopi Corner</span><span class="wct">7/10</span></div>
+            <div class="wdots">${dotsHtml(7, 10)}</div>
+            <div class="wrw">Reward &middot; Free coffee</div>
           </div>
-          <div class="step">
-            <div class="sn">3</div>
-            <h3>Win them back</h3>
-            <p>Haven&rsquo;t seen someone in a while? Send a lock-screen nudge &mdash; &ldquo;we miss you, here&rsquo;s a bonus stamp&rdquo; &mdash; straight to their wallet.</p>
-            <div class="mini"><div class="mnote"><b>Kopi Corner</b><span>We miss you! Here&rsquo;s a bonus stamp &#9749;</span></div></div>
-          </div>
+          <span class="wtag g">Google Wallet</span>
+          <div class="tbox tbx-r">&#9656; One QR &middot; both wallets<b>SAME SCANNER, SAME SPEED</b></div>
+        </div>
+        <div class="specs">
+          <span>One tap to add</span><span>No app</span><span>Updates itself</span><span>iPhone &amp; Android</span>
         </div>
       </div></section>
 
-      <section class="panel dark" id="features"><div class="inner reveal">
-        <span class="kicker">The whole thing</span>
-        <h2 class="h2">Everything runs from a phone.</h2>
-        <p class="h2sub">Tap through the parts &mdash; the customer&rsquo;s card, your staff&rsquo;s stamper, your dashboard, and the win-back nudge.</p>
-        <div class="featwrap">
-          <div class="fpills">
-            <button class="fpill" data-feat="card"><div class="fn">In your customer&rsquo;s wallet</div><div class="fd">A branded card with stamp dots &mdash; no app.</div></button>
-            <button class="fpill" data-feat="stamp"><div class="fn">Stamp from any phone</div><div class="fd">Scan the card, add a stamp, done.</div></button>
-            <button class="fpill" data-feat="dash"><div class="fn">See who&rsquo;s coming back</div><div class="fd">Live counts of customers, stamps, rewards.</div></button>
-            <button class="fpill" data-feat="nudge"><div class="fn">Win back the quiet ones</div><div class="fd">A lock-screen nudge to lapsing customers.</div></button>
+      <section class="panel dark" id="features"><div class="inner"><div class="feat reveal">
+        <div class="fcopy">
+          <span class="chip"><span class="ic">&#128276;</span>Win-back</span>
+          <h2 class="h2">Paper can&rsquo;t bring them back. <span class="lime">Stampy can.</span></h2>
+          <p class="h2sub">When a regular goes quiet, Stampy sends a gentle lock-screen nudge &mdash; &ldquo;we miss you, here&rsquo;s a bonus stamp&rdquo; &mdash; straight from the card in their wallet. No numbers to collect, no email blasts to write.</p>
+          <span class="callout">&#9656; Runs itself &mdash; spots lapsing regulars and nudges them for you</span>
+        </div>
+        <div class="fart">
+          <div class="trail">
+            <div class="tbox">&#9656; Last visit<b>21 DAYS AGO</b></div>
+            <span class="arr">&darr;</span>
+            <div class="tbox">&#9656; Auto win-back<b>NUDGE SENT &#10003;</b></div>
+            <span class="arr">&darr;</span>
+            <div class="tbox">&#9656; Next morning<b>BACK AT THE COUNTER &#9749;</b></div>
           </div>
-          <div class="stage">
-            <div class="phone">
-              <div class="notch"></div>
-              <div class="screen sc-wallet" data-screen="card">
-                <div class="sc">
-                  <div class="stat">Wallet</div>
-                  <div class="wc">
-                    <div class="top"><div class="lg">&#9749;</div><div class="nm">Kopi Corner</div><div class="pg">3/10</div></div>
-                    <div class="dots">${dotsHtml(3, 10)}</div>
-                    <div class="rw">Reward &middot; Free coffee</div>
-                    <div class="qr" style="color:var(--ink)">${qr}</div>
-                  </div>
-                  <div class="cap">Updates by itself &mdash; no app needed</div>
-                </div>
-              </div>
-              <div class="screen sc-stamp" data-screen="stamp">
-                <div class="sc">
-                  <div class="stat">Stamper</div>
-                  <h4>Add a stamp</h4>
-                  <div class="sub">Scan the customer&rsquo;s card, or type its code.</div>
-                  <div class="scan">&#128247;&nbsp; Scan card</div>
-                  <div class="cardrow">
-                    <div class="cc">ABC123</div>
-                    <div class="dd">3/10 &middot; last seen 2d ago</div>
-                    <div class="plus">+1 Stamp</div>
-                  </div>
-                </div>
-              </div>
-              <div class="screen sc-dash" data-screen="dash">
-                <div class="sc">
-                  <div class="stat">Dashboard</div>
-                  <h4>Home</h4>
-                  <div class="seg2"><span class="on">Home</span><span>Cards</span><span>Share</span></div>
-                  <div class="grid3">
-                    <div class="st"><b>124</b><i>customers</i></div>
-                    <div class="st"><b>940</b><i>stamps</i></div>
-                    <div class="st"><b>32</b><i>rewards</i></div>
-                  </div>
-                  <div class="brow"><span>3 lapsing this week</span><span style="color:var(--sage-dark);font-weight:700">Nudge &rarr;</span></div>
-                  <div class="brow"><span>New this month</span><span>+41</span></div>
-                </div>
-              </div>
-              <div class="screen sc-lock" data-screen="nudge">
-                <div class="sc">
-                  <div class="clock">9:41</div>
-                  <div class="date">Monday, 21 July</div>
-                  <div class="noti">
-                    <div class="ic">&#9749;</div>
-                    <div><div class="mt">Wallet &middot; now</div><div class="tt">Kopi Corner</div><div class="bd">We miss you! Here&rsquo;s a bonus stamp on us &#9749;</div></div>
-                  </div>
-                </div>
+          <div class="phone">
+            <div class="notch"></div>
+            <div class="lock">
+              <div class="clock">9:41</div>
+              <div class="date">Friday, 25 July</div>
+              <div class="noti">
+                <div class="ic">&#9749;</div>
+                <div><div class="mt">Wallet &middot; now</div><div class="tt">Kopi Corner</div><div class="bd">We miss you! Here&rsquo;s a bonus stamp on us &#9749;</div></div>
               </div>
             </div>
           </div>
         </div>
-      </div></section>
+      </div></div></section>
 
-      <section class="panel stone"><div class="inner reveal" style="text-align:center;display:flex;flex-direction:column;align-items:center">
-        <p class="quote">No app to download. No paper to reprint.<br>Just a card that <span class="accent">updates itself</span> &mdash; and quietly brings people back.</p>
-      </div></section>
+      <section class="panel light"><div class="inner"><div class="feat flip reveal">
+        <div class="fcopy">
+          <span class="chip"><span class="ic">&#128200;</span>Know your customers</span>
+          <h2 class="h2">See who&rsquo;s coming back &mdash; <span class="accent">and who isn&rsquo;t.</span></h2>
+          <p class="h2sub">Every stamp is a visit you can actually see. New faces, solid regulars, people starting to drift &mdash; all on one screen, updated with every tap. Paper kept all of this a secret.</p>
+          <span class="callout">&#9656; Live counts &middot; visit history &middot; lapsing alerts</span>
+        </div>
+        <div class="fart">
+          <div class="dashcard">
+            <div class="dh"><span>Customers</span><span class="live">&#9679; Live</span></div>
+            <div class="dtiles">
+              <div class="dtile"><b>124</b><i>Customers</i></div>
+              <div class="dtile"><b>940</b><i>Stamps</i></div>
+              <div class="dtile"><b>32</b><i>Rewards</i></div>
+            </div>
+            <div class="drow"><span class="did">#A47F</span><span class="ddots">${dotsHtml(7, 10)}</span><span class="dwhen">2h ago</span><span class="dbdg ok">Regular</span></div>
+            <div class="drow"><span class="did">#2B91</span><span class="ddots">${dotsHtml(3, 10)}</span><span class="dwhen">3w ago</span><span class="dbdg warn">Lapsing</span></div>
+            <div class="drow"><span class="did">#C7D3</span><span class="ddots">${dotsHtml(1, 10)}</span><span class="dwhen">just now</span><span class="dbdg new">New</span></div>
+            <div class="dfoot"><span>3 lapsing this week</span><b>Nudge all &rarr;</b></div>
+          </div>
+        </div>
+      </div></div></section>
 
-      <section class="panel dark"><div class="inner reveal" style="text-align:center;display:flex;flex-direction:column;align-items:center">
-        <h2 class="h2" style="max-width:20ch">Give your regulars a reason to come back.</h2>
-        <p class="h2sub" style="text-align:center">Free during our beta &mdash; no card details. Design your card and print a QR in minutes.</p>
-        <div class="row" style="justify-content:center"><a class="cta sage" href="/dashboard">Get early access</a></div>
-        <div class="band-specs">
-          <span class="badge"><span class="dot"></span>No app</span>
-          <span class="badge"><span class="dot"></span>iPhone &amp; Android</span>
-          <span class="badge"><span class="dot"></span>No hardware</span>
-          <span class="badge"><span class="dot"></span>Live in minutes</span>
+      <section class="panel cream"><div class="inner reveal">
+        <div class="stats">
+          <div class="stat"><b>0</b><i>Apps to download</i></div>
+          <div class="stat"><b>1</b><i>QR at the counter</i></div>
+          <div class="stat"><b>2</b><i>Wallets covered &mdash; Apple &amp; Google</i></div>
+          <div class="stat"><b>5<small>min</small></b><i>From sign-up to first stamp</i></div>
         </div>
       </div></section>
 
-      <section class="panel light"><div class="inner foot">
-        <a class="brand" href="/">Stampy &#9749;</a>
-        <nav><a href="#how">How it works</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/dashboard">Log in</a></nav>
-        <span class="fine">Made for caf&eacute;s in Malaysia</span>
-      </div></section>
-    </div>
+      <section class="panel stone dotted-bg" id="setup"><div class="inner"><div class="feat reveal">
+        <div class="fcopy">
+          <span class="chip"><span class="ic">&#9889;</span>From zero to live</span>
+          <h2 class="h2">Set up in 5 minutes.</h2>
+          <p class="h2sub">No hardware to buy, no app to build, no training day. If you can post to Instagram, you can launch a loyalty program.</p>
+          <ul class="steplist">
+            <li><span class="n">01</span><span class="s">Create your account</span><span class="t">1 min</span></li>
+            <li><span class="n">02</span><span class="s">Design your card</span><span class="t">2 min</span></li>
+            <li><span class="n">03</span><span class="s">Print the counter QR</span><span class="t">1 min</span></li>
+            <li><span class="n">04</span><span class="s">First customer, first stamp</span><span class="t">instant</span></li>
+          </ul>
+        </div>
+        <div class="fart">
+          <div class="laptop">
+            <div class="lscr">
+              <div class="lhd"><span>Stampy &mdash; Dashboard</span><span class="lv">&#9679; Live</span></div>
+              <div class="ltiles">
+                <div class="ltile"><b>124</b><i>Customers</i></div>
+                <div class="ltile"><b>+41</b><i>This month</i></div>
+                <div class="ltile"><b>86%</b><i>Come back</i></div>
+              </div>
+              <div class="lbars"><i style="height:26%"></i><i style="height:34%"></i><i style="height:30%"></i><i style="height:44%"></i><i style="height:38%"></i><i style="height:52%"></i><i style="height:47%"></i><i style="height:60%"></i><i style="height:55%"></i><i style="height:71%"></i><i style="height:66%"></i><i style="height:84%"></i></div>
+              <div class="lrow2"><span>Stamps this week</span><b>+188</b></div>
+            </div>
+            <div class="lbase"></div>
+          </div>
+        </div>
+      </div></div></section>
 
-    <a class="betapill" href="/dashboard">&#9749; Free during beta</a>`;
+      <section class="panel dark"><div class="inner final reveal">
+        <span class="brkt">[ Early access ]</span>
+        <h2 class="h2">Be first through the door.</h2>
+        <p class="h2sub" style="text-align:center">Stampy is onboarding its first caf&eacute;s now. Free while in beta &mdash; no card details needed.</p>
+        <div class="row"><a class="cta lime" href="/dashboard">Get early access</a></div>
+        <div class="specs">
+          <span>Free during beta</span><span>No card details</span><span>Live in minutes</span>
+        </div>
+        <div class="fgrid">
+          <div>
+            <a class="fbrand" href="/">Stampy &#9749;</a>
+            <p class="fblurb">Loyalty stamp cards in Apple &amp; Google Wallet &mdash; no app, no paper, no lost cards.</p>
+          </div>
+          <div class="fcol"><h5>Product</h5><a href="#why">Why paper fails</a><a href="#features">Win-back</a><a href="#setup">Setup</a></div>
+          <div class="fcol"><h5>Legal</h5><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+          <div class="fcol"><h5>Account</h5><a href="/dashboard">Log in</a><a href="/dashboard">Get early access</a></div>
+        </div>
+        <div class="fine"><span>Made for caf&eacute;s in Malaysia</span><span>&copy; Stampy</span></div>
+      </div></section>
+    </div>`;
   return page("Stampy — loyalty cards in Apple & Google Wallet, no app", body, css, script);
 }
 
