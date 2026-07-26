@@ -26,7 +26,7 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@cafe.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken, updateCafe, getPool, verifyStaffPin } =
+  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken, updateCafe, getPool, verifyStaffPin, setStaffPin: setStaffPinFor } =
     await import("../src/db.js");
   const { createHash } = await import("node:crypto");
   await migrate();
@@ -153,6 +153,32 @@ async function main() {
     "the owner's PIN is stored hashed",
   );
   expect(!verifyStaffPin(ownerAfter, "9875"), "a near-miss PIN does not verify");
+  // --- Upgrading a LIVE database, not a fresh one ---
+  // The PIN moved from the café to the owner. A deployed café already has a
+  // working PIN and staff who know it, so the migration has to lift that PIN up
+  // rather than leave the counter locked out. Simulate the pre-upgrade shape and
+  // re-run migrate(), which is exactly what a Railway deploy does on boot.
+  const { migrate: remigrate } = await import("../src/db.js");
+  await getPool().query(`UPDATE owners SET staff_pin_hash = '' WHERE email = 'owner@test.my'`);
+  await getPool().query(
+    `UPDATE cafes SET staff_pin_hash = $1 WHERE id = 'default'`,
+    [(await getOwnerByEmail("owner@test.my"))!.password_hash], // any valid scrypt hash
+  );
+  await remigrate();
+  const lifted = (await getOwnerByEmail("owner@test.my"))!;
+  expect(
+    lifted.staff_pin_hash !== "" && lifted.staff_pin_hash.startsWith("scrypt$"),
+    "upgrading a live database lifts each owner's existing PIN up from their card",
+  );
+  // And it must not clobber a PIN the owner has already set for themselves.
+  await setStaffPinFor(lifted.id, "5555");
+  await remigrate();
+  expect(
+    verifyStaffPin((await getOwnerByEmail("owner@test.my"))!, "5555"),
+    "re-running the migration never overwrites a PIN the owner already has",
+  );
+  await setStaffPinFor(lifted.id, "9876"); // restore for the checks below
+
   const shortPin = await fetch(base + "/dashboard/api/staff-pin", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ pin: "12" }),
