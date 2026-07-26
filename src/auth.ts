@@ -191,6 +191,31 @@ export function clearStaffCookie(res: Response, ownerId: string): void {
   res.append("Set-Cookie", `${staffCookieName(ownerId)}=; Path=/staff; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
+/**
+ * Which owners this device already holds a valid staff session for.
+ *
+ * Needed because a staff phone can arrive at a bare `/staff` — bookmarked, typed,
+ * or an old link — with no café in the URL, and we must NOT fall back to "whatever
+ * café is called default", which on a multi-merchant deployment belongs to a
+ * stranger. The owner id is read out of the SIGNED payload, never from the cookie
+ * name, and the name is then required to match, so a renamed cookie proves nothing.
+ */
+export function staffCookieOwners(req: Request): string[] {
+  const header = req.get("cookie") ?? "";
+  const owners: string[] = [];
+  for (const part of header.split(";")) {
+    const name = part.trim().split("=")[0] ?? "";
+    if (!name.startsWith("stampy_staff_")) continue;
+    const payload = unseal(readCookie(req, name));
+    if (payload === null) continue;
+    const [ownerId, deviceId, epochStr, expiresStr] = payload.split(".");
+    if (!ownerId || !deviceId || !epochStr || !fresh(expiresStr)) continue;
+    if (staffCookieName(ownerId) !== name) continue; // renamed → not this owner's
+    owners.push(ownerId);
+  }
+  return owners;
+}
+
 /** Minimal cookie-header parser (we only ever read our own cookie). */
 export function readCookie(req: Request, name = COOKIE): string | undefined {
   const header = req.get("cookie") ?? "";

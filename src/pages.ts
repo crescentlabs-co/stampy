@@ -832,7 +832,7 @@ export function termsPage(contactEmail = ""): string {
  * The stamper. `signedIn` comes from the staff session cookie — an unsigned-in
  * device is only ever sent the PIN form, so the page itself leaks no café data.
  */
-export function staffPage(signedIn: boolean): string {
+export function staffPage(signedIn: boolean, cafeId = DEFAULT_CAFE_ID): string {
   const css = /* css */ `
     .pass { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
     .pass .dots { font-size: 1.15rem; letter-spacing: 2px; margin: 6px 0; }
@@ -876,10 +876,11 @@ export function staffPage(signedIn: boolean): string {
   // rather than a hidden panel.
   const sharedJs = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
-    // Which card this phone is stamping. It starts from the ?c= on the stamper
-    // link and can be switched in the page — one PIN covers every card the owner
-    // runs, so signing in again per card would be pointless friction.
-    let cafeId = new URLSearchParams(location.search).get("c") || "default";
+    // Which card this phone is stamping — decided by the SERVER and injected
+    // here, not re-derived from the URL. A bare /staff used to make the browser
+    // claim "default", which on a multi-merchant deployment is someone else's
+    // counter. Switchable in the page: one PIN covers every card the owner runs.
+    let cafeId = ${JSON.stringify(cafeId)};
 
     async function api(path, opts = {}) {
       const res = await fetch("/staff/api" + path, {
@@ -2140,8 +2141,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       div.innerHTML = \`
         <h2 class="sec first">Staff page</h2>
         <p class="muted">One PIN for your whole counter — it works on every card you run. Stored scrambled, so it can't be looked up, not even by us. If nobody remembers it, generate a new one.</p>
+        <!-- The card id MUST be in this link. Without it a bare /staff has to
+             guess which counter it is, and on a deployment with several
+             merchants the guess used to be "whoever owns the café named
+             default" — a stranger. -->
         <div class="sharelist" style="margin-top:10px">
-          <a href="/staff" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
+          <a href="/staff?c=\${(S.cafes[0] || {}).id || ""}" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
         </div>
         <label style="margin-top:14px">Staff PIN</label>
         <div class="copyrow" style="margin-top:6px">

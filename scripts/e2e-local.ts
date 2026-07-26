@@ -798,16 +798,36 @@ async function main() {
   }
   expect(loginStatus === 429, "login rate-limits after repeated failures (8/15min)");
 
-  // Staff PIN limiter counts only WRONG PINs, keyed by café+IP. Hammer the second
-  // café (whose real PIN is 2222) with a wrong PIN — nothing after this uses it.
+  // Staff PIN limiter counts only WRONG PINs, keyed by OWNER+IP — the PIN being
+  // guessed belongs to the owner, whichever of their cards the attacker points
+  // at. Hammered against a throwaway owner so it can't block a real sign-in
+  // later in this run (which is exactly what a per-café key used to hide).
+  const outsiderCard2 = JSON.parse(await (await fetch(base + "/dashboard/api/cafes", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieOutsider },
+    body: JSON.stringify({ name: "Outsider second card" }),
+  })).text());
+  const outsiderCard1 = JSON.parse(
+    (await get("/dashboard/api/overview", { headers: { cookie: cookieOutsider } })).body,
+  ).cafes[0].id;
   let firstPin = 0, lastPin = 0;
   for (let i = 0; i < 22; i++) {
-    const r = await staffLogin(newCafeOut.id, "0000");
+    const r = await staffLogin(outsiderCard1, "0000");
     if (i === 0) firstPin = r.status;
     lastPin = r.status;
   }
   expect(firstPin === 401, "a wrong staff PIN is rejected (401) before the limit trips");
   expect(lastPin === 429, "staff sign-in rate-limits repeated WRONG attempts (20/10min)");
+  // One owner, one PIN: guessing at one of their cards must not leave the others
+  // wide open to the same guessing.
+  expect(
+    (await staffLogin(outsiderCard2.id, "0000")).status === 429,
+    "the block covers every card that owner runs, not just the one being hammered",
+  );
+  // But it is scoped to that owner — nobody else's counter is affected.
+  expect(
+    (await staffLogin("default", "0000")).status === 401,
+    "another owner's sign-in is untouched by that block",
+  );
   // The limiter guards sign-in only — an already-signed-in phone keeps working
   // through the block, so one bad actor can't stop the shift.
   expect(
@@ -1133,6 +1153,29 @@ async function main() {
       headers: { cookie: staff1.cookie, "x-cafe-id": ov2nd.cafes[0].id },
     })).status === 401,
     "a staff session can't be pointed at another owner's card",
+  );
+
+  // --- A bare /staff must never resolve to another merchant's counter ---
+  // Regression: the Settings link dropped its ?c=, and /staff fell back to the
+  // café literally named "default" — which on a multi-merchant deployment is
+  // somebody else's shop. The second owner's staff saw the FIRST owner's cards,
+  // and since PINs are 4-6 digits and can collide, could have signed in there.
+  const bareStaff = await get("/staff", { headers: { cookie: cookie2 } });
+  expect(
+    bareStaff.status === 200 && !bareStaff.body.includes('let cafeId = "default"'),
+    "a bare /staff does not silently claim the default café",
+  );
+  expect(
+    bareStaff.body.includes('let cafeId = "' + ov2nd.cafes[0].id + '"'),
+    "a bare /staff resolves to the logged-in owner's own card",
+  );
+  // A staff phone that bookmarked plain /staff keeps working, on ITS owner's card.
+  const bookmarked = await fetch(base + "/staff/api/passes", { headers: { cookie: staff1.cookie } });
+  expect(bookmarked.status === 200, "a staff phone with no x-cafe-id still reaches its own counter");
+  // And the owner's Settings link carries the card id, which is what fixes it.
+  expect(
+    (await get("/dashboard")).body.includes('href="/staff?c='),
+    "the dashboard's staff link names the card explicitly",
   );
 
   // --- Rotating the PIN signs every staff phone out (break-glass) ---

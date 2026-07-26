@@ -24,7 +24,9 @@ import {
   clearStaffCookie,
   newStaffDeviceId,
   readStaffCookie,
+  sessionOwnerId,
   setStaffCookie,
+  staffCookieOwners,
 } from "../auth.js";
 import { applyAndPush } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
@@ -33,6 +35,7 @@ import {
   cafesForOwner,
   DEFAULT_CAFE_ID,
   getCafe,
+  getOwner,
   ownerForCafe,
   type OwnerRow,
   getPass,
@@ -72,9 +75,9 @@ interface StaffRequest extends Request {
   deviceId?: string;
 }
 
-/** Which card this request is about: the API header, or ?c= when loading the page. */
+/** Which card this request names explicitly: the API header, or ?c= on the page. */
 function cafeIdOf(req: Request): string {
-  return req.get("x-cafe-id") || String(req.query.c ?? "") || DEFAULT_CAFE_ID;
+  return req.get("x-cafe-id") || String(req.query.c ?? "");
 }
 
 /**
@@ -87,6 +90,43 @@ async function cafeAndOwner(cafeId: string): Promise<{ cafe: CafeRow; owner: Own
   const owner = await ownerForCafe(cafeId);
   if (!owner) return null; // an unclaimed café (the env-seeded default) has no PIN to type
   return { cafe, owner };
+}
+
+/**
+ * Which counter is this? Falling straight back to DEFAULT_CAFE_ID was fine when
+ * one deployment meant one café, and became a cross-merchant bug the moment it
+ * didn't: an owner opening a bare `/staff` landed on whoever happened to own the
+ * café named "default", saw THEIR cards, and — since PINs are only 4-6 digits and
+ * can collide by chance — could have signed into a stranger's counter.
+ *
+ * So a bare `/staff` is answered from who the visitor demonstrably is, in order:
+ *   1. the card named in the URL / header,
+ *   2. the owner logged into the dashboard in this browser — the strongest
+ *      signal of whose counter this is, and it beats a stale staff cookie left
+ *      over from signing into the wrong shop,
+ *   3. a staff session this phone already holds (the bookmarked-/staff case,
+ *      where there is no dashboard session at all),
+ *   4. only then the seeded default, which is all a fresh deployment has.
+ */
+async function resolveCafe(req: Request): Promise<{ cafe: CafeRow; owner: OwnerRow } | null> {
+  const named = cafeIdOf(req);
+  if (named) return cafeAndOwner(named);
+
+  const firstCardOf = async (ownerId: string) => {
+    const cards = await cafesForOwner(ownerId);
+    const owner = await getOwner(ownerId);
+    return cards[0] && owner ? { cafe: cards[0], owner } : null;
+  };
+  const sessionOwner = sessionOwnerId(req);
+  if (sessionOwner) {
+    const found = await firstCardOf(sessionOwner);
+    if (found) return found;
+  }
+  for (const ownerId of staffCookieOwners(req)) {
+    const found = await firstCardOf(ownerId);
+    if (found) return found;
+  }
+  return cafeAndOwner(DEFAULT_CAFE_ID);
 }
 
 /**
@@ -109,7 +149,7 @@ async function stampCooldownLeft(serial: string, cafeId: string): Promise<number
  * stops a signed-in phone stamping a stranger's card by editing a header.
  */
 async function requireStaff(req: StaffRequest, res: Response, next: NextFunction): Promise<void> {
-  const found = await cafeAndOwner(cafeIdOf(req));
+  const found = await resolveCafe(req);
   if (!found) return void res.status(404).json({ error: "no-such-cafe" });
   const session = readStaffCookie(req, found.owner.id);
   if (!session) return void res.status(401).json({ error: "not-signed-in" });
@@ -130,16 +170,17 @@ const actorOf = (req: StaffRequest) => `staff:${req.deviceId}`;
 
 /** Exchange the owner's staff PIN for a session cookie. The only place it's read. */
 staffRouter.post("/api/login", async (req, res) => {
-  const cafeId = cafeIdOf(req);
-  const rlKey = `pin:${cafeId}:${req.ip}`;
+  const found = await resolveCafe(req);
+  if (!found) return void res.status(404).json({ error: "no-such-cafe" });
+  // Keyed on the OWNER: the PIN being guessed is theirs, whichever of their cards
+  // the phone happens to be pointed at.
+  const rlKey = `pin:${found.owner.id}:${req.ip}`;
   const peeked = peek(rlKey, PIN_TRIES, PIN_WINDOW_MS);
   if (!peeked.ok) {
     return void res
       .status(429)
       .json({ error: "too-many-attempts", retryAfterSeconds: peeked.retryAfterSeconds });
   }
-  const found = await cafeAndOwner(cafeId);
-  if (!found) return void res.status(404).json({ error: "no-such-cafe" });
   const pin = String((req.body ?? {}).pin ?? "");
   if (!verifyStaffPin(found.owner, pin)) {
     hit(rlKey, PIN_TRIES, PIN_WINDOW_MS); // record only the failed attempt
@@ -153,7 +194,7 @@ staffRouter.post("/api/login", async (req, res) => {
 });
 
 staffRouter.post("/api/logout", async (req, res) => {
-  const found = await cafeAndOwner(cafeIdOf(req));
+  const found = await resolveCafe(req);
   if (found) clearStaffCookie(res, found.owner.id);
   res.json({ ok: true });
 });
@@ -170,13 +211,16 @@ staffRouter.get("/api/cards", requireStaff, async (req: StaffRequest, res) => {
  * no card list, no codes, no customer count.
  */
 staffRouter.get("/", async (req, res) => {
-  const found = await cafeAndOwner(cafeIdOf(req));
+  const found = await resolveCafe(req);
   const session = found ? readStaffCookie(req, found.owner.id) : null;
   const signedIn = Boolean(session && found && session.epoch === found.owner.staff_session_epoch);
   // A cookie that survived a PIN change would otherwise get the stamper shell,
   // fail its first API call, reload, and loop. Drop it here instead.
   if (session && !signedIn && found) clearStaffCookie(res, found.owner.id);
-  res.type("html").send(staffPage(signedIn));
+  // The page is TOLD which card it is for. It used to re-derive that from the
+  // URL, so a bare /staff had the browser send x-cafe-id:"default" no matter
+  // which counter the server had actually resolved.
+  res.type("html").send(staffPage(signedIn, found?.cafe.id ?? DEFAULT_CAFE_ID));
 });
 
 // QR-decoder fallback for browsers without BarcodeDetector (iPhone Safari).
