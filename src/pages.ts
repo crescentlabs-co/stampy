@@ -841,6 +841,20 @@ export function staffPage(signedIn: boolean): string {
     .codebox { display: flex; gap: 8px; margin-top: 8px; }
     .codebox input { text-transform: uppercase; letter-spacing: 3px; font-weight: 700; text-align: center; }
     .codebox .btn { width: auto; padding: 12px 18px; }
+    /* A button waiting for its second tap. Loud, because it is about to give
+       away a free coffee — and because the tap that armed it may have been a
+       pocket. It disarms itself after four seconds. */
+    .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
+    /* The whole point of the redeem rework: a card that has hit its target is
+       already on screen when the customer hands over their phone, instead of
+       being somewhere in a list of twenty. */
+    #readywrap:not(:empty) { margin-top: 22px; }
+    #readywrap .pass { border-color: #1a7f37; border-width: 2px; }
+    .find { border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 14px; margin-top: 22px; }
+    .find summary { cursor: pointer; padding: 12px 0; font-weight: 600; list-style: none; display: flex; gap: 8px; align-items: center; }
+    .find summary::-webkit-details-marker { display: none; }
+    .find summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
+    .find[open] summary::before { transform: rotate(90deg); }
   `;
   // Shared by both states. Everything below it is emitted for one state only:
   // an unsigned-in phone is never sent the stamper code, so the page is a gate
@@ -890,16 +904,47 @@ export function staffPage(signedIn: boolean): string {
   `;
 
   const stamperJs = /* js */ `
+    // ---- two-tap confirm, deliberately NOT a browser dialog ----
+    // Browsers offer "prevent this page from creating additional dialogs" after
+    // a few in a row. A busy counter hits that in one shift, and once a staff
+    // member ticks it every later dialog silently reports "cancel" — the redeem
+    // button would just stop working, with no error, until someone reloaded. So
+    // the confirmation lives in the button itself. A test enforces this.
+    let armedBtn = null, armedTimer = null;
+    function disarm() {
+      if (armedBtn) { armedBtn.textContent = armedBtn.dataset.label; armedBtn.classList.remove("armed"); }
+      clearTimeout(armedTimer); armedBtn = null; armedTimer = null;
+    }
+    /** First tap arms and relabels; second tap within 4s runs it. */
+    function arm(btn, prompt, go) {
+      btn.dataset.label = btn.textContent;
+      btn.onclick = () => {
+        if (armedBtn === btn) { disarm(); go(); return; }
+        disarm();
+        armedBtn = btn;
+        btn.textContent = prompt;
+        btn.classList.add("armed");
+        armedTimer = setTimeout(disarm, 4000);
+      };
+    }
+
     let busy = false; // debounce: one tap/scan = one stamp
+    // A card refused for being stamped seconds ago is remembered briefly, so the
+    // staff's next tap on it means "yes, genuinely a second order". Same two-tap
+    // idiom as the buttons, and it works for the scanner too.
+    const forceArmed = new Map();
     async function act(path, body, doneMsg) {
       if (busy) return; busy = true;
       try {
+        const key = body.serial || body.code || "";
+        if (forceArmed.get(key) > Date.now()) { forceArmed.delete(key); body = { ...body, force: true }; }
         let out = await api(path, { method: "POST", body: JSON.stringify(body) });
-        // Anti-spam: same card stamped moments ago. Let staff override for a
-        // genuine repeat order, otherwise stop the double-stamp.
+        // Anti-spam: same card stamped moments ago. Staff can override for a
+        // genuine repeat order by repeating the action.
         if (out.error === "too-soon") {
-          if (!confirm("This card was just stamped " + out.secondsLeft + "s ago. Add another stamp?")) return;
-          out = await api(path, { method: "POST", body: JSON.stringify({ ...body, force: true }) });
+          forceArmed.set(key, Date.now() + 8000);
+          toast("Stamped " + out.secondsLeft + "s ago — scan or tap again to add another");
+          return out;
         }
         if (out.error) toast("Error: " + out.error);
         else toast(doneMsg + (out.push.registeredDevices === 0
@@ -975,8 +1020,47 @@ export function staffPage(signedIn: boolean): string {
     async function load() {
       const out = await api("/passes");
       allPasses = out.passes;
+      renderReady();
       renderList();
     }
+    /** One card, with whatever actions it currently allows. */
+    function passRow(p) {
+      const div = document.createElement("div");
+      div.className = "pass";
+      div.innerHTML = \`
+        <strong>\${p.code}</strong>
+        \${p.rewardReady ? '<span class="ready"> — REWARD READY 🎉</span>' : ""}
+        <div class="dots">\${p.dots} <span class="muted">\${p.stamps}/\${p.target}</span></div>
+        <div class="row">
+          <button class="btn btn-stamp" data-a="stamp">+1 Stamp</button>
+          \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">− Undo a stamp</button>' : ""}
+          \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">Give reward & restart</button>' : ""}
+        </div>\`;
+      div.querySelector('[data-a=stamp]').onclick = () => act("/stamp", { serial: p.serial }, "Stamp added");
+      // The fix for a mis-scan. Before this the only way back was to redeem,
+      // which handed out a free reward.
+      const u = div.querySelector('[data-a=undo]');
+      if (u) arm(u, "Confirm — undo?", () => act("/undo", { serial: p.serial }, "Stamp removed"));
+      const r = div.querySelector('[data-a=redeem]');
+      if (r) arm(r, "Confirm — give reward?", () => act("/redeem", { serial: p.serial }, "Reward given — card restarted"));
+      return div;
+    }
+
+    // Cards at their target, always on screen. The customer's last stamp used to
+    // drop them somewhere into a list of twenty and staff had to go hunting for
+    // the card that was right in front of them.
+    function renderReady() {
+      const host = $("#readywrap"); if (!host) return;
+      const ready = allPasses.filter((p) => p.rewardReady);
+      host.innerHTML = "";
+      if (!ready.length) return;
+      host.insertAdjacentHTML("beforeend",
+        "<h2>Ready to redeem</h2><p class=\\"sub\\">" +
+        (ready.length === 1 ? "One card has" : ready.length + " cards have") +
+        " hit the target.</p>");
+      for (const p of ready) host.appendChild(passRow(p));
+    }
+
     function renderList() {
       const list = $("#list"); if (!list) return;
       const q = ($("#search")?.value || "").trim().toUpperCase();
@@ -993,29 +1077,11 @@ export function staffPage(signedIn: boolean): string {
           (q.length >= 6 ? 'No card has the code ' + q + '.' : 'Type the full 6-character code to search every card.') + '</p>';
         return;
       }
-      for (const p of rows) {
-        const div = document.createElement("div");
-        div.className = "pass";
-        div.innerHTML = \`
-          <strong>\${p.code}</strong>
-          \${p.rewardReady ? '<span class="ready"> — REWARD READY 🎉</span>' : ""}
-          <div class="dots">\${p.dots} <span class="muted">\${p.stamps}/\${p.target}</span></div>
-          <div class="row">
-            <button class="btn btn-stamp" data-a="stamp">+1 Stamp</button>
-            \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">− Undo a stamp</button>' : ""}
-            \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">Give reward & restart</button>' : ""}
-          </div>\`;
-        div.querySelector('[data-a=stamp]').onclick = () => act("/stamp", { serial: p.serial }, "Stamp added");
-        // The fix for a mis-scan. Before this the only way back was to redeem,
-        // which handed out a free reward.
-        const u = div.querySelector('[data-a=undo]');
-        if (u) u.onclick = () => confirm("Take one stamp back off this card?") &&
-          act("/undo", { serial: p.serial }, "Stamp removed");
-        const r = div.querySelector('[data-a=redeem]');
-        if (r) r.onclick = () => confirm("Give the reward and start this card fresh?") &&
-          act("/redeem", { serial: p.serial }, "Reward given — card restarted");
-        list.appendChild(div);
+      if (!q) {
+        list.insertAdjacentHTML("beforeend",
+          '<p class="muted" style="margin:10px 0 0">The ' + rows.length + ' most recent cards. Type a code to reach any other.</p>');
       }
+      for (const p of rows) list.appendChild(passRow(p));
     }
 
     // Codes are exactly 6 chars, so once that much is typed we can ask the
@@ -1044,9 +1110,12 @@ export function staffPage(signedIn: boolean): string {
         <input id="code" placeholder="CARD CODE" maxlength="8" autocomplete="off">
         <button class="btn btn-ghost" id="bycode">Stamp</button>
       </div>
-      <h2>Cards</h2>
-      <input id="search" placeholder="🔍 Search by card code" autocomplete="off" style="text-transform:uppercase">
-      <div id="list" style="margin-top:10px"></div>
+      <div id="readywrap"></div>
+      <details class="find" id="find">
+        <summary>Find a card</summary>
+        <input id="search" placeholder="🔍 Card code" autocomplete="off" style="text-transform:uppercase">
+        <div id="list" style="margin-top:10px"></div>
+      </details>
       <button class="signout" id="out">Sign this phone out</button>\`;
     $("#scan").onclick = startScanner;
     $("#bycode").onclick = () => {
@@ -1055,13 +1124,15 @@ export function staffPage(signedIn: boolean): string {
       act("/stamp-by-code", { code }, "Stamp added").then(() => { $("#code").value = ""; });
     };
     $("#search").oninput = onSearch;
-    $("#out").onclick = async () => {
-      if (!confirm("Sign out? You’ll need the PIN again on this phone.")) return;
+    arm($("#out"), "Confirm — sign out?", async () => {
       await api("/logout", { method: "POST" });
       location.reload();
-    };
+    });
     load();
-    clearInterval(window.__poll); window.__poll = setInterval(load, 10000);
+    // Don't repaint out from under a half-confirmed action — the poll would
+    // replace the armed button and swallow the second tap.
+    clearInterval(window.__poll);
+    window.__poll = setInterval(() => { if (!armedBtn) load(); }, 10000);
   `;
   // The camera overlay and jsQR (the BarcodeDetector fallback iPhone Safari
   // needs) are only worth loading for a phone that can actually stamp.

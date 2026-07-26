@@ -76,6 +76,25 @@ describe("staff page is a gate, not a hidden panel", () => {
       expect(html).not.toContain("x-staff-pin");
     }
   });
+
+  // Browsers let a user suppress further dialogs after a few in a row. A counter
+  // hits that in one shift, and from then on confirm() returns false without
+  // asking — "Give reward & restart" would silently do nothing until a reload.
+  // The confirmation has to live in the button, not in a dialog.
+  it("gates destructive actions without confirm()", () => {
+    const signedIn = staffPage(true);
+    expect(signedIn).not.toContain("confirm(");
+    expect(signedIn).toContain("Confirm — give reward?");
+    expect(signedIn).toContain("Confirm — undo?");
+  });
+
+  // A card at its target is what the customer is standing there waiting for, so
+  // it gets its own always-visible section rather than a place in a list of 20.
+  it("surfaces reward-ready cards above the searchable list", () => {
+    const signedIn = staffPage(true);
+    expect(signedIn).toContain("Ready to redeem");
+    expect(signedIn.indexOf("readywrap")).toBeLessThan(signedIn.indexOf('id="find"'));
+  });
 });
 
 // Promising a reset link with no email service configured left owners waiting
