@@ -1358,6 +1358,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     /* --- Card tab: Design / Rules section headings --- */
     .sec { font-size: 1.1rem; margin: 28px 0 2px; padding-top: 20px; border-top: 1px solid var(--line); }
     .sec.first { margin-top: 4px; padding-top: 0; border-top: none; }
+    /* Design is a set-it-once job, so it folds away. Rules — the reward, the
+       stamp count, the win-back — is what owners come back to, and stays open. */
+    .fold { border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; margin-top: 14px;
+            background: var(--surface); }
+    .fold summary { cursor: pointer; padding: 14px 0; font-weight: 600; list-style: none;
+                    display: flex; gap: 8px; align-items: center; }
+    .fold summary::-webkit-details-marker { display: none; }
+    .fold summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
+    .fold[open] summary::before { transform: rotate(90deg); }
+    .fold[open] { padding-bottom: 18px; }
     /* A button waiting for its second tap (see armBtn). */
     .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
     /* --- show-password toggle --- */
@@ -1482,8 +1492,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       const bust = (v) => v ? "?v=" + v : "";
       const logoSrc = base + "/art/logo.png" + bust(c.logoVersion);
       div.innerHTML = \`
-        <h2 class="sec first">Design</h2>
-        <label>Card preview <span class="muted">(live — updates as you type)</span></label>
+        <label class="sec first" style="display:block">Card preview <span class="muted">(live — updates as you type)</span></label>
         <div class="pv" data-pv>
           <div class="pv-banner" data-pv-banner></div>
           <div class="pv-top">
@@ -1499,6 +1508,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
 
+        <details class="fold">
+        <summary>Design — colours, logo, banner, stamps</summary>
         <label style="margin-top:6px">Start from a template <span class="muted">(sets colours, banner, stamps & reward for your kind of shop)</span></label>
         <div class="bantpl" data-vtpl></div>
 
@@ -1532,7 +1543,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
 
         <label style="margin-top:12px">Card name</label><input data-f="name" value="\${c.name}">
         <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
-        <p class="muted" style="margin-top:8px">Templates, banners and stamp styles save the moment you tap them. Colours and the name save with this button.</p>
+        <p class="muted" style="margin-top:8px">Templates, banners and stamp styles save the moment you tap them. Colours and the name save with this button. Everything here updates on your customers' existing cards too.</p>
+        </details>
 
         <h2 class="sec">Rules</h2>
         <label>Reward</label><input data-f="reward" value="\${c.reward}">
@@ -1540,10 +1552,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
           <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
         </div>
-        <div class="row2">
-          <div><label>Average spend per visit</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
-          <div><label>Currency</label><input data-f="currency" maxlength="4" value="\${c.currency}"></div>
-        </div>
+        <p class="muted" style="margin-top:-2px">Welcome stamps are also where a card restarts after a reward — that part applies to your existing customers straight away.</p>
+        <label style="margin-top:14px">Average spend per visit (RM)</label>
+        <input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}">
         <p class="muted" style="margin-top:-2px">Used on Home to turn stamps into a money figure. Leave at 0 to hide it.</p>
 
         <label style="margin-top:16px">Automatic win-back <span class="muted">(bring quiet customers back on their own)</span></label>
@@ -1554,10 +1565,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         </div>
         <label style="margin-top:10px">Win-back message</label>
         <input data-wb="msg" maxlength="200" value="\${(c.autoWinbackMessage || "").replace(/"/g, "&quot;")}">
-        <p class="muted" style="margin-top:6px">One message, used by both the automatic nudges and the manual ones in <strong>Customers</strong> (you can edit it there before sending). Each customer is nudged at most once per period, we stop after 3 unanswered, and Google caps messages at 3 per card per day.</p>
+        <p class="muted" style="margin-top:6px">One message, used by both the automatic nudges and the manual ones in <strong>Customers</strong> (you can edit it there before sending). At most 2 messages per card per week, and we stop entirely after 6 with no visit in between.</p>
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
-        <p class="muted" style="margin-top:8px">Reward and stamp counts apply to newly issued cards; existing cards keep theirs. Links and the staff PIN live in the <strong>Access</strong> tab.</p>\`;
+        <p class="muted" style="margin-top:8px" data-rulesnote></p>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -1845,11 +1856,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         stampsTarget: Number(f("stampsTarget").value),
         stampsStart: Number(f("stampsStart").value),
         averageSpend: Number(f("averageSpend").value) || 0,
-        currency: f("currency").value,
         autoWinbackEnabled: q("[data-wb=on]").checked,
         autoWinbackDays: Number(q("[data-wb=days]").value),
         autoWinbackMessage: q("[data-wb=msg]").value,
       }, "Rules");
+
+      // Say exactly what a rules change does, with the real number attached.
+      // Each pass snapshots its reward and target when it's issued, so lowering
+      // "stamps to reward" from 10 to 5 leaves every existing card on 10 — that
+      // surprises people, so it shouldn't be buried in a doc.
+      (async () => {
+        const note = q("[data-rulesnote]");
+        const { body } = await api("/customers?cardId=" + encodeURIComponent(c.id));
+        const n = (body.counts || {}).active || 0;
+        note.innerHTML = n
+          ? "Applies to cards issued from now on. Your <strong>" + n + "</strong> existing " +
+            (n === 1 ? "customer keeps their" : "customers keep their") +
+            " current reward and stamp count — colours, logo and card name update on everyone's card."
+          : "Applies to every card from now on. Once you have customers, a change here only affects newly issued cards; their reward and stamp count stay as they were.";
+      })();
       return div;
     }
 

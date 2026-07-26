@@ -330,7 +330,9 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
       ? Math.max(0, Math.min(1_000_000, Math.round(major * 100)))
       : 0;
   }
-  if (typeof body.currency === "string") fields.currency = body.currency.trim().slice(0, 4) || "RM";
+  // Currency is no longer an owner-facing choice — everything is RM. The column
+  // stays for the day that changes; nothing in the UI writes it.
+
   // Colours arrive as hex from the pickers; stored as rgb(...) for PassKit.
   if (typeof body.bg === "string") fields.background_color = hexToRgb(body.bg);
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
