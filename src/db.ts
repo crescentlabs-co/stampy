@@ -83,7 +83,21 @@ export interface RegistrationRow {
   serial: string;
 }
 
-export type EventType = "enroll" | "stamp" | "redeem" | "nudge" | "undo";
+/**
+ * `pass_added` / `pass_removed` are APPLE ONLY. iOS calls our PassKit web service
+ * when a pass really lands in a wallet and again when it is deleted, so those two
+ * moments are recordable. Google hosts its own objects and reports neither — an
+ * Android card that was added and one that was never opened are indistinguishable,
+ * and always will be. Never present these counts as platform-wide.
+ */
+export type EventType =
+  | "enroll"
+  | "stamp"
+  | "redeem"
+  | "nudge"
+  | "undo"
+  | "pass_added"
+  | "pass_removed";
 
 /**
  * Who caused an event, and whether a stamp was forced past the anti-spam
@@ -480,6 +494,10 @@ export interface CustomerRow {
   last_visit: Date;
   /** Nudges sent since this card's last visit — how many messages went unanswered. */
   unanswered_nudges: number;
+  /** Nudges sent in the last 7 days — gates the "2 per week" limit. */
+  nudges_7d: number;
+  /** True once the customer deleted the card from their wallet (Apple only). */
+  removed: boolean;
 }
 
 // ---- shared SQL fragments (both assume the passes table is aliased `p`) ----
@@ -494,11 +512,18 @@ const LAST_VISIT_SQL = `COALESCE(
 
 // A pass row alone proves nothing: it is written on the /enroll hit, before iOS
 // even shows the Add sheet, so prefetches, bots and cancelled sheets all left
-// permanent "customers". A real customer has either been stamped or is known to
-// be sitting in a wallet. Registrations are Apple-only, hence the OR.
+// permanent "customers". A real customer has been stamped, is sitting in a
+// wallet now, or was sitting in one at some point.
+//
+// That last clause matters: deleting the pass removes the registrations row, and
+// without the `pass_added` check someone who joined, got the card, then deleted
+// it would silently vanish from the count — the churn would erase its own
+// evidence. They stay counted, and show up in the "Deleted the card" cohort.
+// Registrations and pass_added are Apple-only, hence the ORs.
 const ACTIVE_PASS_SQL = `(
        EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')
     OR EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
+    OR EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')
      )`;
 
 // Stamps actually given. A staff `undo` corrects a mis-scan, so it has to come
@@ -518,17 +543,80 @@ const UNANSWERED_NUDGES_SQL = `(
           AND e.created_at > ${LAST_VISIT_SQL}
      )`;
 
-/** Every card of a café, most-recently-visited first (for the Customers view). */
-export async function cafeCustomers(cafeId: string): Promise<CustomerRow[]> {
-  const res = await getPool().query<CustomerRow>(
-    `SELECT p.serial, p.short_code AS code, p.stamp_count AS stamps,
+// Nudges in the last 7 days, for the "at most 2 per week" limit. Counted off the
+// clock rather than off the last visit, so a customer who came in yesterday still
+// can't be messaged three times this week.
+const NUDGES_7D_SQL = `(
+       SELECT count(*)::int FROM events e
+        WHERE e.serial = p.serial AND e.type = 'nudge'
+          AND e.created_at > now() - interval '7 days'
+     )`;
+
+// The customer deleted the card from their wallet: iOS told us so, and no device
+// has since re-registered it (re-adding writes a fresh registrations row, which
+// is what makes this recover on its own). Apple-only — see EventType.
+const REMOVED_PASS_SQL = `(
+       EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_removed')
+   AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
+     )`;
+
+const CUSTOMER_COLUMNS_SQL = `p.serial, p.short_code AS code, p.stamp_count AS stamps,
             p.stamps_target AS target, p.updated_at, p.created_at,
             ${LAST_VISIT_SQL} AS last_visit,
-            ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges
-       FROM passes p WHERE p.cafe_id = $1 ORDER BY last_visit DESC`,
+            ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges,
+            ${NUDGES_7D_SQL} AS nudges_7d,
+            ${REMOVED_PASS_SQL} AS removed`;
+
+/**
+ * A café's real customers, most-recently-visited first.
+ *
+ * Defaults to active cards only — the same definition the Home tile counts — so
+ * the headline number and the list below it can never disagree again. Passing
+ * `false` returns every pass row ever minted, including the ones abandoned at the
+ * Add sheet; only the housekeeping/admin paths want that.
+ */
+export async function cafeCustomers(cafeId: string, activeOnly = true): Promise<CustomerRow[]> {
+  const res = await getPool().query<CustomerRow>(
+    `SELECT ${CUSTOMER_COLUMNS_SQL}
+       FROM passes p
+      WHERE p.cafe_id = $1 ${activeOnly ? `AND ${ACTIVE_PASS_SQL}` : ""}
+      ORDER BY last_visit DESC`,
     [cafeId],
   );
   return res.rows;
+}
+
+export interface CafeCardCounts {
+  /** Cards that reached a wallet or were stamped — the number we call "customers". */
+  active: number;
+  /** Minted but never stamped and never confirmed in a wallet: mostly abandoned Add sheets. */
+  issuedNeverAdded: number;
+  /** Added to a wallet, then deleted (Apple only). */
+  removed: number;
+}
+
+/**
+ * The three numbers behind the customer count, so the dashboard can explain a
+ * gap instead of showing two contradictory totals. `removed` cards are still
+ * counted in `active` when they were ever stamped — deleting the pass doesn't
+ * un-happen the visits.
+ */
+export async function cafeCardCounts(cafeId: string): Promise<CafeCardCounts> {
+  const res = await getPool().query<{ active: string; never_added: string; removed: string }>(
+    `SELECT count(*) FILTER (WHERE ${ACTIVE_PASS_SQL})::text AS active,
+            count(*) FILTER (WHERE NOT ${ACTIVE_PASS_SQL}
+              AND NOT EXISTS (SELECT 1 FROM events e
+                               WHERE e.serial = p.serial AND e.type = 'pass_added'))::text AS never_added,
+            count(*) FILTER (WHERE ${REMOVED_PASS_SQL})::text AS removed
+       FROM passes p WHERE p.cafe_id = $1`,
+    [cafeId],
+  );
+  const row = res.rows[0];
+  return {
+    active: Number(row?.active ?? 0),
+    issuedNeverAdded: Number(row?.never_added ?? 0),
+    removed: Number(row?.removed ?? 0),
+  };
 }
 
 /** Serials whose card hasn't been stamped in `days` days — the lapsing set. */
@@ -818,6 +906,27 @@ export async function unansweredNudges(serial: string): Promise<number> {
   return res.rows[0]?.n ?? 0;
 }
 
+/** Everything the nudge limits are decided on. See `canNudge` in winback.ts. */
+export interface NudgeState {
+  nudges7d: number;
+  unanswered: number;
+  removed: boolean;
+}
+
+/** One round trip for the three numbers that gate a nudge. Unknown serial → null. */
+export async function nudgeState(serial: string): Promise<NudgeState | null> {
+  const res = await getPool().query<{ nudges_7d: number; unanswered_nudges: number; removed: boolean }>(
+    `SELECT ${NUDGES_7D_SQL} AS nudges_7d,
+            ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges,
+            ${REMOVED_PASS_SQL} AS removed
+       FROM passes p WHERE p.serial = $1`,
+    [serial],
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return { nudges7d: row.nudges_7d, unanswered: row.unanswered_nudges, removed: row.removed };
+}
+
 export interface NudgeOutcomes {
   /** Nudged, then came in — the win-back worked. */
   returned: number;
@@ -895,12 +1004,16 @@ export async function cafeMetrics(cafeId: string): Promise<CafeMetrics> {
 
 /** Housekeeping: drop pass rows that never reached a wallet and were never
  *  stamped. 30 days is deliberately generous — Google never reports a wallet
- *  add, so a real un-stamped Android card must not be pruned early. */
+ *  add, so a real un-stamped Android card must not be pruned early.
+ *
+ *  A card that was added and then deleted is NOT abandoned — it is churn, and
+ *  deleting the row would destroy the only evidence we have of it. */
 export async function pruneAbandonedPasses(olderThanDays = 30): Promise<number> {
   const res = await getPool().query(
     `DELETE FROM passes p
       WHERE p.created_at < now() - ($1 || ' days')::interval
         AND NOT EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')
+        AND NOT EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')
         AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)`,
     [String(Math.max(1, Math.trunc(olderThanDays)))],
   );
@@ -909,11 +1022,24 @@ export async function pruneAbandonedPasses(olderThanDays = 30): Promise<number> 
 
 // --------------------------------------------------------- registrations ----
 
+/**
+ * The wallet-add moment. A `pass_added` event is logged on the FIRST registration
+ * of a serial only — a refreshed push token is the same card, and a second device
+ * (iPad, Watch) is the same customer. Re-adding after a delete does log again, so
+ * the event stream reads as a true timeline.
+ *
+ * The logging lives here rather than in the route so the direct callers (tests,
+ * scripts) can't bypass it.
+ */
 export async function upsertRegistration(
   deviceLibraryId: string,
   serial: string,
   pushToken: string,
 ): Promise<{ created: boolean }> {
+  const had = await getPool().query(
+    `SELECT 1 FROM registrations WHERE serial = $1 LIMIT 1`,
+    [serial],
+  );
   const res = await getPool().query(
     `INSERT INTO registrations (device_library_id, serial, push_token)
      VALUES ($1, $2, $3)
@@ -922,13 +1048,35 @@ export async function upsertRegistration(
      RETURNING (xmax = 0) AS created`,
     [deviceLibraryId, serial, pushToken],
   );
-  return { created: Boolean(res.rows[0]?.created) };
+  const created = Boolean(res.rows[0]?.created);
+  if (created && had.rowCount === 0) {
+    await logPassLifecycle(serial, "pass_added");
+  }
+  return { created };
 }
 
+/**
+ * The wallet-delete moment — the only hard churn signal either platform gives us,
+ * and it arrives exactly once, so it has to be recorded before the row goes.
+ * Logged only when the LAST device drops the pass: someone who removes it from an
+ * iPad but keeps it on their iPhone has not churned.
+ */
 export async function deleteRegistration(deviceLibraryId: string, serial: string): Promise<void> {
-  await getPool().query(
+  const res = await getPool().query(
     `DELETE FROM registrations WHERE device_library_id = $1 AND serial = $2`,
     [deviceLibraryId, serial],
+  );
+  if (!res.rowCount) return;
+  const left = await getPool().query(`SELECT 1 FROM registrations WHERE serial = $1 LIMIT 1`, [serial]);
+  if (left.rowCount === 0) await logPassLifecycle(serial, "pass_removed");
+}
+
+/** Log an add/remove against the pass's café, skipping silently if the pass is gone. */
+async function logPassLifecycle(serial: string, type: EventType): Promise<void> {
+  await getPool().query(
+    `INSERT INTO events (cafe_id, serial, type, actor)
+     SELECT p.cafe_id, p.serial, $2, 'customer' FROM passes p WHERE p.serial = $1`,
+    [serial, type],
   );
 }
 

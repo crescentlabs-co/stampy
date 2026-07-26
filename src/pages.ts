@@ -1244,6 +1244,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .cn { width: auto; padding: 7px 14px; font-size: .82rem; }
     .cmeta { color: var(--muted); font-size: .8rem; margin-top: 3px; }
     .warn { color: #9a3412; font-weight: 600; }
+    /* --- Customers: one standalone row per lapse cohort (not a collapsible) --- */
+    .bucket { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+              margin-bottom: 8px; background: var(--surface); }
+    .bucket .cprog { text-align: right; padding-right: 6px; }
+    .bucket .cn:disabled { opacity: .4; }
     /* --- a value shown exactly once (a new PIN) --- */
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 10px 12px;
             border-radius: 10px; margin-top: 10px; font-size: .85rem; line-height: 1.5; }
@@ -1733,170 +1738,166 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
            </table>\`
         : "";
       div.innerHTML = \`
-        <div class="segwrap">
-          <div class="seg" id="range" role="tablist">
-            <button data-r="all" class="on">All time</button>
-            <button data-r="30">Last 30 days</button>
-            <span class="thumb"></span>
-          </div>
-        </div>
         <div class="totals" data-totals></div>
-        \${breakdown}
-        <label style="margin-top:16px">Customers</label>
-        <div data-cust><p class="muted">Loading…</p></div>
-        <button class="btn btn-ghost viewall" data-viewall>View all customers →</button>\`;
+        <p class="muted" data-gap style="margin:-6px 0 4px"></p>
+        \${breakdown}\`;
 
       // Money influenced = stamps × that card's average spend, summed per card
       // (each card can have a different basket). Hidden until a spend is set,
-      // because a confident "0" would read as a real answer.
+      // because a confident "0" would read as a real answer. The symbol comes
+      // from each card, not from whichever card happened to be first.
       const priced = S.cafes.filter((c) => c.averageSpend > 0);
-      const currency = (priced[0] || {}).currency || "";
-      function influenced(range) {
-        return priced.reduce((a, c) => a + (range === "30" ? c.metrics.stamps30d : c.metrics.stamps) * c.averageSpend, 0);
-      }
-      const money = (n) => currency + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      const oneCurrency = priced.every((c) => c.currency === (priced[0] || {}).currency);
+      const influenced = priced.reduce((a, c) => a + c.metrics.stamps * c.averageSpend, 0);
+      const money = (n) =>
+        (oneCurrency ? (priced[0] || {}).currency || "" : "") +
+        n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-      // The All-time / 30-day toggle swaps the big numbers instantly (tactile).
-      function paintTotals(range) {
-        const suffix = range === "30" ? " · 30d" : "";
-        const stamps = range === "30" ? sum("stamps30d") : sum("stamps");
-        const claimed = range === "30" ? sum("redemptions30d") : sum("redemptions");
-        const host = div.querySelector("[data-totals]");
-        host.className = "totals" + (priced.length ? " four" : "");
-        host.innerHTML = \`
-          <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
-          <div class="metric"><b>\${stamps}</b><span>stamps\${suffix}</span></div>
-          <div class="metric"><b>\${claimed}</b><span>rewards\${suffix}</span></div>
-          \${priced.length ? '<div class="metric"><b>' + money(influenced(range)) + '</b><span>spend influenced' + suffix + '</span></div>' : ""}\`;
-      }
-      paintTotals("all");
-      wireSeg(div.querySelector("#range"), (btn) => paintTotals(btn.dataset.r));
-      if (!priced.length) {
-        div.querySelector("[data-totals]").insertAdjacentHTML("afterend",
-          '<p class="muted" style="margin:-6px 0 4px">Set an <strong>average spend per visit</strong> in Card → Rules to also see the money your stamps influenced.</p>');
-      }
+      // One set of numbers, all time. The All-time / 30-day toggle is gone: it
+      // doubled every figure on the screen for a question nobody was asking yet.
+      const host = div.querySelector("[data-totals]");
+      host.className = "totals" + (priced.length ? " four" : "");
+      host.innerHTML = \`
+        <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
+        <div class="metric"><b>\${sum("stamps")}</b><span>stamps</span></div>
+        <div class="metric"><b>\${sum("redemptions")}</b><span>rewards given</span></div>
+        \${priced.length ? '<div class="metric"><b>' + money(influenced) + '</b><span>spend influenced</span></div>' : ""}\`;
+
+      // The gap line. "Customers" counts cards that were stamped or confirmed in
+      // a wallet; cards abandoned at the Add sheet and cards since deleted are
+      // named here rather than silently inflating or deflating the headline.
       (async () => {
-        const { body } = await api("/customers?lapsedDays=" + LAPSE_DAYS);
-        const cust = body.customers || [];
-        const lapsing = cust.filter((x) => x.lapsing).length;
-        const host = div.querySelector("[data-cust]");
-        host.innerHTML = cust.length
-          ? '<p><strong>' + cust.length + '</strong> customers · <strong>' + lapsing + '</strong> not seen in ' + LAPSE_DAYS + '+ days</p>'
-          : '<p class="muted">No customers yet — they appear once someone adds your card and gets their first stamp.</p>';
+        const { body } = await api("/customers");
+        const counts = body.counts || { active: 0, issuedNeverAdded: 0, removed: 0 };
+        const need = (body.buckets || [])
+          .filter((b) => b.nudgeable)
+          .reduce((a, b) => a + b.eligible, 0);
+        const gap = [];
+        if (counts.issuedNeverAdded) gap.push(counts.issuedNeverAdded + " never reached a wallet");
+        if (counts.removed) gap.push(counts.removed + " deleted the card");
+        const line = div.querySelector("[data-gap]");
+        if (!counts.active && !gap.length) {
+          line.innerHTML = "No customers yet — they appear once someone adds your card and gets their first stamp.";
+        } else {
+          line.innerHTML = (need ? "<strong>" + need + "</strong> could use a nudge" + (gap.length ? " · " : "") : "") +
+            (gap.length ? "Also issued: " + gap.join(" · ") : "");
+        }
+        if (!priced.length) {
+          line.insertAdjacentHTML("afterend",
+            '<p class="muted" style="margin:2px 0 4px">Set an <strong>average spend per visit</strong> in Card → Rules to also see the money your stamps influenced.</p>');
+        }
       })();
-      div.querySelector("[data-viewall]").onclick = () => go("customers");
       return div;
     }
 
-    // ---- Customers: grouped by how long since they came in ----
-    // A flat wall of 6-character codes told the owner nothing. Recency is the
-    // only thing they can act on, so it decides the grouping.
-    // "bulk" decides whether the group gets a nudge-all button: messaging
-    // someone who came in today is a footgun, so those groups only offer the
-    // per-row nudge.
-    const GROUPS = [
-      { key: "new",     title: "New this week",       hint: "joined in the last 7 days",       open: true,  bulk: false },
-      { key: "active",  title: "Active",              hint: "came in within the last week",    open: false, bulk: false },
-      { key: "q7",      title: "Not seen in 7 days",  hint: "slipping — worth a nudge",        open: true,  bulk: true  },
-      { key: "q14",     title: "Not seen in 14 days", hint: "going quiet",                     open: true,  bulk: true  },
-      { key: "q30",     title: "Not seen in 30 days", hint: "last chance to win back",         open: true,  bulk: true  },
-      { key: "churned", title: "Churned",             hint: "90+ days, or ignored 3 messages", open: false, bulk: true  },
-    ];
-
-    /** Which group a customer belongs in. Order matters — the first match wins. */
-    function groupOf(x, nudgeCap) {
-      if (x.joinedDays < 7) return "new";
-      if (x.unanswered >= nudgeCap || x.lastDays >= 90) return "churned";
-      if (x.lastDays >= 30) return "q30";
-      if (x.lastDays >= 14) return "q14";
-      if (x.lastDays >= 7) return "q7";
-      return "active";
-    }
-
+    // ---- Customers: weekly lapse cohorts, then a search box ----
+    // Nobody works a loyalty list card by card, so the list is no longer the
+    // page: the cohorts are. Buckets, counts and eligibility are all computed
+    // server-side (routes/dashboard.ts BUCKETS), so what you see and what the
+    // Nudge button sends to can never drift apart.
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <div class="custctl">
-          <div><label>Card</label><select data-card><option value="all">All cards</option></select></div>
-        </div>
-        <input data-search placeholder="🔍 Search by card code" autocomplete="off" style="text-transform:uppercase;margin-top:8px">
-        <div data-groups style="margin-top:14px"><p class="muted">Loading…</p></div>
-        <div class="account" style="margin-top:22px">
+        <div class="account">
           <label>Win-back message</label>
           <input data-msg maxlength="200">
-          <p class="muted" style="margin-top:6px">Starts from the message in Card → Rules. Edit it here to change just this send. Google limits 3 messages per card per day, and we stop chasing anyone who has ignored 3.</p>
-        </div>\`;
+          <p class="muted" style="margin-top:6px" data-limits></p>
+        </div>
+        <div class="custctl" style="margin-top:18px">
+          <div><label>Card</label><select data-card><option value="all">All cards</option></select></div>
+        </div>
+        <div data-buckets style="margin-top:14px"><p class="muted">Loading…</p></div>
+        <details class="grp" style="margin-top:22px" data-find>
+          <summary><span class="gt">Find a card</span><span class="gh">look up one customer by their code</span></summary>
+          <input data-search placeholder="🔍 Card code" autocomplete="off" style="text-transform:uppercase;margin-top:10px">
+          <div data-results style="margin-top:10px"></div>
+        </details>\`;
       const q = (s) => div.querySelector(s);
-      let all = [], cap = 3;
+      let all = [], buckets = [], limits = { perWeek: 2, maxUnanswered: 6 };
 
-      async function nudge(people, what) {
+      /** Send. The server decides who is actually eligible and reports back. */
+      async function nudge(payload, what, expected) {
         const message = q("[data-msg]").value.trim();
         if (!message) return toast("Type a message first");
-        if (!people.length) return toast("Nobody to nudge there");
-        const spent = people.filter((x) => x.unanswered >= cap).length;
-        if (spent && !confirm(spent + " of these " + people.length + " have already ignored " + cap +
-            " messages. Message them anyway?")) return;
-        if (!confirm("Send this message to " + people.length + " " + what + "?")) return;
-        const { body } = await api("/nudge", { method: "POST", body: JSON.stringify({ message, target: people.map((x) => x.serial) }) });
-        toast(body.ok ? ("Nudged " + body.sent + " of " + body.total + " (rest have no phone yet)") : (body.error || "Failed"));
+        if (!expected) return toast("Nobody to nudge there");
+        const { body } = await api("/nudge", { method: "POST", body: JSON.stringify(Object.assign({ message }, payload)) });
+        if (!body.ok) return toast(body.error || "Failed");
+        const s = body.skipped || {};
+        const held = (s.rateLimited || 0) + (s.ignored || 0) + (s.removed || 0);
+        toast("Nudged " + body.sent + " of " + body.total + (held ? " · " + held + " held back by the limits" : ""));
+        load();
       }
 
-      // Code and progress on one line, the story underneath — the old single
-      // run-on line wrapped mid-sentence on a phone and read as noise.
+      // One row per cohort. The counts are live sums over whoever is in the
+      // bucket right now — a card that ages from one week into the next takes
+      // its own nudge history with it, so nothing here is an average.
+      function renderBuckets() {
+        const host = q("[data-buckets]"); host.innerHTML = "";
+        if (!all.length && !buckets.some((b) => b.customers)) {
+          host.innerHTML = '<p class="muted">No customers yet — they appear once someone adds your card and gets their first stamp.</p>';
+          return;
+        }
+        for (const b of buckets) {
+          if (!b.customers) continue;
+          const el = document.createElement("div");
+          el.className = "bucket";
+          const bits = [b.customers + (b.customers === 1 ? " customer" : " customers")];
+          if (b.nudgeable) {
+            bits.push(b.nudgedThisWeek + " nudged this week");
+            if (b.stopped) bits.push(b.stopped + " stopped messaging");
+          }
+          el.innerHTML = \`
+            <div class="ctop">
+              <strong>\${b.label}</strong>
+              <span class="cprog">\${b.customers}</span>
+              \${b.nudgeable ? '<button class="btn btn-ghost cn" data-n' + (b.eligible ? "" : " disabled") + '>Nudge ' + b.eligible + '</button>' : ""}
+            </div>
+            <div class="cmeta">\${bits.join(" · ")} · \${b.hint}</div>\`;
+          const btn = el.querySelector("[data-n]");
+          if (btn && b.eligible) btn.onclick = () => nudge({ target: b.key }, b.label, b.eligible);
+          host.appendChild(el);
+        }
+      }
+
+      // Code and progress on one line, the story underneath.
       function row(x) {
         const el = document.createElement("div"); el.className = "crow";
         const seen = x.lastDays === 0 ? "in today" : x.lastDays + " days ago";
+        const why = x.blocked === "ignored" ? "stopped messaging"
+          : x.blocked === "rate-limited" ? "already nudged twice this week"
+          : x.blocked === "removed" ? "deleted the card" : "";
         const meta = [x.cardName, "last " + seen].join(" · ");
         el.innerHTML = \`
           <div class="ctop">
             <strong>\${x.code}</strong>
             <span class="cprog">\${x.stamps}/\${x.target}</span>
-            <button class="btn btn-ghost cn" data-n>Nudge</button>
+            \${x.canNudge ? '<button class="btn btn-ghost cn" data-n>Nudge</button>' : ""}
           </div>
-          <div class="cmeta">\${meta}\${x.unanswered ? ' · <span class="warn">' + x.unanswered + ' unanswered</span>' : ""}</div>\`;
-        el.querySelector("[data-n]").onclick = () => nudge([x], "customer");
+          <div class="cmeta">\${meta}\${x.unanswered ? ' · <span class="warn">' + x.unanswered + ' unanswered</span>' : ""}\${why ? ' · <span class="warn">' + why + "</span>" : ""}</div>\`;
+        const btn = el.querySelector("[data-n]");
+        if (btn) btn.onclick = () => nudge({ target: [x.serial] }, "customer", 1);
         return el;
       }
 
-      function renderGroups() {
+      // Hidden until they type: the list is a lookup tool, not a view.
+      function renderResults() {
         const search = (q("[data-search]").value || "").trim().toUpperCase();
-        const shown = all.filter((x) => !search || x.code.toUpperCase().includes(search));
-        const host = q("[data-groups]"); host.innerHTML = "";
-        if (!all.length) {
-          host.innerHTML = '<p class="muted">No customers yet — they appear once someone adds your card and gets their first stamp.</p>';
-          return;
-        }
+        const host = q("[data-results]"); host.innerHTML = "";
+        if (!search) return;
+        const shown = all.filter((x) => x.code.toUpperCase().includes(search));
         if (!shown.length) { host.innerHTML = '<p class="muted">No card has that code.</p>'; return; }
-        for (const g of GROUPS) {
-          const people = shown.filter((x) => groupOf(x, cap) === g.key);
-          if (!people.length) continue;
-          const box = document.createElement("details");
-          box.className = "grp";
-          // A search is a hunt for one card — open everything so it can't hide.
-          if (g.open || search) box.open = true;
-          box.innerHTML = \`<summary><span class="gt">\${g.title}</span>
-            <span class="gc">\${people.length}</span>
-            <span class="gh">\${g.hint}</span></summary>
-            \${g.bulk ? '<button class="btn btn-ghost gnudge">Nudge all ' + people.length + '</button>' : ""}
-            <div class="grows"></div>\`;
-          const bulk = box.querySelector(".gnudge");
-          if (bulk) bulk.onclick = () => nudge(people, g.title.toLowerCase());
-          const rows = box.querySelector(".grows");
-          // 50 rows is plenty to act on; the search box reaches the rest.
-          for (const x of people.slice(0, 50)) rows.appendChild(row(x));
-          if (people.length > 50) {
-            rows.insertAdjacentHTML("beforeend",
-              '<p class="muted" style="margin-top:10px">Showing 50 of ' + people.length + ' — search by code to find a specific card.</p>');
-          }
-          host.appendChild(box);
-        }
+        for (const x of shown.slice(0, 25)) host.appendChild(row(x));
       }
 
       async function load() {
         const card = q("[data-card]").value;
-        const { body } = await api("/customers?cardId=" + encodeURIComponent(card) + "&lapsedDays=" + LAPSE_DAYS);
+        const { body } = await api("/customers?cardId=" + encodeURIComponent(card));
         all = body.customers || [];
-        cap = body.nudgeCap || 3;
+        buckets = body.buckets || [];
+        limits = body.limits || limits;
+        q("[data-limits]").innerHTML = "Starts from the message in Card → Rules. Edit it here to change just this send. " +
+          "At most " + limits.perWeek + " messages per card per week, and we stop entirely after " +
+          limits.maxUnanswered + " with no visit in between.";
         const sel = q("[data-card]");
         if (!sel.dataset.filled) {
           sel.insertAdjacentHTML("beforeend", (body.cards || []).map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join(""));
@@ -1906,11 +1907,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         // hard-coded default here meant two sources of truth for one message.
         const src = card === "all" ? S.cafes[0] : S.cafes.find((c) => c.id === card);
         if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (src && src.autoWinbackMessage) || "";
-        renderGroups();
+        renderBuckets();
+        renderResults();
       }
       q("[data-msg]").oninput = (e) => { e.target.dataset.touched = "1"; };
       q("[data-card]").onchange = load;
-      q("[data-search]").oninput = renderGroups;
+      q("[data-search]").oninput = renderResults;
       load();
       return div;
     }
@@ -2029,8 +2031,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       return div;
     }
 
-    // Slides a segmented control's thumb under its active button. Reused by the
-    // tab bar and the Home time toggle — this is the "tap across, watch it glide".
+    // Slides the tab bar's thumb under the active tab — the "tap across, watch
+    // it glide". (Home's All-time / 30-day toggle used to share this too, until
+    // it was dropped for doubling every number on the screen.)
     function moveThumb(seg) {
       const on = seg.querySelector("button.on") || seg.querySelector("button");
       const thumb = seg.querySelector(".thumb");
@@ -2041,23 +2044,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // block:"nearest" so this never scrolls the page itself.
       if (seg.scrollWidth > seg.clientWidth) on.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
-    // Wires a segmented control: click → set .on, glide the thumb, run onPick(btn).
-    function wireSeg(seg, onPick) {
-      seg.querySelectorAll("button").forEach((b) => {
-        b.onclick = () => {
-          seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-          moveThumb(seg);
-          onPick && onPick(b);
-        };
-      });
-      requestAnimationFrame(() => moveThumb(seg)); // position once laid out
-    }
-
     // ---- app shell: owner-scoped tabs ----
     const S = { cafes: [], email: "", tab: "home", selCard: 0 };
-    // One source of truth for "lapsing" — Home's summary and the Customers
-    // filter default must agree, or the two screens contradict each other.
-    const LAPSE_DAYS = 14;
 
     async function app() {
       const { status, body } = await api("/overview");

@@ -537,7 +537,36 @@ async function main() {
     ownerCust.customers.every((c: any) => typeof c.joinedDays === "number" && typeof c.unanswered === "number"),
     "each customer row carries joined-days and unanswered-nudge counts (the grouping inputs)",
   );
-  expect(ownerCust.nudgeCap >= 1, "the customers response states the unanswered-nudge cap");
+  expect(
+    ownerCust.limits.perWeek >= 1 && ownerCust.limits.maxUnanswered >= 1,
+    "the customers response states both nudge limits",
+  );
+  // The cohorts and the gap counts are computed server-side, so the browser
+  // can't invent a group the Nudge button wouldn't actually send to.
+  expect(
+    Array.isArray(ownerCust.buckets) && ownerCust.buckets.some((b: any) => b.key === "active"),
+    "the customers response carries the weekly lapse cohorts",
+  );
+  expect(
+    ownerCust.buckets.every(
+      (b: any) => typeof b.customers === "number" && typeof b.nudgedThisWeek === "number" && typeof b.eligible === "number",
+    ),
+    "each cohort states its size, nudges this week, and how many are still under the limit",
+  );
+  expect(
+    ownerCust.buckets.reduce((a: number, b: any) => a + b.customers, 0) === ownerCust.customers.length,
+    "every customer lands in exactly one cohort",
+  );
+  expect(
+    typeof ownerCust.counts.active === "number" &&
+      typeof ownerCust.counts.issuedNeverAdded === "number" &&
+      typeof ownerCust.counts.removed === "number",
+    "the customers response explains the gap between cards issued and customers",
+  );
+  expect(
+    ownerCust.customers.every((c: any) => typeof c.canNudge === "boolean" && typeof c.bucket === "string"),
+    "each customer row states its cohort and whether the limits allow a nudge",
+  );
 
   const nudgeEmpty = await fetch(base + "/dashboard/api/nudge", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
@@ -665,7 +694,7 @@ async function main() {
   expect((await get("/dashboard")).body.includes('id="agree"'), "signup form has the Terms/Privacy consent checkbox");
 
   // --- Automated win-back ---
-  const { runAutoWinback } = await import("../src/winback.js");
+  const { runAutoWinback, MAX_UNANSWERED_NUDGES, MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
   const lp = await mk(); // fresh pass on the default café, never stamped
   // Lapse is measured from the last *visit* (last stamp event, else when the
   // card was created) — NOT updated_at, which a nudge bumps. So age the card
@@ -722,6 +751,106 @@ async function main() {
   // Registering it (what iOS does on a real Add) makes it real without any stamp.
   await upsertRegistration("device-e2e-1", ghost.serial, "push-token-e2e");
   expect((await ghostActive()) === 1, "a confirmed wallet add counts as a customer with zero stamps");
+
+  // --- Apple's PassKit web service, over HTTP (the add/remove signal) ---
+  // These routes were only ever exercised as library calls, so the auth header,
+  // the status codes and the lifecycle logging were all untested.
+  const wp = await mk();
+  const passAuth = { Authorization: "ApplePass " + "t".repeat(24) };
+  const regUrl = (device: string, serial: string) =>
+    `/wallet/v1/devices/${device}/registrations/pass.com.e2e/${serial}`;
+  const typeOf = async (serial: string) =>
+    (await getPool().query<{ type: string }>(
+      "SELECT type FROM events WHERE serial = $1 ORDER BY id", [serial],
+    )).rows.map((r) => r.type);
+
+  const noAuth = await fetch(base + regUrl("dev-http-1", wp.serial), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pushToken: "tok-1" }),
+  });
+  expect(noAuth.status === 401, "registering a pass without the ApplePass token → 401");
+
+  const reg1 = await fetch(base + regUrl("dev-http-1", wp.serial), {
+    method: "POST", headers: { "Content-Type": "application/json", ...passAuth },
+    body: JSON.stringify({ pushToken: "tok-1" }),
+  });
+  expect(reg1.status === 201, "iOS registering a pass → 201 created");
+  expect((await typeOf(wp.serial)).includes("pass_added"), "a real wallet add is logged as pass_added");
+
+  const reg2 = await fetch(base + regUrl("dev-http-2", wp.serial), {
+    method: "POST", headers: { "Content-Type": "application/json", ...passAuth },
+    body: JSON.stringify({ pushToken: "tok-2" }),
+  });
+  expect(reg2.status === 201, "a second device registering the same pass → 201");
+  expect(
+    (await typeOf(wp.serial)).filter((t) => t === "pass_added").length === 1,
+    "a second device is the same customer, not a second wallet add",
+  );
+
+  const del1 = await fetch(base + regUrl("dev-http-1", wp.serial), { method: "DELETE", headers: passAuth });
+  expect(del1.status === 200, "iOS unregistering a pass → 200");
+  expect(
+    !(await typeOf(wp.serial)).includes("pass_removed"),
+    "removing it from one device while another still has it is NOT churn",
+  );
+  await fetch(base + regUrl("dev-http-2", wp.serial), { method: "DELETE", headers: passAuth });
+  expect((await typeOf(wp.serial)).includes("pass_removed"), "the last device dropping the pass is logged as pass_removed");
+
+  const { cafeCardCounts, nudgeState } = await import("../src/db.js");
+  expect((await cafeCardCounts("default")).removed >= 1, "a deleted card shows up in the removed count");
+  expect((await nudgeState(wp.serial))!.removed === true, "a deleted card is flagged as unreachable");
+  // Re-adding recovers on its own — the fresh registrations row clears the flag.
+  await fetch(base + regUrl("dev-http-1", wp.serial), {
+    method: "POST", headers: { "Content-Type": "application/json", ...passAuth },
+    body: JSON.stringify({ pushToken: "tok-1" }),
+  });
+  expect((await nudgeState(wp.serial))!.removed === false, "re-adding the card clears the removed flag");
+
+  // --- Nudge limits are enforced by the server, not by a browser dialog ---
+  const rl = await mk();
+  await upsertRegistration("dev-rl", rl.serial, "tok-rl"); // a real customer, so they're nudgeable
+  await getPool().query("UPDATE passes SET created_at = now() - interval '30 days' WHERE serial = $1", [rl.serial]);
+  const nudgeOnce = async () =>
+    JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ message: "Come back!", target: [rl.serial] }),
+    })).text());
+  for (let i = 0; i < MAX_NUDGES_PER_WEEK; i++) {
+    expect((await nudgeOnce()).total === 1, `nudge ${i + 1} of ${MAX_NUDGES_PER_WEEK} this week goes out`);
+  }
+  const overLimit = await nudgeOnce();
+  expect(
+    overLimit.total === 0 && overLimit.skipped.rateLimited === 1,
+    `a ${MAX_NUDGES_PER_WEEK + 1}th nudge in the same week is refused by the server`,
+  );
+  // A visit resets the "unanswered" run but NOT the weekly rate limit.
+  await logEvent("default", rl.serial, "stamp");
+  expect((await nudgeState(rl.serial))!.unanswered === 0, "a stamp clears the unanswered run");
+  expect((await nudgeOnce()).total === 0, "the weekly limit still holds right after a visit");
+  await getPool().query(
+    "UPDATE events SET created_at = now() - interval '30 days' WHERE serial = $1 AND type = 'nudge'", [rl.serial],
+  );
+  expect((await nudgeOnce()).total === 1, "once the week rolls over, they're reachable again");
+
+  // Someone who deleted the card can never be messaged, whatever the counts say.
+  const gone = await mk();
+  await upsertRegistration("dev-gone", gone.serial, "tok-gone");
+  await (await import("../src/db.js")).deleteRegistration("dev-gone", gone.serial);
+  const goneOut = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "Hello?", target: [gone.serial] }),
+  })).text());
+  expect(goneOut.total === 0 && goneOut.skipped.removed === 1, "a customer who deleted the card is never nudged");
+  // Churn must not erase its own evidence: they were a real customer, and the
+  // headline count says so even though nothing is left in any wallet.
+  const goneCust = JSON.parse((await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body);
+  const goneRow = goneCust.customers.find((c: any) => c.serial === gone.serial);
+  expect(goneRow && goneRow.bucket === "removed", "a deleted card still counts as a customer, in the removed cohort");
+  await pruneAbandonedPasses(0);
+  expect(
+    (await getPool().query("SELECT 1 FROM passes WHERE serial = $1", [gone.serial])).rowCount === 1,
+    "housekeeping never prunes a card that reached a wallet and was then deleted",
+  );
 
   // --- Staff can look up a card that is NOT in the recent-20 list ---
   const older = await mk();
@@ -800,14 +929,14 @@ async function main() {
   const ch = await mk();
   await getPool().query("UPDATE passes SET created_at = now() - interval '60 days' WHERE serial = $1", [ch.serial]);
   await updateCafe("default", { auto_winback_enabled: true, auto_winback_days: 14 });
-  for (let i = 0; i < 5; i++) {
-    // Each pass re-opens the "already nudged this window" guard so the stop-rule
-    // is what limits us, not the throttle.
+  for (let i = 0; i < 9; i++) {
+    // Back-dating the nudges re-opens both throttles — the café's own window and
+    // the shared 2-per-week limit — so the give-up rule is what stops us.
     await runAutoWinback();
     await getPool().query("UPDATE events SET created_at = now() - interval '30 days' WHERE serial = $1 AND type = 'nudge'", [ch.serial]);
   }
   const sent = await unansweredNudges(ch.serial);
-  expect(sent === 3, `auto win-back gives up after 3 unanswered messages (sent ${sent})`);
+  expect(sent === MAX_UNANSWERED_NUDGES, `auto win-back gives up after ${MAX_UNANSWERED_NUDGES} unanswered messages (sent ${sent})`);
   const outBefore = await nudgeOutcomes("default");
   expect(outBefore.noReturn >= 1, "a nudged customer who hasn't been back counts as no-return");
   await logEvent("default", ch.serial, "stamp"); // they finally came in

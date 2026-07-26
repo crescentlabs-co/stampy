@@ -25,6 +25,7 @@ import {
 } from "../auth.js";
 import {
   cafeBannerVersion,
+  cafeCardCounts,
   cafeCustomers,
   cafeLogoVersion,
   cafeMetrics,
@@ -41,7 +42,6 @@ import {
   getOwner,
   getOwnerByEmail,
   getOwnerByResetToken,
-  lapsingSerials,
   linkOwnerCafe,
   ownerHasCafe,
   setCafeBanner,
@@ -64,7 +64,7 @@ import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateLogoPng } from "../imageValidate.js";
 import { dashboardPage, resetPage } from "../pages.js";
-import { MAX_UNANSWERED_NUDGES } from "../winback.js";
+import { canNudge, MAX_NUDGES_PER_WEEK, MAX_UNANSWERED_NUDGES } from "../winback.js";
 
 export const dashboardRouter = Router();
 
@@ -486,19 +486,72 @@ async function targetedCafes(ownerId: string, cardIds: unknown): Promise<CafeRow
   return owned.filter((c) => wanted.has(c.id));
 }
 
-/** GET /api/customers?cardId=all|<id>&lapsedDays=N — merged, card-tagged customer list. */
-dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, res) => {
-  const owned = await cafesForOwner(req.owner!.id);
-  const cardId = String(req.query.cardId ?? "all");
-  const cards = cardId === "all" ? owned : owned.filter((c) => c.id === cardId);
-  const lapsedDays = clampInt(req.query.lapsedDays, 0, 3650, 14);
+/**
+ * The cohorts the Customers tab is built around. Weekly, because "when did they
+ * last come in" is the only question a nudge answers, and a flat list of every
+ * customer is not something an owner would ever work through card by card.
+ *
+ * Defined here, server-side, so the group the owner *sees* and the group the
+ * Nudge button *sends to* are computed by the same code. `removed` wins over any
+ * day bucket: the card is gone from their wallet, so no message can reach them.
+ */
+const BUCKETS = [
+  { key: "active", label: "Active", hint: "stamped in the last 7 days", nudgeable: false },
+  { key: "d7", label: "Not seen 7–13 days", hint: "slipping — worth a nudge", nudgeable: true },
+  { key: "d14", label: "Not seen 14–20 days", hint: "going quiet", nudgeable: true },
+  { key: "d21", label: "Not seen 21–27 days", hint: "last chance to win them back", nudgeable: true },
+  { key: "d28", label: "Not seen 28+ days", hint: "long gone, but still reachable", nudgeable: true },
+  {
+    key: "removed",
+    label: "Deleted the card",
+    hint: "removed it from their wallet — Apple only, Android deletions are invisible",
+    nudgeable: false,
+  },
+] as const;
+
+type BucketKey = (typeof BUCKETS)[number]["key"];
+
+function bucketOf(lastDays: number, removed: boolean): BucketKey {
+  if (removed) return "removed";
+  if (lastDays < 7) return "active";
+  if (lastDays < 14) return "d7";
+  if (lastDays < 21) return "d14";
+  if (lastDays < 28) return "d21";
+  return "d28";
+}
+
+interface CustomerView {
+  serial: string;
+  code: string;
+  cardId: string;
+  cardName: string;
+  stamps: number;
+  target: number;
+  lastDays: number;
+  joinedDays: number;
+  unanswered: number;
+  nudges7d: number;
+  removed: boolean;
+  bucket: BucketKey;
+  /** False when a limit blocks a message — the reason is in `blocked`. */
+  canNudge: boolean;
+  blocked: string;
+}
+
+/** Every active card of the owner's targeted cafés, decorated for the Customers view. */
+async function customerViews(cards: CafeRow[]): Promise<CustomerView[]> {
   const now = Date.now();
-  const customers = [];
+  const out: CustomerView[] = [];
   for (const cafe of cards) {
     for (const c of await cafeCustomers(cafe.id)) {
       // last_visit, not updated_at — a nudge must not reset the lapse clock.
       const lastDays = Math.floor((now - new Date(c.last_visit).getTime()) / 86400000);
-      customers.push({
+      const allowed = canNudge({
+        nudges7d: c.nudges_7d,
+        unanswered: c.unanswered_nudges,
+        removed: c.removed,
+      });
+      out.push({
         serial: c.serial,
         code: c.code,
         cardId: cafe.id,
@@ -506,65 +559,121 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
         stamps: c.stamps,
         target: c.target,
         lastDays,
-        /** Days since the card was issued — how "New" is decided, independent of visits. */
+        /** Days since the card was issued — independent of visits. */
         joinedDays: Math.floor((now - new Date(c.created_at).getTime()) / 86400000),
-        /** Messages sent since their last visit; at the cap they count as churned. */
+        /** Messages sent since their last visit; at the cap we stop entirely. */
         unanswered: c.unanswered_nudges,
-        lapsing: lapsedDays > 0 && lastDays >= lapsedDays,
+        nudges7d: c.nudges_7d,
+        removed: c.removed,
+        bucket: bucketOf(lastDays, c.removed),
+        canNudge: allowed.ok,
+        blocked: allowed.ok ? "" : allowed.reason,
       });
     }
   }
-  customers.sort((a, b) => a.lastDays - b.lastDays);
+  out.sort((a, b) => a.lastDays - b.lastDays);
+  return out;
+}
+
+/** GET /api/customers?cardId=all|<id> — cohort summary, counts, and the searchable list. */
+dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, res) => {
+  const owned = await cafesForOwner(req.owner!.id);
+  const cardId = String(req.query.cardId ?? "all");
+  const cards = cardId === "all" ? owned : owned.filter((c) => c.id === cardId);
+  const customers = await customerViews(cards);
+
+  // Live sums over whoever is in the bucket right now. Nothing is averaged and
+  // nothing is stored per group: a card that ages out of one week and into the
+  // next carries its own nudge history with it, because that history lives on the
+  // card in `events`.
+  const buckets = BUCKETS.map((b) => {
+    const members = customers.filter((c) => c.bucket === b.key);
+    return {
+      key: b.key,
+      label: b.label,
+      hint: b.hint,
+      nudgeable: b.nudgeable,
+      customers: members.length,
+      nudgedThisWeek: members.filter((c) => c.nudges7d > 0).length,
+      eligible: b.nudgeable ? members.filter((c) => c.canNudge).length : 0,
+      stopped: members.filter((c) => c.blocked === "ignored").length,
+    };
+  });
+
+  // Counts across the targeted cards, so the gap between "cards issued" and
+  // "customers" is explained on screen instead of showing as two numbers that
+  // contradict each other.
+  let active = 0;
+  let issuedNeverAdded = 0;
+  let removed = 0;
+  for (const cafe of cards) {
+    const n = await cafeCardCounts(cafe.id);
+    active += n.active;
+    issuedNeverAdded += n.issuedNeverAdded;
+    removed += n.removed;
+  }
+
   res.json({
     customers,
-    lapsedDays,
-    nudgeCap: MAX_UNANSWERED_NUDGES,
+    buckets,
+    counts: { active, issuedNeverAdded, removed },
+    limits: { perWeek: MAX_NUDGES_PER_WEEK, maxUnanswered: MAX_UNANSWERED_NUDGES },
     cards: owned.map((c) => ({ id: c.id, name: c.name })),
   });
 });
 
-/** POST /api/nudge { message, cardIds?:[], target:"all"|"lapsing"|serial[], lapsedDays? }. */
+/**
+ * POST /api/nudge { message, cardIds?:[], target:"all"|<bucket key>|serial[] }.
+ *
+ * The limits are enforced HERE, not in the browser. They used to live in a
+ * `confirm()` dialog, which meant a determined tap could message a customer any
+ * number of times a day and walk straight into Google's 3/card/24h ceiling. The
+ * response reports what actually went out so the UI never claims more.
+ */
 dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) => {
   const body = (req.body ?? {}) as {
     message?: string;
     cardIds?: string[];
     target?: string | string[];
-    lapsedDays?: number;
   };
   const message = (body.message ?? "").trim().slice(0, 200);
   if (!message) return void res.status(400).json({ error: "missing-message" });
 
   const cafes = await targetedCafes(req.owner!.id, body.cardIds);
-  // Map every eligible serial → its café (also enforces ownership for serial[] targets).
-  const serialCafe = new Map<string, CafeRow>();
-  for (const cafe of cafes) {
-    const days = clampInt(body.lapsedDays, 1, 3650, 14);
-    const serials =
-      body.target === "lapsing"
-        ? await lapsingSerials(cafe.id, days)
-        : (await cafeCustomers(cafe.id)).map((c) => c.serial);
-    for (const s of serials) serialCafe.set(s, cafe);
-  }
-  let serials = [...serialCafe.keys()];
+  const cafeById = new Map(cafes.map((c) => [c.id, c]));
+  const everyone = await customerViews(cafes); // active cards of owned cafés only
+
+  const bucketKeys = new Set<string>(BUCKETS.map((b) => b.key));
+  let targets = everyone;
   if (Array.isArray(body.target)) {
     const wanted = new Set(body.target.map(String));
-    serials = serials.filter((s) => wanted.has(s)); // only owned serials survive
+    targets = everyone.filter((c) => wanted.has(c.serial)); // only owned serials survive
+  } else if (typeof body.target === "string" && bucketKeys.has(body.target)) {
+    targets = everyone.filter((c) => c.bucket === body.target);
   }
-  serials = serials.slice(0, 1000);
-  if (!serials.length) return void res.json({ ok: true, total: 0, sent: 0, failed: 0 });
 
+  const skipped = { rateLimited: 0, ignored: 0, removed: 0 };
+  const eligible = targets.filter((c) => {
+    if (c.canNudge) return true;
+    if (c.blocked === "rate-limited") skipped.rateLimited++;
+    else if (c.blocked === "ignored") skipped.ignored++;
+    else skipped.removed++;
+    return false;
+  });
+
+  const serials = eligible.slice(0, 1000);
   let sent = 0;
   let failed = 0;
-  for (const serial of serials) {
-    const cafe = serialCafe.get(serial)!;
-    const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, message), {
+  for (const c of serials) {
+    const cafe = cafeById.get(c.cardId)!;
+    const r = await applyAndPush(cafe, c.serial, "nudge", () => setMessage(c.serial, message), {
       nudgeText: message,
       actor: `owner:${req.owner!.id}`,
     });
     if (r && r.push.sent > 0) sent++;
     else failed++;
   }
-  res.json({ ok: true, total: serials.length, sent, failed });
+  res.json({ ok: true, total: serials.length, sent, failed, skipped });
 });
 
 /** Re-sync a café's Google-hosted class after a branding/art change (graceful no-op unconfigured). */
