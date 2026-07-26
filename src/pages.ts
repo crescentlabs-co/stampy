@@ -132,7 +132,12 @@ export function landingPage(
       ${
         buttons
           ? `<div id="wallets">${buttons}</div>
-             <p class="muted" style="margin-top:14px">You start with a few free stamps as a welcome gift 🎁</p>`
+             <p class="muted" style="margin-top:14px">You start with a few free stamps as a welcome gift 🎁</p>
+             <!-- A link, not a tick-box: we ask customers for no name, email or
+                  phone, and a consent gate at a counter costs real sign-ups. -->
+             <p class="muted" style="margin-top:10px;font-size:.78rem">Adding this card means you accept our
+               <a href="/terms" target="_blank">Terms</a> and <a href="/privacy" target="_blank">Privacy Policy</a>.
+               We never ask for your name, email or phone number.</p>`
           : `<p class="sub"><strong>Almost ready!</strong> Cards can’t be issued yet — the café is still being set up.</p>`
       }
     </div>`,

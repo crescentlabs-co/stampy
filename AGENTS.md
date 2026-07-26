@@ -26,6 +26,8 @@ every working change with a meaningful message.
    `changeMessage` (`progress`, `message`) — a test enforces this. Google:
    one NOTIFY_ON_UPDATE patch or one TEXT_AND_NOTIFY message per event;
    Google hard-caps 3 notifications/card/24h.
+   Nudge limits are enforced server-side in `canNudge` (src/winback.ts): max 2
+   per card per 7 days, stop after 6 with no visit between. Never in the browser.
 4. **Both platforms share one scanner:** the pass barcode content is the serial
    (UUID) on Apple AND Google; `short_code` (6 chars, no 0/O/1/I/L) is the
    typed fallback. Don't diverge them.

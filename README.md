@@ -19,12 +19,18 @@ customer's phone in seconds, with a lock-screen notification.
 |---|---|---|
 | Customer card | Apple Wallet / Google Wallet | Branded pass, stamp dots, QR barcode + typed card code. Added by scanning the counter QR — the landing page shows both wallet buttons. |
 | Staff stamper | `/staff` (web page, PIN-gated) | 📷 scan the customer's card → +1 stamp; typed-code fallback; redeem & reset; lock-screen nudge. |
-| Owner dashboard | `/dashboard` (email + password) | Metrics (cards, stamps, redemptions), edit reward/PIN/targets, add more cafés. |
+| Owner dashboard | `/dashboard` (email + password) | Four tabs: Home (customers, stamps, rewards), Customers (weekly lapse cohorts + nudging), Card (design, rules, links), Settings (staff PIN, your login). |
 | Brain | This Node server + Postgres on Railway | Multi-café; issues signed passes, hosts Apple's pass web service, pushes updates via APNs. |
 
-**Multi-café:** every café has its own pages under `/c/<cafeId>` (landing, `/enroll`, `/qr`)
-and its own staff PIN (`/staff?c=<cafeId>`). The bare paths serve the default café,
-which is seeded from the env vars below on first boot.
+**Multi-card:** each card has its own pages under `/c/<cafeId>` (landing, `/enroll`, `/qr`).
+The bare paths serve the default card, seeded from the env vars below on first boot.
+There is **one staff PIN and one stamper page per owner** (`/staff`), covering every
+card they run; the stamper shows a card switcher when there's more than one.
+
+**Who counts as a customer:** a card that has been stamped, is in a wallet now, or ever
+was. Apple tells us when a pass is added and when it's deleted; Google reports neither,
+so an Android card only counts once it's stamped. Deleting a pass doesn't un-count
+someone — they move to the "Deleted the card" cohort instead.
 
 **Stamping fallback ladder (staff side):** camera scan (BarcodeDetector, or the
 bundled jsQR on iPhone Safari) → typed card code (printed on the pass) → tap the
@@ -54,7 +60,7 @@ card in the recent list.
 | `APNS_KEY_B64` / `APNS_KEY_ID` | APNs auth key `.p8` + its Key ID |
 | `GOOGLE_ISSUER_ID` | From the Google Wallet Business Console (Android cards) |
 | `GOOGLE_SERVICE_ACCOUNT_B64` | Produced by `pnpm prepare-google <key.json>` |
-| `STAFF_PIN` | Seeds the default café's staff PIN (change it later in the dashboard) |
+| `STAFF_PIN` | Seeds the default café's PIN on first boot; the first owner to sign up inherits it, and changes it in Settings afterwards |
 | `SESSION_SECRET` | Any long random string — keeps dashboard logins valid across deploys |
 | `CAFE_NAME` / `CAFE_REWARD` / `STAMPS_TARGET` / `STAMPS_START` | Seed the default café on first boot (Kopi Corner / Free coffee / 10 / 2); edit in the dashboard afterwards |
 

@@ -796,6 +796,16 @@ async function main() {
   expect(terms.status === 200 && terms.body.includes("Terms of Service"), "GET /terms renders the terms");
   expect((await get("/")).body.includes("/privacy"), "marketing footer links the Privacy page");
   expect((await get("/dashboard")).body.includes('id="agree"'), "signup form has the Terms/Privacy consent checkbox");
+  // The customer-facing page links the policies but does NOT gate on a tick-box:
+  // we ask customers for nothing personal, and a consent gate at a counter costs
+  // sign-ups. (Buttons only render once a wallet is configured, hence the guard.)
+  const custLanding = (await get("/c/default")).body;
+  expect(
+    !custLanding.includes('id="wallets"') ||
+      (custLanding.includes('href="/terms"') && custLanding.includes('href="/privacy"')),
+    "the customer sign-up page links Terms and Privacy",
+  );
+  expect(!custLanding.includes('id="agree"'), "the customer sign-up page has no consent tick-box");
 
   // --- Automated win-back ---
   const { runAutoWinback, MAX_UNANSWERED_NUDGES, MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
