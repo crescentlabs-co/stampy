@@ -267,6 +267,23 @@ export async function migrate(): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_owner_logins ON owner_logins(owner_id, created_at DESC);
+    -- v1.2: reusable card designs. The sales flow is "we mock a card up for a
+    -- prospect, they sign up, we push the design onto their card" — so a design
+    -- has to exist before the café that will wear it. Stamp strips are NOT
+    -- stored: they depend on the target's stamp count, and are re-rendered in
+    -- the browser at apply time, the same way the done-for-you flow does it.
+    CREATE TABLE IF NOT EXISTS design_templates (
+      id          text PRIMARY KEY,
+      name        text NOT NULL,
+      reward      text NOT NULL DEFAULT 'Free reward',
+      bg          text NOT NULL DEFAULT 'rgb(59,32,22)',
+      fg          text NOT NULL DEFAULT 'rgb(255,250,240)',
+      label_color text NOT NULL DEFAULT 'rgb(214,178,120)',
+      stamp_style text NOT NULL DEFAULT '',
+      logo        bytea,
+      banner      bytea,
+      created_at  timestamptz NOT NULL DEFAULT now()
+    );
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -692,6 +709,8 @@ export interface AdminCafeRow {
   name: string;
   owners: string | null;
   created_at: Date;
+  /** Needed to re-render a template's stamp strips for THIS card. */
+  stamps_target: number;
   has_logo: boolean;
   has_banner: boolean;
   /** Real customers (stamped at least once, or confirmed in a wallet). */
@@ -724,7 +743,7 @@ export interface AdminCafeRow {
  *  Never selects a password or a PIN — only hashes exist and neither is surfaced. */
 export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
   const res = await getPool().query<AdminCafeRow>(
-    `SELECT c.id, c.name, c.created_at,
+    `SELECT c.id, c.name, c.created_at, c.stamps_target,
             (SELECT string_agg(o.email, ', ' ORDER BY o.email)
                FROM owner_cafes oc JOIN owners o ON o.id = oc.owner_id
               WHERE oc.cafe_id = c.id) AS owners,
@@ -767,6 +786,66 @@ export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
       ORDER BY c.created_at DESC`,
   );
   return res.rows;
+}
+
+// ------------------------------------------------------- design templates ----
+
+export interface DesignTemplateRow {
+  id: string;
+  name: string;
+  reward: string;
+  bg: string;
+  fg: string;
+  label_color: string;
+  stamp_style: string;
+  created_at: Date;
+  has_logo: boolean;
+  has_banner: boolean;
+}
+
+/** Templates, newest first. Never selects the image bytes — those stream separately. */
+export async function listDesignTemplates(): Promise<DesignTemplateRow[]> {
+  const res = await getPool().query<DesignTemplateRow>(
+    `SELECT id, name, reward, bg, fg, label_color, stamp_style, created_at,
+            logo IS NOT NULL AS has_logo, banner IS NOT NULL AS has_banner
+       FROM design_templates ORDER BY created_at DESC`,
+  );
+  return res.rows;
+}
+
+export async function createDesignTemplate(row: {
+  name: string;
+  reward: string;
+  bg: string;
+  fg: string;
+  labelColor: string;
+  stampStyle: string;
+  logo: Buffer | null;
+  banner: Buffer | null;
+}): Promise<{ id: string }> {
+  const id = generateShortCode(8).toLowerCase();
+  await getPool().query(
+    `INSERT INTO design_templates (id, name, reward, bg, fg, label_color, stamp_style, logo, banner)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [id, row.name, row.reward, row.bg, row.fg, row.labelColor, row.stampStyle, row.logo, row.banner],
+  );
+  return { id };
+}
+
+export async function getDesignTemplate(id: string): Promise<
+  (DesignTemplateRow & { logo: Buffer | null; banner: Buffer | null }) | null
+> {
+  const res = await getPool().query(
+    `SELECT id, name, reward, bg, fg, label_color, stamp_style, created_at, logo, banner,
+            logo IS NOT NULL AS has_logo, banner IS NOT NULL AS has_banner
+       FROM design_templates WHERE id = $1`,
+    [id],
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function deleteDesignTemplate(id: string): Promise<void> {
+  await getPool().query(`DELETE FROM design_templates WHERE id = $1`, [id]);
 }
 
 /** Record an owner sign-in. Best-effort — never block a login on analytics. */

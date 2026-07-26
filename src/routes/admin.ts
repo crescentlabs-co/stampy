@@ -23,12 +23,19 @@ import {
   createOwner,
   adminRetention,
   adminStaffAudit,
+  createDesignTemplate,
+  deleteDesignTemplate,
+  deleteStampStrips,
   generateStaffPin,
+  getCafe,
+  getDesignTemplate,
+  listDesignTemplates,
   setStaffPin,
   getOwner,
   getOwnerByEmail,
   linkOwnerCafe,
   setCafeBanner,
+  setCafeLogo,
   setStampStrips,
   updateCafe,
   updateOwnerPassword,
@@ -36,7 +43,7 @@ import {
 } from "../db.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateLogoPng } from "../imageValidate.js";
-import { adminPage } from "../pages.js";
+import { adminPage, counterSheetPage } from "../pages.js";
 
 export const adminRouter = Router();
 
@@ -57,6 +64,13 @@ async function requireAdmin(req: AdminRequest, res: Response, next: NextFunction
 
 adminRouter.get("/", (_req, res) => {
   res.type("html").send(adminPage());
+});
+
+/** Print-ready counter sheet for one card: the QR, big, with the reward named. */
+adminRouter.get("/cafe/:id/sheet", requireAdmin, async (req, res) => {
+  const cafe = await getCafe(req.params.id!);
+  if (!cafe) return void res.status(404).type("html").send("<p>No such card.</p>");
+  res.type("html").send(counterSheetPage(cafe));
 });
 
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
@@ -133,6 +147,102 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });
   res.json({ ok: true, cafeId: cafe.id, ownerEmail: owner.email, tempPassword, staffPin });
+});
+
+// ------------------------------------------------------- design templates ----
+// The sales flow: mock a card up for a prospect BEFORE they have an account,
+// then push the design onto their card once they sign up, so all they have to
+// do afterwards is tweak the wording and colours.
+
+adminRouter.get("/api/templates", requireAdmin, async (_req, res) => {
+  res.json({ templates: await listDesignTemplates() });
+});
+
+adminRouter.post("/api/templates", requireAdmin, async (req, res) => {
+  const b = (req.body ?? {}) as {
+    name?: string; reward?: string; bg?: string; fg?: string; label?: string;
+    stampStyle?: string; logo?: string; banner?: string;
+  };
+  const name = (b.name ?? "").trim().slice(0, 60);
+  if (!name) return void res.status(400).json({ error: "missing-name" });
+
+  // Images arrive base64 from the admin's browser, same as the done-for-you
+  // flow. validateLogoPng returns a REASON on failure, so truthy means bad.
+  const decode = (s?: string): Buffer | null => {
+    if (typeof s !== "string" || !s) return null;
+    const bytes = Buffer.from(s, "base64");
+    return validateLogoPng(bytes) ? null : bytes;
+  };
+  const { id } = await createDesignTemplate({
+    name,
+    reward: (b.reward ?? "Free reward").trim().slice(0, 60) || "Free reward",
+    bg: hexToRgb(b.bg ?? "#3b2016"),
+    fg: hexToRgb(b.fg ?? "#fffaf0"),
+    labelColor: hexToRgb(b.label ?? "#d6b278"),
+    stampStyle: (b.stampStyle ?? "").slice(0, 40),
+    logo: decode(b.logo),
+    banner: decode(b.banner),
+  });
+  res.json({ ok: true, id });
+});
+
+adminRouter.delete("/api/templates/:id", requireAdmin, async (req, res) => {
+  await deleteDesignTemplate(req.params.id!);
+  res.json({ ok: true });
+});
+
+/** Template art, for the preview thumbnails. Admin-gated like everything here. */
+adminRouter.get("/api/templates/:id/:kind.png", requireAdmin, async (req, res) => {
+  const tpl = await getDesignTemplate(req.params.id!);
+  const png = req.params.kind === "logo" ? tpl?.logo : req.params.kind === "banner" ? tpl?.banner : null;
+  if (!png) return void res.status(404).end();
+  res.type("png").set("Cache-Control", "no-store").send(png);
+});
+
+/**
+ * Push a saved design onto a merchant's card. Colours, stamp style, reward and
+ * art all copy across; the stamp strips are re-rendered by the admin's browser
+ * for THIS card's stamp count and posted alongside, because a template can't
+ * know what that count will be.
+ *
+ * The card's name and its links are left alone — this changes how it looks, not
+ * what it is or where it points.
+ */
+adminRouter.post("/api/cafe/:id/apply-template", requireAdmin, async (req, res) => {
+  const b = (req.body ?? {}) as { templateId?: string; strips?: { filled: number; png: string }[] };
+  const tpl = await getDesignTemplate(String(b.templateId ?? ""));
+  if (!tpl) return void res.status(404).json({ error: "no-such-template" });
+  const cafe = await updateCafe(req.params.id!, {
+    reward: tpl.reward,
+    background_color: tpl.bg,
+    foreground_color: tpl.fg,
+    label_color: tpl.label_color,
+    stamp_style: tpl.stamp_style,
+  });
+  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
+
+  if (tpl.logo) await setCafeLogo(cafe.id, tpl.logo);
+  if (tpl.banner) await setCafeBanner(cafe.id, tpl.banner);
+
+  // Strips are all-or-nothing: a half-applied grid would show the old art for
+  // some stamp counts and the new art for others.
+  if (Array.isArray(b.strips) && b.strips.length) {
+    const decoded: { filled: number; png: Buffer }[] = [];
+    let ok = true;
+    for (const s of b.strips) {
+      if (typeof s?.png !== "string" || typeof s?.filled !== "number") { ok = false; break; }
+      const bytes = Buffer.from(s.png, "base64");
+      if (validateLogoPng(bytes)) { ok = false; break; }
+      decoded.push({ filled: Math.trunc(s.filled), png: bytes });
+    }
+    if (ok) await setStampStrips(cafe.id, decoded);
+    else await deleteStampStrips(cafe.id);
+  }
+
+  void ensureClass(cafe).then((r) => {
+    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
+  });
+  res.json({ ok: true });
 });
 
 adminRouter.post("/api/owner/:id/reset-password", requireAdmin, async (req, res) => {

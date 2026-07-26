@@ -70,6 +70,11 @@ const baseCss = /* css */ `
   .toast.show { opacity: 1; }
 `;
 
+/** Owner-supplied text (café name, reward) going into markup, not into a script. */
+function esc(s: string): string {
+  return s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+}
+
 function page(title: string, body: string, extraCss = "", script = ""): string {
   return `<!doctype html>
 <html lang="en">
@@ -2263,6 +2268,55 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
 
 // ---------------------------------------------------------------- admin ----
 
+/**
+ * A print-ready sheet for a café's counter: the Add-to-Wallet QR, big, with the
+ * reward named under it. Built for the admin doing done-for-you onboarding —
+ * open it, hit print, hand it over. Deliberately plain HTML/CSS with a print
+ * stylesheet rather than generated PDF, so there is no new dependency and the
+ * merchant can print it from any phone or laptop.
+ */
+export function counterSheetPage(cafe: {
+  id: string;
+  name: string;
+  reward: string;
+  stamps_target: number;
+}): string {
+  const css = /* css */ `
+    body { max-width: 720px; }
+    .sheet { border: 1px solid var(--line); border-radius: 20px; padding: 40px 32px; text-align: center;
+             background: #fff; }
+    .sheet h1 { font-size: 2rem; margin: 0 0 6px; }
+    .sheet .reward { font-size: 1.25rem; font-weight: 700; margin: 0 0 4px; }
+    .sheet .how { color: var(--muted); margin: 0 0 24px; }
+    .sheet img { width: 100%; max-width: 340px; height: auto; }
+    .sheet .steps { text-align: left; max-width: 340px; margin: 24px auto 0; color: var(--muted);
+                    font-size: .9rem; line-height: 1.7; }
+    .noprint { margin-top: 18px; }
+    /* On paper: no browser chrome, no buttons, no page background. */
+    @media print {
+      .noprint { display: none; }
+      body { max-width: none; padding: 0; background: #fff; }
+      .sheet { border: none; padding: 0; }
+    }
+  `;
+  const body = `
+    <div class="sheet">
+      <h1>${esc(cafe.name)}</h1>
+      <p class="reward">${esc(cafe.reward)} after ${cafe.stamps_target} stamps</p>
+      <p class="how">Scan to add your card — no app to download</p>
+      <img src="/c/${encodeURIComponent(cafe.id)}/qr" alt="Add-to-Wallet QR code">
+      <div class="steps">
+        1. Point your camera at the code<br>
+        2. Tap <strong>Add to Apple Wallet</strong> or <strong>Google Wallet</strong><br>
+        3. Show the card when you order — it stamps itself
+      </div>
+    </div>
+    <div class="noprint">
+      <button class="btn btn-dark" onclick="window.print()">Print this sheet</button>
+    </div>`;
+  return page(`${cafe.name} — counter sheet`, body, css);
+}
+
 export function adminPage(): string {
   const css = /* css */ `
     body { max-width: none; }
@@ -2292,6 +2346,25 @@ export function adminPage(): string {
     #dfy label { display: block; margin-top: 10px; }
     #dfy input { width: 100%; }
     #dfy .btn { width: auto; padding: 10px 14px; margin-top: 12px; }
+    /* --- card designs: form on the left, the thing you'd show a prospect on the right --- */
+    #tpl label { display: block; margin-top: 10px; }
+    #tpl input[type=text], #tpl input:not([type]) { width: 100%; }
+    #tpl .btn { width: auto; padding: 10px 14px; margin-top: 14px; }
+    .tplgrid { display: grid; grid-template-columns: 1fr 260px; gap: 24px; align-items: start; }
+    @media (max-width: 680px) { .tplgrid { grid-template-columns: 1fr; } }
+    .tplcolors { display: flex; gap: 14px; margin-top: 10px; }
+    .tplcolors label { margin: 0; font-size: .8rem; color: var(--muted); }
+    .tplcolors input { width: 44px; height: 30px; padding: 0; border: none; background: none; }
+    /* A wallet card, roughly to scale — enough to judge a logo against a colour. */
+    .mock { border-radius: 14px; padding: 14px; min-height: 190px; margin-top: 6px;
+            box-shadow: 0 6px 22px rgba(0,0,0,.16); position: relative; overflow: hidden; }
+    .mock .mb { position: absolute; inset: 0 0 auto 0; height: 62px; background-size: cover; background-position: center; }
+    .mock .mtop { position: relative; display: flex; align-items: center; gap: 8px; margin-top: 66px; }
+    .mock .mlogo { width: 30px; height: 30px; border-radius: 7px; object-fit: cover; background: rgba(255,255,255,.14); }
+    .mock .mname { font-weight: 700; font-size: .95rem; }
+    .mock .mlbl { font-size: .55rem; letter-spacing: .1em; opacity: .75; margin-top: 12px; }
+    .mock .mdots { font-size: 1.1rem; letter-spacing: 3px; margin-top: 2px; }
+    .mock .mrew { font-weight: 700; font-size: .9rem; margin-top: 1px; }
   `;
   const js = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
@@ -2362,6 +2435,144 @@ export function adminPage(): string {
     ];
     let picked = VERTICALS[0];
 
+    // ------------------------------------------------- reusable card designs ----
+    // Saved before the merchant exists, applied to their card once they sign up.
+    // Stamp strips are NOT stored on a design — they depend on the target card's
+    // stamp count, so they're re-rendered here at apply time.
+    const STAMP_ICONS = ["dot", "☕", "🍗", "🧋", "🥐", "🍨", "🍜", "⭐", "🌸", "🍺"];
+    let tplIcon = "dot";
+    let tplLogoB64 = "";   // stripped of its data: prefix, ready to POST
+    let tplLogoUrl = "";   // for the live preview
+
+    function readAsPng(file, cb) {
+      // Everything is normalised to a square PNG so the wallet gets one format
+      // whatever the prospect sent us (usually a JPG off WhatsApp).
+      const img = new Image();
+      const fr = new FileReader();
+      fr.onload = () => { img.onload = () => {
+        const S = 300;
+        const cv = document.createElement("canvas"); cv.width = S; cv.height = S;
+        const x = cv.getContext("2d");
+        const side = Math.min(img.width, img.height);
+        x.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
+        cb(cv.toDataURL("image/png"));
+      }; img.src = fr.result; };
+      fr.readAsDataURL(file);
+    }
+
+    function drawTplMock() {
+      const bg = $("#tpl-bg").value, fg = $("#tpl-fg").value, lbl = $("#tpl-label").value;
+      const name = $("#tpl-name").value.trim() || "Their shop";
+      const reward = $("#tpl-reward").value.trim() || "Free reward";
+      const dots = tplIcon === "dot"
+        ? "●●●○○○○○○○"
+        : tplIcon.repeat(3) + "·".repeat(7);
+      const m = $("#tpl-mock");
+      m.style.background = bg; m.style.color = fg;
+      m.innerHTML =
+        '<div class="mb" style="background-image:url(' + drawBanner("gradient", bg, shade(bg, 0.4), 260, 62) + ')"></div>' +
+        '<div class="mtop">' +
+          (tplLogoUrl ? '<img class="mlogo" src="' + tplLogoUrl + '">' : '<div class="mlogo"></div>') +
+          '<span class="mname">' + name + "</span>" +
+        "</div>" +
+        '<div class="mlbl" style="color:' + lbl + '">YOUR STAMPS</div>' +
+        '<div class="mdots">' + dots + "</div>" +
+        '<div class="mlbl" style="color:' + lbl + '">REWARD</div>' +
+        '<div class="mrew">' + reward + "</div>";
+    }
+
+    function wireTemplates(cafes) {
+      const ipick = $("[data-ipick]");
+      ipick.innerHTML = "";
+      STAMP_ICONS.forEach((ic, i) => {
+        const bt = document.createElement("div");
+        bt.className = "bt" + (i === 0 ? " sel" : "");
+        bt.style.display = "grid"; bt.style.placeItems = "center";
+        bt.style.width = "44px"; bt.style.background = "var(--ghost-bg)";
+        bt.textContent = ic === "dot" ? "●" : ic;
+        bt.onclick = () => {
+          tplIcon = ic;
+          ipick.querySelectorAll(".bt").forEach((x) => x.classList.remove("sel"));
+          bt.classList.add("sel"); drawTplMock();
+        };
+        ipick.appendChild(bt);
+      });
+      ["#tpl-name", "#tpl-reward", "#tpl-bg", "#tpl-fg", "#tpl-label"].forEach((s) => {
+        $(s).oninput = drawTplMock;
+      });
+      $("#tpl-logo").onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        readAsPng(file, (url) => { tplLogoUrl = url; tplLogoB64 = url.split(",")[1]; drawTplMock(); });
+      };
+      drawTplMock();
+
+      $("#tpl-save").onclick = async () => {
+        const name = $("#tpl-name").value.trim();
+        if (!name) return void ($("#tpl-out").textContent = "Give the design a name.");
+        const bg = $("#tpl-bg").value;
+        const { body: r } = await api("/templates", { method: "POST", body: JSON.stringify({
+          name, reward: $("#tpl-reward").value.trim() || "Free reward",
+          bg, fg: $("#tpl-fg").value, label: $("#tpl-label").value,
+          stampStyle: tplIcon,
+          logo: tplLogoB64,
+          banner: drawBanner("gradient", bg, shade(bg, 0.4), 1032, 336).split(",")[1],
+        })});
+        $("#tpl-out").textContent = r.ok ? "" : (r.error || "Failed");
+        if (r.ok) { $("#tpl-name").value = ""; drawTplMock(); listTemplates(cafes); }
+      };
+      listTemplates(cafes);
+    }
+
+    async function listTemplates(cafes) {
+      const { body } = await api("/templates");
+      const t = $("#tpl-table");
+      const list = body.templates || [];
+      if (!list.length) {
+        t.innerHTML = '<tr><td class="flags">No saved designs yet.</td></tr>';
+        return;
+      }
+      const opts = cafes.map((c) => '<option value="' + c.id + '">' + c.name + "</option>").join("");
+      t.innerHTML = "<tr><th>Design</th><th>Reward</th><th>Colours</th><th>Push onto a card</th><th></th></tr>" +
+        list.map((x) => \`<tr>
+          <td><strong>\${x.name}</strong><br><span class="flags">\${x.has_logo ? "logo · " : ""}\${x.stamp_style === "dot" ? "dots" : x.stamp_style}</span></td>
+          <td>\${x.reward}</td>
+          <td><span style="display:inline-block;width:34px;height:18px;border-radius:5px;background:\${x.bg}"></span></td>
+          <td><select data-to="\${x.id}">\${opts}</select>
+              <button class="btn btn-ghost cbtn" data-apply="\${x.id}">Apply</button></td>
+          <td><button class="btn btn-ghost cbtn" data-deltpl="\${x.id}">Delete</button></td>
+        </tr>\`).join("");
+
+      t.querySelectorAll("[data-apply]").forEach((b) => {
+        b.onclick = async () => {
+          const id = b.dataset.apply;
+          const cafeId = t.querySelector('[data-to="' + id + '"]').value;
+          const cafe = cafes.find((c) => c.id === cafeId);
+          const tpl = list.find((x) => x.id === id);
+          b.disabled = true; b.textContent = "Applying…";
+          // Re-render the stamp grid for THIS card's target — a saved design
+          // can't know how many stamps the card it lands on will need.
+          const target = cafe.stamps_target || 10;
+          const icon = tpl.stamp_style || "dot";
+          const strips = [];
+          for (let n = 0; n <= target; n++) {
+            strips.push({ filled: n, png: drawStampStrip(n, target, icon, tpl.bg, tpl.label_color).split(",")[1] });
+          }
+          const { body: r } = await api("/cafe/" + cafeId + "/apply-template", {
+            method: "POST", body: JSON.stringify({ templateId: id, strips }),
+          });
+          b.disabled = false; b.textContent = r.ok ? "Applied ✓" : "Failed";
+          if (r.ok) setTimeout(load, 1200);
+        };
+      });
+      t.querySelectorAll("[data-deltpl]").forEach((b) => {
+        b.onclick = async () => {
+          await api("/templates/" + b.dataset.deltpl, { method: "DELETE" });
+          listTemplates(cafes);
+        };
+      });
+    }
+
     async function load() {
       const { status, body } = await api("/overview");
       if (status === 403) {
@@ -2393,7 +2604,9 @@ export function adminPage(): string {
           <td>\${c.redemptions}</td>
           <td class="\${stale(c.last_stamp_at, 7) ? "bad" : ""}">\${ago(c.last_stamp_at)}</td>
           <td class="\${stale(c.last_owner_login, 30) ? "bad" : ""}">\${ago(c.last_owner_login)}</td>
-          <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br><button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button></td>
+          <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br>
+            <button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button>
+            <a class="btn btn-ghost cbtn" href="/admin/cafe/\${c.id}/sheet" target="_blank">Counter sheet</a></td>
         </tr>\`).join("");
 
       // Where cards go once they're handed out. "Never in a wallet" is mostly
@@ -2490,6 +2703,33 @@ export function adminPage(): string {
           \${staffRows || '<tr><td colspan="7" class="flags">No counter activity yet.</td></tr>'}
         </table></div>
 
+        <h2>Card designs</h2>
+        <p class="muted">Mock a card up for a prospect before they have an account, then push it onto their card once they sign up — after that all they touch is the wording and the colours. Drop in their logo and you have something to show them in a minute.</p>
+        <div id="tpl">
+          <div class="tplgrid">
+            <div>
+              <label>Design name</label><input id="tpl-name" placeholder="e.g. Ah Seng Kopitiam">
+              <label>Reward</label><input id="tpl-reward" placeholder="Free coffee">
+              <label>Logo <span class="muted">(square PNG or JPG)</span></label>
+              <input id="tpl-logo" type="file" accept="image/*">
+              <label>Stamp icon</label>
+              <div class="bantpl" data-ipick></div>
+              <div class="tplcolors">
+                <label>Card<input id="tpl-bg" type="color" value="#3b2016"></label>
+                <label>Text<input id="tpl-fg" type="color" value="#fffaf0"></label>
+                <label>Labels<input id="tpl-label" type="color" value="#d6b278"></label>
+              </div>
+              <button class="btn btn-dark" id="tpl-save">Save this design</button>
+            </div>
+            <div>
+              <label>Preview</label>
+              <div class="mock" id="tpl-mock"></div>
+            </div>
+          </div>
+          <div id="tpl-out"></div>
+          <div class="tw"><table id="tpl-table"></table></div>
+        </div>
+
         <h2>Create a café (done-for-you)</h2>
         <p class="muted">Design a card and set up the owner's account in one step. Pick their business type, and we build a matching card. They get a temp password to log in and take over.</p>
         <div id="dfy">
@@ -2508,6 +2748,8 @@ export function adminPage(): string {
           <button class="btn btn-dark" id="reset">Generate temp password</button>
         </div>
         <div id="tempout"></div>\`;
+
+      wireTemplates(body.cafes);
 
       // Business-type swatches (click to select the design bundle).
       const vpick = $("[data-vpick]");

@@ -576,6 +576,59 @@ async function main() {
   // The created café carries its rendered stamp grid + isolation from other owners.
   expect((await get("/c/" + dfyOut.cafeId + "/art/stamps/1.png")).status === 200, "the done-for-you café serves its rendered stamp strip");
 
+  // --- Reusable card designs: mock one up now, push it onto a card later ---
+  const tplNew = await fetch(base + "/admin/api/templates", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({
+      name: "Ah Seng Kopitiam", reward: "Free kopi",
+      bg: "#123047", fg: "#eef7fc", label: "#8fc4e6", stampStyle: "☕", banner: pngB64,
+    }),
+  });
+  const tplOut = JSON.parse(await tplNew.text());
+  expect(tplNew.status === 200 && tplOut.id, "a card design can be saved before any merchant exists");
+  const tplList = JSON.parse((await get("/admin/api/templates", { headers: { cookie: cookieNow } })).body);
+  expect(
+    tplList.templates.some((t: any) => t.id === tplOut.id && t.has_banner && t.reward === "Free kopi"),
+    "saved designs are listed with their art flags",
+  );
+  expect(
+    (await get("/admin/api/templates", { headers: { cookie: cookieOutsider } })).status === 403,
+    "a non-admin can't read the design library",
+  );
+
+  const applied = await fetch(base + "/admin/api/cafe/" + dfyOut.cafeId + "/apply-template", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ templateId: tplOut.id, strips: [{ filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }] }),
+  });
+  expect(applied.status === 200, "a design pushes onto a merchant's existing card");
+  const appliedCafe = (await getCafe(dfyOut.cafeId))!;
+  expect(
+    appliedCafe.reward === "Free kopi" && appliedCafe.stamp_style === "☕" &&
+      appliedCafe.background_color === "rgb(18, 48, 71)",
+    "the design's reward, stamp style and colours land on the card",
+  );
+  // The card's identity and links are NOT part of a design.
+  expect(appliedCafe.name === "Nasi Lemak House", "applying a design never renames the card");
+  expect((await get("/c/" + dfyOut.cafeId)).status === 200, "and the sign-up link still works");
+
+  expect(
+    (await get("/admin/api/cafe/" + dfyOut.cafeId + "/apply-template", { headers: { cookie: cookieNow } })).status === 404,
+    "applying a design is a POST, not something a stray GET can trigger",
+  );
+  const sheet = await get("/admin/cafe/" + dfyOut.cafeId + "/sheet", { headers: { cookie: cookieNow } });
+  expect(
+    sheet.status === 200 && sheet.body.includes("/c/" + dfyOut.cafeId + "/qr") && sheet.body.includes("Free kopi"),
+    "the printable counter sheet carries the card's QR and reward",
+  );
+  expect(
+    (await get("/admin/cafe/" + dfyOut.cafeId + "/sheet", { headers: { cookie: cookieOutsider } })).status === 403,
+    "the counter sheet is admin-only",
+  );
+
+  await fetch(base + "/admin/api/templates/" + tplOut.id, { method: "DELETE", headers: { cookie: cookieNow } });
+  const tplGone = JSON.parse((await get("/admin/api/templates", { headers: { cookie: cookieNow } })).body);
+  expect(!tplGone.templates.some((t: any) => t.id === tplOut.id), "a design can be deleted");
+
   // --- Owner-level customers + nudge (span ALL of an owner's cards) ---
   const ownerCust = JSON.parse((await get("/dashboard/api/customers?cardId=all&lapsedDays=0", { headers: { cookie: cookieNow } })).body);
   expect(Array.isArray(ownerCust.customers) && ownerCust.customers.length >= 2, "owner customers span all their cards");
