@@ -22,6 +22,7 @@ import {
   createCafe,
   createOwner,
   generateStaffPin,
+  setStaffPin,
   getOwner,
   getOwnerByEmail,
   linkOwnerCafe,
@@ -80,16 +81,11 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
   if (await getOwnerByEmail(ownerEmail)) return void res.status(409).json({ error: "email-taken" });
 
   const reward = (b.reward ?? "Free reward").trim().slice(0, 60) || "Free reward";
-  // Per-café, never the shared "1234". Only its hash is stored, so this response
-  // is the one chance to hand the PIN over — the console shows it beside the
-  // temp password.
-  const staffPin = generateStaffPin();
   const cafe = await createCafe({
     name: cafeName.slice(0, 60),
     reward,
     stampsTarget: 10,
     stampsStart: 2,
-    staffPin,
   });
 
   // Apply the chosen design. Colours arrive as hex; stored as rgb(...) for PassKit.
@@ -121,6 +117,11 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
   const tempPassword = "Stampy-" + randomBytes(4).toString("hex");
   const owner = await createOwner(randomUUID(), ownerEmail, hashPassword(tempPassword));
   await linkOwnerCafe(owner.id, cafe.id);
+  // One staff PIN per owner, never the shared "1234". Only its hash is stored,
+  // so this response is the one chance to hand it over — the console shows it
+  // beside the temp password.
+  const staffPin = generateStaffPin();
+  await setStaffPin(owner.id, staffPin);
   void ensureClass(fresh ?? cafe).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });

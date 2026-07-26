@@ -137,13 +137,29 @@ describe("dashboard information architecture", () => {
   const html = dashboardPage(true, "");
 
   it("has one tab per job", () => {
-    for (const tab of ["home", "customers", "card", "access", "account"]) {
+    for (const tab of ["home", "customers", "card", "account"]) {
       expect(html).toContain(`data-tab="${tab}"`);
     }
     expect(html).not.toContain('data-tab="share"');
   });
 
+  // The Access tab existed only because the PIN hung off each café row, giving
+  // an owner with two cards two PINs and two stamper links for one counter.
+  it("has no Access tab — one PIN in Settings, links under the card", () => {
+    expect(html).not.toContain('data-tab="access"');
+    expect(html).toContain(">Settings<");
+    expect(html).toContain("/staff-pin");
+    expect(html).toContain("Share this card");
+  });
+
   it("keeps the staff PIN out of the card designer", () => {
     expect(html).not.toContain('data-f="staffPin"');
+  });
+
+  // A PIN is only ever stored hashed, so it can never be read back out — the
+  // one place it appears is the response to setting it.
+  it("never asks for a PIN per card", () => {
+    expect(html).not.toContain("rotate-pin");
+    expect(html).not.toContain("Staff PIN: \" + r.staffPin");
   });
 });

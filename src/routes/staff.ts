@@ -30,8 +30,11 @@ import { applyAndPush } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
 import {
   addStamps,
+  cafesForOwner,
   DEFAULT_CAFE_ID,
   getCafe,
+  ownerForCafe,
+  type OwnerRow,
   getPass,
   getPassByShortCode,
   lastStampAt,
@@ -64,13 +67,26 @@ const PIN_WINDOW_MS = 10 * 60_000;
 
 interface StaffRequest extends Request {
   cafe?: CafeRow;
+  owner?: OwnerRow;
   /** Which staff phone this is — recorded as the actor on every event it causes. */
   deviceId?: string;
 }
 
-/** The café this request is about: the API header, or ?c= when loading the page. */
+/** Which card this request is about: the API header, or ?c= when loading the page. */
 function cafeIdOf(req: Request): string {
   return req.get("x-cafe-id") || String(req.query.c ?? "") || DEFAULT_CAFE_ID;
+}
+
+/**
+ * Resolve the card and the owner who runs it. The staff session belongs to the
+ * owner (one PIN, one counter, however many cards), so every path needs both.
+ */
+async function cafeAndOwner(cafeId: string): Promise<{ cafe: CafeRow; owner: OwnerRow } | null> {
+  const cafe = await getCafe(cafeId);
+  if (!cafe) return null;
+  const owner = await ownerForCafe(cafeId);
+  if (!owner) return null; // an unclaimed café (the env-seeded default) has no PIN to type
+  return { cafe, owner };
 }
 
 /**
@@ -87,19 +103,24 @@ async function stampCooldownLeft(serial: string, cafeId: string): Promise<number
   return left > 0 ? Math.ceil(left / 1000) : 0;
 }
 
-/** Gate for everything that touches cards: a valid staff session for this café. */
+/**
+ * Gate for everything that touches cards. The session proves this phone typed
+ * the owner's PIN; the card it names must be one of that owner's, which is what
+ * stops a signed-in phone stamping a stranger's card by editing a header.
+ */
 async function requireStaff(req: StaffRequest, res: Response, next: NextFunction): Promise<void> {
-  const cafeId = cafeIdOf(req);
-  const session = readStaffCookie(req, cafeId);
+  const found = await cafeAndOwner(cafeIdOf(req));
+  if (!found) return void res.status(404).json({ error: "no-such-cafe" });
+  const session = readStaffCookie(req, found.owner.id);
   if (!session) return void res.status(401).json({ error: "not-signed-in" });
-  const cafe = await getCafe(cafeId);
-  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
-  // A PIN change bumps the café's epoch, which strands every older cookie —
-  // that's how the owner revokes a phone or a leaked stamper link.
-  if (session.epoch !== cafe.staff_session_epoch) {
+  // A PIN change bumps the owner's epoch, which strands every older cookie —
+  // that's how the owner revokes a phone or a leaked stamper link, across all
+  // of their cards at once.
+  if (session.epoch !== found.owner.staff_session_epoch) {
     return void res.status(401).json({ error: "session-revoked" });
   }
-  req.cafe = cafe;
+  req.cafe = found.cafe;
+  req.owner = found.owner;
   req.deviceId = session.deviceId;
   next();
 }
@@ -107,7 +128,7 @@ async function requireStaff(req: StaffRequest, res: Response, next: NextFunction
 /** Everything this device does is attributed to it in the events log. */
 const actorOf = (req: StaffRequest) => `staff:${req.deviceId}`;
 
-/** Exchange the café PIN for a session cookie. The only place the PIN is read. */
+/** Exchange the owner's staff PIN for a session cookie. The only place it's read. */
 staffRouter.post("/api/login", async (req, res) => {
   const cafeId = cafeIdOf(req);
   const rlKey = `pin:${cafeId}:${req.ip}`;
@@ -117,21 +138,30 @@ staffRouter.post("/api/login", async (req, res) => {
       .status(429)
       .json({ error: "too-many-attempts", retryAfterSeconds: peeked.retryAfterSeconds });
   }
-  const cafe = await getCafe(cafeId);
-  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
+  const found = await cafeAndOwner(cafeId);
+  if (!found) return void res.status(404).json({ error: "no-such-cafe" });
   const pin = String((req.body ?? {}).pin ?? "");
-  if (!verifyStaffPin(cafe, pin)) {
+  if (!verifyStaffPin(found.owner, pin)) {
     hit(rlKey, PIN_TRIES, PIN_WINDOW_MS); // record only the failed attempt
     return void res.status(401).json({ error: "wrong-pin" });
   }
   clear(rlKey); // a correct PIN clears the counter
-  setStaffCookie(res, cafeId, newStaffDeviceId(), cafe.staff_session_epoch);
+  // One sign-in covers every card this owner runs — the phone picks which one
+  // it's stamping, it doesn't type the PIN again per card.
+  setStaffCookie(res, found.owner.id, newStaffDeviceId(), found.owner.staff_session_epoch);
   res.json({ ok: true });
 });
 
-staffRouter.post("/api/logout", (req, res) => {
-  clearStaffCookie(res, cafeIdOf(req));
+staffRouter.post("/api/logout", async (req, res) => {
+  const found = await cafeAndOwner(cafeIdOf(req));
+  if (found) clearStaffCookie(res, found.owner.id);
   res.json({ ok: true });
+});
+
+/** The cards this signed-in phone may stamp — populates the card switcher. */
+staffRouter.get("/api/cards", requireStaff, async (req: StaffRequest, res) => {
+  const cards = await cafesForOwner(req.owner!.id);
+  res.json({ cards: cards.map((c) => ({ id: c.id, name: c.name })), selected: req.cafe!.id });
 });
 
 /**
@@ -140,13 +170,12 @@ staffRouter.post("/api/logout", (req, res) => {
  * no card list, no codes, no customer count.
  */
 staffRouter.get("/", async (req, res) => {
-  const cafeId = cafeIdOf(req);
-  const session = readStaffCookie(req, cafeId);
-  const cafe = session ? await getCafe(cafeId) : null;
-  const signedIn = Boolean(session && cafe && session.epoch === cafe.staff_session_epoch);
+  const found = await cafeAndOwner(cafeIdOf(req));
+  const session = found ? readStaffCookie(req, found.owner.id) : null;
+  const signedIn = Boolean(session && found && session.epoch === found.owner.staff_session_epoch);
   // A cookie that survived a PIN change would otherwise get the stamper shell,
   // fail its first API call, reload, and loop. Drop it here instead.
-  if (session && !signedIn) clearStaffCookie(res, cafeId);
+  if (session && !signedIn && found) clearStaffCookie(res, found.owner.id);
   res.type("html").send(staffPage(signedIn));
 });
 

@@ -114,19 +114,20 @@ dashboardRouter.post("/api/signup", async (req, res) => {
 
   const isFirstOwner = (await countOwners()) === 0;
   const owner = await createOwner(randomUUID(), email, hashPassword(password));
+  // One staff PIN per owner, random from the start — never the shared,
+  // guessable "1234". They see it in Settings and can replace it there.
+  await setStaffPin(owner.id, generateStaffPin());
 
   if (isFirstOwner) {
     // Bootstrap: the first account on a deployment claims the env-seeded café.
     await linkOwnerCafe(owner.id, DEFAULT_CAFE_ID);
   } else {
-    // Every later signup gets its own isolated starter card with a random PIN
-    // (never the shared default "1234").
+    // Every later signup gets its own isolated starter card.
     const cafe = await createCafe({
       name: (cafeName ?? "").trim().slice(0, 60) || "My Café",
       reward: "Free coffee",
       stampsTarget: 10,
       stampsStart: 2,
-      staffPin: String(randomInt(0, 10000)).padStart(4, "0"),
     });
     await linkOwnerCafe(owner.id, cafe.id);
     // Mirror the new card into Google's system (graceful no-op until configured).
@@ -274,41 +275,40 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   res.json({ email: req.owner!.email, cafes: out });
 });
 
+/** Add another card. It shares the owner's existing staff PIN and stamper page. */
 dashboardRouter.post("/api/cafes", requireOwner, async (req: OwnerRequest, res) => {
-  const { name, reward, stampsTarget, stampsStart, staffPin } = (req.body ?? {}) as {
+  const { name, reward, stampsTarget, stampsStart } = (req.body ?? {}) as {
     name?: string;
     reward?: string;
     stampsTarget?: number;
     stampsStart?: number;
-    staffPin?: string;
   };
   if (!name?.trim()) return void res.status(400).json({ error: "missing-name" });
-  // A random PIN by default — never the shared, guessable "1234". Returned once
-  // here because the hash is all we keep; after this it can only be replaced.
-  const pin = (staffPin ?? "").trim().slice(0, 12) || generateStaffPin();
   const cafe = await createCafe({
     name: name.trim().slice(0, 60),
     reward: (reward ?? "Free coffee").trim().slice(0, 60),
     stampsTarget: clampInt(stampsTarget, 1, 30, 10),
     stampsStart: clampInt(stampsStart, 0, 29, 2),
-    staffPin: pin,
   });
   await linkOwnerCafe(req.owner!.id, cafe.id);
-  res.json({ ok: true, id: cafe.id, staffPin: pin });
+  res.json({ ok: true, id: cafe.id });
 });
 
 /**
- * Replace a card's staff PIN. Returns the new PIN once — it is stored only as a
- * scrypt hash, so this response is the single chance to write it down. Every
- * staff phone has to sign in again with it.
+ * Set or replace THE staff PIN — one per owner, covering every card they run.
+ * Returns it once: it is stored only as a scrypt hash, so this response is the
+ * single chance to write it down. Every staff phone has to sign in again with
+ * it, on every card.
+ *
+ * Was per-café (`/api/cafe/:id/rotate-pin`), which gave an owner with two cards
+ * two PINs and two stamper links for one counter.
  */
-dashboardRouter.post("/api/cafe/:id/rotate-pin", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
-  }
-  const pin = generateStaffPin();
-  await setStaffPin(cafeId, pin);
+dashboardRouter.post("/api/staff-pin", requireOwner, async (req: OwnerRequest, res) => {
+  const given = String((req.body ?? {}).pin ?? "").trim().slice(0, 12);
+  // Blank means "pick one for me" — never the shared, guessable "1234".
+  if (given && given.length < 4) return void res.status(400).json({ error: "pin-too-short" });
+  const pin = given || generateStaffPin();
+  await setStaffPin(req.owner!.id, pin);
   res.json({ ok: true, staffPin: pin });
 });
 
@@ -341,11 +341,8 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
   if (typeof body.autoWinbackMessage === "string" && body.autoWinbackMessage.trim()) {
     fields.auto_winback_message = body.autoWinbackMessage.trim().slice(0, 200);
   }
-  // The PIN is stored only as a hash, so it goes through its own helper rather
-  // than the generic field updater.
-  if (typeof body.staffPin === "string" && body.staffPin.trim()) {
-    await setStaffPin(cafeId, body.staffPin.trim().slice(0, 12));
-  }
+  // The staff PIN is NOT a card field — it belongs to the owner and lives at
+  // POST /api/staff-pin. Anything sent here is ignored on purpose.
   const cafe = await updateCafe(cafeId, fields);
   if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
   // Mirror branding/name changes into the Google-hosted card class (no-op

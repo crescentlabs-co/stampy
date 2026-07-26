@@ -56,6 +56,15 @@ export interface OwnerRow {
   /** Set while a self-serve password reset is pending; both cleared on use/expiry. */
   reset_token_hash?: string | null;
   reset_expires?: Date | null;
+  /**
+   * The staff PIN, scrypt-hashed — ONE per owner, covering every card they run.
+   * A PIN used to hang off each café row, so an owner with a coffee card and a
+   * pastry card had two PINs and two stamper links for one counter. That was an
+   * accident of the data model, not a decision.
+   */
+  staff_pin_hash: string;
+  /** Bumped by setOwnerStaffPin; strands every staff cookie the owner ever issued. */
+  staff_session_epoch: number;
 }
 
 export type Platform = "apple" | "google";
@@ -243,6 +252,13 @@ export async function migrate(): Promise<void> {
     ALTER TABLE events ADD COLUMN IF NOT EXISTS forced boolean NOT NULL DEFAULT false;
     -- Every "last stamp / last nudge for this card" lookup hits this.
     CREATE INDEX IF NOT EXISTS idx_events_serial_type ON events(serial, type);
+    -- v1.2: the staff PIN moves up to the OWNER. One counter, one PIN, one
+    -- stamper link, however many cards they run — the per-café PIN was an
+    -- accident of "+ Add card" creating a whole new café row. The cafes columns
+    -- stay (additive only) but are no longer read; the backfill below lifts each
+    -- owner's existing PIN up so nobody has to be told a new one.
+    ALTER TABLE owners ADD COLUMN IF NOT EXISTS staff_pin_hash text NOT NULL DEFAULT '';
+    ALTER TABLE owners ADD COLUMN IF NOT EXISTS staff_session_epoch integer NOT NULL DEFAULT 1;
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -274,6 +290,20 @@ export async function migrate(): Promise<void> {
     ]);
   }
   if (stale.rows.length) console.log(`[migrate] hashed ${stale.rows.length} staff PIN(s)`);
+
+  // Lift each owner's PIN up from their oldest café, so an existing counter
+  // keeps working with the PIN it already knows. Owners with several cards had
+  // several PINs; the first card's wins, and the others simply stop being read.
+  const lifted = await getPool().query(
+    `UPDATE owners o
+        SET staff_pin_hash = c.staff_pin_hash
+       FROM (SELECT DISTINCT ON (oc.owner_id) oc.owner_id, ca.staff_pin_hash
+               FROM owner_cafes oc JOIN cafes ca ON ca.id = oc.cafe_id
+              WHERE ca.staff_pin_hash <> ''
+              ORDER BY oc.owner_id, ca.created_at) c
+      WHERE c.owner_id = o.id AND o.staff_pin_hash = ''`,
+  );
+  if (lifted.rowCount) console.log(`[migrate] moved ${lifted.rowCount} staff PIN(s) to the owner`);
 }
 
 // ----------------------------------------------------------------- cafes ----
@@ -292,39 +322,56 @@ export async function getCafe(id: string): Promise<CafeRow | null> {
   return res.rows[0] ?? null;
 }
 
+/** A card. The staff PIN is NOT set here — it belongs to the owner (setStaffPin). */
 export async function createCafe(row: {
   name: string;
   reward: string;
   stampsTarget: number;
   stampsStart: number;
-  staffPin: string;
 }): Promise<CafeRow> {
   const id = generateShortCode(8).toLowerCase();
   const res = await getPool().query<CafeRow>(
     `INSERT INTO cafes (id, name, reward, stamps_target, stamps_start, staff_pin, staff_pin_hash)
-     VALUES ($1, $2, $3, $4, $5, '', $6) RETURNING *`,
-    [id, row.name, row.reward, row.stampsTarget, row.stampsStart, hashPassword(row.staffPin)],
+     VALUES ($1, $2, $3, $4, $5, '', '') RETURNING *`,
+    [id, row.name, row.reward, row.stampsTarget, row.stampsStart],
   );
   return res.rows[0]!;
 }
 
-/** Verifies a PIN typed at the counter against the café's stored hash (timing-safe). */
-export function verifyStaffPin(cafe: CafeRow, given: string): boolean {
-  return verifyPassword(given, cafe.staff_pin_hash);
+/** Verifies a PIN typed at the counter against the owner's stored hash (timing-safe). */
+export function verifyStaffPin(owner: OwnerRow, given: string): boolean {
+  return verifyPassword(given, owner.staff_pin_hash);
 }
 
 /**
- * Replaces a café's staff PIN. Stores only the hash; the caller shows the PIN
- * once. Bumping the epoch signs every staff phone out, so a changed PIN really
- * does revoke access rather than just changing what new devices must type.
+ * Replaces an owner's staff PIN — the one PIN for every card they run. Stores
+ * only the hash; the caller shows the PIN once. Bumping the epoch signs every
+ * staff phone out across every card, so a changed PIN really does revoke access
+ * rather than just changing what new devices must type.
  */
-export async function setStaffPin(cafeId: string, pin: string): Promise<void> {
+export async function setStaffPin(ownerId: string, pin: string): Promise<void> {
   await getPool().query(
-    `UPDATE cafes SET staff_pin_hash = $2, staff_pin = '',
+    `UPDATE owners SET staff_pin_hash = $2,
             staff_session_epoch = staff_session_epoch + 1
       WHERE id = $1`,
-    [cafeId, hashPassword(pin)],
+    [ownerId, hashPassword(pin)],
   );
+}
+
+/**
+ * Who runs this card. The staff session belongs to the owner, not the café, so
+ * every staff request resolves this first. Null means an orphaned café (only
+ * possible for the env-seeded default before anyone signs up).
+ */
+export async function ownerForCafe(cafeId: string): Promise<OwnerRow | null> {
+  const res = await getPool().query<OwnerRow>(
+    `SELECT o.* FROM owners o
+       JOIN owner_cafes oc ON oc.owner_id = o.id
+      WHERE oc.cafe_id = $1
+      ORDER BY o.created_at LIMIT 1`,
+    [cafeId],
+  );
+  return res.rows[0] ?? null;
 }
 
 /** A fresh 6-digit PIN — longer than the old 4 digits, still fast to type. */

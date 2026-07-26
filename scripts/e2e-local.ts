@@ -100,9 +100,12 @@ async function main() {
   // The PIN is stored only as a scrypt hash, so there is nothing for the API to
   // hand back — the dashboard can set or replace it, never read it.
   expect(ov2nd.cafes[0].staffPin === undefined, "the overview API never returns a staff PIN");
+  // The PIN belongs to the OWNER now — one counter, one PIN, however many cards.
+  const secondOwner = (await getOwnerByEmail("second@cafe.my"))!;
+  expect(secondOwner.staff_pin_hash.startsWith("scrypt$"), "a new owner's PIN is stored hashed, never in plaintext");
+  expect(!verifyStaffPin(secondOwner, "1234"), "a new owner gets a random PIN, not the shared default");
   const starter = (await getCafe(ov2nd.cafes[0].id))!;
-  expect(starter.staff_pin === "" && starter.staff_pin_hash.startsWith("scrypt$"), "a new card's PIN is stored hashed, never in plaintext");
-  expect(!verifyStaffPin(starter, "1234"), "starter card gets a random PIN, not the shared default");
+  expect(starter.staff_pin === "" && starter.staff_pin_hash === "", "a card carries no PIN of its own");
 
   const dupSignup = await fetch(base + "/dashboard/api/signup", {
     method: "POST",
@@ -124,6 +127,7 @@ async function main() {
   expect(overview1.cafes.length === 1 && overview1.cafes[0].id === "default", "overview lists default café");
 
   // Edit café via dashboard
+  const pinHashBefore = (await getCafe("default"))!.staff_pin_hash;
   const edit = await fetch(base + "/dashboard/api/cafe/default", {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie },
@@ -133,10 +137,27 @@ async function main() {
   const cafeAfter = await getCafe("default");
   expect(cafeAfter!.reward === "Free latte", "café edit persisted");
   expect(
-    verifyStaffPin(cafeAfter!, "9876") && cafeAfter!.staff_pin === "",
-    "a PIN set from the dashboard is hashed, and the plaintext column stays empty",
+    cafeAfter!.staff_pin_hash === pinHashBefore,
+    "a PIN smuggled into a card edit is ignored — it isn't a card field",
   );
-  expect(!verifyStaffPin(cafeAfter!, "9875"), "a near-miss PIN does not verify");
+
+  // The staff PIN is set at owner level, and only there.
+  const setPin = await fetch(base + "/dashboard/api/staff-pin", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ pin: "9876" }),
+  });
+  expect(setPin.status === 200 && JSON.parse(await setPin.text()).staffPin === "9876", "the owner sets their staff PIN");
+  const ownerAfter = (await getOwnerByEmail("owner@test.my"))!;
+  expect(
+    verifyStaffPin(ownerAfter, "9876") && ownerAfter.staff_pin_hash.startsWith("scrypt$"),
+    "the owner's PIN is stored hashed",
+  );
+  expect(!verifyStaffPin(ownerAfter, "9875"), "a near-miss PIN does not verify");
+  const shortPin = await fetch(base + "/dashboard/api/staff-pin", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ pin: "12" }),
+  });
+  expect(shortPin.status === 400, "a PIN under 4 digits is refused");
 
   // Create two passes directly (enroll route would 503 without Apple certs)
   const mk = async (platform: "apple" | "google" = "apple") =>
@@ -176,8 +197,10 @@ async function main() {
 
   expect((await staffLogin("default", "1111")).status === 401, "staff sign-in with the wrong PIN is rejected");
   const staff1 = await staffLogin("default", "9876");
+  // The cookie is keyed on the OWNER, not the café — one sign-in covers every
+  // card they run, so it can't be named after any one of them.
   expect(
-    staff1.status === 200 && staff1.cookie.startsWith("stampy_staff_default="),
+    staff1.status === 200 && /^stampy_staff_[0-9a-f-]+=/.test(staff1.cookie),
     "the right PIN issues a staff session cookie",
   );
   const staffHeaders = { "Content-Type": "application/json", "x-cafe-id": "default", cookie: staff1.cookie };
@@ -276,26 +299,30 @@ async function main() {
   // New café via dashboard, isolated from default
   const newCafe = await fetch(base + "/dashboard/api/cafes", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
-    body: JSON.stringify({ name: "Second Café", staffPin: "2222" }),
+    body: JSON.stringify({ name: "Second Café" }),
   });
   const newCafeOut = JSON.parse(await newCafe.text());
   expect(newCafeOut.ok && newCafeOut.id, "second café created");
-  // A session is scoped to one café: the default café's cookie is not accepted
-  // for the new one, even with its x-cafe-id.
-  const wrongCafe = await fetch(base + "/staff/api/passes", {
+  // A session is scoped to the OWNER: this owner's other card is fine on the
+  // same sign-in (one counter, one PIN). Another owner's card is not — see the
+  // cross-owner check further down.
+  const sameOwnerCard = await fetch(base + "/staff/api/passes", {
     headers: { ...staffHeaders, "x-cafe-id": newCafeOut.id },
   });
-  expect(wrongCafe.status === 401, "a staff session for one café is refused for another");
+  expect(sameOwnerCard.status === 200, "one staff session covers every card the same owner runs");
 
-  const staff2 = await staffLogin(newCafeOut.id, "2222");
-  expect(staff2.status === 200, "the second café's own PIN signs in");
+  // The one PIN signs in against any of the owner's cards.
+  const staff2 = await staffLogin(newCafeOut.id, "9876");
+  expect(staff2.status === 200, "the owner's PIN signs in against their second card too");
   const staff2Headers = { "Content-Type": "application/json", "x-cafe-id": newCafeOut.id, cookie: staff2.cookie };
   const otherList = await fetch(base + "/staff/api/passes", { headers: staff2Headers });
-  expect(JSON.parse(await otherList.text()).passes.length === 0, "cafés are isolated (no cross-café cards)");
+  expect(JSON.parse(await otherList.text()).passes.length === 0, "cards are isolated (no cross-card customers)");
+  // Sharing a sign-in must NOT let one card's stamper touch another's customers
+  // — the serial still has to belong to the card named in the header.
   const crossStamp = await fetch(base + "/staff/api/stamp", {
     method: "POST", headers: staff2Headers, body: JSON.stringify({ serial: p1.serial }),
   });
-  expect(crossStamp.status === 404, "cannot stamp another café's card");
+  expect(crossStamp.status === 404, "cannot stamp a card that belongs to a different programme");
 
   // --- Google Wallet branch (no Google creds → graceful, never throws) ---
   const gEnroll = await get("/enroll/google");
@@ -962,28 +989,58 @@ async function main() {
   const defCard = ovSpend.cafes.find((c: any) => c.id === "default");
   expect(defCard.averageSpend === 4.5 && defCard.currency === "RM", "average spend round-trips through cents without float drift");
 
-  // --- Dashboard IA: five tabs, each one job ---
+  // --- Dashboard IA: four tabs, each one job ---
   const dashIa = (await get("/dashboard")).body;
-  for (const tab of ["home", "customers", "card", "access", "account"]) {
+  for (const tab of ["home", "customers", "card", "account"]) {
     expect(dashIa.includes('data-tab="' + tab + '"'), `dashboard has the ${tab} tab`);
   }
-  expect(!dashIa.includes('data-tab="share"'), "the old Share tab is gone (replaced by Access)");
+  expect(!dashIa.includes('data-tab="share"'), "the old Share tab is gone");
+  // Access only existed because each café row carried its own PIN.
+  expect(!dashIa.includes('data-tab="access"'), "the Access tab is gone (one PIN in Settings, links under the card)");
   expect(!dashIa.includes('data-f="staffPin"'), "the PIN is no longer a field in the card designer");
+
+  // --- One PIN covers every card the owner runs ---
+  const secondCard = JSON.parse((await (await fetch(base + "/dashboard/api/cafes", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ name: "Pastry card" }),
+  })).text()));
+  expect(secondCard.ok && !secondCard.staffPin, "adding a card no longer mints a PIN of its own");
+  const bothCards = JSON.parse(await (await fetch(base + "/staff/api/cards", { headers: staffHeaders })).text());
+  expect(
+    (bothCards.cards || []).some((c: any) => c.id === secondCard.id),
+    "the stamper offers every card the owner runs, on one sign-in",
+  );
+  expect(
+    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-cafe-id": secondCard.id } })).status === 200,
+    "the same staff session stamps the second card without signing in again",
+  );
+  // A café belonging to somebody else is still refused, header or not.
+  expect(
+    (await fetch(base + "/staff/api/passes", {
+      headers: { cookie: staff1.cookie, "x-cafe-id": ov2nd.cafes[0].id },
+    })).status === 401,
+    "a staff session can't be pointed at another owner's card",
+  );
 
   // --- Rotating the PIN signs every staff phone out (break-glass) ---
   // Last, because it invalidates the sessions used above.
   const beforeRotate = await fetch(base + "/staff/api/passes", { headers: staffHeaders });
   expect(beforeRotate.status === 200, "the staff session works before the PIN is rotated");
-  const rot = await fetch(base + "/dashboard/api/cafe/default/rotate-pin", {
-    method: "POST", headers: { cookie: cookieNow },
+  const rot = await fetch(base + "/dashboard/api/staff-pin", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({}),
   });
   const rotOut = JSON.parse(await rot.text());
-  expect(rot.status === 200 && /^\d{6}$/.test(rotOut.staffPin), "rotate-pin returns a fresh 6-digit PIN once");
-  const cafeRot = (await getCafe("default"))!;
-  expect(verifyStaffPin(cafeRot, rotOut.staffPin), "the rotated PIN verifies");
-  expect(!verifyStaffPin(cafeRot, "9876"), "the old PIN stops working");
+  expect(rot.status === 200 && /^\d{6}$/.test(rotOut.staffPin), "an empty PIN request mints a fresh 6-digit one");
+  const ownerRot = (await getOwnerByEmail("owner@test.my"))!;
+  expect(verifyStaffPin(ownerRot, rotOut.staffPin), "the rotated PIN verifies");
+  expect(!verifyStaffPin(ownerRot, "9876"), "the old PIN stops working");
   const afterRotate = await fetch(base + "/staff/api/passes", { headers: staffHeaders });
   expect(afterRotate.status === 401, "rotating the PIN revokes every existing staff session");
+  expect(
+    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-cafe-id": secondCard.id } })).status === 401,
+    "and it revokes them on every card at once",
+  );
   expect((await get("/staff", { headers: { cookie: staff1.cookie } })).body.includes("Staff login"),
     "a revoked device is shown the PIN form again (no reload loop)");
   const staffRot = await staffLogin("default", rotOut.staffPin);
@@ -992,10 +1049,11 @@ async function main() {
     (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, cookie: staffRot.cookie } })).status === 200,
     "the new session works",
   );
-  const rotForeign = await fetch(base + "/dashboard/api/cafe/default/rotate-pin", {
-    method: "POST", headers: { cookie: cookie2 },
-  });
-  expect(rotForeign.status === 403, "an owner can't rotate another owner's PIN");
+  // The second owner's PIN is untouched by the first owner rotating theirs.
+  expect(
+    !verifyStaffPin((await getOwnerByEmail("second@cafe.my"))!, rotOut.staffPin),
+    "one owner's PIN never works at another owner's counter",
+  );
 
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);

@@ -137,18 +137,23 @@ export function setEnrollCookie(res: Response, cafeId: string, serial: string): 
  *
  * The payload carries a per-device id, which becomes the `actor` on every event
  * that device causes — that's what makes counter abuse attributable — plus the
- * café's session epoch, so changing the PIN signs every phone out at once.
+ * owner's session epoch, so changing the PIN signs every phone out at once.
+ *
+ * The session is scoped to the OWNER, not to one café: a counter running two
+ * cards is still one counter, and the staff there typed one PIN. Which card is
+ * being stamped travels separately, on each request, and is checked against the
+ * owner's cards.
  */
 const STAFF_DAYS = 14;
 
 export interface StaffSession {
   deviceId: string;
-  /** Must still match the café's `staff_session_epoch`; the caller checks it. */
+  /** Must still match the owner's `staff_session_epoch`; the caller checks it. */
   epoch: number;
 }
 
-export function staffCookieName(cafeId: string): string {
-  return `stampy_staff_${safeId(cafeId)}`;
+export function staffCookieName(ownerId: string): string {
+  return `stampy_staff_${safeId(ownerId)}`;
 }
 
 /** A short, non-guessable id for one staff phone. Recorded on its events. */
@@ -156,34 +161,34 @@ export function newStaffDeviceId(): string {
   return randomBytes(5).toString("hex");
 }
 
-export function createStaffCookie(cafeId: string, deviceId: string, epoch: number): string {
-  return seal(`${cafeId}.${deviceId}.${epoch}.${Date.now() + STAFF_DAYS * 24 * 60 * 60 * 1000}`);
+export function createStaffCookie(ownerId: string, deviceId: string, epoch: number): string {
+  return seal(`${ownerId}.${deviceId}.${epoch}.${Date.now() + STAFF_DAYS * 24 * 60 * 60 * 1000}`);
 }
 
 /**
- * This device's staff session for `cafeId`, or null. The café id is inside the
- * signed payload as well as the cookie name, so a valid cookie for one café
+ * This device's staff session for `ownerId`, or null. The owner id is inside the
+ * signed payload as well as the cookie name, so a valid cookie for one owner
  * can't be renamed and replayed against another.
  */
-export function readStaffCookie(req: Request, cafeId: string): StaffSession | null {
-  const payload = unseal(readCookie(req, staffCookieName(cafeId)));
+export function readStaffCookie(req: Request, ownerId: string): StaffSession | null {
+  const payload = unseal(readCookie(req, staffCookieName(ownerId)));
   if (payload === null) return null;
-  const [signedCafeId, deviceId, epochStr, expiresStr] = payload.split(".");
-  if (signedCafeId !== cafeId || !deviceId || !epochStr || !fresh(expiresStr)) return null;
+  const [signedOwnerId, deviceId, epochStr, expiresStr] = payload.split(".");
+  if (signedOwnerId !== ownerId || !deviceId || !epochStr || !fresh(expiresStr)) return null;
   const epoch = Number(epochStr);
   return Number.isInteger(epoch) ? { deviceId, epoch } : null;
 }
 
-export function setStaffCookie(res: Response, cafeId: string, deviceId: string, epoch: number): void {
-  const value = createStaffCookie(cafeId, deviceId, epoch);
+export function setStaffCookie(res: Response, ownerId: string, deviceId: string, epoch: number): void {
+  const value = createStaffCookie(ownerId, deviceId, epoch);
   res.append(
     "Set-Cookie",
-    `${staffCookieName(cafeId)}=${encodeURIComponent(value)}; Path=/staff; HttpOnly; SameSite=Lax; Max-Age=${STAFF_DAYS * 24 * 60 * 60}`,
+    `${staffCookieName(ownerId)}=${encodeURIComponent(value)}; Path=/staff; HttpOnly; SameSite=Lax; Max-Age=${STAFF_DAYS * 24 * 60 * 60}`,
   );
 }
 
-export function clearStaffCookie(res: Response, cafeId: string): void {
-  res.append("Set-Cookie", `${staffCookieName(cafeId)}=; Path=/staff; HttpOnly; SameSite=Lax; Max-Age=0`);
+export function clearStaffCookie(res: Response, ownerId: string): void {
+  res.append("Set-Cookie", `${staffCookieName(ownerId)}=; Path=/staff; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
 /** Minimal cookie-header parser (we only ever read our own cookie). */

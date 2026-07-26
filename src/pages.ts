@@ -850,6 +850,11 @@ export function staffPage(signedIn: boolean): string {
        being somewhere in a list of twenty. */
     #readywrap:not(:empty) { margin-top: 22px; }
     #readywrap .pass { border-color: #1a7f37; border-width: 2px; }
+    /* Card switcher: only rendered when the owner runs more than one card. */
+    .cardpick { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 16px; }
+    .cardpick button { width: auto; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line);
+                       background: none; font: inherit; font-size: .9rem; cursor: pointer; }
+    .cardpick button.on { background: var(--ink, #111); color: #fff; border-color: var(--ink, #111); }
     .find { border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 14px; margin-top: 22px; }
     .find summary { cursor: pointer; padding: 12px 0; font-weight: 600; list-style: none; display: flex; gap: 8px; align-items: center; }
     .find summary::-webkit-details-marker { display: none; }
@@ -861,7 +866,10 @@ export function staffPage(signedIn: boolean): string {
   // rather than a hidden panel.
   const sharedJs = /* js */ `
     const $ = (s, el=document) => el.querySelector(s);
-    const cafeId = new URLSearchParams(location.search).get("c") || "default";
+    // Which card this phone is stamping. It starts from the ?c= on the stamper
+    // link and can be switched in the page — one PIN covers every card the owner
+    // runs, so signing in again per card would be pointless friction.
+    let cafeId = new URLSearchParams(location.search).get("c") || "default";
 
     async function api(path, opts = {}) {
       const res = await fetch("/staff/api" + path, {
@@ -1102,9 +1110,32 @@ export function staffPage(signedIn: boolean): string {
       }, 250);
     }
 
+    // One PIN covers every card the owner runs, so a counter with a coffee card
+    // and a pastry card switches here instead of signing in twice. Hidden
+    // entirely for the overwhelmingly common case of a single card.
+    async function renderCards() {
+      const out = await api("/cards");
+      const cards = out.cards || [];
+      const host = $("#cards");
+      if (cards.length < 2) { host.innerHTML = ""; return; }
+      host.innerHTML = '<label>Stamping</label><div class="cardpick">' +
+        cards.map((c) => '<button class="' + (c.id === cafeId ? "on" : "") +
+          '" data-c="' + c.id + '">' + c.name + "</button>").join("") + "</div>";
+      host.querySelectorAll("[data-c]").forEach((b) => {
+        b.onclick = () => {
+          cafeId = b.dataset.c;
+          // Keep the URL honest, so a reload (or a bookmark) stays on this card.
+          history.replaceState(null, "", "/staff?c=" + encodeURIComponent(cafeId));
+          renderCards();
+          load();
+        };
+      });
+    }
+
     $("#app").innerHTML = \`
       <h1>Stamper</h1>
       <p class="sub">Scan the customer’s card, or type its code.</p>
+      <div id="cards"></div>
       <button class="btn btn-stamp" id="scan">📷 Scan card</button>
       <div class="codebox">
         <input id="code" placeholder="CARD CODE" maxlength="8" autocomplete="off">
@@ -1128,6 +1159,7 @@ export function staffPage(signedIn: boolean): string {
       await api("/logout", { method: "POST" });
       location.reload();
     });
+    renderCards();
     load();
     // Don't repaint out from under a half-confirmed action — the poll would
     // replace the armed button and swallow the second tap.
@@ -1326,6 +1358,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     /* --- Card tab: Design / Rules section headings --- */
     .sec { font-size: 1.1rem; margin: 28px 0 2px; padding-top: 20px; border-top: 1px solid var(--line); }
     .sec.first { margin-top: 4px; padding-top: 0; border-top: none; }
+    /* A button waiting for its second tap (see armBtn). */
+    .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
     /* --- show-password toggle --- */
     .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
@@ -1351,6 +1385,27 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       root.querySelectorAll("[data-eye]").forEach((cb) => {
         cb.onchange = () => { const i = root.querySelector(cb.dataset.eye); if (i) i.type = cb.checked ? "text" : "password"; };
       });
+    }
+
+    // Two-tap confirmation, same idiom as the stamper. Browsers let a user
+    // suppress further dialogs, and a suppressed dialog reports "cancel" — so an
+    // action gated on one silently stops working. First tap relabels the button,
+    // second within 4s runs it.
+    let armedBtn = null, armedTimer = null;
+    function disarmBtn() {
+      if (armedBtn) { armedBtn.textContent = armedBtn.dataset.label; armedBtn.classList.remove("armed"); }
+      clearTimeout(armedTimer); armedBtn = null; armedTimer = null;
+    }
+    function armBtn(btn, prompt, go) {
+      btn.dataset.label = btn.textContent;
+      btn.onclick = () => {
+        if (armedBtn === btn) { disarmBtn(); go(); return; }
+        disarmBtn();
+        armedBtn = btn;
+        btn.textContent = prompt;
+        btn.classList.add("armed");
+        armedTimer = setTimeout(disarmBtn, 4000);
+      };
     }
 
     function authForm(mode) {
@@ -2012,75 +2067,56 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           if (!name) return;
           const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
           if (!r.ok) return toast(r.error || "Failed");
-          // The PIN is only stored hashed, so this is the one chance to read it.
-          alert("Card created.\\n\\nStaff PIN: " + r.staffPin +
-                "\\n\\nWrite it down — it can't be looked up later. You can change it any time in the Access tab.");
+          // No PIN to hand over any more — the new card shares the one staff
+          // PIN and the one stamper page the owner already has.
           location.reload();
         };
         pick.appendChild(add);
-        host.innerHTML = ""; host.appendChild(designPanel(S.cafes[S.selCard]));
+        host.innerHTML = "";
+        host.appendChild(designPanel(S.cafes[S.selCard]));
+        host.appendChild(sharePanel(S.cafes[S.selCard]));
       }
       draw();
       return div;
     }
 
-    // ---- Access: the links you hand out, and the PIN that guards the stamper ----
-    // One home for both. The PIN used to be printed next to the staff link (so
-    // anyone shown the link got the PIN too) and was also editable over in the
-    // designer — two places, neither obviously about access.
-    function accessPanel() {
+    // ---- The two links for the selected card, at the very bottom ----
+    // You need these once, when you set the card up — so they sit under
+    // everything you actually come back to edit. They never change when the card
+    // does, which is the whole point of putting them beside it.
+    function sharePanel(c) {
       const div = document.createElement("div");
-      div.innerHTML = '<p class="sub">Links to share, and who can stamp. The links never change when you edit a card.</p>';
-      for (const c of S.cafes) {
-        // Every card (incl. the default) uses /c/:id now that / is the marketing page.
-        const base = "/c/" + c.id;
-        const block = document.createElement("div");
-        block.innerHTML = \`
-          \${S.cafes.length > 1 ? '<label style="font-weight:700;color:var(--ink)">' + c.name + '</label>' : ""}
-          <div class="sharelist">
-            <a href="\${base + "/qr"}" target="_blank"><span>Add-to-Wallet QR <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
-            <a href="\${base}" target="_blank"><span>Add-to-Wallet page <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
-            <a href="/staff?c=\${c.id}" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
-          </div>
-          <label style="margin-top:14px">Staff PIN</label>
-          <p class="muted" style="margin-top:-2px">Stored scrambled, so it can't be looked up — not even by us. If nobody remembers it, generate a new one.</p>
-          <div class="copyrow" style="margin-top:8px">
-            <input data-pin placeholder="Set your own PIN (4–12 digits)" inputmode="numeric" autocomplete="off">
-            <button class="btn btn-ghost" data-setpin>Set</button>
-          </div>
-          <button class="btn btn-ghost" style="margin-top:8px;width:auto;padding:10px 14px" data-newpin>Generate a new PIN</button>
-          <div data-pinout></div>
-          <div style="height:18px"></div>\`;
-
-        const out = block.querySelector("[data-pinout]");
-        // Shown once, right after it's set — there is no way back to it later.
-        const reveal = (pin) => {
-          out.innerHTML = '<div class="temp">New staff PIN: <strong>' + pin + '</strong><br>' +
-            'Write it down now. Every staff phone has to sign in again with it.</div>';
-        };
-        block.querySelector("[data-setpin]").onclick = async () => {
-          const pin = block.querySelector("[data-pin]").value.trim();
-          if (pin.length < 4) return toast("Use at least 4 digits");
-          const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({ staffPin: pin }) });
-          if (!body.ok) return toast(body.error || "Couldn’t set the PIN");
-          block.querySelector("[data-pin]").value = "";
-          reveal(pin);
-        };
-        block.querySelector("[data-newpin]").onclick = async () => {
-          if (!confirm("Generate a new PIN? The current one stops working and staff phones must sign in again.")) return;
-          const { body } = await api("/cafe/" + c.id + "/rotate-pin", { method: "POST" });
-          if (body.ok) reveal(body.staffPin);
-          else toast(body.error || "Couldn’t change the PIN");
-        };
-        div.appendChild(block);
-      }
+      div.innerHTML = \`
+        <h2 class="sec">Share this card</h2>
+        <p class="muted">Print the QR for your counter. Both links stay the same however you edit the card.</p>
+        <div class="sharelist" style="margin-top:10px">
+          <a href="/c/\${c.id}" target="_blank"><span>\${c.name} <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
+          <a href="/c/\${c.id}/qr" target="_blank"><span>\${c.name} QR <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
+        </div>\`;
       return div;
     }
 
-    // ---- Account: identity + change password + log out ----
+    // ---- Settings: the staff page, then your own login ----
+    // The old Access tab existed only because the PIN hung off each café row, so
+    // every card had its own PIN and its own stamper link. There is one counter,
+    // so there is one PIN — and the links belong beside the card they open.
     function accountPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
+        <h2 class="sec first">Staff page</h2>
+        <p class="muted">One PIN for your whole counter — it works on every card you run. Stored scrambled, so it can't be looked up, not even by us. If nobody remembers it, generate a new one.</p>
+        <div class="sharelist" style="margin-top:10px">
+          <a href="/staff" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
+        </div>
+        <label style="margin-top:14px">Staff PIN</label>
+        <div class="copyrow" style="margin-top:6px">
+          <input data-pin placeholder="Set your own PIN (4–12 digits)" inputmode="numeric" autocomplete="off">
+          <button class="btn btn-ghost" data-setpin>Set</button>
+        </div>
+        <button class="btn btn-ghost" style="margin-top:8px;width:auto;padding:10px 14px" data-newpin>Generate a new PIN</button>
+        <div data-pinout></div>
+
+        <h2 class="sec">Your account</h2>
         <label>Signed in as</label>
         <p style="font-weight:600;margin-bottom:6px">\${S.email}</p>
         <label style="margin-top:10px">Change password</label>
@@ -2091,6 +2127,28 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <button class="btn btn-dark" style="margin-top:10px" data-pwsave>Update password</button>
         <button class="btn btn-ghost" style="margin-top:20px" data-out>Log out</button>\`;
       wireEyes(div);
+
+      const pinOut = div.querySelector("[data-pinout]");
+      // Shown once, right after it's set — there is no way back to it later.
+      const reveal = (pin) => {
+        pinOut.innerHTML = '<div class="temp">New staff PIN: <strong>' + pin + '</strong><br>' +
+          'Write it down now. Every staff phone has to sign in again with it, on every card.</div>';
+      };
+      const setPin = async (pin) => {
+        const { body } = await api("/staff-pin", { method: "POST", body: JSON.stringify({ pin }) });
+        if (body.ok) reveal(body.staffPin);
+        else toast(body.error === "pin-too-short" ? "Use at least 4 digits" : (body.error || "Couldn’t set the PIN"));
+      };
+      div.querySelector("[data-setpin]").onclick = () => {
+        const el = div.querySelector("[data-pin]");
+        const pin = el.value.trim();
+        if (pin.length < 4) return toast("Use at least 4 digits");
+        el.value = "";
+        setPin(pin);
+      };
+      // Two taps rather than a dialog: this signs every staff phone out.
+      armBtn(div.querySelector("[data-newpin]"), "Confirm — sign all phones out?", () => setPin(""));
+
       div.querySelector("[data-pwsave]").onclick = async () => {
         const { body } = await api("/change-password", { method: "POST", body: JSON.stringify({
           current: div.querySelector("[data-cur]").value, next: div.querySelector("[data-new]").value,
@@ -2122,17 +2180,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
       S.cafes = body.cafes; S.email = body.email; S.selCard = 0; S.tab = "home";
-      // Five tabs, each one job: how it's going · who they are · what the card
-      // is · who can reach it · your login. Customers is a real tab now, not an
-      // unreachable sub-page of Home.
+      // Four tabs, each one job: how it's going · who they are · what the card
+      // is · everything you set once. Access is gone — it only existed because
+      // each card had its own PIN, and the links now sit under the card itself.
       $("#app").innerHTML = \`
         <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">\${S.email}</p></div>
         <div class="seg" id="tabs" role="tablist">
           <button data-tab="home" class="on">Home</button>
           <button data-tab="customers">Customers</button>
           <button data-tab="card">Card</button>
-          <button data-tab="access">Access</button>
-          <button data-tab="account">Account</button>
+          <button data-tab="account">Settings</button>
           <span class="thumb"></span>
         </div>
         <div id="panel"></div>\`;
@@ -2153,7 +2210,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     function renderPanel() {
       const panel = $("#panel"); panel.innerHTML = "";
       const view = S.tab === "card" ? cardsPanel()
-        : S.tab === "access" ? accessPanel()
         : S.tab === "account" ? accountPanel()
         : S.tab === "customers" ? customersPanel()
         : homePanel();

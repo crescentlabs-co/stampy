@@ -91,8 +91,10 @@ describe("staff session cookie", () => {
   const reqWith = (cookieHeader: string) =>
     ({ get: (h: string) => (h.toLowerCase() === "cookie" ? cookieHeader : undefined) }) as unknown as Request;
 
-  const cookieFor = (nameCafe: string, signedCafe: string, device: string, epoch: number) =>
-    `${staffCookieName(nameCafe)}=${encodeURIComponent(createStaffCookie(signedCafe, device, epoch))}`;
+  // Scoped to the OWNER, not one café: a counter running two cards is still one
+  // counter, and the staff there typed one PIN.
+  const cookieFor = (nameOwner: string, signedOwner: string, device: string, epoch: number) =>
+    `${staffCookieName(nameOwner)}=${encodeURIComponent(createStaffCookie(signedOwner, device, epoch))}`;
 
   it("round-trips the device id and epoch", () => {
     expect(readStaffCookie(reqWith(cookieFor("default", "default", "abc123", 7)), "default")).toEqual({
@@ -107,9 +109,9 @@ describe("staff session cookie", () => {
     for (const id of ids) expect(id).toMatch(/^[0-9a-f]{10}$/);
   });
 
-  // The café id is signed as well as being in the cookie name, so a cookie for
-  // one café can't be renamed and replayed against another.
-  it("rejects a cookie whose signed café doesn't match the café asked about", () => {
+  // The owner id is signed as well as being in the cookie name, so a cookie for
+  // one owner can't be renamed and replayed against another.
+  it("rejects a cookie whose signed owner doesn't match the owner asked about", () => {
     expect(readStaffCookie(reqWith(cookieFor("other", "default", "abc123", 1)), "other")).toBeNull();
     expect(readStaffCookie(reqWith(cookieFor("default", "default", "abc123", 1)), "other")).toBeNull();
   });
@@ -127,7 +129,8 @@ describe("staff session cookie", () => {
   });
 
   // The epoch is returned rather than enforced here — requireStaff compares it
-  // against the café row, which is what makes a PIN change revoke every phone.
+  // against the owner row, which is what makes a PIN change revoke every phone,
+  // across every card at once.
   it("returns the epoch it was issued with so a PIN change can strand it", () => {
     const old = readStaffCookie(reqWith(cookieFor("default", "default", "abc123", 3)), "default");
     expect(old?.epoch).toBe(3);
