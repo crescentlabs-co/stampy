@@ -2271,6 +2271,9 @@ export function adminPage(): string {
     th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
     .flags { font-size: .78rem; color: var(--muted); }
+    /* Something that needs a phone call: a quiet merchant, a deleted card, an
+       unclaimed reward, a phone redeeming far more than it stamps. */
+    .bad { color: #9a3412; font-weight: 600; }
     .tw { overflow-x: auto; }
     .rst { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: end; }
     .rst select { width: auto; }
@@ -2371,17 +2374,70 @@ export function adminPage(): string {
       }
       const origin = location.origin;
       const nfcUrl = (id) => origin + (id === "default" ? "/" : "/c/" + id);
+      // "3 days ago" beats a date when the question is "is this one alive?".
+      const ago = (d) => {
+        if (!d) return "never";
+        const days = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+        return days === 0 ? "today" : days === 1 ? "yesterday" : days + "d ago";
+      };
+      const pct = (x) => (x === null || x === undefined) ? "—" : Math.round(x * 100) + "%";
+      const num = (x, dp) => (x === null || x === undefined) ? "—" : Number(x).toFixed(dp || 0);
+      const stale = (d, days) => !d || (Date.now() - new Date(d).getTime()) > days * 86400000;
+
       const rows = body.cafes.map((c) => \`
         <tr>
           <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
           <td>\${c.owners || "—"}</td>
-          <td>\${c.active}</td>
-          <td>\${c.cards}</td>
-          <td>\${c.stamps}</td>
+          <td>\${c.active}<br><span class="flags">\${c.active_7d} this week</span></td>
+          <td>\${c.stamps}<br><span class="flags">\${c.stamps_7d} / 7d · \${c.stamps_30d} / 30d</span></td>
           <td>\${c.redemptions}</td>
-          <td class="flags">\${c.has_logo ? "logo " : ""}\${c.has_banner ? "banner" : ""}\${!c.has_logo && !c.has_banner ? "—" : ""}<br>\${new Date(c.created_at).toLocaleDateString()}</td>
+          <td class="\${stale(c.last_stamp_at, 7) ? "bad" : ""}">\${ago(c.last_stamp_at)}</td>
+          <td class="\${stale(c.last_owner_login, 30) ? "bad" : ""}">\${ago(c.last_owner_login)}</td>
           <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br><button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button></td>
         </tr>\`).join("");
+
+      // Where cards go once they're handed out. "Never in a wallet" is mostly
+      // abandoned Add sheets; "deleted" is the only hard churn signal we get,
+      // and only Apple gives it.
+      const funnelRows = body.cafes.map((c) => \`
+        <tr>
+          <td><strong>\${c.name}</strong></td>
+          <td>\${c.cards}</td>
+          <td>\${c.added}</td>
+          <td>\${c.never_added}</td>
+          <td class="\${c.removed ? "bad" : ""}">\${c.removed}</td>
+          <td>\${c.active}</td>
+          <td class="flags">\${c.has_logo ? "logo " : ""}\${c.has_banner ? "banner" : ""}\${!c.has_logo && !c.has_banner ? "—" : ""} · \${new Date(c.created_at).toLocaleDateString()}</td>
+        </tr>\`).join("");
+
+      const retRows = (body.retention || []).map((r) => \`
+        <tr>
+          <td><strong>\${r.name}</strong></td>
+          <td>\${pct(r.second_visit_rate)}</td>
+          <td>\${pct(r.third_visit_rate)}</td>
+          <td>\${num(r.median_gap_days, 1)}</td>
+          <td>\${num(r.median_days_to_first_stamp, 1)}</td>
+          <td>\${pct(r.completion_rate)}</td>
+          <td>\${num(r.median_days_to_reward, 0)}</td>
+          <td class="\${r.unclaimed_rewards ? "bad" : ""}">\${r.unclaimed_rewards}</td>
+          <td>\${pct(r.alive_30)} · \${pct(r.alive_60)} · \${pct(r.alive_90)}</td>
+        </tr>\`).join("");
+
+      const staffRows = (body.staff || []).map((s) => {
+        // The fraud signal: a phone giving out rewards disproportionately to the
+        // stamps it adds. Small numbers are noise, so only flag real volume.
+        const share = s.stamps ? s.redeems / s.stamps : 0;
+        const odd = s.stamps >= 10 && share > 0.3;
+        return \`<tr>
+          <td>\${s.cafe_name}</td>
+          <td class="nfc">\${s.actor.replace("staff:", "")}</td>
+          <td>\${s.stamps}</td>
+          <td class="\${odd ? "bad" : ""}">\${s.redeems}\${s.stamps ? " (" + Math.round(share * 100) + "%)" : ""}</td>
+          <td>\${s.undos}</td>
+          <td>\${s.forced}</td>
+          <td class="flags">\${ago(s.last_seen)}</td>
+        </tr>\`;
+      }).join("");
       // Did chasing quiet customers actually work, and is anyone leaning on the
       // override at the counter? Both are only answerable now that events record
       // who did what.
@@ -2393,26 +2449,45 @@ export function adminPage(): string {
           <td>\${c.nudge_returned}</td>
           <td>\${Math.max(0, c.nudged - c.nudge_returned)}</td>
           <td>\${rate}</td>
-          <td>\${c.forced_stamps}</td>
-          <td>\${c.undos}</td>
         </tr>\`;
       }).join("");
       const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
       $("#app").innerHTML = \`
         <h1>Platform admin</h1>
         <p class="sub">\${body.cafes.length} loyalty programmes · \${body.owners.length} owners. Read-only, plus password resets.</p>
-        <p class="muted" style="margin:-4px 0 10px"><strong>Customers</strong> = cards stamped at least once or confirmed in a wallet. <strong>Issued</strong> = every card ever handed out, including ones that never reached a wallet. Stamps exclude free welcome stamps.</p>
+        <p class="muted" style="margin:-4px 0 10px"><strong>Customers</strong> = cards stamped at least once or confirmed in a wallet. Stamps exclude free welcome stamps. Red means quiet: no stamp for a week, or no dashboard login for a month.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Issued</th><th>Stamps</th><th>Redeemed</th><th>Art / created</th><th>Sign-up / NFC link</th></tr>
+          <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>
           \${rows}
         </table></div>
         <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>
 
-        <h2>Win-back &amp; counter audit</h2>
-        <p class="muted"><strong>Came back</strong> = a stamp after the last message, so the nudge worked. Auto win-back gives up after 3 unanswered messages. <strong>Forced</strong> = staff confirmed past the "just stamped" warning; <strong>Undone</strong> = stamps taken back. Both are normal in small numbers — a spike is worth a call.</p>
+        <h2>Where the cards went</h2>
+        <p class="muted"><strong>In a wallet</strong> and <strong>deleted</strong> are Apple-only: iOS tells us when a pass is added and when it's removed, Google reports neither and never will, so an Android card only counts once it's stamped. <strong>Never in a wallet</strong> is mostly people who tapped the link and backed out of the Add sheet.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>Nudged</th><th>Came back</th><th>No return</th><th>Return rate</th><th>Forced</th><th>Undone</th></tr>
+          <tr><th>Programme</th><th>Issued</th><th>In a wallet</th><th>Never in a wallet</th><th>Deleted</th><th>Customers</th><th>Art / created</th></tr>
+          \${funnelRows}
+        </table></div>
+
+        <h2>Do they come back?</h2>
+        <p class="muted">The only questions that decide whether a merchant renews. <strong>2nd visit</strong> is the big one: of everyone who ever got a stamp, how many came back at all. <strong>To 1st stamp</strong> is time-to-value. <strong>Owed</strong> = cards sitting at their target with the reward not yet claimed. <strong>Still active</strong> counts only cards old enough to judge, so a new merchant isn't scored as a failure.</p>
+        <div class="tw"><table>
+          <tr><th>Programme</th><th>2nd visit</th><th>3rd visit</th><th>Days between</th><th>To 1st stamp</th><th>Finish a card</th><th>Days to reward</th><th>Owed</th><th>Still active 30/60/90</th></tr>
+          \${retRows}
+        </table></div>
+
+        <h2>Win-back</h2>
+        <p class="muted"><strong>Came back</strong> = a stamp after the last message, so the nudge worked. We send at most 2 messages per card per week and stop entirely after 6 with no visit in between.</p>
+        <div class="tw"><table>
+          <tr><th>Programme</th><th>Nudged</th><th>Came back</th><th>No return</th><th>Return rate</th></tr>
           \${wbRows}
+        </table></div>
+
+        <h2>Counter audit</h2>
+        <p class="muted">Per staff <em>phone</em>, not per person — a device that signs out and back in gets a new id, and changing the PIN resets them all. So this is "phone A vs phone B". <strong>Redeems</strong> is flagged when a phone hands out rewards on more than 30% of the stamps it adds; that's the shape free-coffee-for-friends takes. <strong>Forced</strong> = confirmed past the "just stamped" warning.</p>
+        <div class="tw"><table>
+          <tr><th>Programme</th><th>Phone</th><th>Stamps</th><th>Redeems</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>
+          \${staffRows || '<tr><td colspan="7" class="flags">No counter activity yet.</td></tr>'}
         </table></div>
 
         <h2>Create a café (done-for-you)</h2>

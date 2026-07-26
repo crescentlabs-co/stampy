@@ -21,6 +21,8 @@ import {
   allOwners,
   createCafe,
   createOwner,
+  adminRetention,
+  adminStaffAudit,
   generateStaffPin,
   setStaffPin,
   getOwner,
@@ -58,8 +60,13 @@ adminRouter.get("/", (_req, res) => {
 });
 
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [cafes, owners] = await Promise.all([allCafesWithStats(), allOwners()]);
-  res.json({ cafes, owners });
+  const [cafes, owners, retention, staff] = await Promise.all([
+    allCafesWithStats(),
+    allOwners(),
+    adminRetention(),
+    adminStaffAudit(),
+  ]);
+  res.json({ cafes, owners, retention, staff });
 });
 
 /**

@@ -509,6 +509,30 @@ async function main() {
     adminOk.cafes.some((c: any) => (c.owners || "").includes("second@cafe.my")),
     "admin sees which owner email is tied to each café",
   );
+  // Merchant health: is the counter alive, and does the owner ever look?
+  expect(
+    adminOk.cafes.every((c: any) =>
+      typeof c.stamps_7d === "number" && typeof c.added === "number" &&
+      typeof c.removed === "number" && typeof c.never_added === "number" &&
+      "last_stamp_at" in c && "last_owner_login" in c),
+    "admin sees each merchant's recent activity and the wallet add/remove split",
+  );
+  expect(
+    adminOk.cafes.find((c: any) => c.id === "default").last_owner_login !== null,
+    "an owner signing in is recorded — nothing tracked that before",
+  );
+  expect(
+    Array.isArray(adminOk.retention) &&
+      adminOk.retention.every((r: any) =>
+        typeof r.second_visit_rate === "number" && typeof r.completion_rate === "number" &&
+        "median_gap_days" in r && "alive_30" in r),
+    "admin sees retention: second visit, completion, gaps and still-active rates",
+  );
+  expect(
+    Array.isArray(adminOk.staff) &&
+      adminOk.staff.every((s: any) => /^staff:[0-9a-f]{10}$/.test(s.actor) && typeof s.stamps === "number"),
+    "admin sees counter activity per staff phone",
+  );
   expect(JSON.stringify(adminOk).indexOf("password") === -1, "admin overview never includes any password field");
 
   const owner2 = adminOk.owners.find((o: any) => o.email === "second@cafe.my");

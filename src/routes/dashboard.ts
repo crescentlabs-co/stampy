@@ -43,6 +43,7 @@ import {
   getOwnerByEmail,
   getOwnerByResetToken,
   linkOwnerCafe,
+  logOwnerLogin,
   ownerHasCafe,
   setCafeBanner,
   setCafeLogo,
@@ -166,6 +167,9 @@ dashboardRouter.post("/api/login", async (req, res) => {
   }
   clear(rlKey);
   setSessionCookie(res, owner.id);
+  // "Does this merchant ever open their dashboard?" had no answer before,
+  // because nothing recorded a sign-in. Best-effort; never blocks the login.
+  void logOwnerLogin(owner.id);
   res.json({ ok: true });
 });
 

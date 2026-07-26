@@ -259,6 +259,14 @@ export async function migrate(): Promise<void> {
     -- owner's existing PIN up so nobody has to be told a new one.
     ALTER TABLE owners ADD COLUMN IF NOT EXISTS staff_pin_hash text NOT NULL DEFAULT '';
     ALTER TABLE owners ADD COLUMN IF NOT EXISTS staff_session_epoch integer NOT NULL DEFAULT 1;
+    -- v1.2: one row per owner sign-in. "Do they ever open the dashboard?" was
+    -- unanswerable — nothing recorded it at all. Kept out of the events table,
+    -- which is per-card; a login isn't about any one card.
+    CREATE TABLE IF NOT EXISTS owner_logins (
+      owner_id   text NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_owner_logins ON owner_logins(owner_id, created_at DESC);
   `);
 
   // Seed the default café from env vars on first boot (v0.1 compatibility).
@@ -698,6 +706,18 @@ export interface AdminCafeRow {
   /** Audit counters: stamps confirmed past the cooldown, and corrections made. */
   forced_stamps: number;
   undos: number;
+  /** Is this café alive? Nulls mean it has never been stamped / never signed in. */
+  last_stamp_at: Date | null;
+  last_owner_login: Date | null;
+  stamps_7d: number;
+  stamps_30d: number;
+  /** Cards confirmed in a wallet, deleted from one, and never seen in one (Apple-only signals). */
+  added: number;
+  removed: number;
+  never_added: number;
+  /** Customers with a stamp in the last 7 / 30 days. */
+  active_7d: number;
+  active_30d: number;
 }
 
 /** Every café on the platform with its owner email(s), metrics, and art flags.
@@ -722,9 +742,160 @@ export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
                             AND s.created_at > (SELECT max(n.created_at) FROM events n
                                                  WHERE n.serial = p.serial AND n.type = 'nudge'))) AS nudge_returned,
             (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.forced) AS forced_stamps,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'undo') AS undos
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'undo') AS undos,
+            (SELECT max(e.created_at) FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp') AS last_stamp_at,
+            (SELECT max(l.created_at) FROM owner_logins l
+               JOIN owner_cafes oc ON oc.owner_id = l.owner_id
+              WHERE oc.cafe_id = c.id) AS last_owner_login,
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp'
+               AND e.created_at > now() - interval '7 days') AS stamps_7d,
+            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp'
+               AND e.created_at > now() - interval '30 days') AS stamps_30d,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+               AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')) AS added,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id AND ${REMOVED_PASS_SQL}) AS removed,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id AND NOT ${ACTIVE_PASS_SQL}
+               AND NOT EXISTS (SELECT 1 FROM events e
+                                WHERE e.serial = p.serial AND e.type = 'pass_added')) AS never_added,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+               AND ${LAST_VISIT_SQL} > now() - interval '7 days'
+               AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_7d,
+            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+               AND ${LAST_VISIT_SQL} > now() - interval '30 days'
+               AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_30d
        FROM cafes c
       ORDER BY c.created_at DESC`,
+  );
+  return res.rows;
+}
+
+/** Record an owner sign-in. Best-effort — never block a login on analytics. */
+export async function logOwnerLogin(ownerId: string): Promise<void> {
+  try {
+    await getPool().query(`INSERT INTO owner_logins (owner_id) VALUES ($1)`, [ownerId]);
+  } catch (err) {
+    console.error("[db] could not record owner login:", err);
+  }
+}
+
+export interface AdminRetentionRow {
+  id: string;
+  name: string;
+  /** Of customers who ever got a stamp, the share who came back a second / third time. */
+  second_visit_rate: number;
+  third_visit_rate: number;
+  /** Median days between consecutive visits, across customers who came more than once. */
+  median_gap_days: number | null;
+  /** Of started cards, the share that reached a reward — and how long that took. */
+  completion_rate: number;
+  median_days_to_reward: number | null;
+  /** Time to value: median days from joining to the first stamp. */
+  median_days_to_first_stamp: number | null;
+  /** Cards at their target with no redeem yet — what the merchant owes. */
+  unclaimed_rewards: number;
+  /** Of cards old enough to judge, the share still visiting. Retention, plainly. */
+  alive_30: number;
+  alive_60: number;
+  alive_90: number;
+}
+
+/**
+ * The questions a merchant's survival actually turns on: do people come back a
+ * second time, do they finish a card, and how long does any of it take.
+ *
+ * Everything here is derived from `events` — no new tracking. Rates are 0..1 and
+ * medians are null when there isn't enough history to say, which the UI renders
+ * as "—" rather than inventing a zero.
+ */
+export async function adminRetention(): Promise<AdminRetentionRow[]> {
+  const res = await getPool().query<AdminRetentionRow>(
+    `WITH visits AS (
+       SELECT p.cafe_id, p.serial, p.created_at,
+              count(*) FILTER (WHERE e.type = 'stamp')::int AS n,
+              min(e.created_at) FILTER (WHERE e.type = 'stamp') AS first_stamp,
+              max(e.created_at) FILTER (WHERE e.type = 'stamp') AS last_stamp,
+              min(e.created_at) FILTER (WHERE e.type = 'redeem') AS first_redeem
+         FROM passes p LEFT JOIN events e ON e.serial = p.serial
+        GROUP BY p.cafe_id, p.serial, p.created_at
+     ),
+     started AS (SELECT * FROM visits WHERE n > 0)
+     SELECT c.id, c.name,
+            COALESCE((SELECT count(*) FILTER (WHERE n >= 2)::numeric / NULLIF(count(*), 0)
+                        FROM started s WHERE s.cafe_id = c.id), 0)::float8 AS second_visit_rate,
+            COALESCE((SELECT count(*) FILTER (WHERE n >= 3)::numeric / NULLIF(count(*), 0)
+                        FROM started s WHERE s.cafe_id = c.id), 0)::float8 AS third_visit_rate,
+            (SELECT percentile_cont(0.5) WITHIN GROUP (
+                      ORDER BY extract(epoch FROM (last_stamp - first_stamp)) / 86400.0 / (n - 1))
+               FROM started s WHERE s.cafe_id = c.id AND n >= 2)::float8 AS median_gap_days,
+            COALESCE((SELECT count(*) FILTER (WHERE first_redeem IS NOT NULL)::numeric / NULLIF(count(*), 0)
+                        FROM started s WHERE s.cafe_id = c.id), 0)::float8 AS completion_rate,
+            (SELECT percentile_cont(0.5) WITHIN GROUP (
+                      ORDER BY extract(epoch FROM (first_redeem - s.created_at)) / 86400.0)
+               FROM started s WHERE s.cafe_id = c.id AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
+            (SELECT percentile_cont(0.5) WITHIN GROUP (
+                      ORDER BY extract(epoch FROM (first_stamp - s.created_at)) / 86400.0)
+               FROM started s WHERE s.cafe_id = c.id)::float8 AS median_days_to_first_stamp,
+            (SELECT count(*)::int FROM passes p
+              WHERE p.cafe_id = c.id AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
+            ${aliveRateSql(30)} AS alive_30,
+            ${aliveRateSql(60)} AS alive_60,
+            ${aliveRateSql(90)} AS alive_90
+       FROM cafes c
+      ORDER BY c.created_at DESC`,
+  );
+  return res.rows;
+}
+
+// Of the cards old enough to judge (joined more than N days ago), the share that
+// have been stamped within the last N days. Cards too young to have had the
+// chance are excluded rather than counted as churned, which would make every
+// young merchant look like a disaster.
+function aliveRateSql(days: number): string {
+  return `COALESCE((
+       SELECT count(*) FILTER (
+                WHERE EXISTS (SELECT 1 FROM events e
+                               WHERE e.serial = p.serial AND e.type = 'stamp'
+                                 AND e.created_at > now() - interval '${days} days')
+              )::numeric / NULLIF(count(*), 0)
+         FROM passes p
+        WHERE p.cafe_id = c.id AND p.created_at < now() - interval '${days} days'
+     ), 0)::float8`;
+}
+
+export interface AdminStaffRow {
+  cafe_id: string;
+  cafe_name: string;
+  /** `staff:<deviceId>` — a PHONE, not a person. A re-sign-in mints a new one. */
+  actor: string;
+  stamps: number;
+  redeems: number;
+  undos: number;
+  forced: number;
+  first_seen: Date;
+  last_seen: Date;
+}
+
+/**
+ * Per-device counter activity. The outlier to look for is a device whose redeem
+ * count is high relative to its stamps — free rewards handed to friends.
+ *
+ * Caveat the UI must repeat: `actor` identifies a PHONE. A device that signs out
+ * and back in gets a new id, and a PIN change resets every one of them, so this
+ * is "phone A vs phone B", never "Aisyah vs Danial".
+ */
+export async function adminStaffAudit(): Promise<AdminStaffRow[]> {
+  const res = await getPool().query<AdminStaffRow>(
+    `SELECT e.cafe_id, c.name AS cafe_name, e.actor,
+            count(*) FILTER (WHERE e.type = 'stamp')::int AS stamps,
+            count(*) FILTER (WHERE e.type = 'redeem')::int AS redeems,
+            count(*) FILTER (WHERE e.type = 'undo')::int AS undos,
+            count(*) FILTER (WHERE e.forced)::int AS forced,
+            min(e.created_at) AS first_seen, max(e.created_at) AS last_seen
+       FROM events e JOIN cafes c ON c.id = e.cafe_id
+      WHERE e.actor LIKE 'staff:%'
+      GROUP BY e.cafe_id, c.name, e.actor
+      ORDER BY count(*) FILTER (WHERE e.type = 'stamp') DESC
+      LIMIT 100`,
   );
   return res.rows;
 }
