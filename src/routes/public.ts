@@ -36,6 +36,7 @@ import {
   getPass,
   getStampStrip,
   logEvent,
+  businessNameForCard,
   cardsForMerchant,
   getMerchantByRef,
   joinTargetCard,
@@ -179,11 +180,12 @@ async function enroll(
       getCardBanner(card.id).catch(() => null),
       getStampStrip(card.id, filled).catch(() => null),
     ]);
-    const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png);
+    const business = await businessNameForCard(card);
+    const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, business);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")
-      .set("Content-Disposition", `attachment; filename="${card.name.replace(/[^\w ]/g, "")}.pkpass"`)
+      .set("Content-Disposition", `attachment; filename="${business.replace(/[^\w ]/g, "")}.pkpass"`)
       .send(pkpass);
   } catch (err) {
     if (err instanceof NotConfiguredError) {

@@ -157,4 +157,10 @@ describe("save-to-wallet JWT", () => {
     expect(decoded.payload.loyaltyObjects[0].classId).toBe("3388000000012345678.stampy-default");
     expect(decoded.origins).toEqual(["https://stampy.example.test"]);
   });
+
+  it("shows the business as the issuer and the card as the programme", () => {
+    const cls = buildLoyaltyClass(card({ name: "Pastry card" }), 0, 0, "Kopi Corner") as any;
+    expect(cls.issuerName).toBe("Kopi Corner");
+    expect(cls.programName).toBe("Pastry card");
+  });
 });

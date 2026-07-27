@@ -618,6 +618,19 @@ export async function merchantForOwner(ownerId: string): Promise<MerchantRow | n
   return res.rows[0] ?? null;
 }
 
+/**
+ * The name customers see as the pass issuer — the BUSINESS, not the card.
+ *
+ * Falls back to the card's own name for the unclaimed seeded card, which has no
+ * merchant yet. In V1 the two are identical anyway; they diverge the moment a
+ * merchant adds a second card, where the pass should still say the shop's name.
+ */
+export async function businessNameForCard(card: CardRow): Promise<string> {
+  if (!card.merchant_id) return card.name;
+  const merchant = await getMerchant(card.merchant_id);
+  return merchant?.name?.trim() || card.name;
+}
+
 /** The merchant that runs this card. Null only for the unclaimed seeded card. */
 export async function merchantForCard(cardId: string): Promise<MerchantRow | null> {
   const res = await getPool().query<MerchantRow>(

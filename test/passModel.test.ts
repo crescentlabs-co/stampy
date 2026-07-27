@@ -107,4 +107,18 @@ describe("buildPassJson", () => {
     expect(p.storeCard.secondaryFields[0].label).toContain("REWARD READY");
     expect(p.storeCard.headerFields[0].changeMessage).toContain("Card full");
   });
+
+  // The shop's name and the card's name are two different things the moment a
+  // merchant runs more than one card. The pass is issued BY the shop.
+  it("puts the business on the issuer fields and the card on the programme", () => {
+    const p = buildPassJson(row(), card({ name: "Pastry card" }), "Kopi Corner") as any;
+    expect(p.organizationName).toBe("Kopi Corner");
+    expect(p.logoText).toBe("Kopi Corner");
+    expect(p.description).toContain("Pastry card");
+  });
+
+  it("falls back to the card's name when there is no business yet", () => {
+    const p = buildPassJson(row(), card({ name: "Kopi Corner" })) as any;
+    expect(p.organizationName).toBe("Kopi Corner");
+  });
 });

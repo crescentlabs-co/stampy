@@ -23,6 +23,7 @@ import {
   createOwner,
   adminRetention,
   adminStaffAudit,
+  businessNameForCard,
   createDesignTemplate,
   deleteDesignTemplate,
   deleteStampStrips,
@@ -71,7 +72,7 @@ adminRouter.get("/", (_req, res) => {
 adminRouter.get("/card/:id/sheet", requireAdmin, async (req, res) => {
   const card = await getCard(req.params.id!);
   if (!card) return void res.status(404).type("html").send("<p>No such card.</p>");
-  res.type("html").send(counterSheetPage(card));
+  res.type("html").send(counterSheetPage(card, await businessNameForCard(card)));
 });
 
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {

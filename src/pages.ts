@@ -2318,12 +2318,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
  * stylesheet rather than generated PDF, so there is no new dependency and the
  * merchant can print it from any phone or laptop.
  */
-export function counterSheetPage(card: {
-  id: string;
-  name: string;
-  reward: string;
-  stamps_target: number;
-}): string {
+export function counterSheetPage(
+  card: { id: string; name: string; reward: string; stamps_target: number },
+  /** The shop. Named on the sheet above the card, so a merchant running two
+   *  cards gets two posters that are obviously from the same place. */
+  business = card.name,
+): string {
   const css = /* css */ `
     body { max-width: 720px; }
     .sheet { border: 1px solid var(--line); border-radius: 20px; padding: 40px 32px; text-align: center;
@@ -2344,7 +2344,8 @@ export function counterSheetPage(card: {
   `;
   const body = `
     <div class="sheet">
-      <h1>${esc(card.name)}</h1>
+      <h1>${esc(business)}</h1>
+      ${business === card.name ? "" : `<p class="sub" style="margin:-4px 0 10px">${esc(card.name)}</p>`}
       <p class="reward">${esc(card.reward)} after ${card.stamps_target} stamps</p>
       <p class="how">Scan to add your card — no app to download</p>
       <img src="/c/${encodeURIComponent(card.id)}/qr" alt="Add-to-Wallet QR code">
@@ -2357,7 +2358,7 @@ export function counterSheetPage(card: {
     <div class="noprint">
       <button class="btn btn-dark" onclick="window.print()">Print this sheet</button>
     </div>`;
-  return page(`${card.name} — counter sheet`, body, css);
+  return page(`${business} — counter sheet`, body, css);
 }
 
 export function adminPage(): string {

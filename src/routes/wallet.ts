@@ -13,6 +13,7 @@
 import { Router, type Request, type Response } from "express";
 import { timingSafeEqual } from "node:crypto";
 import {
+  businessNameForCard,
   deleteRegistration,
   getCard,
   getCardBanner,
@@ -91,7 +92,7 @@ walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
       getCardBanner(card.id).catch(() => null),
       getStampStrip(card.id, filled).catch(() => null),
     ]);
-    const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png);
+    const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, await businessNameForCard(card));
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")

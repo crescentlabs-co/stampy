@@ -38,15 +38,17 @@ export function buildLoyaltyClass(
   card: CardRow,
   logoVersion = 0,
   bannerVersion = 0,
+  /** The shop's name — Google shows it as the issuer above the programme. */
+  business = card.name,
 ): Record<string, unknown> {
   const cls: Record<string, unknown> = {
     id: classId(card),
-    issuerName: card.name,
-    programName: `${card.name} — Loyalty Card`,
+    issuerName: business,
+    programName: card.name,
     programLogo: {
       sourceUri: { uri: logoUrl(card, logoVersion) },
       contentDescription: {
-        defaultValue: { language: "en", value: `${card.name} logo` },
+        defaultValue: { language: "en", value: `${business} logo` },
       },
     },
     hexBackgroundColor: rgbToHex(card.background_color),
@@ -71,6 +73,7 @@ export function buildLoyaltyObject(
   row: PassRow,
   card: CardRow,
   stampStripsVersion = 0,
+  business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
   const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
@@ -103,7 +106,7 @@ export function buildLoyaltyObject(
         header: "REWARD",
         body: ready ? `${row.reward} — show this to staff!` : row.reward,
       },
-      ...(row.message ? [{ id: "message", header: card.name, body: row.message }] : []),
+      ...(row.message ? [{ id: "message", header: business, body: row.message }] : []),
     ],
   };
   if (stampStripsVersion) {

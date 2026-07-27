@@ -24,7 +24,12 @@ export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target"
  *  - the hidden `message` field → fires when we set a win-back message
  * Everything else changes silently, so customers get one clean banner per event.
  */
-export function buildPassJson(row: PassRow, card: CardRow): Record<string, unknown> {
+export function buildPassJson(
+  row: PassRow,
+  card: CardRow,
+  /** The shop's name. Defaults to the card's, which is right until a merchant runs two. */
+  business = card.name,
+): Record<string, unknown> {
   const ready = isRewardReady(row);
   const progress = `${row.stamp_count}/${row.stamps_target}`;
 
@@ -32,13 +37,13 @@ export function buildPassJson(row: PassRow, card: CardRow): Record<string, unkno
     formatVersion: 1,
     passTypeIdentifier: config.passTypeId,
     teamIdentifier: config.teamId,
-    organizationName: card.name,
+    organizationName: business,
     description: `${card.name} loyalty card`,
     serialNumber: row.serial,
     webServiceURL: `${config.baseUrl}/wallet`,
     authenticationToken: row.auth_token,
     sharingProhibited: true,
-    logoText: card.name,
+    logoText: business,
     backgroundColor: card.background_color,
     foregroundColor: card.foreground_color,
     labelColor: card.label_color,
@@ -80,8 +85,8 @@ export function buildPassJson(row: PassRow, card: CardRow): Record<string, unkno
       backFields: [
         {
           key: "message",
-          label: card.name,
-          value: row.message || `Welcome to ${card.name}!`,
+          label: business,
+          value: row.message || `Welcome to ${business}!`,
           changeMessage: "%@",
         },
         {

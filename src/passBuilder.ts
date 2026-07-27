@@ -45,6 +45,7 @@ export function buildPkpass(
   logoPng?: Buffer | null,
   bannerPng?: Buffer | null,
   stampStripPng?: Buffer | null,
+  business?: string,
 ): Buffer {
   if (!setupStatus().canSignPasses) {
     throw new NotConfiguredError(
@@ -67,7 +68,7 @@ export function buildPkpass(
   const pass = new PKPass(
     {
       ...art,
-      "pass.json": Buffer.from(JSON.stringify(buildPassJson(row, card))),
+      "pass.json": Buffer.from(JSON.stringify(buildPassJson(row, card, business))),
     },
     {
       wwdr: readFileSync(path.join(certsDir, "wwdr.pem")),

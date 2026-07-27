@@ -11,6 +11,7 @@
 import jwt from "jsonwebtoken";
 import { config, setupStatus } from "./config.js";
 import {
+  businessNameForCard,
   cafeBannerVersion,
   cafeLogoVersion,
   stampStripsVersion,
@@ -127,7 +128,7 @@ export async function ensureClass(card: CardRow): Promise<GoogleResult> {
       cafeLogoVersion(card.id).catch(() => 0),
       cafeBannerVersion(card.id).catch(() => 0),
     ]);
-    const cls = buildLoyaltyClass(card, logoVersion, bannerVersion);
+    const cls = buildLoyaltyClass(card, logoVersion, bannerVersion, await businessNameForCard(card));
     const inserted = await api("POST", "/loyaltyClass", cls);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyClass/${cls.id as string}`, cls));
@@ -143,7 +144,7 @@ export async function createObject(row: PassRow, card: CardRow): Promise<GoogleR
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
     const stripsV = await stampStripsVersion(card.id).catch(() => 0);
-    const obj = buildLoyaltyObject(row, card, stripsV);
+    const obj = buildLoyaltyObject(row, card, stripsV, await businessNameForCard(card));
     const inserted = await api("POST", "/loyaltyObject", obj);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyObject/${obj.id as string}`, obj));
@@ -174,7 +175,7 @@ export async function patchBalance(row: PassRow, card: CardRow): Promise<GoogleR
   try {
     const stripsV = await stampStripsVersion(card.id).catch(() => 0);
     const obj = {
-      ...buildLoyaltyObject(row, card, stripsV),
+      ...buildLoyaltyObject(row, card, stripsV, await businessNameForCard(card)),
       notifyPreference: "NOTIFY_ON_UPDATE",
     };
     return toResult(await api("PATCH", `/loyaltyObject/${objectId(row)}`, obj));
@@ -189,7 +190,7 @@ export async function addMessage(row: PassRow, card: CardRow, text: string): Pro
   try {
     return toResult(
       await api("POST", `/loyaltyObject/${objectId(row)}/addMessage`, {
-        message: { header: card.name, body: text, messageType: "TEXT_AND_NOTIFY" },
+        message: { header: await businessNameForCard(card), body: text, messageType: "TEXT_AND_NOTIFY" },
       }),
     );
   } catch (err) {
