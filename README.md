@@ -20,17 +20,32 @@ customer's phone in seconds, with a lock-screen notification.
 | Customer card | Apple Wallet / Google Wallet | Branded pass, stamp dots, QR barcode + typed card code. Added by scanning the counter QR — the landing page shows both wallet buttons. |
 | Staff stamper | `/staff` (web page, PIN-gated) | 📷 scan the customer's card → +1 stamp; typed-code fallback; redeem & reset; lock-screen nudge. |
 | Owner dashboard | `/dashboard` (email + password) | Four tabs: Home (customers, stamps, rewards), Customers (weekly lapse cohorts + nudging), Card (design, rules, links), Settings (staff PIN, your login). |
-| Brain | This Node server + Postgres on Railway | Multi-café; issues signed passes, hosts Apple's pass web service, pushes updates via APNs. |
+| Brain | This Node server + Postgres on Railway | Multi-merchant; issues signed passes, hosts Apple's pass web service, pushes updates via APNs. |
 
-**Multi-card:** each card has its own pages under `/c/<cafeId>` (landing, `/enroll`, `/qr`).
-The bare paths serve the default card, seeded from the env vars below on first boot.
+**The model:** a **merchant** is the business (one per login). It runs one or more
+**cards** (loyalty programmes), each with its own design, reward and QR. A
+**customer** is a person at that merchant; the wallet cards they hold are
+**passes**.
+
+**Links:** `/j/<merchant>` is the join link that goes on a poster — it survives a
+rename and a second card, so the poster is printed once and never again. Each card
+also keeps its own `/c/<cardId>` pages (landing, `/enroll`, `/qr`), which can never
+be retired: they're on printed QRs and inside every issued Android card.
+
 There is **one staff PIN and one stamper page per owner** (`/staff`), covering every
-card they run; the stamper shows a card switcher when there's more than one.
+card they run. Staff can scan whichever card a customer hands over — the stamper
+doesn't need to be showing that one.
 
-**Who counts as a customer:** a card that has been stamped, is in a wallet now, or ever
-was. Apple tells us when a pass is added and when it's deleted; Google reports neither,
-so an Android card only counts once it's stamped. Deleting a pass doesn't un-count
-someone — they move to the "Deleted the card" cohort instead.
+**Who counts as a customer:** a *person* whose card has been stamped, is in a wallet
+now, or ever was — counted once however many passes they hold, so adding the card on
+both an iPhone and an Android is one customer. Apple tells us when a pass is added and
+when it's deleted; Google reports neither, so an Android card only counts once it's
+stamped. Deleting a pass doesn't un-count someone — they move to the "Deleted the
+card" cohort instead.
+
+Identity is a signed cookie per merchant, holding no name, email or phone. It
+identifies a *browser*: a new phone reads as a new customer, which is the deliberate
+cost of asking customers for nothing.
 
 **Stamping fallback ladder (staff side):** camera scan (BarcodeDetector, or the
 bundled jsQR on iPhone Safari) → typed card code (printed on the pass) → tap the
@@ -39,9 +54,10 @@ card in the recent list.
 ## Key URLs (once deployed)
 
 - `/` — Stampy marketing landing page (CTAs → `/dashboard`)
-- `/c/default` — default café's customer Add-to-Wallet page (each café: `/c/<id>`)
+- `/j/<merchant>` — **the join link to print**; survives a rename and a 2nd card
+- `/c/<cardId>` — one card's Add-to-Wallet page (permanent; never retire these)
 - `/qr` — printable counter QR (points at `/c/default`)
-- `/staff` — staff stamper (PIN lives in the café row; seeded from `STAFF_PIN`)
+- `/staff` — staff stamper (one PIN per owner; seeded from `STAFF_PIN`)
 - `/dashboard` — owner dashboard (first visit = create the owner account)
 - `/setup` — **green/red checklist of what's configured** — start here
 - `/health` — uptime check
@@ -73,6 +89,7 @@ pnpm install
 pnpm dev        # server on :3000 (setup mode without env)
 pnpm test       # unit tests (pass content, notification wiring, auth)
 pnpm e2e        # full end-to-end run against an embedded local Postgres
+pnpm test:migration  # upgrades a REAL pre-v1.3 database and checks nothing moved
 pnpm typecheck
 pnpm art        # regenerate pass artwork from the SVGs in scripts/generate-art.ts
 ```
