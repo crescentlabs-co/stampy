@@ -200,6 +200,36 @@ async function main(): Promise<void> {
     "one customer per pass — the Apple/Google pair cannot be merged retroactively",
   );
 
+  // v1.4: the denormalised event columns. The backfill reads cards.merchant_id
+  // and passes.customer_id, so it MUST run after the two backfills that create
+  // them — the first version of it ran earlier in migrate() and silently
+  // attributed every historical event to nobody, then never retried because
+  // its guard had already been satisfied by the one column it did fill.
+  const attributed = (await sql.query<{
+    serial: string;
+    merchant_id: string | null;
+    customer_id: string | null;
+    platform: string;
+    stamps_target: number | null;
+  }>(`SELECT serial, merchant_id, customer_id, platform, stamps_target FROM events ORDER BY id`)).rows;
+  expect(attributed.length === 3, `all ${attributed.length} historical events survived`);
+  expect(
+    attributed.every((e) => e.merchant_id),
+    "every historical event was attributed to a merchant",
+  );
+  expect(
+    attributed.every((e) => e.customer_id),
+    "every historical event was attributed to a customer",
+  );
+  expect(
+    attributed.every((e) => e.platform === "apple"),
+    "every historical event knows which platform it happened on",
+  );
+  expect(
+    attributed.find((e) => e.serial === "s-pastry")?.stamps_target === 8,
+    "historical events carry the target that applied to that card, not the default",
+  );
+
   const merchants = (await sql.query<{ id: string; owner_id: string; name: string; average_spend_cents: number }>(
     `SELECT id, owner_id, name, average_spend_cents FROM merchants ORDER BY owner_id`,
   )).rows;

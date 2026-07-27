@@ -118,7 +118,49 @@ export type EventType =
   | "nudge"
   | "undo"
   | "pass_added"
-  | "pass_removed";
+  | "pass_removed"
+  // v1.4 — the funnel above `enroll`. A scan that was never recorded cannot be
+  // reconstructed from anything, so these two are the difference between
+  // knowing and never knowing where people drop out.
+  | "join_view"
+  | "wallet_click"
+  // The stamp that filled the card. Replayable in principle, but only by
+  // walking every stamp in order against a target that may have been edited
+  // since — so it is written down at the moment it is true.
+  | "completed"
+  // APNs answered 410 Unregistered: that device no longer holds the pass.
+  // A second, independent churn signal, free and previously discarded.
+  | "pass_dropped"
+  // The owner changed the reward, the target or the design. Without this, a
+  // completion rate that moves in May has no explanation in the database.
+  | "card_edited"
+  // A typed code that matched nothing, and a staff PIN that failed. Worn
+  // posters, deleted passes, confused staff, and people guessing at the door.
+  | "lookup_failed"
+  | "pin_failed";
+
+/**
+ * `metadata` keys, kept in one place because renaming one later is the same
+ * problem as renaming an event type: every stored row and every query that
+ * reads it has to change together.
+ */
+export interface EventMetadata {
+  /** `apple-webservice` | `google-callback` — which platform told us. */
+  platform_source?: string;
+  /** APNs/Google status code and reason, on delivery events. */
+  status?: number;
+  reason?: string;
+  /** Devices the push reached, and how many refused it. */
+  sent?: number;
+  failed?: number;
+  /** Card edits: only the fields that actually changed, before → after. */
+  changed?: Record<string, { from: unknown; to: unknown }>;
+  /** The code someone typed that matched nothing. */
+  code?: string;
+  /** Which wallet button was tapped, before any pass exists. */
+  wallet?: string;
+  [key: string]: unknown;
+}
 
 /**
  * Who caused an event, and whether a stamp was forced past the anti-spam
@@ -132,6 +174,22 @@ export interface EventMeta {
   forced?: boolean;
   /** Which poster or link they came from, when the join URL carried ?s=. */
   source?: string;
+  /**
+   * The business and the person. Both are derivable by joining through
+   * `passes`, and both are written here anyway — see the migration note. Left
+   * unset, `logEvent` fills them in from the pass itself.
+   */
+  merchantId?: string | null;
+  customerId?: string | null;
+  /** `apple` | `google`. Filled from the pass when not given. */
+  platform?: string;
+  /** The staff phone, and (later) the person on it. */
+  deviceId?: string;
+  staffId?: string | null;
+  /** Progress after this event, and the target that applied at the time. */
+  stampsAfter?: number | null;
+  stampsTarget?: number | null;
+  metadata?: EventMetadata;
 }
 
 /** Default café id — seeded from env on first boot so v0.1 behavior is unchanged. */
@@ -408,7 +466,73 @@ export async function migrate(): Promise<void> {
     -- Which poster/link they scanned, when the join URL carries ?s=. Recorded
     -- now so the history exists; nothing reports on it yet.
     ALTER TABLE events ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT '';
+
+    -- v1.4: make the event log answer questions nobody has asked yet.
+    --
+    -- merchant_id / customer_id / platform are DENORMALISED on purpose. All
+    -- three can be reached by joining through passes today, but that join is
+    -- the thing that breaks first: a pass row that goes away takes the path
+    -- with it, and every person-level question needs it. Writing them at
+    -- insert time costs nothing at a few hundred rows and is a long backfill
+    -- at a few million — so it happens now, not later.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS merchant_id text REFERENCES merchants(id);
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS customer_id text REFERENCES customers(id);
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS platform text NOT NULL DEFAULT '';
+    -- The till that did it. The actor column already carries "staff:<deviceId>";
+    -- this pulls the id out so it can be grouped and indexed without string surgery.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS device_id text NOT NULL DEFAULT '';
+    -- Ships nullable and unused. There is ONE PIN per owner today, so every
+    -- counter action is attributable to a phone, not a person. When named staff
+    -- arrive this column is already here and already indexed, which makes that
+    -- a UI feature instead of a migration plus a rewrite of every historic query.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS staff_id text;
+    -- The state AFTER this event, and the terms in force when it happened.
+    -- Without these, "what was the completion rate last March" means replaying
+    -- every stamp in order against a target that may since have been edited.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS stamps_after integer;
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS stamps_target integer;
+    -- The escape hatch: whatever the next unforeseen field turns out to be, it
+    -- goes in here rather than becoming another migration. APNs status codes,
+    -- callback nonces, a card edit's before/after, the User-Agent.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+    CREATE INDEX IF NOT EXISTS idx_events_merchant_time ON events(merchant_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_events_customer_time ON events(customer_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(type, created_at);
+
+    -- v1.4: what was ACTUALLY sent, and whether it arrived.
+    --
+    -- passes.message holds only the latest nudge and is overwritten by the next
+    -- one, so every earlier message was being destroyed. The nudge event
+    -- recorded that a message happened but never its wording — which makes
+    -- "did the discount wording beat the plain reminder" unanswerable forever.
+    -- Delivery outcome is the other half: applyAndPush already computes exactly
+    -- how many devices took the push and why the rest didn't, then throws it
+    -- away, so "we sent 40" is recorded while "12 never arrived" is not.
+    CREATE TABLE IF NOT EXISTS messages (
+      id          bigserial PRIMARY KEY,
+      event_id    bigint REFERENCES events(id) ON DELETE SET NULL,
+      serial      text NOT NULL,
+      customer_id text REFERENCES customers(id),
+      card_id     text NOT NULL REFERENCES cards(id),
+      kind        text NOT NULL,
+      body        text NOT NULL,
+      platform    text NOT NULL DEFAULT '',
+      delivered   boolean,
+      fail_reason text NOT NULL DEFAULT '',
+      created_at  timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_messages_customer_time ON messages(customer_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_card_time ON messages(card_id, created_at);
   `);
+
+  // The till id already sitting inside the actor string as "staff:<id>".
+  // Independent of merchants and customers, so it can run here.
+  const devices = await getPool().query(
+    `UPDATE events SET device_id = substring(actor from 7)
+      WHERE actor LIKE 'staff:%' AND device_id = ''`,
+  );
+  if (devices.rowCount) console.log(`[migrate] pulled ${devices.rowCount} till id(s) out of actor`);
 
   // Seed the default card from env vars on first boot (v0.1 compatibility).
   await getPool().query(
@@ -456,6 +580,43 @@ export async function migrate(): Promise<void> {
 
   await backfillMerchants();
   await backfillCustomers();
+  await backfillEventAttribution();
+}
+
+/**
+ * Fill in the denormalised event columns from the pass each event points at.
+ *
+ * **Runs last, and that ordering is load-bearing.** It reads `cards.merchant_id`
+ * and `passes.customer_id`, which the two backfills above are what create — run
+ * it any earlier and every row is attributed to nobody.
+ *
+ * Each column is conditioned separately rather than behind one combined guard.
+ * A single `WHERE everything IS NULL` looks equivalent and is not: fill one
+ * column on an early boot and the guard stops matching, so the other two stay
+ * empty for good. Written this way, a partly-filled row is completed on the
+ * next boot and a fully-filled one is left alone.
+ *
+ * Doing this now, while every pass still exists, is the only cheap moment — an
+ * event whose pass is later pruned can never be attributed to anyone.
+ */
+async function backfillEventAttribution(): Promise<void> {
+  const res = await getPool().query(
+    `UPDATE events e
+        SET merchant_id = COALESCE(e.merchant_id, c.merchant_id),
+            customer_id = COALESCE(e.customer_id, p.customer_id),
+            platform    = CASE WHEN e.platform = '' THEN COALESCE(p.platform, '') ELSE e.platform END,
+            stamps_target = COALESCE(e.stamps_target, p.stamps_target)
+       FROM passes p
+       JOIN cards c ON c.id = p.card_id
+      WHERE e.serial = p.serial
+        AND (e.merchant_id IS NULL AND c.merchant_id IS NOT NULL
+          OR e.customer_id IS NULL AND p.customer_id IS NOT NULL
+          OR e.platform = '' AND COALESCE(p.platform, '') <> ''
+          OR e.stamps_target IS NULL)`,
+  );
+  if (res.rowCount) {
+    console.log(`[migrate] attributed ${res.rowCount} event(s) to a merchant, customer and platform`);
+  }
 }
 
 /**
@@ -1665,15 +1826,97 @@ export async function cardsWithAutoWinback(): Promise<CardRow[]> {
   return res.rows;
 }
 
+/**
+ * Append one row to the log. Returns its id so a caller can hang a related row
+ * off it (see `logMessage`).
+ *
+ * Anything the caller leaves out is filled in from the pass itself, in the same
+ * statement — merchant, customer, platform, progress and the target in force.
+ * That is deliberate: these columns exist precisely because they must be true
+ * for every row, and a call site that forgets one would leave a hole that only
+ * shows up months later in a query that silently under-counts. The only way to
+ * get it wrong is to pass a wrong value, not to omit one.
+ *
+ * `serial` may name a pass that does not exist yet — `join_view` happens before
+ * anyone has a card — in which case the pass-derived columns stay null and the
+ * caller's own values (merchantId, platform) are what get written.
+ */
 export async function logEvent(
   cardId: string,
   serial: string,
   type: EventType,
   meta: EventMeta = {},
-): Promise<void> {
+): Promise<number | null> {
+  const deviceId =
+    meta.deviceId ?? (meta.actor?.startsWith("staff:") ? meta.actor.slice("staff:".length) : "");
+  const res = await getPool().query<{ id: string }>(
+    `INSERT INTO events (
+       card_id, serial, type, actor, forced, source,
+       merchant_id, customer_id, platform, device_id, staff_id,
+       stamps_after, stamps_target, metadata
+     )
+     SELECT $1, $2, $3, $4, $5, $6,
+            COALESCE($7, c.merchant_id),
+            COALESCE($8, p.customer_id),
+            COALESCE(NULLIF($9, ''), p.platform, ''),
+            $10, $11,
+            COALESCE($12, p.stamp_count),
+            COALESCE($13, p.stamps_target),
+            $14::jsonb
+       FROM (SELECT $1::text AS id) k
+       LEFT JOIN passes p ON p.serial = $2
+       LEFT JOIN cards  c ON c.id = k.id
+     RETURNING id`,
+    [
+      cardId,
+      serial,
+      type,
+      meta.actor ?? "",
+      meta.forced === true,
+      meta.source ?? "",
+      meta.merchantId ?? null,
+      meta.customerId ?? null,
+      meta.platform ?? "",
+      deviceId,
+      meta.staffId ?? null,
+      meta.stampsAfter ?? null,
+      meta.stampsTarget ?? null,
+      JSON.stringify(meta.metadata ?? {}),
+    ],
+  );
+  return res.rows[0] ? Number(res.rows[0].id) : null;
+}
+
+/** What was actually sent, and whether it landed. See the `messages` table. */
+export interface MessageRecord {
+  eventId: number | null;
+  serial: string;
+  customerId: string | null;
+  cardId: string;
+  /** `auto-winback` (the hourly job) or `manual-nudge` (the dashboard button). */
+  kind: string;
+  body: string;
+  platform: string;
+  /** null when the platform is unconfigured and nothing was attempted. */
+  delivered: boolean | null;
+  failReason?: string;
+}
+
+export async function logMessage(m: MessageRecord): Promise<void> {
   await getPool().query(
-    `INSERT INTO events (card_id, serial, type, actor, forced, source) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [cardId, serial, type, meta.actor ?? "", meta.forced === true, meta.source ?? ""],
+    `INSERT INTO messages (event_id, serial, customer_id, card_id, kind, body, platform, delivered, fail_reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      m.eventId,
+      m.serial,
+      m.customerId,
+      m.cardId,
+      m.kind,
+      m.body,
+      m.platform,
+      m.delivered,
+      m.failReason ?? "",
+    ],
   );
 }
 
