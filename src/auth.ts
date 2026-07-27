@@ -80,19 +80,61 @@ export function parseSessionCookie(value: string | undefined): string | null {
   return ownerId;
 }
 
-// ------------------------------------------------------ enrollment cookie ----
+// -------------------------------------------------------- customer cookie ----
 
 /**
- * Remembers which card we already issued this browser for a café, so a second
- * scan of the counter QR re-serves the SAME pass instead of minting another.
- * Apple and Google both key a pass on its serial, so reusing the serial makes
- * the wallet refresh the existing card rather than add a duplicate.
+ * Who this browser is at one merchant.
  *
- * Signed for the same reason sessions are: the serial is the pass barcode, so
- * an unsigned cookie would let anyone who saw a customer's barcode download
- * that customer's pass (and its auth token). Forging needs the secret.
+ * This replaces a per-CARD cookie that held a serial, and fixes two things at
+ * once. A browser that adds the card on Apple and then on Google used to become
+ * two unrelated customers at the same shop; and a merchant running two cards
+ * used to see one person as two. Now both resolve to one `customers` row.
+ *
+ * It identifies a BROWSER, not a person — a new phone reads as a new customer.
+ * That is the deliberate cost of collecting no name, email or phone, which is
+ * what the privacy page promises.
+ *
+ * Signed like every other cookie here: an unsigned one could be edited to claim
+ * somebody else's customer id and, with it, their card.
  */
 const ENROLL_DAYS = 400;
+
+export function customerCookieName(merchantId: string): string {
+  return `stampy_cust_${safeId(merchantId)}`;
+}
+
+export function createCustomerCookie(customerId: string): string {
+  return seal(`${customerId}.${Date.now() + ENROLL_DAYS * 24 * 60 * 60 * 1000}`);
+}
+
+/** The customer this browser already is at `merchantId`, or null. */
+export function readCustomerCookie(req: Request, merchantId: string): string | null {
+  const payload = unseal(readCookie(req, customerCookieName(merchantId)));
+  if (payload === null) return null;
+  const [customerId, expiresStr] = payload.split(".");
+  if (!customerId || !fresh(expiresStr)) return null;
+  return customerId;
+}
+
+export function setCustomerCookie(res: Response, merchantId: string, customerId: string): void {
+  const value = createCustomerCookie(customerId);
+  res.append(
+    "Set-Cookie",
+    `${customerCookieName(merchantId)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ENROLL_DAYS * 24 * 60 * 60}`,
+  );
+}
+
+// ----------------------------------------------- LEGACY enrollment cookie ----
+
+/**
+ * The pre-v1.3 cookie: one per card, holding a serial, 400 days long.
+ *
+ * **Do not delete this reader.** Customers are still walking around with these,
+ * and they outlive any release. If a returning browser's old cookie is ignored,
+ * it mints a brand-new card on its next scan — silently, for everyone at once,
+ * stranding the card already in their wallet. The join flow reads it to adopt
+ * the existing customer, then writes the new cookie instead.
+ */
 
 /** Strips anything unsafe in a Set-Cookie name; café ids are alphanumeric anyway. */
 function safeId(cardId: string): string {

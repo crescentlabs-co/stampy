@@ -146,6 +146,34 @@ export function landingPage(
   );
 }
 
+/**
+ * Shown when a merchant join link can't decide which card to issue — more than
+ * one card, and no default set. Unreachable while merchants run a single card;
+ * it exists so `/j/` never dead-ends once they don't.
+ */
+export function cardPickerPage(
+  merchant: { name: string },
+  cards: { id: string; name: string; reward: string; stamps_target: number }[],
+  query = "",
+): string {
+  const buttons = cards
+    .map(
+      (c) =>
+        `<a class="btn btn-dark wbtn" style="margin-top:10px" href="/c/${encodeURIComponent(c.id)}${query}">
+           ${esc(c.name)} <span style="opacity:.75">— ${esc(c.reward)} after ${c.stamps_target}</span>
+         </a>`,
+    )
+    .join("");
+  return page(
+    `${merchant.name} — pick a card`,
+    `<div class="card" style="text-align:center">
+      <h1>${esc(merchant.name)}</h1>
+      <p class="sub">Which card would you like?</p>
+      ${buttons}
+    </div>`,
+  );
+}
+
 export function notReadyPage(): string {
   return page(
     "Not ready yet",

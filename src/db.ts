@@ -72,6 +72,8 @@ export type Platform = "apple" | "google";
 export interface PassRow {
   serial: string;
   card_id: string;
+  /** Which person holds it. Null only for a pass on the unclaimed seeded card. */
+  customer_id: string | null;
   /** Which wallet the card lives in — decides how updates are delivered. */
   platform: Platform;
   /** Short human-typeable code printed on the card — staff fallback when the camera won't scan. */
@@ -118,6 +120,8 @@ export interface EventMeta {
   actor?: string;
   /** True when staff confirmed past the "just stamped" refusal. */
   forced?: boolean;
+  /** Which poster or link they came from, when the join URL carried ?s=. */
+  source?: string;
 }
 
 /** Default café id — seeded from env on first boot so v0.1 behavior is unchanged. */
@@ -682,6 +686,37 @@ export async function createCustomer(merchantId: string): Promise<CustomerRecord
 export async function getCustomer(id: string): Promise<CustomerRecord | null> {
   const res = await getPool().query<CustomerRecord>(`SELECT * FROM customers WHERE id = $1`, [id]);
   return res.rows[0] ?? null;
+}
+
+/**
+ * Which customer a browser is, given whatever cookies it turned up with.
+ *
+ * The policy lives here rather than in the route so it can actually be tested:
+ * the join routes can't be exercised without Apple/Google credentials, and the
+ * legacy branch below is the single most expensive thing in v1.3 to get wrong.
+ *
+ * `writeCookie` tells the caller to (re)issue the current cookie — true when a
+ * legacy customer was adopted or a new one created.
+ */
+export async function resolveCustomer(
+  merchantId: string,
+  cookieCustomerId: string | null,
+  legacySerial: string | null,
+): Promise<{ customer: CustomerRecord; writeCookie: boolean }> {
+  if (cookieCustomerId) {
+    const found = await getCustomer(cookieCustomerId);
+    if (found && found.merchant_id === merchantId) return { customer: found, writeCookie: false };
+  }
+  // Pre-v1.3 browsers hold a per-card cookie naming a serial. Follow it back to
+  // the customer that pass was backfilled onto, or they get a duplicate card.
+  if (legacySerial) {
+    const pass = await getPass(legacySerial);
+    if (pass?.customer_id) {
+      const adopted = await getCustomer(pass.customer_id);
+      if (adopted && adopted.merchant_id === merchantId) return { customer: adopted, writeCookie: true };
+    }
+  }
+  return { customer: await createCustomer(merchantId), writeCookie: true };
 }
 
 /** This customer's pass for a given card and platform, if they already have one. */
@@ -1447,6 +1482,7 @@ export async function ownerHasCard(ownerId: string, cardId: string): Promise<boo
 export async function createPass(row: {
   serial: string;
   cardId: string;
+  customerId?: string | null;
   platform: Platform;
   shortCode: string;
   authToken: string;
@@ -1455,9 +1491,10 @@ export async function createPass(row: {
   reward: string;
 }): Promise<PassRow> {
   const res = await getPool().query<PassRow>(
-    `INSERT INTO passes (serial, card_id, platform, short_code, auth_token, stamp_count, stamps_target, reward)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [row.serial, row.cardId, row.platform, row.shortCode, row.authToken, row.stampCount, row.stampsTarget, row.reward],
+    `INSERT INTO passes (serial, card_id, customer_id, platform, short_code, auth_token, stamp_count, stamps_target, reward)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [row.serial, row.cardId, row.customerId ?? null, row.platform, row.shortCode, row.authToken,
+     row.stampCount, row.stampsTarget, row.reward],
   );
   return res.rows[0]!;
 }
@@ -1560,8 +1597,8 @@ export async function logEvent(
   meta: EventMeta = {},
 ): Promise<void> {
   await getPool().query(
-    `INSERT INTO events (card_id, serial, type, actor, forced) VALUES ($1, $2, $3, $4, $5)`,
-    [cardId, serial, type, meta.actor ?? "", meta.forced === true],
+    `INSERT INTO events (card_id, serial, type, actor, forced, source) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [cardId, serial, type, meta.actor ?? "", meta.forced === true, meta.source ?? ""],
   );
 }
 

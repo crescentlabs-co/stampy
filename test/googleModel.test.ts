@@ -40,6 +40,7 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
   return {
     serial: "11111111-2222-3333-4444-555555555555",
     card_id: "default",
+    customer_id: null,
     platform: "google",
     short_code: "ABC234",
     auth_token: "a".repeat(32),

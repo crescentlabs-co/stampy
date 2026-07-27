@@ -186,10 +186,16 @@ async function main() {
   expect(shortPin.status === 400, "a PIN under 4 digits is refused");
 
   // Create two passes directly (enroll route would 503 without Apple certs)
-  const mk = async (platform: "apple" | "google" = "apple") =>
-    createPass({
+  // A pass, as the join flow would mint it: belonging to a customer of the card's
+  // merchant. Each call is a different browser unless a customer is passed in.
+  const { createCustomer: mkCustomer, merchantForCard: merchantOf } = await import("../src/db.js");
+  const mk = async (platform: "apple" | "google" = "apple", customerId?: string) => {
+    const merchant = await merchantOf("default");
+    const cust = customerId ?? (merchant ? (await mkCustomer(merchant.id)).id : null);
+    return createPass({
       serial: crypto.randomUUID(),
       cardId: "default",
+      customerId: cust,
       platform,
       shortCode: generateShortCode(),
       authToken: "t".repeat(24),
@@ -197,6 +203,7 @@ async function main() {
       stampsTarget: 8,
       reward: "Free latte",
     });
+  };
   const p1 = await mk();
   const p2 = await mk();
   await logEvent("default", p1.serial, "enroll");
@@ -834,6 +841,82 @@ async function main() {
     (await fetch(base + "/staff/api/passes", { headers: staff2Headers })).status === 200,
     "a signed-in phone still works while sign-in is rate-limited",
   );
+
+  // --- The merchant join link (what goes on a poster) ---
+  const {
+    merchantForOwner, getMerchantByRef, resolveCustomer, createCustomer, updateMerchant, claimSlug,
+  } = await import("../src/db.js");
+  const m1 = (await merchantForOwner(ownerRow.id))!;
+  expect(Boolean(m1?.id), "the first owner has a merchant");
+
+  const byId = await get("/j/" + m1.id);
+  expect(byId.status === 200 && byId.body.includes("Kopi Corner"), "/j/<merchant id> reaches their card");
+  // The permanent id is what the poster encodes, so it must not redirect.
+  expect(!byId.body.includes("Redirecting"), "the canonical /j/<id> serves directly, no redirect");
+
+  const slugRow = (await getPool().query<{ slug: string }>(
+    `SELECT slug FROM merchant_slugs WHERE merchant_id = $1 ORDER BY created_at LIMIT 1`, [m1.id],
+  )).rows[0]!;
+  const bySlug = await fetch(base + "/j/" + slugRow.slug, { redirect: "manual" });
+  expect(bySlug.status === 301, "a readable slug redirects to the canonical id");
+  expect(
+    (bySlug.headers.get("location") || "").endsWith("/j/" + m1.id),
+    "…and it redirects to the merchant's permanent id",
+  );
+
+  // A rename must never kill a printed poster: the OLD slug keeps resolving.
+  await updateMerchant(m1.id, { name: "Kopi Corner Two" });
+  const retired = await fetch(base + "/j/" + slugRow.slug, { redirect: "manual" });
+  expect(retired.status === 301, "a retired slug still resolves after a rename");
+  const renamed = await getMerchantByRef("kopi-corner-two");
+  expect(renamed?.merchant.id === m1.id, "the new name also resolves");
+  await updateMerchant(m1.id, { name: "Kopi Corner" });
+
+  const jqr = await get("/j/" + m1.id + "/qr");
+  expect(
+    jqr.status === 200 && (jqr.headers.get("content-type") || "").includes("image/png"),
+    "the merchant QR renders a PNG",
+  );
+  expect((await get("/j/nope-nope")).status === 404, "an unknown join link 404s");
+
+  // --- Customer identity, and the legacy cookie that must not be dropped ---
+  // These run against the resolver directly: the enrol routes can't be reached
+  // without Apple/Google credentials, and this is the logic that would silently
+  // mint everyone a duplicate card.
+  const fresh1 = await resolveCustomer(m1.id, null, null);
+  expect(fresh1.writeCookie && fresh1.customer.merchant_id === m1.id, "a new browser becomes a new customer");
+  const again = await resolveCustomer(m1.id, fresh1.customer.id, null);
+  expect(
+    again.customer.id === fresh1.customer.id && !again.writeCookie,
+    "a returning browser with the current cookie is the same customer",
+  );
+  // A cookie naming somebody else's customer must not cross merchants.
+  const otherMerchant = (await merchantForOwner((await getOwnerByEmail("second@card.my"))!.id))!;
+  const stranger = await createCustomer(otherMerchant.id);
+  const crossed = await resolveCustomer(m1.id, stranger.id, null);
+  expect(
+    crossed.customer.id !== stranger.id,
+    "a customer cookie from another merchant is never honoured",
+  );
+
+  // THE regression that matters: a pre-v1.3 browser holding the old per-card
+  // cookie (which named a serial) must be adopted, not handed a second card.
+  const legacyPass = (await getPool().query<{ serial: string; customer_id: string }>(
+    `SELECT serial, customer_id FROM passes WHERE customer_id IS NOT NULL AND card_id = 'default' LIMIT 1`,
+  )).rows[0]!;
+  expect(Boolean(legacyPass?.customer_id), "the backfill gave existing passes a customer");
+  const adopted = await resolveCustomer(m1.id, null, legacyPass.serial);
+  expect(
+    adopted.customer.id === legacyPass.customer_id && adopted.writeCookie,
+    "a legacy per-card cookie adopts the existing customer instead of minting a new one",
+  );
+  const custBefore = (await getPool().query<{ n: string }>(`SELECT count(*) AS n FROM customers`)).rows[0]!.n;
+  await resolveCustomer(m1.id, null, legacyPass.serial);
+  const custAfter = (await getPool().query<{ n: string }>(`SELECT count(*) AS n FROM customers`)).rows[0]!.n;
+  expect(custBefore === custAfter, "…and adopting one creates no new customer row");
+  // A serial we've never seen falls through to a brand-new customer.
+  const unknown = await resolveCustomer(m1.id, null, "not-a-real-serial");
+  expect(unknown.writeCookie && unknown.customer.id !== legacyPass.customer_id, "an unknown serial mints a new customer");
 
   // --- Legal pages + consent ---
   const priv = await get("/privacy");

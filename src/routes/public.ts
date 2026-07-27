@@ -17,24 +17,46 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
-import { readEnrollCookie, setEnrollCookie } from "../auth.js";
+import {
+  readCustomerCookie,
+  readEnrollCookie,
+  setCustomerCookie,
+  setEnrollCookie,
+} from "../auth.js";
 import { config, setupStatus } from "../config.js";
 import {
+  createCustomer,
   createPass,
   DEFAULT_CARD_ID,
   generateShortCode,
   getCard,
   getCardBanner,
   getCardLogo,
+  getCustomer,
   getPass,
   getStampStrip,
   logEvent,
+  cardsForMerchant,
+  getMerchantByRef,
+  joinTargetCard,
+  merchantForCard,
+  passForCustomer,
+  resolveCustomer,
   type CardRow,
+  type CustomerRecord,
+  type MerchantRow,
   type Platform,
 } from "../db.js";
 import { createObject, ensureClass, saveJwtUrl } from "../googleWallet.js";
 import { buildPkpass, NotConfiguredError } from "../passBuilder.js";
-import { landingPage, marketingPage, notReadyPage, privacyPage, termsPage } from "../pages.js";
+import {
+  cardPickerPage,
+  landingPage,
+  marketingPage,
+  notReadyPage,
+  privacyPage,
+  termsPage,
+} from "../pages.js";
 
 export const publicRouter = Router();
 
@@ -55,10 +77,11 @@ async function landing(cardId: string, res: import("express").Response): Promise
   res.type("html").send(landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId));
 }
 
-async function newPass(card: CardRow, platform: Platform) {
+async function newPass(card: CardRow, platform: Platform, customerId: string | null, source: string) {
   const row = await createPass({
     serial: randomUUID(),
     cardId: card.id,
+    customerId,
     platform,
     shortCode: generateShortCode(),
     authToken: randomBytes(24).toString("base64url"), // Apple requires ≥16 chars
@@ -66,35 +89,73 @@ async function newPass(card: CardRow, platform: Platform) {
     stampsTarget: card.stamps_target,
     reward: card.reward,
   });
-  await logEvent(card.id, row.serial, "enroll");
+  await logEvent(card.id, row.serial, "enroll", { actor: "customer", source });
   return row;
 }
 
 /**
- * The card to serve this browser: the one we already issued it for this café if
- * the signed cookie still resolves to a live pass, otherwise a fresh one.
+ * Who is this browser at this merchant? In order:
  *
- * Reuse deliberately logs no `enroll` event and re-grants no welcome stamps —
- * it is the same card being handed back, not a new signup. Scoped per browser,
- * so cleared cookies or another browser still mint a new card; this is data
- * hygiene (and stops duplicate cards in one wallet), not fraud prevention.
+ *  1. the current customer cookie;
+ *  2. **the legacy per-card cookie** — a returning customer from before v1.3,
+ *     whose serial we follow back to the customer that pass was backfilled onto.
+ *     Skipping this step would mint everyone a duplicate card on their next
+ *     scan, so it is load-bearing, not a nicety;
+ *  3. a new customer.
+ */
+async function identifyCustomer(
+  req: import("express").Request,
+  res: import("express").Response,
+  merchant: MerchantRow,
+  card: CardRow,
+): Promise<CustomerRecord> {
+  const { customer, writeCookie } = await resolveCustomer(
+    merchant.id,
+    readCustomerCookie(req, merchant.id),
+    readEnrollCookie(req, card.id),
+  );
+  if (writeCookie) setCustomerCookie(res, merchant.id, customer.id);
+  return customer;
+}
+
+/**
+ * The card to serve this browser: the one this customer already holds for this
+ * card and wallet, otherwise a fresh one.
+ *
+ * Reuse deliberately logs no `enroll` event and re-grants no welcome stamps — it
+ * is the same card being handed back, not a new signup.
+ *
+ * The unclaimed env-seeded card has no merchant (nobody has signed up yet), so
+ * it falls back to the old per-card cookie and issues a pass with no customer.
  */
 async function reuseOrCreatePass(
   req: import("express").Request,
   res: import("express").Response,
   card: CardRow,
   platform: Platform,
+  source = "",
 ) {
-  const known = readEnrollCookie(req, card.id);
-  if (known) {
-    const existing = await getPass(known);
-    if (existing && existing.card_id === card.id && existing.platform === platform) {
-      return existing;
+  const merchant = await merchantForCard(card.id);
+  if (!merchant) {
+    const known = readEnrollCookie(req, card.id);
+    if (known) {
+      const existing = await getPass(known);
+      if (existing && existing.card_id === card.id && existing.platform === platform) return existing;
     }
+    const row = await newPass(card, platform, null, source);
+    setEnrollCookie(res, card.id, row.serial);
+    return row;
   }
-  const row = await newPass(card, platform);
-  setEnrollCookie(res, card.id, row.serial);
-  return row;
+
+  const customer = await identifyCustomer(req, res, merchant, card);
+  const existing = await passForCustomer(customer.id, card.id, platform);
+  if (existing) return existing;
+  return newPass(card, platform, customer.id, source);
+}
+
+/** Where they came from, if the join link carried ?s= — recorded, not yet reported on. */
+function sourceOf(req: import("express").Request): string {
+  return String(req.query.s ?? "").trim().slice(0, 40);
 }
 
 async function enroll(
@@ -110,7 +171,7 @@ async function enroll(
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
 
-  const row = await reuseOrCreatePass(req, res, card, "apple");
+  const row = await reuseOrCreatePass(req, res, card, "apple", sourceOf(req));
   try {
     const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
     const [logo, banner, strip] = await Promise.all([
@@ -147,7 +208,7 @@ async function enrollGoogle(
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
 
-  const row = await reuseOrCreatePass(req, res, card, "google");
+  const row = await reuseOrCreatePass(req, res, card, "google", sourceOf(req));
   const clsResult = await ensureClass(card);
   const objResult = await createObject(row, card);
   const url = saveJwtUrl(row, card);
@@ -158,10 +219,7 @@ async function enrollGoogle(
   res.redirect(302, url);
 }
 
-async function qrPng(cardId: string, res: import("express").Response): Promise<void> {
-  // `/` is now the marketing page, so every café's counter QR (incl. the
-  // default) points at its own Add-to-Wallet page under /c/:id.
-  const path = `/c/${cardId}`;
+async function qrFor(path: string, res: import("express").Response): Promise<void> {
   const target = `${config.baseUrl || ""}${path}` || path;
   const png = await QRCode.toBuffer(target, {
     type: "png",
@@ -172,9 +230,67 @@ async function qrPng(cardId: string, res: import("express").Response): Promise<v
   res.set("Content-Type", "image/png").send(png);
 }
 
+/**
+ * The card's own QR. Still generated, still points at /c/:id, and can never be
+ * retired — these are printed on counters and their URL is baked into the art
+ * links inside every issued Google card.
+ */
+const cardQr = (cardId: string, res: import("express").Response) => qrFor(`/c/${cardId}`, res);
+
+/**
+ * The MERCHANT's QR — what goes on a poster from now on.
+ *
+ * It encodes the merchant's permanent id rather than a name, so a rebrand, a
+ * typo fix or a change of ownership can never kill a poster that is already on a
+ * counter. It also survives the merchant adding a second card, which a per-card
+ * QR does not: that is the whole reason it exists.
+ */
+const merchantQr = (merchantId: string, res: import("express").Response) =>
+  qrFor(`/j/${merchantId}`, res);
+
 publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage()));
 publicRouter.get("/privacy", (_req, res) => res.type("html").send(privacyPage(config.contactEmail)));
 publicRouter.get("/terms", (_req, res) => res.type("html").send(termsPage(config.contactEmail)));
+/**
+ * The merchant join link — the one that goes on a poster.
+ *
+ * `:ref` is the merchant's permanent id, or any slug they have ever held: old
+ * slugs keep resolving forever and redirect to the canonical form, because one
+ * of them may be printed on something nobody is going to reprint.
+ *
+ * It then picks which card to issue — their default, or their only one — and
+ * hands off to the existing per-card landing page, so nothing about how a pass
+ * is minted changes. With more than one card and no default it renders a picker;
+ * V1 ships one card per merchant, so that path is unreachable for now.
+ */
+publicRouter.get("/j/:ref", async (req, res) => {
+  const ref = String(req.params.ref ?? "");
+  let found: Awaited<ReturnType<typeof getMerchantByRef>>;
+  try {
+    found = await getMerchantByRef(ref);
+  } catch {
+    return void res.status(503).type("html").send(notReadyPage());
+  }
+  if (!found) return void res.status(404).type("html").send(notReadyPage());
+
+  const query = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  // A retired name still works, but shouldn't linger in the address bar.
+  if (found.viaSlug) return void res.redirect(301, `/j/${found.merchant.id}${query}`);
+
+  const card = await joinTargetCard(found.merchant);
+  if (!card) {
+    const cards = await cardsForMerchant(found.merchant.id);
+    return void res.type("html").send(cardPickerPage(found.merchant, cards, query));
+  }
+  await landing(card.id, res);
+});
+
+publicRouter.get("/j/:ref/qr", async (req, res) => {
+  const found = await getMerchantByRef(String(req.params.ref ?? ""));
+  if (!found) return void res.status(404).end();
+  await merchantQr(found.merchant.id, res);
+});
+
 publicRouter.get("/c/:cardId", (req, res) => landing(req.params.cardId!, res));
 publicRouter.get("/enroll", (req, res) => enroll(DEFAULT_CARD_ID, req, res));
 publicRouter.get("/c/:cardId/enroll", (req, res) => enroll(req.params.cardId!, req, res));
@@ -182,8 +298,8 @@ publicRouter.get("/enroll/google", (req, res) => enrollGoogle(DEFAULT_CARD_ID, r
 publicRouter.get("/c/:cardId/enroll/google", (req, res) =>
   enrollGoogle(req.params.cardId!, req, res),
 );
-publicRouter.get("/qr", (_req, res) => qrPng(DEFAULT_CARD_ID, res));
-publicRouter.get("/c/:cardId/qr", (req, res) => qrPng(req.params.cardId!, res));
+publicRouter.get("/qr", (_req, res) => cardQr(DEFAULT_CARD_ID, res));
+publicRouter.get("/c/:cardId/qr", (req, res) => cardQr(req.params.cardId!, res));
 
 // Publicly served logo — Google Wallet requires a hosted programLogo URL.
 // Per-café: an uploaded logo from the database, else the bundled default.
