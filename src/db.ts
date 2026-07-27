@@ -1,9 +1,11 @@
 /**
  * Postgres access layer.
  *
- *   cards          — one row per café (branding, reward, staff PIN)
- *   owners         — dashboard logins (email + scrypt password hash)
- *   owner_cards    — which owners manage which cafés
+ *   merchants      — the business (one per login), and its name on the pass
+ *   cards          — one loyalty programme (branding, reward, target)
+ *   customers      — a person at one merchant; deliberately holds no PII
+ *   owners         — dashboard logins (email + scrypt password hash, staff PIN)
+ *   owner_cards    — which owners manage which cards
  *   passes         — one row per issued card (serial, auth token, stamp count)
  *   registrations  — one row per (device, pass) pair that Apple registered for
  *                    push updates; stores the APNs push token
@@ -157,17 +159,17 @@ export function getPool(): pg.Pool {
 }
 
 /**
- * v1.3: `cards` becomes `cards`.
+ * v1.3: `cafes` becomes `cards`.
  *
  * A row in that table was never a café — it is ONE loyalty programme, and a
- * merchant can run several. Calling it `cards` is what produced a separate staff
+ * merchant can run several. Calling it `cafes` is what produced a separate staff
  * PIN per card, and a stamper that resolved to another merchant's counter: both
  * bugs read the name and believed it. Every future reader would too.
  *
  * This is the one non-additive migration in the project (see CLAUDE.md). Two
  * things make it safe:
  *
- *  - **The ids do not change.** Today's `cards.id` becomes `cards.id` verbatim.
+ *  - **The ids do not change.** Today's `cafes.id` becomes `cards.id` verbatim.
  *    That id is baked into printed QR posters, into every issued Android card's
  *    Google class id, into the art URLs inside live Google classes, and into
  *    enrolment cookie names. Re-keying would silently stop every Android card

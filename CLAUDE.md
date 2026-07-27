@@ -7,12 +7,13 @@ them, and prefer browser UIs over files for anything they configure.
 
 ## Verify before claiming done
 ```sh
-pnpm typecheck && pnpm test && pnpm e2e && pnpm test:migration
+pnpm typecheck && pnpm test && pnpm e2e && pnpm test:migration && pnpm test:backup
 ```
 `pnpm e2e` boots an embedded Postgres and runs the full HTTP flow (190+ checks).
 `pnpm test:migration` builds a REAL pre-v1.3 database and upgrades it — the only
-cover for the path a deploy actually takes. All four must be green before any
-change is called complete. Commit after
+cover for the path a deploy actually takes. `pnpm test:backup` dumps, erases and
+restores a real database, because a backup nobody has restored is not a backup.
+All five must be green before any change is called complete. Commit after
 every working change with a meaningful message.
 
 `pnpm dev:local` runs the whole app on localhost:3010 with an embedded Postgres
@@ -122,6 +123,33 @@ never kill a printed poster).
    compiles every inline `<script>` instead, so keep new pages listed there.
    **Never put a backtick in a comment inside those template strings** — it ends
    the literal. Run `pnpm typecheck` after editing src/pages.ts.
+
+## Backups — there is no safety net but this one
+
+Railway only offers snapshots on a paid plan, and this project is on the free
+one, so **`pnpm db:backup` is the only backup that exists.** Take one before any
+migration that is not purely additive, and before anything else irreversible.
+
+```sh
+DATABASE_URL='<Railway DATABASE_PUBLIC_URL>' pnpm db:backup     # → ~/Stampy-backups/
+DATABASE_URL='…' pnpm db:restore ~/Stampy-backups/stampy-….json [--force]
+```
+
+`DATABASE_PUBLIC_URL` (Postgres service → Variables), not `DATABASE_URL` — the
+latter is `.railway.internal` and only resolves inside Railway. Dumps land
+**outside the repo** on purpose: they hold password hashes, staff PIN hashes and
+pass auth tokens, so no `git add -A` may ever reach them.
+
+The dump is data only. Restoring means: check out the commit that was live when
+it was taken, let its `migrate()` build that schema in an EMPTY database, then
+restore into it. `src/backup.ts` refuses a dump whose tables or columns don't
+match the target — that guard is what stops a `cafes`-era dump being replayed
+into a `cards`-era database and turning a recovery into a second outage.
+
+**`passes` is the table that cannot be rebuilt.** `serial` and `auth_token` are
+inside wallet cards already on customers' phones; lose those rows and every
+issued card is orphaned permanently, with no way to tell the phone about a new
+serial. Everything else could be retyped in an afternoon.
 
 ## Stack facts
 - pnpm (not npm), Node 22 from `~/.local/node22` (no Homebrew) — prefix

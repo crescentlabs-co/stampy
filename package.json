@@ -18,7 +18,10 @@
     "art": "tsx scripts/generate-art.ts",
     "prepare-certs": "tsx scripts/prepare-certs.ts",
     "prepare-google": "tsx scripts/prepare-google.ts",
-    "test:migration": "tsx scripts/migration-test.ts"
+    "test:migration": "tsx scripts/migration-test.ts",
+    "test:backup": "tsx scripts/backup-test.ts",
+    "db:backup": "tsx scripts/db-backup.ts",
+    "db:restore": "tsx scripts/db-restore.ts"
   },
   "dependencies": {
     "express": "^4.21.2",

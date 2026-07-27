@@ -90,9 +90,23 @@ pnpm dev        # server on :3000 (setup mode without env)
 pnpm test       # unit tests (pass content, notification wiring, auth)
 pnpm e2e        # full end-to-end run against an embedded local Postgres
 pnpm test:migration  # upgrades a REAL pre-v1.3 database and checks nothing moved
+pnpm test:backup     # dumps, erases and restores a real database
 pnpm typecheck
 pnpm art        # regenerate pass artwork from the SVGs in scripts/generate-art.ts
 ```
+
+## Backups
+
+Railway snapshots are a paid feature, so `pnpm db:backup` is the backup:
+
+```sh
+DATABASE_URL='<DATABASE_PUBLIC_URL from Railway>' pnpm db:backup
+```
+
+It writes one JSON file to `~/Stampy-backups/` — outside the repo, because it
+holds password hashes and pass auth tokens. `pnpm db:restore <file> [--force]`
+replays it into a database whose schema already matches, and refuses otherwise.
+Take one before any migration that isn't purely additive.
 
 ## How a stamp reaches the phone (the hero loop)
 

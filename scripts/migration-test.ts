@@ -237,6 +237,11 @@ async function main(): Promise<void> {
   expect(Number(custCount) === 4, `running migrate twice does not duplicate customers (got ${custCount})`);
 
   console.log(failures === 0 ? "\nMIGRATION OK ✅" : `\n${failures} FAILURE(S) ❌`);
+
+  // Close the pool BEFORE stopping Postgres. Otherwise the server terminates
+  // connections that pg still holds, pg emits an 'error' with no listener, and
+  // node kills the process — so a fully passing run still exits 1.
+  await sql.end();
 }
 
 main()
