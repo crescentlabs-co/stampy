@@ -20,6 +20,7 @@
     "prepare-google": "tsx scripts/prepare-google.ts",
     "test:migration": "tsx scripts/migration-test.ts",
     "test:backup": "tsx scripts/backup-test.ts",
+    "metrics:check": "tsx scripts/metrics-check.ts",
     "db:backup": "tsx scripts/db-backup.ts",
     "db:restore": "tsx scripts/db-restore.ts"
   },
