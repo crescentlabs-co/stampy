@@ -942,6 +942,64 @@ async function main() {
   const unknown = await resolveCustomer(m1.id, null, "not-a-real-serial");
   expect(unknown.writeCookie && unknown.customer.id !== legacyPass.customer_id, "an unknown serial mints a new customer");
 
+  // --- One person holding two passes is one customer ---
+  // The Apple/Google pair at one shop is the case that already existed before
+  // multi-card: two passes, two serials, one human. They must count once and be
+  // messaged once.
+  const twoCardPerson = await mkCustomer(m1.id);
+  const applePass = await mk("apple", twoCardPerson.id);
+  const googlePass = await mk("google", twoCardPerson.id);
+  // Both need a stamp to be real customers — a Google pass is invisible until
+  // one lands, because Google never reports a wallet add.
+  await logEvent("default", applePass.serial, "stamp");
+  await logEvent("default", googlePass.serial, "stamp");
+  await getPool().query(
+    `UPDATE passes SET created_at = now() - interval '40 days' WHERE serial = ANY($1)`,
+    [[applePass.serial, googlePass.serial]],
+  );
+  await getPool().query(
+    `UPDATE events SET created_at = now() - interval '40 days' WHERE serial = ANY($1)`,
+    [[applePass.serial, googlePass.serial]],
+  );
+
+  const listed = JSON.parse((await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body);
+  const mine = listed.customers.filter((c: any) => c.customerId === twoCardPerson.id);
+  expect(mine.length === 1, `a person with two passes appears once (got ${mine.length})`);
+  // Lapse is measured across everything they hold, not per card.
+  expect(mine[0].lastDays >= 39, "their last visit is the last stamp on ANY pass they hold");
+
+  const twoCardNudge = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "One message please", target: [applePass.serial, googlePass.serial] }),
+  })).text());
+  expect(twoCardNudge.total === 1, `one person gets one message, not one per pass (sent to ${twoCardNudge.total})`);
+  const nudgeRows = (await getPool().query<{ n: string }>(
+    `SELECT count(*) AS n FROM events WHERE type = 'nudge' AND serial = ANY($1)`,
+    [[applePass.serial, googlePass.serial]],
+  )).rows[0]!.n;
+  expect(Number(nudgeRows) === 1, `…and only one nudge event is written (got ${nudgeRows})`);
+  // The weekly limit now counts the person, so their other pass is capped too.
+  const secondTry = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "Again", target: [googlePass.serial] }),
+  })).text());
+  expect(
+    Number((await getPool().query<{ n: string }>(
+      `SELECT count(*) AS n FROM events WHERE type = 'nudge' AND serial = ANY($1)`,
+      [[applePass.serial, googlePass.serial]],
+    )).rows[0]!.n) === 2,
+    "a second message this week is still allowed — and targeting their OTHER pass reaches the same person",
+  );
+  const thirdTry = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "Third", target: [applePass.serial] }),
+  })).text());
+  expect(
+    thirdTry.total === 0 && thirdTry.skipped.rateLimited === 1,
+    "a third message in the same week is refused — the limit follows the person",
+  );
+  void secondTry;
+
   // --- Legal pages + consent ---
   const priv = await get("/privacy");
   expect(priv.status === 200 && priv.body.includes("Privacy Policy") && priv.body.includes("PDPA"), "GET /privacy renders the PDPA-aware policy");

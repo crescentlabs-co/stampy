@@ -535,6 +535,8 @@ function bucketOf(lastDays: number, removed: boolean): BucketKey {
 
 interface CustomerView {
   serial: string;
+  /** Null only for a pass on the unclaimed seeded card. */
+  customerId: string | null;
   code: string;
   cardId: string;
   cardName: string;
@@ -566,6 +568,7 @@ async function customerViews(cards: CardRow[]): Promise<CustomerView[]> {
       });
       out.push({
         serial: c.serial,
+        customerId: c.customer_id,
         code: c.code,
         cardId: card.id,
         cardName: card.name,
@@ -588,12 +591,43 @@ async function customerViews(cards: CardRow[]): Promise<CustomerView[]> {
   return out;
 }
 
+/**
+ * One row per PERSON, not per pass.
+ *
+ * Somebody who added the card on Apple and again on Google, or who holds two of
+ * the shop's cards, is one customer — counting them twice would inflate every
+ * cohort and, worse, send them one message per card they hold. The most recently
+ * active pass represents them, which is also the pass a nudge is delivered to.
+ *
+ * Passes with no customer (only possible on the unclaimed seeded card) each
+ * stand alone.
+ */
+function onePerCustomer(views: CustomerView[]): CustomerView[] {
+  const byCustomer = new Map<string, CustomerView>();
+  const out: CustomerView[] = [];
+  for (const v of views) {
+    if (!v.customerId) {
+      out.push(v);
+      continue;
+    }
+    const seen = byCustomer.get(v.customerId);
+    // views arrive most-recently-visited first, so the first one wins.
+    if (!seen) {
+      byCustomer.set(v.customerId, v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
 /** GET /api/customers?cardId=all|<id> — cohort summary, counts, and the searchable list. */
 dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, res) => {
   const owned = await cardsForOwner(req.owner!.id);
   const cardId = String(req.query.cardId ?? "all");
   const cards = cardId === "all" ? owned : owned.filter((c) => c.id === cardId);
-  const customers = await customerViews(cards);
+  // Cohorts count PEOPLE. Someone holding an Apple and a Google card at the same
+  // shop must not appear — or be messaged — twice.
+  const customers = onePerCustomer(await customerViews(cards));
 
   // Live sums over whoever is in the bucket right now. Nothing is averaged and
   // nothing is stored per group: a card that ages out of one week and into the
@@ -653,14 +687,23 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   if (!message) return void res.status(400).json({ error: "missing-message" });
 
   const cards = await targetedCards(req.owner!.id, body.cardIds);
-  const cafeById = new Map(cards.map((c) => [c.id, c]));
-  const everyone = await customerViews(cards); // active cards of owned cafés only
+  const cardById = new Map(cards.map((c) => [c.id, c]));
+  const allPasses = await customerViews(cards); // active cards of owned cards only
+  // One entry per PERSON, represented by their most recently active pass — which
+  // is also the only pass the message goes to. Someone holding an Apple and a
+  // Google card at one shop must not get two notifications.
+  const everyone = onePerCustomer(allPasses);
+  const whoever = (c: CustomerView) => c.customerId ?? c.serial;
 
   const bucketKeys = new Set<string>(BUCKETS.map((b) => b.key));
   let targets = everyone;
   if (Array.isArray(body.target)) {
     const wanted = new Set(body.target.map(String));
-    targets = everyone.filter((c) => wanted.has(c.serial)); // only owned serials survive
+    // A serial names a PERSON, not a pass: whichever of their cards was asked
+    // for, the message goes to the one pass representing them. Only serials
+    // belonging to this owner survive the lookup.
+    const people = new Set(allPasses.filter((c) => wanted.has(c.serial)).map(whoever));
+    targets = everyone.filter((c) => people.has(whoever(c)));
   } else if (typeof body.target === "string" && bucketKeys.has(body.target)) {
     targets = everyone.filter((c) => c.bucket === body.target);
   }
@@ -678,7 +721,7 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   let sent = 0;
   let failed = 0;
   for (const c of serials) {
-    const card = cafeById.get(c.cardId)!;
+    const card = cardById.get(c.cardId)!;
     const r = await applyAndPush(card, c.serial, "nudge", () => setMessage(c.serial, message), {
       nudgeText: message,
       actor: `owner:${req.owner!.id}`,

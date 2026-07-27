@@ -971,16 +971,18 @@ export async function stampStripsVersion(cardId: string): Promise<number> {
 
 export interface CustomerRow {
   serial: string;
+  /** Who holds it. Two rows sharing this are one person with two passes. */
+  customer_id: string | null;
   code: string;
   stamps: number;
   target: number;
   updated_at: Date;
   created_at: Date;
-  /** Last real visit = last `stamp` event, falling back to when the card was created. */
+  /** Last visit by this PERSON — the last stamp on any pass they hold. */
   last_visit: Date;
-  /** Nudges sent since this card's last visit — how many messages went unanswered. */
+  /** Messages sent to this person since their last visit, across every pass. */
   unanswered_nudges: number;
-  /** Nudges sent in the last 7 days — gates the "2 per week" limit. */
+  /** Messages to this person in the last 7 days — gates the "2 per week" limit. */
   nudges_7d: number;
   /** True once the customer deleted the card from their wallet (Apple only). */
   removed: boolean;
@@ -991,8 +993,20 @@ export interface CustomerRow {
 // "Last visit" must be the last *stamp*, never passes.updated_at: setMessage()
 // bumps updated_at, so measuring lapse off it meant nudging a lapsed customer
 // marked them freshly-active — nobody ever appeared to lapse.
+// Every pass held by the same PERSON as `p`. A customer who added the card on
+// Apple and again on Google, or who holds two of the shop's cards, is one human
+// — so "when did they last come in" and "how often have we messaged them" have
+// to be asked across all of it, not per card. Falls back to the pass itself for
+// the unclaimed seeded card, which has no customer.
+const CUSTOMER_SERIALS_SQL = `(
+       SELECT q.serial FROM passes q
+        WHERE (p.customer_id IS NOT NULL AND q.customer_id = p.customer_id)
+           OR (p.customer_id IS NULL AND q.serial = p.serial)
+     )`;
+
 const LAST_VISIT_SQL = `COALESCE(
-       (SELECT max(e.created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'stamp'),
+       (SELECT max(e.created_at) FROM events e
+         WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp'),
        p.created_at
      )`;
 
@@ -1025,7 +1039,7 @@ const NET_STAMPS_SQL = `(
 // messaged someone who then didn't come in — the signal for "stop chasing".
 const UNANSWERED_NUDGES_SQL = `(
        SELECT count(*)::int FROM events e
-        WHERE e.serial = p.serial AND e.type = 'nudge'
+        WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'nudge'
           AND e.created_at > ${LAST_VISIT_SQL}
      )`;
 
@@ -1034,7 +1048,7 @@ const UNANSWERED_NUDGES_SQL = `(
 // can't be messaged three times this week.
 const NUDGES_7D_SQL = `(
        SELECT count(*)::int FROM events e
-        WHERE e.serial = p.serial AND e.type = 'nudge'
+        WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'nudge'
           AND e.created_at > now() - interval '7 days'
      )`;
 
@@ -1046,7 +1060,7 @@ const REMOVED_PASS_SQL = `(
    AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
      )`;
 
-const CUSTOMER_COLUMNS_SQL = `p.serial, p.short_code AS code, p.stamp_count AS stamps,
+const CUSTOMER_COLUMNS_SQL = `p.serial, p.customer_id, p.short_code AS code, p.stamp_count AS stamps,
             p.stamps_target AS target, p.updated_at, p.created_at,
             ${LAST_VISIT_SQL} AS last_visit,
             ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges,
@@ -1105,12 +1119,25 @@ export async function cardCounts(cardId: string): Promise<CardCounts> {
   };
 }
 
-/** Serials whose card hasn't been stamped in `days` days — the lapsing set. */
+/**
+ * The lapsing set — one serial per PERSON, not per pass.
+ *
+ * Someone holding both an Apple and a Google card here is one human, and the
+ * automatic win-back job messages whatever this returns; without the DISTINCT ON
+ * they would get two notifications for the same silence. The most recently
+ * active pass represents them, which is the one worth reaching them on.
+ *
+ * (A person holding two of the merchant's *cards* can still be reached twice,
+ * because the job runs per card with per-card settings. V1 ships one card per
+ * merchant, so that cannot arise yet.)
+ */
 export async function lapsingSerials(cardId: string, days: number): Promise<string[]> {
   const res = await getPool().query<{ serial: string }>(
-    `SELECT p.serial FROM passes p
+    `SELECT DISTINCT ON (COALESCE(p.customer_id, p.serial)) p.serial
+       FROM passes p
       WHERE p.card_id = $1
-        AND ${LAST_VISIT_SQL} < now() - ($2 || ' days')::interval`,
+        AND ${LAST_VISIT_SQL} < now() - ($2 || ' days')::interval
+      ORDER BY COALESCE(p.customer_id, p.serial), ${LAST_VISIT_SQL} DESC`,
     [cardId, String(Math.max(0, Math.trunc(days)))],
   );
   return res.rows.map((r) => r.serial);
