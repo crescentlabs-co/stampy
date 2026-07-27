@@ -42,6 +42,8 @@ async function main() {
   // a known one here — the PIN belongs to the owner, not the café.
   const devOwner = (await db.getOwnerByEmail("dev@stampy.test"))!;
   await db.setStaffPin(devOwner.id, "1234");
+  const merchant = (await db.merchantForOwner(devOwner.id))!;
+  console.log("Merchant:", merchant.name, "→ join link http://localhost:3010/j/" + merchant.id);
 
   // Customers spread across every recency cohort, each with a real visit
   // HISTORY rather than a single stamp — otherwise every retention figure on
@@ -66,8 +68,9 @@ async function main() {
     const serial = crypto.randomUUID();
     // Joined a few weeks before their first visit, so time-to-value is visible.
     const joinedDaysAgo = age + visits * 7 + 3;
+    const customer = await db.createCustomer(merchant.id);
     const p = await db.createPass({
-      serial, cardId: "default", platform: "apple",
+      serial, cardId: "default", customerId: customer.id, platform: "apple",
       shortCode: db.generateShortCode(), authToken: "t".repeat(24),
       stampCount: redeemed ? 2 : Math.min(visits, 9), stampsTarget: 10, reward: "Free coffee",
     });
@@ -106,7 +109,8 @@ async function main() {
   // can't show what that column looks like.
   const goneSerial = crypto.randomUUID();
   await db.createPass({
-    serial: goneSerial, cardId: "default", platform: "apple",
+    serial: goneSerial, cardId: "default", customerId: (await db.createCustomer(merchant.id)).id,
+    platform: "apple",
     shortCode: db.generateShortCode(), authToken: "t".repeat(24),
     stampCount: 3, stampsTarget: 10, reward: "Free coffee",
   });
@@ -118,10 +122,27 @@ async function main() {
 
   // And one that never made it into a wallet at all (a cancelled Add sheet).
   await db.createPass({
-    serial: crypto.randomUUID(), cardId: "default", platform: "apple",
+    serial: crypto.randomUUID(), cardId: "default", customerId: (await db.createCustomer(merchant.id)).id,
+    platform: "apple",
     shortCode: db.generateShortCode(), authToken: "t".repeat(24),
     stampCount: 0, stampsTarget: 10, reward: "Free coffee",
   });
+
+  // One person who added the card on an iPhone AND on an Android — two passes,
+  // two barcodes, one human. They must appear once in Customers and be messaged
+  // once, which is the whole point of the customers table.
+  const bothWallets = await db.createCustomer(merchant.id);
+  for (const platform of ["apple", "google"] as const) {
+    const serial = crypto.randomUUID();
+    const p = await db.createPass({
+      serial, cardId: "default", customerId: bothWallets.id, platform,
+      shortCode: db.generateShortCode(), authToken: "t".repeat(24),
+      stampCount: 4, stampsTarget: 10, reward: "Free coffee",
+    });
+    await db.logEvent("default", p.serial, "stamp", { actor: phones[0] });
+    await backdate(serial, 9, "stamp");
+    if (platform === "apple") await db.upsertRegistration("dev-both", p.serial, "tok");
+  }
   console.log("DEV READY on " + base + " — login dev@stampy.test / password123");
 }
 

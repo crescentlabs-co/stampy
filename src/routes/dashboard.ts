@@ -37,6 +37,7 @@ import {
   createCard,
   createOwner,
   DEFAULT_CARD_ID,
+  getCard,
   deleteCardBanner,
   deleteCardLogo,
   deleteStampStrips,
@@ -121,8 +122,11 @@ dashboardRouter.post("/api/signup", async (req, res) => {
   // guessable "1234". They see it in Settings and can replace it there.
   await setStaffPin(owner.id, generateStaffPin());
   // The business, distinct from the card it runs. Its id is what the /j/ poster
-  // QR encodes, so it is minted here and never changes.
-  const shopName = (cafeName ?? "").trim().slice(0, 60) || "My shop";
+  // QR encodes, so it is minted here and never changes. The first owner on a
+  // deployment claims the env-seeded card, so take its name rather than a
+  // placeholder — that card was configured to be this shop.
+  const seeded = isFirstOwner ? await getCard(DEFAULT_CARD_ID) : null;
+  const shopName = (cafeName ?? "").trim().slice(0, 60) || seeded?.name || "My shop";
   const merchant = await ensureMerchantForOwner(owner.id, shopName);
 
   if (isFirstOwner) {

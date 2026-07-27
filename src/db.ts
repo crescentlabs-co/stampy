@@ -1068,6 +1068,11 @@ const NUDGES_7D_SQL = `(
 // The customer deleted the card from their wallet: iOS told us so, and no device
 // has since re-registered it (re-adding writes a fresh registrations row, which
 // is what makes this recover on its own). Apple-only — see EventType.
+// A person, not a pass. Someone holding an Apple and a Google card at one shop
+// is one customer — count passes instead and the Home headline says 14 while the
+// list under it shows 13, which is exactly the bug this replaced.
+const PERSON_KEY_SQL = `COALESCE(p.customer_id, p.serial)`;
+
 const REMOVED_PASS_SQL = `(
        EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_removed')
    AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
@@ -1116,7 +1121,7 @@ export interface CardCounts {
  */
 export async function cardCounts(cardId: string): Promise<CardCounts> {
   const res = await getPool().query<{ active: string; never_added: string; removed: string }>(
-    `SELECT count(*) FILTER (WHERE ${ACTIVE_PASS_SQL})::text AS active,
+    `SELECT count(DISTINCT ${PERSON_KEY_SQL}) FILTER (WHERE ${ACTIVE_PASS_SQL})::text AS active,
             count(*) FILTER (WHERE NOT ${ACTIVE_PASS_SQL}
               AND NOT EXISTS (SELECT 1 FROM events e
                                WHERE e.serial = p.serial AND e.type = 'pass_added'))::text AS never_added,
@@ -1203,7 +1208,7 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
               WHERE oc.card_id = c.id) AS owners,
             EXISTS (SELECT 1 FROM card_logos l WHERE l.card_id = c.id) AS has_logo,
             EXISTS (SELECT 1 FROM card_banners b WHERE b.card_id = c.id) AS has_banner,
-            (SELECT count(*)::int FROM passes p
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
               WHERE p.card_id = c.id AND ${ACTIVE_PASS_SQL}) AS active,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id) AS cards,
             ${NET_STAMPS_SQL} AS stamps,
@@ -1230,10 +1235,10 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND NOT ${ACTIVE_PASS_SQL}
                AND NOT EXISTS (SELECT 1 FROM events e
                                 WHERE e.serial = p.serial AND e.type = 'pass_added')) AS never_added,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p WHERE p.card_id = c.id
                AND ${LAST_VISIT_SQL} > now() - interval '7 days'
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_7d,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p WHERE p.card_id = c.id
                AND ${LAST_VISIT_SQL} > now() - interval '30 days'
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_30d
        FROM cards c
@@ -1753,7 +1758,8 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
     redemptions30d: string;
   }>(
     `SELECT
-       (SELECT count(*) FROM passes p WHERE p.card_id = $1 AND ${ACTIVE_PASS_SQL})::text AS active,
+       (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
+          WHERE p.card_id = $1 AND ${ACTIVE_PASS_SQL})::text AS active,
        (SELECT count(*) FROM passes WHERE card_id = $1)::text AS cards,
        GREATEST(count(*) FILTER (WHERE type = 'stamp')
               - count(*) FILTER (WHERE type = 'undo'), 0)::text AS stamps,

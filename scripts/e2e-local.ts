@@ -965,6 +965,14 @@ async function main() {
   const listed = JSON.parse((await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body);
   const mine = listed.customers.filter((c: any) => c.customerId === twoCardPerson.id);
   expect(mine.length === 1, `a person with two passes appears once (got ${mine.length})`);
+  // The headline and the list must never disagree — counting passes instead of
+  // people is exactly how that bug came back.
+  const ovAgree = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  const headline = ovAgree.cards.reduce((a: number, c: any) => a + c.metrics.active, 0);
+  expect(
+    headline === listed.customers.length && headline === listed.counts.active,
+    `the Home headline counts people, like the list does (${headline} vs ${listed.customers.length})`,
+  );
   // Lapse is measured across everything they hold, not per card.
   expect(mine[0].lastDays >= 39, "their last visit is the last stamp on ANY pass they hold");
 
