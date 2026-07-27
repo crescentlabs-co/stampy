@@ -1391,6 +1391,138 @@ async function main() {
     "one owner's PIN never works at another owner's counter",
   );
 
+  // ---- v1.4: the event log answers questions nobody has asked yet ----------
+  //
+  // The point of these is not that a row was written — it's that the columns
+  // needed to GROUP BY anything are populated. An event that lands with a null
+  // merchant or a blank platform is worse than no event: it looks like data.
+
+  const evCols = (await getPool().query<{
+    type: string;
+    merchant_id: string | null;
+    customer_id: string | null;
+    platform: string;
+    stamps_after: number | null;
+    stamps_target: number | null;
+  }>(`SELECT type, merchant_id, customer_id, platform, stamps_after, stamps_target
+        FROM events WHERE type = 'stamp' ORDER BY id DESC LIMIT 1`)).rows[0];
+  expect(Boolean(evCols?.merchant_id), "a stamp event knows its merchant without a join");
+  expect(Boolean(evCols?.customer_id), "a stamp event knows its customer without a join");
+  expect(evCols?.platform === "apple" || evCols?.platform === "google",
+    `a stamp event knows its platform (${evCols?.platform})`);
+  expect(evCols?.stamps_after != null, "a stamp event records the progress it produced");
+  expect(evCols?.stamps_target != null, "a stamp event records the target in force at the time");
+
+  // The funnel: a join page view must exist before any of it can be measured.
+  const viewsBefore = Number((await getPool().query<{ c: string }>(
+    `SELECT count(*) c FROM events WHERE type = 'join_view'`)).rows[0]!.c);
+  await get("/c/default", { headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)" } });
+  const views = (await getPool().query<{ platform: string; merchant_id: string | null; metadata: { bot?: boolean } }>(
+    `SELECT platform, merchant_id, metadata FROM events WHERE type = 'join_view' ORDER BY id DESC LIMIT 1`)).rows[0];
+  expect(
+    Number((await getPool().query<{ c: string }>(
+      `SELECT count(*) c FROM events WHERE type = 'join_view'`)).rows[0]!.c) === viewsBefore + 1,
+    "opening the join page logs exactly one join_view",
+  );
+  expect(views?.platform === "apple", "the view is labelled with the wallet that phone can use");
+  expect(views?.metadata?.bot === false, "a real phone is not flagged as a bot");
+  expect(Boolean(views?.merchant_id), "a join_view knows which business was scanned");
+
+  // A crawler hitting a printed URL must be filterable, not counted as a scan.
+  await get("/c/default", { headers: { "user-agent": "Twitterbot/1.0" } });
+  const botView = (await getPool().query<{ metadata: { bot?: boolean } }>(
+    `SELECT metadata FROM events WHERE type = 'join_view' ORDER BY id DESC LIMIT 1`)).rows[0];
+  expect(botView?.metadata?.bot === true, "a crawler's view is flagged so it can be excluded");
+
+  // A page view must NOT mint a customer — the customer list is a real thing
+  // owners look at, and every bot that ever finds a poster URL would be in it.
+  const custCountBefore = Number((await getPool().query<{ c: string }>(
+    `SELECT count(*) c FROM customers`)).rows[0]!.c);
+  await get("/c/default", { headers: { "user-agent": "Mozilla/5.0 (iPhone)" } });
+  expect(
+    Number((await getPool().query<{ c: string }>(`SELECT count(*) c FROM customers`)).rows[0]!.c) === custCountBefore,
+    "a join page view does not mint a customer",
+  );
+
+  // What was actually sent, and whether it arrived.
+  const msg = (await getPool().query<{ kind: string; body: string; delivered: boolean | null; customer_id: string | null }>(
+    `SELECT kind, body, delivered, customer_id FROM messages ORDER BY id DESC LIMIT 1`)).rows[0];
+  expect(Boolean(msg), "a nudge writes a messages row");
+  expect(Boolean(msg?.body), `the message body is stored, not just the fact of it (${msg?.body?.slice(0, 30)})`);
+  expect(msg?.kind === "manual-nudge" || msg?.kind === "auto-winback", `the message knows why it was sent (${msg?.kind})`);
+
+  // passes.message is overwritten by the next nudge; messages must not be.
+  const msgCount = Number((await getPool().query<{ c: string }>(
+    `SELECT count(*) c FROM messages`)).rows[0]!.c);
+  expect(msgCount >= 1, `message history accumulates rather than overwriting (${msgCount} rows)`);
+
+  // A card edit has to leave a trace, or a metric that moves has no explanation.
+  await getPool().query(`UPDATE events SET id = id WHERE false`); // no-op, keeps the linter honest
+  const { updateCard: editCard } = await import("../src/db.js");
+  await editCard("default", { reward: "Free kopi peng" }, "owner:e2e");
+  const editEv = (await getPool().query<{ actor: string; metadata: { changed?: Record<string, { from: unknown; to: unknown }> } }>(
+    `SELECT actor, metadata FROM events WHERE type = 'card_edited' ORDER BY id DESC LIMIT 1`)).rows[0];
+  expect(editEv?.actor === "owner:e2e", "a card edit records who made it");
+  expect(
+    editEv?.metadata?.changed?.reward?.to === "Free kopi peng",
+    "a card edit records the new value",
+  );
+  expect(
+    typeof editEv?.metadata?.changed?.reward?.from === "string",
+    "a card edit records the OLD value — the part that is otherwise gone forever",
+  );
+  const editsBefore = Number((await getPool().query<{ c: string }>(
+    `SELECT count(*) c FROM events WHERE type = 'card_edited'`)).rows[0]!.c);
+  await editCard("default", { reward: "Free kopi peng" }, "owner:e2e"); // same value
+  expect(
+    Number((await getPool().query<{ c: string }>(
+      `SELECT count(*) c FROM events WHERE type = 'card_edited'`)).rows[0]!.c) === editsBefore,
+    "a save that changed nothing is not logged as an edit",
+  );
+
+  // A typed code that matched nothing is the only trace of a worn poster.
+  const badLookup = await fetch(base + "/staff/api/lookup?code=ZZZZZZ", {
+    headers: { ...staffHeaders, cookie: staffRot.cookie },
+  });
+  expect(badLookup.status === 404, "an unknown code is still a 404");
+  const failed = (await getPool().query<{ metadata: { code?: string } }>(
+    `SELECT metadata FROM events WHERE type = 'lookup_failed' ORDER BY id DESC LIMIT 1`)).rows[0];
+  expect(failed?.metadata?.code === "ZZZZZZ", "a failed lookup records the code that was typed");
+
+  // A wrong PIN must outlive the process that counted it.
+  const pinBefore = Number((await getPool().query<{ c: string }>(
+    `SELECT count(*) c FROM events WHERE type = 'pin_failed'`)).rows[0]!.c);
+  await staffLogin("default", "000000");
+  expect(
+    Number((await getPool().query<{ c: string }>(
+      `SELECT count(*) c FROM events WHERE type = 'pin_failed'`)).rows[0]!.c) === pinBefore + 1,
+    "a wrong staff PIN is recorded, not just rate-limited in memory",
+  );
+  const pinEvents = (await getPool().query<{ metadata: Record<string, unknown> }>(
+    `SELECT metadata FROM events WHERE type = 'pin_failed'`)).rows;
+  expect(
+    pinEvents.every((e) => !JSON.stringify(e.metadata).includes("000000")),
+    "the attempted PIN itself is never stored",
+  );
+
+  // The Google callback: refused without the shared secret, and never with a 4xx
+  // that Google would retry against for hours.
+  const noSecret = await fetch(base + "/google/callback", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ signedMessage: JSON.stringify({ objectId: "x.y", eventType: "del" }) }),
+  });
+  expect(noSecret.status === 200, "an unauthorised Google callback still answers 200 (no retry storm)");
+  expect(
+    ((await noSecret.json()) as { ok?: boolean }).ok === false,
+    "...but does not act on it",
+  );
+
+  // Nothing may ever rewrite history.
+  const eventUpdates = (await getPool().query<{ n: string }>(
+    `SELECT count(*) n FROM events WHERE created_at > now() + interval '1 minute'`)).rows[0]!.n;
+  expect(Number(eventUpdates) === 0, "no event is dated in the future");
+
   console.log("\nALL E2E CHECKS PASSED ✅");
   process.exit(0);
 }

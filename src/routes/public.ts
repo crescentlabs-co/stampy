@@ -70,11 +70,58 @@ async function findCafe(cardId: string): Promise<CardRow | null | "no-db"> {
   }
 }
 
-async function landing(cardId: string, res: import("express").Response): Promise<void> {
+/**
+ * Which wallet this phone can actually use, guessed from the User-Agent.
+ *
+ * Only ever used to label a `join_view`, never to decide anything: the customer
+ * picks their own wallet button a moment later, and `wallet_click` records that
+ * choice for real. The guess is what makes "iPhones scan but don't add" a
+ * question you can ask at all — at view time nobody has chosen yet.
+ */
+function guessPlatform(ua: string): string {
+  if (/iPhone|iPad|iPod|Mac OS X/i.test(ua)) return "apple";
+  if (/Android/i.test(ua)) return "google";
+  return "";
+}
+
+/** Crawlers and link-preview bots hit the join page too; keep them filterable. */
+function viewMeta(req: import("express").Request): { ua: string; bot: boolean } {
+  const ua = (req.get("user-agent") ?? "").slice(0, 200);
+  return { ua, bot: /bot|crawler|spider|preview|facebookexternalhit|slackbot|curl|wget/i.test(ua) };
+}
+
+/**
+ * The top of the funnel, and the one moment that is genuinely unrecoverable: a
+ * scan nobody wrote down cannot be reconstructed from anything later. Logged
+ * here rather than in each route because /j/:ref and /c/:cardId both land here,
+ * so neither path can be added later without picking this up for free.
+ *
+ * The customer is attached only if this browser already has a cookie. A page
+ * view deliberately does NOT mint a customer — every crawler that ever hits a
+ * poster URL would become one, and the customer list is a real thing people
+ * look at.
+ */
+async function landing(
+  cardId: string,
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<void> {
   const card = await findCafe(cardId);
   if (card === "no-db") return void res.status(503).type("html").send(notReadyPage());
   if (!card) return void res.status(404).type("html").send(notReadyPage());
+
   const s = setupStatus();
+  const { ua, bot } = viewMeta(req);
+  const merchant = await merchantForCard(card.id).catch(() => null);
+  await logEvent(card.id, "", "join_view", {
+    actor: "customer",
+    source: sourceOf(req),
+    merchantId: merchant?.id ?? null,
+    customerId: merchant ? readCustomerCookie(req, merchant.id) : null,
+    platform: guessPlatform(ua),
+    metadata: { ua, bot, ref: (req.get("referer") ?? "").slice(0, 200) },
+  }).catch((err) => console.error("[join_view] not logged:", err));
+
   res.type("html").send(landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId));
 }
 
@@ -159,17 +206,43 @@ function sourceOf(req: import("express").Request): string {
   return String(req.query.s ?? "").trim().slice(0, 40);
 }
 
+/**
+ * They tapped Add to Apple/Google Wallet. The middle of the funnel: between
+ * this and `enroll` sits pass signing, and between it and `pass_added` sits the
+ * customer deciding at the wallet's own Add sheet.
+ *
+ * Logged before anything can fail, so a 503 from unconfigured signing still
+ * leaves a record that somebody tried — which is exactly the case where the
+ * funnel is the thing you want to look at.
+ */
+async function logWalletClick(
+  req: import("express").Request,
+  card: CardRow,
+  platform: Platform,
+): Promise<void> {
+  const merchant = await merchantForCard(card.id).catch(() => null);
+  await logEvent(card.id, "", "wallet_click", {
+    actor: "customer",
+    source: sourceOf(req),
+    merchantId: merchant?.id ?? null,
+    customerId: merchant ? readCustomerCookie(req, merchant.id) : null,
+    platform,
+    metadata: { wallet: platform },
+  }).catch((err) => console.error("[wallet_click] not logged:", err));
+}
+
 async function enroll(
   cardId: string,
   req: import("express").Request,
   res: import("express").Response,
 ): Promise<void> {
-  if (!setupStatus().canSignPasses) {
-    return void res.status(503).type("html").send(notReadyPage());
-  }
   const card = await findCafe(cardId);
   if (card === "no-db" || !card) {
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
+  }
+  await logWalletClick(req, card, "apple");
+  if (!setupStatus().canSignPasses) {
+    return void res.status(503).type("html").send(notReadyPage());
   }
 
   const row = await reuseOrCreatePass(req, res, card, "apple", sourceOf(req));
@@ -202,12 +275,13 @@ async function enrollGoogle(
   req: import("express").Request,
   res: import("express").Response,
 ): Promise<void> {
-  if (!setupStatus().canGoogleWallet) {
-    return void res.status(503).type("html").send(notReadyPage());
-  }
   const card = await findCafe(cardId);
   if (card === "no-db" || !card) {
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
+  }
+  await logWalletClick(req, card, "google");
+  if (!setupStatus().canGoogleWallet) {
+    return void res.status(503).type("html").send(notReadyPage());
   }
 
   const row = await reuseOrCreatePass(req, res, card, "google", sourceOf(req));
@@ -284,7 +358,7 @@ publicRouter.get("/j/:ref", async (req, res) => {
     const cards = await cardsForMerchant(found.merchant.id);
     return void res.type("html").send(cardPickerPage(found.merchant, cards, query));
   }
-  await landing(card.id, res);
+  await landing(card.id, req, res);
 });
 
 publicRouter.get("/j/:ref/qr", async (req, res) => {
@@ -293,7 +367,7 @@ publicRouter.get("/j/:ref/qr", async (req, res) => {
   await merchantQr(found.merchant.id, res);
 });
 
-publicRouter.get("/c/:cardId", (req, res) => landing(req.params.cardId!, res));
+publicRouter.get("/c/:cardId", (req, res) => landing(req.params.cardId!, req, res));
 publicRouter.get("/enroll", (req, res) => enroll(DEFAULT_CARD_ID, req, res));
 publicRouter.get("/c/:cardId/enroll", (req, res) => enroll(req.params.cardId!, req, res));
 publicRouter.get("/enroll/google", (req, res) => enrollGoogle(DEFAULT_CARD_ID, req, res));

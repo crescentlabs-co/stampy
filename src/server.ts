@@ -19,6 +19,7 @@ import { runAutoWinback } from "./winback.js";
 import { setupPage } from "./pages.js";
 import { adminRouter } from "./routes/admin.js";
 import { dashboardRouter } from "./routes/dashboard.js";
+import { googleCallbackRouter } from "./routes/googleCallback.js";
 import { publicRouter } from "./routes/public.js";
 import { staffRouter } from "./routes/staff.js";
 import { walletRouter } from "./routes/wallet.js";
@@ -42,6 +43,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/setup", (_req, res) => res.type("html").send(setupPage(setupStatus(), config.baseUrl)));
 
 app.use("/wallet", walletRouter);
+app.use("/google", googleCallbackRouter);
 app.use("/staff", staffRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/admin", adminRouter);

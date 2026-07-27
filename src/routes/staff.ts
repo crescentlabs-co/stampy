@@ -41,6 +41,7 @@ import {
   type OwnerRow,
   getPass,
   getPassByShortCodeForMerchant,
+  logEvent,
   lastStampAt,
   listRecentPasses,
   redeemPass,
@@ -191,6 +192,14 @@ staffRouter.post("/api/login", async (req, res) => {
   const pin = String((req.body ?? {}).pin ?? "");
   if (!verifyStaffPin(found.owner, pin)) {
     hit(rlKey, PIN_TRIES, PIN_WINDOW_MS); // record only the failed attempt
+    // The rate limiter counts these in memory and forgets them on the next
+    // deploy. A shop with forty failures a week has a problem worth seeing,
+    // and it can only be seen if the attempts outlive the process.
+    // The PIN itself is never recorded — only that one was wrong.
+    await logEvent(found.card.id, "", "pin_failed", {
+      actor: "staff",
+      metadata: {},
+    }).catch(() => {});
     return void res.status(401).json({ error: "wrong-pin" });
   }
   clear(rlKey); // a correct PIN clears the counter
@@ -271,7 +280,17 @@ staffRouter.get("/api/lookup", requireStaff, async (req: StaffRequest, res) => {
   const code = String(req.query.code ?? "").trim();
   if (!code) return void res.status(400).json({ error: "missing-code" });
   const row = await getPassByShortCodeForMerchant(req.merchant?.id, code);
-  if (!row) return void res.status(404).json({ error: "no-such-card" });
+  if (!row) {
+    // A typed code that matched nothing: a worn poster, a deleted pass, a
+    // customer at the wrong shop, or staff mistyping. All four are worth
+    // knowing about and none of them leave any other trace.
+    await logEvent(req.card!.id, "", "lookup_failed", {
+      actor: actorOf(req),
+      merchantId: req.merchant?.id ?? null,
+      metadata: { code },
+    }).catch(() => {});
+    return void res.status(404).json({ error: "no-such-card" });
+  }
   res.json({ pass: passView(row) });
 });
 

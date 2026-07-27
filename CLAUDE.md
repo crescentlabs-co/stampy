@@ -75,9 +75,13 @@ never kill a printed poster).
    in a wallet now, or ever was (`ACTIVE_PASS_SQL`, src/db.ts). Deleting the
    pass must NOT un-count someone — that would let churn erase its own
    evidence — so `pass_added` keeps them counted and the pruner skips them.
-   `pass_added`/`pass_removed` come from Apple's PassKit web service and are
-   **Apple-only**: Google reports neither, ever. Never present them as
-   platform-wide numbers.
+   `pass_added`/`pass_removed` arrive from **two** places, and
+   `metadata.platform_source` says which: `apple-webservice` (Apple's PassKit
+   web service) or `google-callback` (Google Wallet issuer callbacks —
+   src/routes/googleCallback.ts). This file used to state that Google reports
+   neither, ever. **That was wrong**, and it cost the product its only Android
+   churn signal for as long as it stood. Anything comparing platforms must still
+   check the date: rows before the callback shipped are Apple-only.
 8. **No browser dialogs for anything that matters.** Browsers let a user
    suppress further dialogs, after which `confirm()` returns false silently —
    on a staff phone that means "Give reward & restart" quietly stops working.
@@ -123,6 +127,42 @@ never kill a printed poster).
    compiles every inline `<script>` instead, so keep new pages listed there.
    **Never put a backtick in a comment inside those template strings** — it ends
    the literal. Run `pnpm typecheck` after editing src/pages.ts.
+
+## The event log is the source of truth
+
+`events` is append-only — nothing in this codebase may ever UPDATE or DELETE a
+row in it. Metrics are **derived by query** (`cardMetrics`, src/db.ts computes
+stamps as `count(stamp) - count(undo)`); `passes.stamp_count` is a cache that
+can be rebuilt. Keep it that way: a stored aggregate that drifts from the log is
+how the Home headline came to disagree with the list under it.
+
+A correction is a new row, never an edit. An `undo` is its own event and the
+stamp it reverses stays. The pruner (`pruneAbandonedPasses`) refuses to delete
+any pass that was ever stamped or ever reached a wallet, because that would let
+churn erase its own evidence.
+
+**`logEvent` fills in what the caller omits** — merchant, customer, platform,
+progress, and the target in force — from the pass, in the same statement. Don't
+work around it. Those columns exist because they must be true of every row, and
+a call site that skipped one would leave a hole that surfaces months later as a
+query that quietly under-counts.
+
+Two things are written down because they cannot be recovered later:
+- **`join_view` / `wallet_click`** — the funnel above `enroll`. A scan nobody
+  recorded is gone; nothing downstream implies it.
+- **`messages`** — what was ACTUALLY sent and whether it arrived.
+  `passes.message` keeps only the latest wording and the next nudge overwrites
+  it, so the table is the only place message history exists.
+
+`metadata` (jsonb) is the escape hatch for the next unforeseen field. Event type
+names and metadata keys are effectively permanent: every historical query keys
+off those strings, so renaming one later means rewriting stored rows *and* every
+query together.
+
+**`pass_dropped`** (APNs 410) records that a device no longer holds a pass. It
+deliberately does NOT gate nudges the way `pass_removed` does — a delivery
+failure silently changing who gets messaged would be a behaviour change, not a
+logging one. Revisit that deliberately or not at all.
 
 ## Backups — there is no safety net but this one
 

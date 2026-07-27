@@ -499,6 +499,9 @@ export async function migrate(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_events_merchant_time ON events(merchant_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_events_customer_time ON events(customer_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(type, created_at);
+    -- Replay protection for Google Wallet callbacks: a captured callback must
+    -- not be re-postable to fake repeated churn. See routes/googleCallback.ts.
+    CREATE INDEX IF NOT EXISTS idx_events_nonce ON events((metadata->>'nonce'));
 
     -- v1.4: what was ACTUALLY sent, and whether it arrived.
     --
@@ -1011,15 +1014,43 @@ export async function updateCard(
     average_spend_cents: number;
     currency: string;
   }>,
+  actor = "",
 ): Promise<CardRow | null> {
   const keys = Object.keys(fields) as (keyof typeof fields)[];
   if (!keys.length) return getCard(id);
+
+  // Read the old values first, so the audit row can say what actually changed.
+  // Without this, a completion rate that moves in May has no explanation in the
+  // database — the reward could have been changed on the 3rd and nothing would
+  // remember. Logged from inside updateCard rather than from the dashboard so a
+  // new call site cannot silently skip it.
+  const before = await getCard(id);
+
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
   const res = await getPool().query<CardRow>(
     `UPDATE cards SET ${sets} WHERE id = $1 RETURNING *`,
     [id, ...keys.map((k) => fields[k])],
   );
-  return res.rows[0] ?? null;
+  const after = res.rows[0] ?? null;
+
+  if (before && after) {
+    const changed: Record<string, { from: unknown; to: unknown }> = {};
+    for (const k of keys) {
+      const from = (before as unknown as Record<string, unknown>)[k];
+      const to = (after as unknown as Record<string, unknown>)[k];
+      if (from !== to) changed[k] = { from, to };
+    }
+    // A save that changed nothing is not an edit worth a row.
+    if (Object.keys(changed).length) {
+      await logEvent(id, "", "card_edited", {
+        actor,
+        merchantId: after.merchant_id ?? null,
+        stampsTarget: after.stamps_target,
+        metadata: { changed },
+      }).catch((err) => console.error("[card_edited] not logged:", err));
+    }
+  }
+  return after;
 }
 
 // ----------------------------------------------------------- café logos ----
@@ -1887,6 +1918,19 @@ export async function logEvent(
   return res.rows[0] ? Number(res.rows[0].id) : null;
 }
 
+/**
+ * Has this Google callback nonce already been recorded? Replay protection for
+ * the one endpoint a stranger could otherwise POST to repeatedly.
+ */
+export async function seenGoogleNonce(nonce: string): Promise<boolean> {
+  if (!nonce) return false;
+  const res = await getPool().query(
+    `SELECT 1 FROM events WHERE metadata->>'nonce' = $1 LIMIT 1`,
+    [nonce],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 /** What was actually sent, and whether it landed. See the `messages` table. */
 export interface MessageRecord {
   eventId: number | null;
@@ -2123,6 +2167,34 @@ export async function serialsUpdatedSince(
     serialNumbers: changed.map((r) => r.serial),
     lastUpdated: String(lastUpdated || Date.now()),
   };
+}
+
+/**
+ * APNs answered 410 Unregistered for this token: that device no longer holds
+ * the pass. Apple hands this over for free on the next push and it was being
+ * discarded — a second, independent churn signal alongside the web service's
+ * DELETE, and the only one that catches a pass removed while the phone was
+ * offline.
+ *
+ * Deliberately does NOT log `pass_removed` (which `deleteRegistration` does):
+ * that event gates whether a customer may be nudged, and a delivery failure
+ * quietly changing who gets messaged is a behaviour change, not a logging one.
+ * The dead row still goes, because pushing to it forever is pure waste.
+ */
+export async function dropDeadRegistration(pushToken: string): Promise<void> {
+  const gone = await getPool().query<{ serial: string; card_id: string }>(
+    `DELETE FROM registrations r USING passes p
+      WHERE r.push_token = $1 AND p.serial = r.serial
+      RETURNING r.serial, p.card_id`,
+    [pushToken],
+  );
+  for (const row of gone.rows) {
+    await logEvent(row.card_id, row.serial, "pass_dropped", {
+      actor: "customer",
+      platform: "apple",
+      metadata: { platform_source: "apns", status: 410, reason: "Unregistered" },
+    });
+  }
 }
 
 /** Push tokens registered for a pass (usually one device, can be several). */

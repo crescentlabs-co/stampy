@@ -60,6 +60,13 @@ export const config = {
   googleIssuerId: (process.env.GOOGLE_ISSUER_ID ?? "").trim(),
   /** Google Cloud service-account JSON, base64-encoded (from pnpm prepare-google). */
   googleServiceAccountB64: process.env.GOOGLE_SERVICE_ACCOUNT_B64 ?? "",
+  /**
+   * Shared secret in the Google Wallet callback URL — the ONLY thing standing
+   * between a stranger and the ability to write fake "customer deleted their
+   * card" rows. Unset ⇒ the endpoint refuses everything, so Android churn is
+   * simply not recorded (see src/routes/googleCallback.ts).
+   */
+  googleCallbackSecret: (process.env.GOOGLE_CALLBACK_SECRET ?? "").trim(),
 
   /** Seed PIN for the default café's staff page (per-café PINs live in the DB). */
   staffPin: process.env.STAFF_PIN ?? "1234",

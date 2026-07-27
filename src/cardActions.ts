@@ -13,9 +13,11 @@
 import { pushPassUpdate } from "./apns.js";
 import { addMessage, patchBalance } from "./googleWallet.js";
 import {
+  dropDeadRegistration,
   getCard,
   getPass,
   logEvent,
+  logMessage,
   pushTokensForSerial,
   type CardRow,
   type EventMeta,
@@ -73,7 +75,17 @@ export async function applyAndPush(
 
   const row = await update();
   if (!row) return null;
-  await logEvent(card.id, serial, eventType, meta);
+
+  // The card filled up on this action. Replayable in principle — walk every
+  // stamp in order against the target — but only until someone edits the
+  // target, so it is written down at the moment it is true instead.
+  const justCompleted = eventType === "stamp" && row.stamp_count >= row.stamps_target;
+
+  const eventId = await logEvent(card.id, serial, eventType, {
+    ...meta,
+    stampsAfter: row.stamp_count,
+    stampsTarget: row.stamps_target,
+  });
 
   let push: PushSummary;
   if (row.platform === "google") {
@@ -95,6 +107,43 @@ export async function applyAndPush(
       registeredDevices: pushResults.length,
       detail: pushResults.map((r) => ({ status: r.status, reason: r.reason })),
     };
+    // 410 Unregistered: Apple is telling us the card is off that device.
+    // Free churn evidence that used to be read once and thrown away.
+    for (const dead of pushResults.filter((r) => r.status === 410)) {
+      await dropDeadRegistration(dead.token).catch((err) =>
+        console.error("[pass_dropped] not recorded:", err),
+      );
+    }
   }
+
+  // What was ACTUALLY sent, and whether it arrived. passes.message keeps only
+  // the latest wording and the next nudge overwrites it, so without this row
+  // the text is gone — and "did this message work" is not answerable about a
+  // message you can no longer read. Delivery matters just as much: 40 sent with
+  // 12 undelivered is a different response rate from 40 sent.
+  if (eventType === "nudge" && nudgeText) {
+    await logMessage({
+      eventId,
+      serial,
+      customerId: row.customer_id ?? null,
+      cardId: card.id,
+      kind: meta.actor === "auto" ? "auto-winback" : "manual-nudge",
+      body: nudgeText,
+      platform: row.platform,
+      delivered: push.sent > 0 ? true : push.failed > 0 ? false : null,
+      failReason: push.detail.find((d) => d.reason)?.reason ?? "",
+    }).catch((err) => console.error("[message] not recorded:", err));
+  }
+
+  // Logged after delivery so the completion sits in the timeline where it
+  // happened, not before the stamp that caused it.
+  if (justCompleted) {
+    await logEvent(card.id, serial, "completed", {
+      ...meta,
+      stampsAfter: row.stamp_count,
+      stampsTarget: row.stamps_target,
+    }).catch((err) => console.error("[completed] not logged:", err));
+  }
+
   return { row, push, card };
 }

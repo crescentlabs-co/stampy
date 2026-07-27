@@ -363,7 +363,7 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   }
   // The staff PIN is NOT a card field — it belongs to the owner and lives at
   // POST /api/staff-pin. Anything sent here is ignored on purpose.
-  const card = await updateCard(cardId, fields);
+  const card = await updateCard(cardId, fields, `owner:${req.owner!.id}`);
   if (!card) return void res.status(404).json({ error: "no-such-card" });
   // Mirror branding/name changes into the Google-hosted card class (no-op
   // result until Google credentials are configured).
