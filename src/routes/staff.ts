@@ -36,15 +36,17 @@ import {
   DEFAULT_CARD_ID,
   getCard,
   getOwner,
+  merchantForOwner,
   ownerForCard,
   type OwnerRow,
   getPass,
-  getPassByShortCode,
+  getPassByShortCodeForMerchant,
   lastStampAt,
   listRecentPasses,
   redeemPass,
   verifyStaffPin,
   type CardRow,
+  type MerchantRow,
   type EventType,
   type PassRow,
 } from "../db.js";
@@ -71,6 +73,8 @@ const PIN_WINDOW_MS = 10 * 60_000;
 interface StaffRequest extends Request {
   card?: CardRow;
   owner?: OwnerRow;
+  /** The business. Scanning is scoped to this, not to `card`. */
+  merchant?: MerchantRow;
   /** Which staff phone this is — recorded as the actor on every event it causes. */
   deviceId?: string;
 }
@@ -134,9 +138,11 @@ async function resolveCard(req: Request): Promise<{ card: CardRow; owner: OwnerR
  * a card that isn't this café's (or doesn't exist) so the stamp path proceeds to
  * applyAndPush, which is the one place that maps that to a 404.
  */
-async function stampCooldownLeft(serial: string, cardId: string): Promise<number> {
+async function stampCooldownLeft(serial: string, merchantId: string | undefined): Promise<number> {
   const pass = await getPass(serial);
-  if (!pass || pass.card_id !== cardId) return 0;
+  if (!pass) return 0;
+  const card = await getCard(pass.card_id);
+  if (!card || !merchantId || card.merchant_id !== merchantId) return 0;
   const last = await lastStampAt(serial);
   if (!last) return 0;
   const left = STAMP_COOLDOWN_MS - (Date.now() - new Date(last).getTime());
@@ -161,6 +167,7 @@ async function requireStaff(req: StaffRequest, res: Response, next: NextFunction
   }
   req.card = found.card;
   req.owner = found.owner;
+  req.merchant = (await merchantForOwner(found.owner.id)) ?? undefined;
   req.deviceId = session.deviceId;
   next();
 }
@@ -263,7 +270,7 @@ staffRouter.get("/api/passes", requireStaff, async (req: StaffRequest, res) => {
 staffRouter.get("/api/lookup", requireStaff, async (req: StaffRequest, res) => {
   const code = String(req.query.code ?? "").trim();
   if (!code) return void res.status(400).json({ error: "missing-code" });
-  const row = await getPassByShortCode(req.card!.id, code);
+  const row = await getPassByShortCodeForMerchant(req.merchant?.id, code);
   if (!row) return void res.status(404).json({ error: "no-such-card" });
   res.json({ pass: passView(row) });
 });
@@ -280,16 +287,25 @@ async function updateAndPush(
   const result = await applyAndPush(req.card!, serial, eventType, update, {
     actor: actorOf(req),
     forced,
+    // A customer hands over whichever card they have; the phone shouldn't have
+    // to be showing that one already.
+    merchantId: req.merchant?.id,
   });
   if (!result) return void res.status(404).json({ error: "no-such-card" });
-  res.json({ pass: passView(result.row), push: result.push });
+  res.json({
+    pass: passView(result.row),
+    push: result.push,
+    // Which card it landed on — the staff page names it when it isn't the one
+    // currently on screen.
+    card: { id: result.card.id, name: result.card.name },
+  });
 }
 
 staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
   const { serial, force } = (req.body ?? {}) as { serial?: string; force?: boolean };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
   if (!force) {
-    const secondsLeft = await stampCooldownLeft(serial, req.card!.id);
+    const secondsLeft = await stampCooldownLeft(serial, req.merchant?.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
   await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, 1), force === true);
@@ -299,10 +315,10 @@ staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
 staffRouter.post("/api/stamp-by-code", requireStaff, async (req: StaffRequest, res) => {
   const { code, force } = (req.body ?? {}) as { code?: string; force?: boolean };
   if (!code?.trim()) return void res.status(400).json({ error: "missing-code" });
-  const row = await getPassByShortCode(req.card!.id, code);
+  const row = await getPassByShortCodeForMerchant(req.merchant?.id, code);
   if (!row) return void res.status(404).json({ error: "no-such-card" });
   if (!force) {
-    const secondsLeft = await stampCooldownLeft(row.serial, req.card!.id);
+    const secondsLeft = await stampCooldownLeft(row.serial, req.merchant?.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
   await updateAndPush(req, res, row.serial, "stamp", () => addStamps(row.serial, 1), force === true);

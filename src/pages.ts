@@ -994,9 +994,14 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
           return out;
         }
         if (out.error) toast("Error: " + out.error);
-        else toast(doneMsg + (out.push.registeredDevices === 0
-          ? " (card not opened on a phone yet — no push)"
-          : out.push.sent > 0 ? " — pushed to phone ✓" : " — push failed ✗"));
+        else {
+          // The customer can hand over any of the shop's cards, so name the one
+          // it landed on when that isn't the card currently on screen.
+          const other = out.card && out.card.id !== cardId ? " on " + out.card.name : "";
+          toast(doneMsg + other + (out.push.registeredDevices === 0
+            ? " (card not opened on a phone yet — no push)"
+            : out.push.sent > 0 ? " — pushed to phone ✓" : " — push failed ✗"));
+        }
         await load();
         return out;
       } finally { busy = false; }

@@ -5,6 +5,7 @@ import type { CardRow, PassRow } from "../src/db.js";
 function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
     id: "default",
+    merchant_id: null,
     name: "Kopi Corner",
     reward: "Free coffee",
     stamps_target: 10,

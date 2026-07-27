@@ -21,7 +21,15 @@ import { config, seedCard } from "./config.js";
 const { Pool } = pg;
 
 export interface CardRow {
+  /**
+   * Permanent. It is printed on QR posters, forms the Google class id, and
+   * appears in the art URLs inside every issued Android card — see
+   * renameCafesToCards for what changing one would do.
+   */
   id: string;
+  /** The business that runs this card. Null only for the unclaimed seeded card. */
+  merchant_id: string | null;
+  /** The CARD's name ("Coffee card"), not the shop's — that lives on merchants. */
   name: string;
   reward: string;
   stamps_target: number;
@@ -1508,6 +1516,26 @@ export async function getPassByShortCode(cardId: string, shortCode: string): Pro
   const res = await getPool().query<PassRow>(
     `SELECT * FROM passes WHERE card_id = $1 AND short_code = $2`,
     [cardId, shortCode.toUpperCase().trim()],
+  );
+  return res.rows[0] ?? null;
+}
+
+/**
+ * A typed short code, looked up across everything the merchant runs.
+ *
+ * `short_code` is UNIQUE platform-wide, so widening from one card to the shop
+ * adds no ambiguity — it only stops staff being told "no such card" because the
+ * customer happened to hand over the pastry card while the phone showed coffee.
+ */
+export async function getPassByShortCodeForMerchant(
+  merchantId: string | undefined,
+  shortCode: string,
+): Promise<PassRow | null> {
+  if (!merchantId) return null;
+  const res = await getPool().query<PassRow>(
+    `SELECT p.* FROM passes p JOIN cards c ON c.id = p.card_id
+      WHERE c.merchant_id = $1 AND p.short_code = $2`,
+    [merchantId, shortCode.toUpperCase().trim()],
   );
   return res.rows[0] ?? null;
 }

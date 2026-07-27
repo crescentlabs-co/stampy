@@ -350,12 +350,36 @@ async function main() {
   const staff2Headers = { "Content-Type": "application/json", "x-card-id": newCafeOut.id, cookie: staff2.cookie };
   const otherList = await fetch(base + "/staff/api/passes", { headers: staff2Headers });
   expect(JSON.parse(await otherList.text()).passes.length === 0, "cards are isolated (no cross-card customers)");
-  // Sharing a sign-in must NOT let one card's stamper touch another's customers
-  // — the serial still has to belong to the card named in the header.
+  // A customer hands over whichever card they hold, so the stamper accepts any
+  // of the SHOP's cards even when the phone is showing a different one — and
+  // says which one it landed on.
+  const crossPass = await mk(); // a fresh card on "default", so no cooldown in the way
   const crossStamp = await fetch(base + "/staff/api/stamp", {
-    method: "POST", headers: staff2Headers, body: JSON.stringify({ serial: p1.serial }),
+    method: "POST", headers: staff2Headers, body: JSON.stringify({ serial: crossPass.serial }),
   });
-  expect(crossStamp.status === 404, "cannot stamp a card that belongs to a different programme");
+  const crossOut = JSON.parse(await crossStamp.text());
+  expect(crossStamp.status === 200, "the stamper accepts any card the same merchant runs");
+  expect(
+    crossOut.card?.id === "default" && crossOut.card?.name,
+    "…and names the card it actually stamped",
+  );
+  // The event must be written against the PASS's card, not the header's, or
+  // stamps land on the wrong programme's metrics.
+  const landed = (await getPool().query<{ card_id: string }>(
+    `SELECT card_id FROM events WHERE serial = $1 AND type = 'stamp' ORDER BY id DESC LIMIT 1`,
+    [crossPass.serial],
+  )).rows[0]!;
+  expect(landed.card_id === "default", "the stamp is recorded against the card the pass belongs to");
+  await fetch(base + "/staff/api/undo", {
+    method: "POST", headers: staff2Headers, body: JSON.stringify({ serial: crossPass.serial }),
+  });
+
+  // A short code from the shop's other card resolves too — it used to 404.
+  const codeLookup = await fetch(
+    base + "/staff/api/lookup?code=" + encodeURIComponent(crossPass.short_code),
+    { headers: staff2Headers },
+  );
+  expect(codeLookup.status === 200, "a short code from the merchant's other card is found");
 
   // --- Google Wallet branch (no Google creds → graceful, never throws) ---
   const gEnroll = await get("/enroll/google");
@@ -1138,7 +1162,14 @@ async function main() {
   for (let i = 0; i < 5; i++) await post("/undo", { serial: un.serial });
   const floored = JSON.parse((await get("/staff/api/lookup?code=" + un.short_code, { headers: staffHeaders })).body);
   expect(floored.pass.stamps === 0, "undo floors at 0 rather than going negative");
-  expect((await post("/undo", { serial: un.serial }, staff2Headers)).status === 404, "cannot undo another café's card");
+  // Undo follows the same scope as stamping: any card the merchant runs is fair
+  // game (the phone shouldn't have to be on the right one to fix a mis-scan).
+  // The cross-MERCHANT boundary is asserted further down, and is a 401 — the
+  // staff cookie is owner-scoped, so a stranger's card is refused before this.
+  expect(
+    (await post("/undo", { serial: un.serial }, staff2Headers)).status === 200,
+    "undo works on any card the same merchant runs",
+  );
 
   // --- Audit trail: who did it, and was the cooldown overridden ---
   const events = async (serial: string) =>
