@@ -3,8 +3,8 @@
  * nothing for the founder to compile. Mobile-first (staff use their phones).
  */
 import type { SetupStatus } from "./config.js";
-import type { CafeRow } from "./db.js";
-import { DEFAULT_CAFE_ID } from "./db.js";
+import type { CardRow } from "./db.js";
+import { DEFAULT_CARD_ID } from "./db.js";
 
 const baseCss = /* css */ `
   /* Font face is declared INLINE (not a separate cacheable stylesheet) so a
@@ -91,12 +91,12 @@ function page(title: string, body: string, extraCss = "", script = ""): string {
 // ------------------------------------------------------------- customer ----
 
 export function landingPage(
-  cafe: CafeRow,
+  card: CardRow,
   appleReady: boolean,
   googleReady: boolean,
-  cafeId: string,
+  cardId: string,
 ): string {
-  const base = cafeId === DEFAULT_CAFE_ID ? "" : `/c/${cafeId}`;
+  const base = cardId === DEFAULT_CARD_ID ? "" : `/c/${cardId}`;
   const buttons = [
     appleReady
       ? `<a class="btn btn-dark wbtn" data-w="apple" href="${base}/enroll">&#63743; Add to Apple Wallet</a>`
@@ -123,11 +123,11 @@ export function landingPage(
     })();
   `;
   return page(
-    `${cafe.name} — Loyalty Card`,
+    `${card.name} — Loyalty Card`,
     `<div class="card" style="text-align:center">
       <div style="font-size:3rem; margin-bottom:8px">☕️</div>
-      <h1>${cafe.name}</h1>
-      <p class="sub">Collect ${cafe.stamps_target} stamps, get a ${cafe.reward.toLowerCase()}.<br>
+      <h1>${card.name}</h1>
+      <p class="sub">Collect ${card.stamps_target} stamps, get a ${card.reward.toLowerCase()}.<br>
       Your card lives in your phone’s wallet — no app needed.</p>
       ${
         buttons
@@ -832,7 +832,7 @@ export function termsPage(contactEmail = ""): string {
  * The stamper. `signedIn` comes from the staff session cookie — an unsigned-in
  * device is only ever sent the PIN form, so the page itself leaks no café data.
  */
-export function staffPage(signedIn: boolean, cafeId = DEFAULT_CAFE_ID): string {
+export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
   const css = /* css */ `
     .pass { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
     .pass .dots { font-size: 1.15rem; letter-spacing: 2px; margin: 6px 0; }
@@ -880,12 +880,12 @@ export function staffPage(signedIn: boolean, cafeId = DEFAULT_CAFE_ID): string {
     // here, not re-derived from the URL. A bare /staff used to make the browser
     // claim "default", which on a multi-merchant deployment is someone else's
     // counter. Switchable in the page: one PIN covers every card the owner runs.
-    let cafeId = ${JSON.stringify(cafeId)};
+    let cardId = ${JSON.stringify(cardId)};
 
     async function api(path, opts = {}) {
       const res = await fetch("/staff/api" + path, {
         ...opts,
-        headers: { "Content-Type": "application/json", "x-cafe-id": cafeId, ...(opts.headers||{}) },
+        headers: { "Content-Type": "application/json", "x-card-id": cardId, ...(opts.headers||{}) },
       });
       if (res.status === 429) {
         const b = await res.json().catch(() => ({}));
@@ -1130,13 +1130,13 @@ export function staffPage(signedIn: boolean, cafeId = DEFAULT_CAFE_ID): string {
       const host = $("#cards");
       if (cards.length < 2) { host.innerHTML = ""; return; }
       host.innerHTML = '<label>Stamping</label><div class="cardpick">' +
-        cards.map((c) => '<button class="' + (c.id === cafeId ? "on" : "") +
+        cards.map((c) => '<button class="' + (c.id === cardId ? "on" : "") +
           '" data-c="' + c.id + '">' + c.name + "</button>").join("") + "</div>";
       host.querySelectorAll("[data-c]").forEach((b) => {
         b.onclick = () => {
-          cafeId = b.dataset.c;
+          cardId = b.dataset.c;
           // Keep the URL honest, so a reload (or a bookmark) stays on this card.
-          history.replaceState(null, "", "/staff?c=" + encodeURIComponent(cafeId));
+          history.replaceState(null, "", "/staff?c=" + encodeURIComponent(cardId));
           renderCards();
           load();
         };
@@ -1222,7 +1222,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
                 display: block; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
     .metric span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
                    letter-spacing: .05em; color: var(--muted); }
-    .cafe { border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 14px; }
+    .card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 14px; }
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
     .row2 { display: flex; gap: 8px; }
     .row2 > div { flex: 1; }
@@ -1686,7 +1686,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
             ctx.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
             const dataUrl = canvas.toDataURL("image/png");
             if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
-            const { body } = await api("/cafe/" + c.id + "/" + kind, {
+            const { body } = await api("/card/" + c.id + "/" + kind, {
               method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
             });
             if (body.ok) { onDone(dataUrl); toast((kind === "logo" ? "Logo" : "Banner") + " saved ✓"); }
@@ -1700,21 +1700,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         q("[data-pv-logo]").src = url; q("[data-a=rmlogo]").style.display = "";
       });
       q("[data-a=rmlogo]").onclick = async () => {
-        const { body } = await api("/cafe/" + c.id + "/logo", { method: "DELETE" });
+        const { body } = await api("/card/" + c.id + "/logo", { method: "DELETE" });
         if (body.ok) { q("[data-pv-logo]").src = base + "/art/logo.png?v=" + Date.now(); q("[data-a=rmlogo]").style.display = "none"; toast("Logo removed"); }
       };
 
       // Banner: pre-made templates (drawn on a canvas from the card's colours,
       // so they stay on-brand) plus "upload your own". Both save the same way.
       async function saveBanner(dataUrl) {
-        const { body } = await api("/cafe/" + c.id + "/banner", { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
+        const { body } = await api("/card/" + c.id + "/banner", { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
         if (!body.ok) return toast(body.error || "Banner failed");
         const b = q("[data-pv-banner]"); b.style.backgroundImage = "url(" + dataUrl + ")"; b.classList.add("on");
         q("[data-a=rmbanner]").style.display = ""; toast("Banner saved ✓");
       }
       wireUpload("[data-banner]", null, 1032, 336, saveBanner); // null kind → onDone handles the POST
       q("[data-a=rmbanner]").onclick = async () => {
-        const { body } = await api("/cafe/" + c.id + "/banner", { method: "DELETE" });
+        const { body } = await api("/card/" + c.id + "/banner", { method: "DELETE" });
         if (body.ok) { const b = q("[data-pv-banner]"); b.classList.remove("on"); b.style.backgroundImage = ""; q("[data-a=rmbanner]").style.display = "none"; toast("Banner removed"); }
       };
 
@@ -1784,7 +1784,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const target = Math.max(1, Math.min(30, Number(f("stampsTarget").value) || 10));
         const strips = [];
         for (let n = 0; n <= target; n++) strips.push({ filled: n, png: drawStampStrip(n, target, style).split(",")[1] });
-        const { body } = await api("/cafe/" + c.id + "/stamps", { method: "POST", body: JSON.stringify({ style, strips }) });
+        const { body } = await api("/card/" + c.id + "/stamps", { method: "POST", body: JSON.stringify({ style, strips }) });
         if (!body.ok) return toast(body.error || "Couldn't save stamps");
         q("[data-a=rmstamp]").style.display = "";
         renderPreview(); toast("Stamp style saved ✓");
@@ -1804,7 +1804,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         stampImg.onload = () => applyStamps("custom");
       });
       q("[data-a=rmstamp]").onclick = async () => {
-        const { body } = await api("/cafe/" + c.id + "/stamps", { method: "DELETE" });
+        const { body } = await api("/card/" + c.id + "/stamps", { method: "DELETE" });
         if (body.ok) { stampStyle = ""; q("[data-a=rmstamp]").style.display = "none"; renderPreview(); toast("Back to plain dots"); }
       };
 
@@ -1823,7 +1823,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         f("bg").value = v.bg; f("fg").value = v.fg; f("label").value = v.label;
         f("reward").value = v.reward;
         renderPreview();
-        const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify({
+        const { body } = await api("/card/" + c.id, { method: "POST", body: JSON.stringify({
           reward: v.reward, bg: v.bg, fg: v.fg, label: v.label,
         })});
         if (!body.ok) return toast(body.error || "Couldn't apply template");
@@ -1848,7 +1848,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // Two saves, disjoint field sets. Both re-render the stamp strips, because
       // a colour change (design) and a target change (rules) each alter them.
       async function save(fields, label) {
-        const { body } = await api("/cafe/" + c.id, { method: "POST", body: JSON.stringify(fields) });
+        const { body } = await api("/card/" + c.id, { method: "POST", body: JSON.stringify(fields) });
         if (!body.ok) return toast(body.error || "Save failed");
         Object.assign(c, fields);
         if (stampStyle) await applyStamps(stampStyle);
@@ -1859,7 +1859,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         await save({ name: f("name").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value }, "Design");
         // Keep the card-picker chip labels in sync without resetting the form.
         const pk = document.querySelector("[data-pick]");
-        if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cafes[Number(b.dataset.ci)].name; });
+        if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cards[Number(b.dataset.ci)].name; });
       };
 
       q("[data-a=saverules]").onclick = () => save({
@@ -1892,11 +1892,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     // ---- Home: totals across ALL cards + per-card breakdown + customer preview ----
     function homePanel() {
       const div = document.createElement("div");
-      const sum = (k) => S.cafes.reduce((a, c) => a + (c.metrics[k] || 0), 0);
-      const breakdown = S.cafes.length > 1
+      const sum = (k) => S.cards.reduce((a, c) => a + (c.metrics[k] || 0), 0);
+      const breakdown = S.cards.length > 1
         ? \`<label style="margin-top:16px">By card</label>
            <table class="breakdown"><tr><th>Card</th><th>Customers</th><th>Stamps</th><th>Claimed</th></tr>
-           \${S.cafes.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.active + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
+           \${S.cards.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.active + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
            </table>\`
         : "";
       div.innerHTML = \`
@@ -1908,7 +1908,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // (each card can have a different basket). Hidden until a spend is set,
       // because a confident "0" would read as a real answer. The symbol comes
       // from each card, not from whichever card happened to be first.
-      const priced = S.cafes.filter((c) => c.averageSpend > 0);
+      const priced = S.cards.filter((c) => c.averageSpend > 0);
       const oneCurrency = priced.every((c) => c.currency === (priced[0] || {}).currency);
       const influenced = priced.reduce((a, c) => a + c.metrics.stamps * c.averageSpend, 0);
       const money = (n) =>
@@ -2067,7 +2067,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         }
         // One message template, defined in Card → Rules — the old duplicate
         // hard-coded default here meant two sources of truth for one message.
-        const src = card === "all" ? S.cafes[0] : S.cafes.find((c) => c.id === card);
+        const src = card === "all" ? S.cards[0] : S.cards.find((c) => c.id === card);
         if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (src && src.autoWinbackMessage) || "";
         renderBuckets();
         renderResults();
@@ -2087,8 +2087,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       const host = div.querySelector("[data-design]");
       function draw() {
         pick.innerHTML = "";
-        if (S.cafes.length > 1) {
-          S.cafes.forEach((c, i) => {
+        if (S.cards.length > 1) {
+          S.cards.forEach((c, i) => {
             const b = document.createElement("button");
             b.textContent = c.name; b.dataset.ci = String(i);
             b.className = i === S.selCard ? "on" : "";
@@ -2101,7 +2101,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         add.onclick = async () => {
           const name = prompt("Name for the new card (e.g. “Coffee card” or “Pastry card”):");
           if (!name) return;
-          const { body: r } = await api("/cafes", { method: "POST", body: JSON.stringify({ name }) });
+          const { body: r } = await api("/cards", { method: "POST", body: JSON.stringify({ name }) });
           if (!r.ok) return toast(r.error || "Failed");
           // No PIN to hand over any more — the new card shares the one staff
           // PIN and the one stamper page the owner already has.
@@ -2109,8 +2109,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         };
         pick.appendChild(add);
         host.innerHTML = "";
-        host.appendChild(designPanel(S.cafes[S.selCard]));
-        host.appendChild(sharePanel(S.cafes[S.selCard]));
+        host.appendChild(designPanel(S.cards[S.selCard]));
+        host.appendChild(sharePanel(S.cards[S.selCard]));
       }
       draw();
       return div;
@@ -2146,7 +2146,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
              merchants the guess used to be "whoever owns the café named
              default" — a stranger. -->
         <div class="sharelist" style="margin-top:10px">
-          <a href="/staff?c=\${(S.cafes[0] || {}).id || ""}" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
+          <a href="/staff?c=\${(S.cards[0] || {}).id || ""}" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
         </div>
         <label style="margin-top:14px">Staff PIN</label>
         <div class="copyrow" style="margin-top:6px">
@@ -2214,12 +2214,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       if (seg.scrollWidth > seg.clientWidth) on.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
     // ---- app shell: owner-scoped tabs ----
-    const S = { cafes: [], email: "", tab: "home", selCard: 0 };
+    const S = { cards: [], email: "", tab: "home", selCard: 0 };
 
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
-      S.cafes = body.cafes; S.email = body.email; S.selCard = 0; S.tab = "home";
+      S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "home";
       // Four tabs, each one job: how it's going · who they are · what the card
       // is · everything you set once. Access is gone — it only existed because
       // each card had its own PIN, and the links now sit under the card itself.
@@ -2285,7 +2285,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
  * stylesheet rather than generated PDF, so there is no new dependency and the
  * merchant can print it from any phone or laptop.
  */
-export function counterSheetPage(cafe: {
+export function counterSheetPage(card: {
   id: string;
   name: string;
   reward: string;
@@ -2311,10 +2311,10 @@ export function counterSheetPage(cafe: {
   `;
   const body = `
     <div class="sheet">
-      <h1>${esc(cafe.name)}</h1>
-      <p class="reward">${esc(cafe.reward)} after ${cafe.stamps_target} stamps</p>
+      <h1>${esc(card.name)}</h1>
+      <p class="reward">${esc(card.reward)} after ${card.stamps_target} stamps</p>
       <p class="how">Scan to add your card — no app to download</p>
-      <img src="/c/${encodeURIComponent(cafe.id)}/qr" alt="Add-to-Wallet QR code">
+      <img src="/c/${encodeURIComponent(card.id)}/qr" alt="Add-to-Wallet QR code">
       <div class="steps">
         1. Point your camera at the code<br>
         2. Tap <strong>Add to Apple Wallet</strong> or <strong>Google Wallet</strong><br>
@@ -2324,7 +2324,7 @@ export function counterSheetPage(cafe: {
     <div class="noprint">
       <button class="btn btn-dark" onclick="window.print()">Print this sheet</button>
     </div>`;
-  return page(`${cafe.name} — counter sheet`, body, css);
+  return page(`${card.name} — counter sheet`, body, css);
 }
 
 export function adminPage(): string {
@@ -2491,7 +2491,7 @@ export function adminPage(): string {
         '<div class="mrew">' + reward + "</div>";
     }
 
-    function wireTemplates(cafes) {
+    function wireTemplates(cards) {
       const ipick = $("[data-ipick]");
       ipick.innerHTML = "";
       STAMP_ICONS.forEach((ic, i) => {
@@ -2529,12 +2529,12 @@ export function adminPage(): string {
           banner: drawBanner("gradient", bg, shade(bg, 0.4), 1032, 336).split(",")[1],
         })});
         $("#tpl-out").textContent = r.ok ? "" : (r.error || "Failed");
-        if (r.ok) { $("#tpl-name").value = ""; drawTplMock(); listTemplates(cafes); }
+        if (r.ok) { $("#tpl-name").value = ""; drawTplMock(); listTemplates(cards); }
       };
-      listTemplates(cafes);
+      listTemplates(cards);
     }
 
-    async function listTemplates(cafes) {
+    async function listTemplates(cards) {
       const { body } = await api("/templates");
       const t = $("#tpl-table");
       const list = body.templates || [];
@@ -2542,7 +2542,7 @@ export function adminPage(): string {
         t.innerHTML = '<tr><td class="flags">No saved designs yet.</td></tr>';
         return;
       }
-      const opts = cafes.map((c) => '<option value="' + c.id + '">' + c.name + "</option>").join("");
+      const opts = cards.map((c) => '<option value="' + c.id + '">' + c.name + "</option>").join("");
       t.innerHTML = "<tr><th>Design</th><th>Reward</th><th>Colours</th><th>Push onto a card</th><th></th></tr>" +
         list.map((x) => \`<tr>
           <td><strong>\${x.name}</strong><br><span class="flags">\${x.has_logo ? "logo · " : ""}\${x.stamp_style === "dot" ? "dots" : x.stamp_style}</span></td>
@@ -2556,19 +2556,19 @@ export function adminPage(): string {
       t.querySelectorAll("[data-apply]").forEach((b) => {
         b.onclick = async () => {
           const id = b.dataset.apply;
-          const cafeId = t.querySelector('[data-to="' + id + '"]').value;
-          const cafe = cafes.find((c) => c.id === cafeId);
+          const cardId = t.querySelector('[data-to="' + id + '"]').value;
+          const card = cards.find((c) => c.id === cardId);
           const tpl = list.find((x) => x.id === id);
           b.disabled = true; b.textContent = "Applying…";
           // Re-render the stamp grid for THIS card's target — a saved design
           // can't know how many stamps the card it lands on will need.
-          const target = cafe.stamps_target || 10;
+          const target = card.stamps_target || 10;
           const icon = tpl.stamp_style || "dot";
           const strips = [];
           for (let n = 0; n <= target; n++) {
             strips.push({ filled: n, png: drawStampStrip(n, target, icon, tpl.bg, tpl.label_color).split(",")[1] });
           }
-          const { body: r } = await api("/cafe/" + cafeId + "/apply-template", {
+          const { body: r } = await api("/card/" + cardId + "/apply-template", {
             method: "POST", body: JSON.stringify({ templateId: id, strips }),
           });
           b.disabled = false; b.textContent = r.ok ? "Applied ✓" : "Failed";
@@ -2578,7 +2578,7 @@ export function adminPage(): string {
       t.querySelectorAll("[data-deltpl]").forEach((b) => {
         b.onclick = async () => {
           await api("/templates/" + b.dataset.deltpl, { method: "DELETE" });
-          listTemplates(cafes);
+          listTemplates(cards);
         };
       });
     }
@@ -2605,7 +2605,7 @@ export function adminPage(): string {
       const num = (x, dp) => (x === null || x === undefined) ? "—" : Number(x).toFixed(dp || 0);
       const stale = (d, days) => !d || (Date.now() - new Date(d).getTime()) > days * 86400000;
 
-      const rows = body.cafes.map((c) => \`
+      const rows = body.cards.map((c) => \`
         <tr>
           <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
           <td>\${c.owners || "—"}</td>
@@ -2616,13 +2616,13 @@ export function adminPage(): string {
           <td class="\${stale(c.last_owner_login, 30) ? "bad" : ""}">\${ago(c.last_owner_login)}</td>
           <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br>
             <button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button>
-            <a class="btn btn-ghost cbtn" href="/admin/cafe/\${c.id}/sheet" target="_blank">Counter sheet</a></td>
+            <a class="btn btn-ghost cbtn" href="/admin/card/\${c.id}/sheet" target="_blank">Counter sheet</a></td>
         </tr>\`).join("");
 
       // Where cards go once they're handed out. "Never in a wallet" is mostly
       // abandoned Add sheets; "deleted" is the only hard churn signal we get,
       // and only Apple gives it.
-      const funnelRows = body.cafes.map((c) => \`
+      const funnelRows = body.cards.map((c) => \`
         <tr>
           <td><strong>\${c.name}</strong></td>
           <td>\${c.cards}</td>
@@ -2664,7 +2664,7 @@ export function adminPage(): string {
       // Did chasing quiet customers actually work, and is anyone leaning on the
       // override at the counter? Both are only answerable now that events record
       // who did what.
-      const wbRows = body.cafes.map((c) => {
+      const wbRows = body.cards.map((c) => {
         const rate = c.nudged ? Math.round((c.nudge_returned / c.nudged) * 100) + "%" : "—";
         return \`<tr>
           <td><strong>\${c.name}</strong></td>
@@ -2677,7 +2677,7 @@ export function adminPage(): string {
       const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
       $("#app").innerHTML = \`
         <h1>Platform admin</h1>
-        <p class="sub">\${body.cafes.length} loyalty programmes · \${body.owners.length} owners. Read-only, plus password resets.</p>
+        <p class="sub">\${body.cards.length} loyalty programmes · \${body.owners.length} owners. Read-only, plus password resets.</p>
         <p class="muted" style="margin:-4px 0 10px"><strong>Customers</strong> = cards stamped at least once or confirmed in a wallet. Stamps exclude free welcome stamps. Red means quiet: no stamp for a week, or no dashboard login for a month.</p>
         <div class="tw"><table>
           <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>
@@ -2746,7 +2746,7 @@ export function adminPage(): string {
           <label>Business type</label>
           <div class="bantpl" data-vpick></div>
           <label>Café name</label><input id="dfy-name" placeholder="e.g. Nasi Lemak House">
-          <label>Owner email</label><input id="dfy-email" type="email" placeholder="owner@cafe.my">
+          <label>Owner email</label><input id="dfy-email" type="email" placeholder="owner@card.my">
           <button class="btn btn-dark" id="dfy-create">Create café + account</button>
         </div>
         <div id="dfy-out"></div>
@@ -2759,7 +2759,7 @@ export function adminPage(): string {
         </div>
         <div id="tempout"></div>\`;
 
-      wireTemplates(body.cafes);
+      wireTemplates(body.cards);
 
       // Business-type swatches (click to select the design bundle).
       const vpick = $("[data-vpick]");
@@ -2778,7 +2778,7 @@ export function adminPage(): string {
         const strips = [];
         for (let n = 0; n <= 10; n++) strips.push({ filled: n, png: drawStampStrip(n, 10, picked.icon, picked.bg, picked.label).split(",")[1] });
         const banner = drawBanner(picked.banner, picked.bg, shade(picked.bg, 0.4), 1032, 336).split(",")[1];
-        const { body: r } = await api("/cafe", { method: "POST", body: JSON.stringify({
+        const { body: r } = await api("/card", { method: "POST", body: JSON.stringify({
           cafeName, ownerEmail, reward: picked.reward,
           bg: picked.bg, fg: picked.fg, label: picked.label, stampStyle: picked.icon,
           banner, strips,

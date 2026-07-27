@@ -3,7 +3,7 @@
  * notification wording are unit-testable before Apple approval even lands.
  */
 import { config } from "./config.js";
-import type { CafeRow, PassRow } from "./db.js";
+import type { CardRow, PassRow } from "./db.js";
 
 /** "●●●○○○○○○○" — filled vs empty stamp slots. */
 export function stampDots(count: number, target: number): string {
@@ -24,7 +24,7 @@ export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target"
  *  - the hidden `message` field → fires when we set a win-back message
  * Everything else changes silently, so customers get one clean banner per event.
  */
-export function buildPassJson(row: PassRow, cafe: CafeRow): Record<string, unknown> {
+export function buildPassJson(row: PassRow, card: CardRow): Record<string, unknown> {
   const ready = isRewardReady(row);
   const progress = `${row.stamp_count}/${row.stamps_target}`;
 
@@ -32,16 +32,16 @@ export function buildPassJson(row: PassRow, cafe: CafeRow): Record<string, unkno
     formatVersion: 1,
     passTypeIdentifier: config.passTypeId,
     teamIdentifier: config.teamId,
-    organizationName: cafe.name,
-    description: `${cafe.name} loyalty card`,
+    organizationName: card.name,
+    description: `${card.name} loyalty card`,
     serialNumber: row.serial,
     webServiceURL: `${config.baseUrl}/wallet`,
     authenticationToken: row.auth_token,
     sharingProhibited: true,
-    logoText: cafe.name,
-    backgroundColor: cafe.background_color,
-    foregroundColor: cafe.foreground_color,
-    labelColor: cafe.label_color,
+    logoText: card.name,
+    backgroundColor: card.background_color,
+    foregroundColor: card.foreground_color,
+    labelColor: card.label_color,
     barcodes: [
       {
         format: "PKBarcodeFormatQR",
@@ -80,8 +80,8 @@ export function buildPassJson(row: PassRow, cafe: CafeRow): Record<string, unkno
       backFields: [
         {
           key: "message",
-          label: cafe.name,
-          value: row.message || `Welcome to ${cafe.name}!`,
+          label: card.name,
+          value: row.message || `Welcome to ${card.name}!`,
           changeMessage: "%@",
         },
         {

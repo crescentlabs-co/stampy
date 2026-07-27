@@ -16,7 +16,7 @@ import {
   getPass,
   logEvent,
   pushTokensForSerial,
-  type CafeRow,
+  type CardRow,
   type EventMeta,
   type EventType,
   type PassRow,
@@ -35,13 +35,13 @@ export interface ApplyOptions extends EventMeta {
 }
 
 /**
- * Applies `update()` to a card that must belong to `cafe`, logs the event, and
+ * Applies `update()` to a card that must belong to `card`, logs the event, and
  * pushes the change to the phone. Returns null when the card is missing or not
  * this café's (callers map that to 404). Never throws on a delivery failure —
  * the push result is reported in the summary.
  */
 export async function applyAndPush(
-  cafe: CafeRow,
+  card: CardRow,
   serial: string,
   eventType: EventType,
   update: () => Promise<PassRow | null>,
@@ -49,17 +49,17 @@ export async function applyAndPush(
 ): Promise<{ row: PassRow; push: PushSummary } | null> {
   const { nudgeText, ...meta } = opts;
   const existing = await getPass(serial);
-  if (!existing || existing.cafe_id !== cafe.id) return null;
+  if (!existing || existing.card_id !== card.id) return null;
   const row = await update();
   if (!row) return null;
-  await logEvent(cafe.id, serial, eventType, meta);
+  await logEvent(card.id, serial, eventType, meta);
 
   let push: PushSummary;
   if (row.platform === "google") {
     const result =
       eventType === "nudge" && nudgeText
-        ? await addMessage(row, cafe, nudgeText)
-        : await patchBalance(row, cafe);
+        ? await addMessage(row, card, nudgeText)
+        : await patchBalance(row, card);
     push = {
       sent: result.ok ? 1 : 0,
       failed: result.ok ? 0 : 1,

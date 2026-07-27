@@ -14,9 +14,9 @@ import { Router, type Request, type Response } from "express";
 import { timingSafeEqual } from "node:crypto";
 import {
   deleteRegistration,
-  getCafe,
-  getCafeBanner,
-  getCafeLogo,
+  getCard,
+  getCardBanner,
+  getCardLogo,
   getPass,
   getStampStrip,
   serialsUpdatedSince,
@@ -82,16 +82,16 @@ walletRouter.get("/v1/devices/:deviceId/registrations/:passTypeId", async (req, 
 walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
   const row = await authedPass(req, res);
   if (!row) return;
-  const cafe = await getCafe(row.cafe_id);
-  if (!cafe) return void res.status(500).end();
+  const card = await getCard(row.card_id);
+  if (!card) return void res.status(500).end();
   try {
     const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
     const [logo, banner, strip] = await Promise.all([
-      getCafeLogo(cafe.id).catch(() => null),
-      getCafeBanner(cafe.id).catch(() => null),
-      getStampStrip(cafe.id, filled).catch(() => null),
+      getCardLogo(card.id).catch(() => null),
+      getCardBanner(card.id).catch(() => null),
+      getStampStrip(card.id, filled).catch(() => null),
     ]);
-    const pkpass = buildPkpass(row, cafe, logo?.png, banner?.png, strip?.png);
+    const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")

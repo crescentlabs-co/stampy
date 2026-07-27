@@ -9,11 +9,11 @@
  */
 
 /**
- * Café content now lives in the `cafes` DB table (multi-café). These env values
+ * Café content now lives in the `cards` DB table (multi-café). These env values
  * are used ONCE — to seed the default café on first boot — so v0.1 deployments
  * keep working unchanged. Edits after that happen in the owner dashboard.
  */
-export const seedCafe = {
+export const seedCard = {
   name: process.env.CAFE_NAME ?? "Kopi Corner",
   stampsTarget: intEnv("STAMPS_TARGET", 10),
   stampsStart: intEnv("STAMPS_START", 2),

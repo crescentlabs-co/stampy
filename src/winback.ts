@@ -10,12 +10,12 @@
  */
 import { applyAndPush } from "./cardActions.js";
 import {
-  cafesWithAutoWinback,
+  cardsWithAutoWinback,
   lapsingSerials,
   lastNudgeAt,
   nudgeState,
   setMessage,
-  type CafeRow,
+  type CardRow,
   type NudgeState,
 } from "./db.js";
 
@@ -58,10 +58,10 @@ export async function canNudgeSerial(
   return canNudge(state);
 }
 
-async function runForCafe(cafe: CafeRow): Promise<{ sent: number; skipped: number; givenUp: number }> {
-  const days = Math.max(1, cafe.auto_winback_days);
+async function runForCafe(card: CardRow): Promise<{ sent: number; skipped: number; givenUp: number }> {
+  const days = Math.max(1, card.auto_winback_days);
   const windowMs = days * 86_400_000;
-  const serials = await lapsingSerials(cafe.id, days);
+  const serials = await lapsingSerials(card.id, days);
   let sent = 0;
   let skipped = 0;
   let givenUp = 0;
@@ -81,8 +81,8 @@ async function runForCafe(cafe: CafeRow): Promise<{ sent: number; skipped: numbe
       else skipped++;
       continue; // churned, rate-limited, or the card is gone from their wallet
     }
-    const r = await applyAndPush(cafe, serial, "nudge", () => setMessage(serial, cafe.auto_winback_message), {
-      nudgeText: cafe.auto_winback_message,
+    const r = await applyAndPush(card, serial, "nudge", () => setMessage(serial, card.auto_winback_message), {
+      nudgeText: card.auto_winback_message,
       actor: "auto",
     });
     if (r) sent++;
@@ -92,21 +92,21 @@ async function runForCafe(cafe: CafeRow): Promise<{ sent: number; skipped: numbe
 
 /** One pass over all opted-in cafés. Isolates per-café errors; never throws. */
 export async function runAutoWinback(): Promise<void> {
-  let cafes: CafeRow[];
+  let cards: CardRow[];
   try {
-    cafes = await cafesWithAutoWinback();
+    cards = await cardsWithAutoWinback();
   } catch (err) {
     console.error("[winback] could not load cafés:", err);
     return;
   }
-  for (const cafe of cafes) {
+  for (const card of cards) {
     try {
-      const { sent, skipped, givenUp } = await runForCafe(cafe);
+      const { sent, skipped, givenUp } = await runForCafe(card);
       if (sent > 0 || givenUp > 0) {
-        console.log(`[winback] ${cafe.id}: sent ${sent}, skipped ${skipped}, gave up on ${givenUp}`);
+        console.log(`[winback] ${card.id}: sent ${sent}, skipped ${skipped}, gave up on ${givenUp}`);
       }
     } catch (err) {
-      console.error(`[winback] café ${cafe.id} failed:`, err);
+      console.error(`[winback] café ${card.id} failed:`, err);
     }
   }
 }

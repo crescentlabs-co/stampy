@@ -2,7 +2,7 @@
  * Staff-facing routes. A device types the café PIN once at /staff/api/login and
  * gets a signed, HttpOnly, expiring session cookie; every later request is
  * authorised by that cookie, not by replaying the PIN. Multi-café: requests
- * carry x-cafe-id (or ?c= on the page); the session is scoped to that café.
+ * carry x-card-id (or ?c= on the page); the session is scoped to that café.
  *
  *   GET  /staff                    login form, or the stamper once signed in
  *   POST /staff/api/login          { pin } → staff session cookie
@@ -32,11 +32,11 @@ import { applyAndPush } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
 import {
   addStamps,
-  cafesForOwner,
-  DEFAULT_CAFE_ID,
-  getCafe,
+  cardsForOwner,
+  DEFAULT_CARD_ID,
+  getCard,
   getOwner,
-  ownerForCafe,
+  ownerForCard,
   type OwnerRow,
   getPass,
   getPassByShortCode,
@@ -44,7 +44,7 @@ import {
   listRecentPasses,
   redeemPass,
   verifyStaffPin,
-  type CafeRow,
+  type CardRow,
   type EventType,
   type PassRow,
 } from "../db.js";
@@ -69,7 +69,7 @@ const PIN_TRIES = 20;
 const PIN_WINDOW_MS = 10 * 60_000;
 
 interface StaffRequest extends Request {
-  cafe?: CafeRow;
+  card?: CardRow;
   owner?: OwnerRow;
   /** Which staff phone this is — recorded as the actor on every event it causes. */
   deviceId?: string;
@@ -77,23 +77,23 @@ interface StaffRequest extends Request {
 
 /** Which card this request names explicitly: the API header, or ?c= on the page. */
 function cafeIdOf(req: Request): string {
-  return req.get("x-cafe-id") || String(req.query.c ?? "");
+  return req.get("x-card-id") || String(req.query.c ?? "");
 }
 
 /**
  * Resolve the card and the owner who runs it. The staff session belongs to the
  * owner (one PIN, one counter, however many cards), so every path needs both.
  */
-async function cafeAndOwner(cafeId: string): Promise<{ cafe: CafeRow; owner: OwnerRow } | null> {
-  const cafe = await getCafe(cafeId);
-  if (!cafe) return null;
-  const owner = await ownerForCafe(cafeId);
+async function cardAndOwner(cardId: string): Promise<{ card: CardRow; owner: OwnerRow } | null> {
+  const card = await getCard(cardId);
+  if (!card) return null;
+  const owner = await ownerForCard(cardId);
   if (!owner) return null; // an unclaimed café (the env-seeded default) has no PIN to type
-  return { cafe, owner };
+  return { card, owner };
 }
 
 /**
- * Which counter is this? Falling straight back to DEFAULT_CAFE_ID was fine when
+ * Which counter is this? Falling straight back to DEFAULT_CARD_ID was fine when
  * one deployment meant one café, and became a cross-merchant bug the moment it
  * didn't: an owner opening a bare `/staff` landed on whoever happened to own the
  * café named "default", saw THEIR cards, and — since PINs are only 4-6 digits and
@@ -108,14 +108,14 @@ async function cafeAndOwner(cafeId: string): Promise<{ cafe: CafeRow; owner: Own
  *      where there is no dashboard session at all),
  *   4. only then the seeded default, which is all a fresh deployment has.
  */
-async function resolveCafe(req: Request): Promise<{ cafe: CafeRow; owner: OwnerRow } | null> {
+async function resolveCard(req: Request): Promise<{ card: CardRow; owner: OwnerRow } | null> {
   const named = cafeIdOf(req);
-  if (named) return cafeAndOwner(named);
+  if (named) return cardAndOwner(named);
 
   const firstCardOf = async (ownerId: string) => {
-    const cards = await cafesForOwner(ownerId);
+    const cards = await cardsForOwner(ownerId);
     const owner = await getOwner(ownerId);
-    return cards[0] && owner ? { cafe: cards[0], owner } : null;
+    return cards[0] && owner ? { card: cards[0], owner } : null;
   };
   const sessionOwner = sessionOwnerId(req);
   if (sessionOwner) {
@@ -126,7 +126,7 @@ async function resolveCafe(req: Request): Promise<{ cafe: CafeRow; owner: OwnerR
     const found = await firstCardOf(ownerId);
     if (found) return found;
   }
-  return cafeAndOwner(DEFAULT_CAFE_ID);
+  return cardAndOwner(DEFAULT_CARD_ID);
 }
 
 /**
@@ -134,9 +134,9 @@ async function resolveCafe(req: Request): Promise<{ cafe: CafeRow; owner: OwnerR
  * a card that isn't this café's (or doesn't exist) so the stamp path proceeds to
  * applyAndPush, which is the one place that maps that to a 404.
  */
-async function stampCooldownLeft(serial: string, cafeId: string): Promise<number> {
+async function stampCooldownLeft(serial: string, cardId: string): Promise<number> {
   const pass = await getPass(serial);
-  if (!pass || pass.cafe_id !== cafeId) return 0;
+  if (!pass || pass.card_id !== cardId) return 0;
   const last = await lastStampAt(serial);
   if (!last) return 0;
   const left = STAMP_COOLDOWN_MS - (Date.now() - new Date(last).getTime());
@@ -149,8 +149,8 @@ async function stampCooldownLeft(serial: string, cafeId: string): Promise<number
  * stops a signed-in phone stamping a stranger's card by editing a header.
  */
 async function requireStaff(req: StaffRequest, res: Response, next: NextFunction): Promise<void> {
-  const found = await resolveCafe(req);
-  if (!found) return void res.status(404).json({ error: "no-such-cafe" });
+  const found = await resolveCard(req);
+  if (!found) return void res.status(404).json({ error: "no-such-card" });
   const session = readStaffCookie(req, found.owner.id);
   if (!session) return void res.status(401).json({ error: "not-signed-in" });
   // A PIN change bumps the owner's epoch, which strands every older cookie —
@@ -159,7 +159,7 @@ async function requireStaff(req: StaffRequest, res: Response, next: NextFunction
   if (session.epoch !== found.owner.staff_session_epoch) {
     return void res.status(401).json({ error: "session-revoked" });
   }
-  req.cafe = found.cafe;
+  req.card = found.card;
   req.owner = found.owner;
   req.deviceId = session.deviceId;
   next();
@@ -170,8 +170,8 @@ const actorOf = (req: StaffRequest) => `staff:${req.deviceId}`;
 
 /** Exchange the owner's staff PIN for a session cookie. The only place it's read. */
 staffRouter.post("/api/login", async (req, res) => {
-  const found = await resolveCafe(req);
-  if (!found) return void res.status(404).json({ error: "no-such-cafe" });
+  const found = await resolveCard(req);
+  if (!found) return void res.status(404).json({ error: "no-such-card" });
   // Keyed on the OWNER: the PIN being guessed is theirs, whichever of their cards
   // the phone happens to be pointed at.
   const rlKey = `pin:${found.owner.id}:${req.ip}`;
@@ -194,15 +194,15 @@ staffRouter.post("/api/login", async (req, res) => {
 });
 
 staffRouter.post("/api/logout", async (req, res) => {
-  const found = await resolveCafe(req);
+  const found = await resolveCard(req);
   if (found) clearStaffCookie(res, found.owner.id);
   res.json({ ok: true });
 });
 
 /** The cards this signed-in phone may stamp — populates the card switcher. */
 staffRouter.get("/api/cards", requireStaff, async (req: StaffRequest, res) => {
-  const cards = await cafesForOwner(req.owner!.id);
-  res.json({ cards: cards.map((c) => ({ id: c.id, name: c.name })), selected: req.cafe!.id });
+  const cards = await cardsForOwner(req.owner!.id);
+  res.json({ cards: cards.map((c) => ({ id: c.id, name: c.name })), selected: req.card!.id });
 });
 
 /**
@@ -211,16 +211,16 @@ staffRouter.get("/api/cards", requireStaff, async (req: StaffRequest, res) => {
  * no card list, no codes, no customer count.
  */
 staffRouter.get("/", async (req, res) => {
-  const found = await resolveCafe(req);
+  const found = await resolveCard(req);
   const session = found ? readStaffCookie(req, found.owner.id) : null;
   const signedIn = Boolean(session && found && session.epoch === found.owner.staff_session_epoch);
   // A cookie that survived a PIN change would otherwise get the stamper shell,
   // fail its first API call, reload, and loop. Drop it here instead.
   if (session && !signedIn && found) clearStaffCookie(res, found.owner.id);
   // The page is TOLD which card it is for. It used to re-derive that from the
-  // URL, so a bare /staff had the browser send x-cafe-id:"default" no matter
+  // URL, so a bare /staff had the browser send x-card-id:"default" no matter
   // which counter the server had actually resolved.
-  res.type("html").send(staffPage(signedIn, found?.cafe.id ?? DEFAULT_CAFE_ID));
+  res.type("html").send(staffPage(signedIn, found?.card.id ?? DEFAULT_CARD_ID));
 });
 
 // QR-decoder fallback for browsers without BarcodeDetector (iPhone Safari).
@@ -253,7 +253,7 @@ function passView(row: PassRow) {
 }
 
 staffRouter.get("/api/passes", requireStaff, async (req: StaffRequest, res) => {
-  const rows = await listRecentPasses(req.cafe!.id, 20);
+  const rows = await listRecentPasses(req.card!.id, 20);
   res.json({ passes: rows.map(passView) });
 });
 
@@ -263,7 +263,7 @@ staffRouter.get("/api/passes", requireStaff, async (req: StaffRequest, res) => {
 staffRouter.get("/api/lookup", requireStaff, async (req: StaffRequest, res) => {
   const code = String(req.query.code ?? "").trim();
   if (!code) return void res.status(400).json({ error: "missing-code" });
-  const row = await getPassByShortCode(req.cafe!.id, code);
+  const row = await getPassByShortCode(req.card!.id, code);
   if (!row) return void res.status(404).json({ error: "no-such-card" });
   res.json({ pass: passView(row) });
 });
@@ -277,7 +277,7 @@ async function updateAndPush(
   update: () => Promise<PassRow | null>,
   forced = false,
 ): Promise<void> {
-  const result = await applyAndPush(req.cafe!, serial, eventType, update, {
+  const result = await applyAndPush(req.card!, serial, eventType, update, {
     actor: actorOf(req),
     forced,
   });
@@ -289,7 +289,7 @@ staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
   const { serial, force } = (req.body ?? {}) as { serial?: string; force?: boolean };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
   if (!force) {
-    const secondsLeft = await stampCooldownLeft(serial, req.cafe!.id);
+    const secondsLeft = await stampCooldownLeft(serial, req.card!.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
   await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, 1), force === true);
@@ -299,10 +299,10 @@ staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
 staffRouter.post("/api/stamp-by-code", requireStaff, async (req: StaffRequest, res) => {
   const { code, force } = (req.body ?? {}) as { code?: string; force?: boolean };
   if (!code?.trim()) return void res.status(400).json({ error: "missing-code" });
-  const row = await getPassByShortCode(req.cafe!.id, code);
+  const row = await getPassByShortCode(req.card!.id, code);
   if (!row) return void res.status(404).json({ error: "no-such-card" });
   if (!force) {
-    const secondsLeft = await stampCooldownLeft(row.serial, req.cafe!.id);
+    const secondsLeft = await stampCooldownLeft(row.serial, req.card!.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
   await updateAndPush(req, res, row.serial, "stamp", () => addStamps(row.serial, 1), force === true);

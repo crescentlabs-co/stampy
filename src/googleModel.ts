@@ -11,12 +11,12 @@
  */
 import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
-import { DEFAULT_CAFE_ID, type CafeRow, type PassRow } from "./db.js";
+import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
 import { isRewardReady, stampDots } from "./passModel.js";
 
-/** One LoyaltyClass per café: `<issuerId>.stampy-<cafeId>`. */
-export function classId(cafe: Pick<CafeRow, "id">): string {
-  return `${config.googleIssuerId}.stampy-${cafe.id}`;
+/** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
+export function classId(card: Pick<CardRow, "id">): string {
+  return `${config.googleIssuerId}.stampy-${card.id}`;
 }
 
 /** One LoyaltyObject per card: `<issuerId>.<serial>` (UUIDs are valid id chars). */
@@ -25,38 +25,38 @@ export function objectId(row: Pick<PassRow, "serial">): string {
 }
 
 /** A café's hosted art URL (per-café route; ?v= makes Google re-fetch after an upload). */
-function artUrl(cafe: Pick<CafeRow, "id">, name: "logo" | "banner", version = 0): string {
-  const base = cafe.id === DEFAULT_CAFE_ID ? "" : `/c/${cafe.id}`;
+function artUrl(card: Pick<CardRow, "id">, name: "logo" | "banner", version = 0): string {
+  const base = card.id === DEFAULT_CARD_ID ? "" : `/c/${card.id}`;
   return `${config.baseUrl}${base}/art/${name}.png${version ? `?v=${version}` : ""}`;
 }
 
-export function logoUrl(cafe: Pick<CafeRow, "id">, logoVersion = 0): string {
-  return artUrl(cafe, "logo", logoVersion);
+export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0): string {
+  return artUrl(card, "logo", logoVersion);
 }
 
 export function buildLoyaltyClass(
-  cafe: CafeRow,
+  card: CardRow,
   logoVersion = 0,
   bannerVersion = 0,
 ): Record<string, unknown> {
   const cls: Record<string, unknown> = {
-    id: classId(cafe),
-    issuerName: cafe.name,
-    programName: `${cafe.name} — Loyalty Card`,
+    id: classId(card),
+    issuerName: card.name,
+    programName: `${card.name} — Loyalty Card`,
     programLogo: {
-      sourceUri: { uri: logoUrl(cafe, logoVersion) },
+      sourceUri: { uri: logoUrl(card, logoVersion) },
       contentDescription: {
-        defaultValue: { language: "en", value: `${cafe.name} logo` },
+        defaultValue: { language: "en", value: `${card.name} logo` },
       },
     },
-    hexBackgroundColor: rgbToHex(cafe.background_color),
+    hexBackgroundColor: rgbToHex(card.background_color),
     countryCode: "MY",
     reviewStatus: "UNDER_REVIEW",
   };
   if (bannerVersion) {
     cls.heroImage = {
-      sourceUri: { uri: artUrl(cafe, "banner", bannerVersion) },
-      contentDescription: { defaultValue: { language: "en", value: `${cafe.name} banner` } },
+      sourceUri: { uri: artUrl(card, "banner", bannerVersion) },
+      contentDescription: { defaultValue: { language: "en", value: `${card.name} banner` } },
     };
   }
   return cls;
@@ -69,15 +69,15 @@ export function buildLoyaltyClass(
  */
 export function buildLoyaltyObject(
   row: PassRow,
-  cafe: CafeRow,
+  card: CardRow,
   stampStripsVersion = 0,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
   const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
-  const base = cafe.id === DEFAULT_CAFE_ID ? "" : `/c/${cafe.id}`;
+  const base = card.id === DEFAULT_CARD_ID ? "" : `/c/${card.id}`;
   const obj: Record<string, unknown> = {
     id: objectId(row),
-    classId: classId(cafe),
+    classId: classId(card),
     state: "ACTIVE",
     accountId: row.serial,
     accountName: `Card ${row.short_code}`,
@@ -103,14 +103,14 @@ export function buildLoyaltyObject(
         header: "REWARD",
         body: ready ? `${row.reward} — show this to staff!` : row.reward,
       },
-      ...(row.message ? [{ id: "message", header: cafe.name, body: row.message }] : []),
+      ...(row.message ? [{ id: "message", header: card.name, body: row.message }] : []),
     ],
   };
   if (stampStripsVersion) {
     obj.heroImage = {
       sourceUri: { uri: `${config.baseUrl}${base}/art/stamps/${filled}.png?v=${stampStripsVersion}` },
       contentDescription: {
-        defaultValue: { language: "en", value: `${cafe.name} stamps: ${row.stamp_count} of ${row.stamps_target}` },
+        defaultValue: { language: "en", value: `${card.name} stamps: ${row.stamp_count} of ${row.stamps_target}` },
       },
     };
   }
@@ -124,7 +124,7 @@ export function buildLoyaltyObject(
  */
 export function buildSaveJwtClaims(
   row: PassRow,
-  cafe: CafeRow,
+  card: CardRow,
   serviceAccountEmail: string,
 ): Record<string, unknown> {
   return {
@@ -134,7 +134,7 @@ export function buildSaveJwtClaims(
     iat: Math.floor(Date.now() / 1000),
     origins: config.baseUrl ? [config.baseUrl] : [],
     payload: {
-      loyaltyObjects: [{ id: objectId(row), classId: classId(cafe) }],
+      loyaltyObjects: [{ id: objectId(row), classId: classId(card) }],
     },
   };
 }

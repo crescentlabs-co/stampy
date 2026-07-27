@@ -14,7 +14,7 @@ import {
   cafeBannerVersion,
   cafeLogoVersion,
   stampStripsVersion,
-  type CafeRow,
+  type CardRow,
   type PassRow,
 } from "./db.js";
 import {
@@ -119,15 +119,15 @@ function toResult(res: { status: number; text: string }): GoogleResult {
 }
 
 /** Insert-or-update the café's LoyaltyClass (called on enroll, café edits, logo upload). */
-export async function ensureClass(cafe: CafeRow): Promise<GoogleResult> {
+export async function ensureClass(card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
     // Version-stamp the art URLs so Google re-fetches them after an upload.
     const [logoVersion, bannerVersion] = await Promise.all([
-      cafeLogoVersion(cafe.id).catch(() => 0),
-      cafeBannerVersion(cafe.id).catch(() => 0),
+      cafeLogoVersion(card.id).catch(() => 0),
+      cafeBannerVersion(card.id).catch(() => 0),
     ]);
-    const cls = buildLoyaltyClass(cafe, logoVersion, bannerVersion);
+    const cls = buildLoyaltyClass(card, logoVersion, bannerVersion);
     const inserted = await api("POST", "/loyaltyClass", cls);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyClass/${cls.id as string}`, cls));
@@ -139,11 +139,11 @@ export async function ensureClass(cafe: CafeRow): Promise<GoogleResult> {
 }
 
 /** Insert the card's LoyaltyObject (idempotent: 409 → patch to freshest state). */
-export async function createObject(row: PassRow, cafe: CafeRow): Promise<GoogleResult> {
+export async function createObject(row: PassRow, card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const stripsV = await stampStripsVersion(cafe.id).catch(() => 0);
-    const obj = buildLoyaltyObject(row, cafe, stripsV);
+    const stripsV = await stampStripsVersion(card.id).catch(() => 0);
+    const obj = buildLoyaltyObject(row, card, stripsV);
     const inserted = await api("POST", "/loyaltyObject", obj);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyObject/${obj.id as string}`, obj));
@@ -155,10 +155,10 @@ export async function createObject(row: PassRow, cafe: CafeRow): Promise<GoogleR
 }
 
 /** The "Add to Google Wallet" URL — a signed savetowallet JWT. */
-export function saveJwtUrl(row: PassRow, cafe: CafeRow): string | null {
+export function saveJwtUrl(row: PassRow, card: CardRow): string | null {
   const sa = serviceAccount();
   if (!sa || !setupStatus().canGoogleWallet) return null;
-  const token = jwt.sign(buildSaveJwtClaims(row, cafe, sa.client_email), sa.private_key, {
+  const token = jwt.sign(buildSaveJwtClaims(row, card, sa.client_email), sa.private_key, {
     algorithm: "RS256",
   });
   return `https://pay.google.com/gp/v/save/${token}`;
@@ -169,12 +169,12 @@ export function saveJwtUrl(row: PassRow, cafe: CafeRow): string | null {
  * NOTIFY_ON_UPDATE makes Google show a notification for the balance change —
  * the Android equivalent of Apple's changeMessage banner.
  */
-export async function patchBalance(row: PassRow, cafe: CafeRow): Promise<GoogleResult> {
+export async function patchBalance(row: PassRow, card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const stripsV = await stampStripsVersion(cafe.id).catch(() => 0);
+    const stripsV = await stampStripsVersion(card.id).catch(() => 0);
     const obj = {
-      ...buildLoyaltyObject(row, cafe, stripsV),
+      ...buildLoyaltyObject(row, card, stripsV),
       notifyPreference: "NOTIFY_ON_UPDATE",
     };
     return toResult(await api("PATCH", `/loyaltyObject/${objectId(row)}`, obj));
@@ -184,12 +184,12 @@ export async function patchBalance(row: PassRow, cafe: CafeRow): Promise<GoogleR
 }
 
 /** Free-form nudge: TEXT_AND_NOTIFY adds a message AND fires a notification. */
-export async function addMessage(row: PassRow, cafe: CafeRow, text: string): Promise<GoogleResult> {
+export async function addMessage(row: PassRow, card: CardRow, text: string): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
     return toResult(
       await api("POST", `/loyaltyObject/${objectId(row)}/addMessage`, {
-        message: { header: cafe.name, body: text, messageType: "TEXT_AND_NOTIFY" },
+        message: { header: card.name, body: text, messageType: "TEXT_AND_NOTIFY" },
       }),
     );
   } catch (err) {

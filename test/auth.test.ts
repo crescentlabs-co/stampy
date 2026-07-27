@@ -52,8 +52,8 @@ describe("enrollment cookie", () => {
   const reqWith = (cookieHeader: string) =>
     ({ get: (h: string) => (h.toLowerCase() === "cookie" ? cookieHeader : undefined) }) as unknown as Request;
 
-  const cookieFor = (cafeId: string, serial: string) =>
-    `${enrollCookieName(cafeId)}=${encodeURIComponent(createEnrollCookie(serial))}`;
+  const cookieFor = (cardId: string, serial: string) =>
+    `${enrollCookieName(cardId)}=${encodeURIComponent(createEnrollCookie(serial))}`;
 
   it("round-trips the serial it issued for a café", () => {
     const serial = "b690eedc-3700-4711-b8ef-3b2d350f0386";
@@ -62,7 +62,7 @@ describe("enrollment cookie", () => {
 
   it("is scoped per café, so another café's cookie is not reused", () => {
     const cookie = cookieFor("default", "serial-a");
-    expect(readEnrollCookie(reqWith(cookie), "other-cafe")).toBeNull();
+    expect(readEnrollCookie(reqWith(cookie), "other-card")).toBeNull();
   });
 
   // The serial is the pass barcode, so an unsigned cookie would let anyone who

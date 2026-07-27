@@ -17,27 +17,28 @@ import { hashPassword, sessionOwnerId } from "../auth.js";
 import { hexToRgb } from "../color.js";
 import { config } from "../config.js";
 import {
-  allCafesWithStats,
+  allCardsWithStats,
   allOwners,
-  createCafe,
+  createCard,
   createOwner,
   adminRetention,
   adminStaffAudit,
   createDesignTemplate,
   deleteDesignTemplate,
   deleteStampStrips,
+  ensureMerchantForOwner,
   generateStaffPin,
-  getCafe,
+  getCard,
   getDesignTemplate,
   listDesignTemplates,
   setStaffPin,
   getOwner,
   getOwnerByEmail,
-  linkOwnerCafe,
-  setCafeBanner,
-  setCafeLogo,
+  linkOwnerCard,
+  setCardBanner,
+  setCardLogo,
   setStampStrips,
-  updateCafe,
+  updateCard,
   updateOwnerPassword,
   type OwnerRow,
 } from "../db.js";
@@ -67,20 +68,20 @@ adminRouter.get("/", (_req, res) => {
 });
 
 /** Print-ready counter sheet for one card: the QR, big, with the reward named. */
-adminRouter.get("/cafe/:id/sheet", requireAdmin, async (req, res) => {
-  const cafe = await getCafe(req.params.id!);
-  if (!cafe) return void res.status(404).type("html").send("<p>No such card.</p>");
-  res.type("html").send(counterSheetPage(cafe));
+adminRouter.get("/card/:id/sheet", requireAdmin, async (req, res) => {
+  const card = await getCard(req.params.id!);
+  if (!card) return void res.status(404).type("html").send("<p>No such card.</p>");
+  res.type("html").send(counterSheetPage(card));
 });
 
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [cafes, owners, retention, staff] = await Promise.all([
-    allCafesWithStats(),
+  const [cards, owners, retention, staff] = await Promise.all([
+    allCardsWithStats(),
     allOwners(),
     adminRetention(),
     adminStaffAudit(),
   ]);
-  res.json({ cafes, owners, retention, staff });
+  res.json({ cards, owners, retention, staff });
 });
 
 /**
@@ -89,7 +90,7 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
  * The design (colours, banner, stamp grid) is rendered in the admin's browser
  * and posted here — no server-side image work, same as the owner dashboard.
  */
-adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
+adminRouter.post("/api/card", requireAdmin, async (req, res) => {
   const b = (req.body ?? {}) as {
     cafeName?: string; ownerEmail?: string; reward?: string;
     bg?: string; fg?: string; label?: string; stampStyle?: string;
@@ -97,12 +98,19 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
   };
   const cafeName = (b.cafeName ?? "").trim();
   const ownerEmail = (b.ownerEmail ?? "").trim().toLowerCase();
-  if (!cafeName) return void res.status(400).json({ error: "missing-cafe-name" });
+  if (!cafeName) return void res.status(400).json({ error: "missing-card-name" });
   if (!ownerEmail.includes("@")) return void res.status(400).json({ error: "bad-email" });
   if (await getOwnerByEmail(ownerEmail)) return void res.status(409).json({ error: "email-taken" });
 
   const reward = (b.reward ?? "Free reward").trim().slice(0, 60) || "Free reward";
-  const cafe = await createCafe({
+  // Owner → merchant → card, in that order: a card belongs to a business, and a
+  // business belongs to a login. (This used to create the card first, back when
+  // one row was all three things.)
+  const tempPassword = "Stampy-" + randomBytes(4).toString("hex");
+  const owner = await createOwner(randomUUID(), ownerEmail, hashPassword(tempPassword));
+  const merchant = await ensureMerchantForOwner(owner.id, cafeName);
+  const card = await createCard({
+    merchantId: merchant.id,
     name: cafeName.slice(0, 60),
     reward,
     stampsTarget: 10,
@@ -110,7 +118,7 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
   });
 
   // Apply the chosen design. Colours arrive as hex; stored as rgb(...) for PassKit.
-  const fresh = await updateCafe(cafe.id, {
+  const fresh = await updateCard(card.id, {
     reward,
     ...(typeof b.bg === "string" ? { background_color: hexToRgb(b.bg) } : {}),
     ...(typeof b.fg === "string" ? { foreground_color: hexToRgb(b.fg) } : {}),
@@ -120,7 +128,7 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
 
   if (typeof b.banner === "string" && b.banner) {
     const bytes = Buffer.from(b.banner, "base64");
-    if (!validateLogoPng(bytes)) await setCafeBanner(cafe.id, bytes);
+    if (!validateLogoPng(bytes)) await setCardBanner(card.id, bytes);
   }
   if (Array.isArray(b.strips) && b.strips.length) {
     const decoded: { filled: number; png: Buffer }[] = [];
@@ -131,22 +139,19 @@ adminRouter.post("/api/cafe", requireAdmin, async (req, res) => {
       if (validateLogoPng(bytes)) { ok = false; break; }
       decoded.push({ filled: Math.trunc(s.filled), png: bytes });
     }
-    if (ok) await setStampStrips(cafe.id, decoded);
+    if (ok) await setStampStrips(card.id, decoded);
   }
 
-  // Create the owner account with a readable temp password, then link them.
-  const tempPassword = "Stampy-" + randomBytes(4).toString("hex");
-  const owner = await createOwner(randomUUID(), ownerEmail, hashPassword(tempPassword));
-  await linkOwnerCafe(owner.id, cafe.id);
+  await linkOwnerCard(owner.id, card.id);
   // One staff PIN per owner, never the shared "1234". Only its hash is stored,
   // so this response is the one chance to hand it over — the console shows it
   // beside the temp password.
   const staffPin = generateStaffPin();
   await setStaffPin(owner.id, staffPin);
-  void ensureClass(fresh ?? cafe).then((r) => {
+  void ensureClass(fresh ?? card).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });
-  res.json({ ok: true, cafeId: cafe.id, ownerEmail: owner.email, tempPassword, staffPin });
+  res.json({ ok: true, cardId: card.id, ownerEmail: owner.email, tempPassword, staffPin });
 });
 
 // ------------------------------------------------------- design templates ----
@@ -208,21 +213,21 @@ adminRouter.get("/api/templates/:id/:kind.png", requireAdmin, async (req, res) =
  * The card's name and its links are left alone — this changes how it looks, not
  * what it is or where it points.
  */
-adminRouter.post("/api/cafe/:id/apply-template", requireAdmin, async (req, res) => {
+adminRouter.post("/api/card/:id/apply-template", requireAdmin, async (req, res) => {
   const b = (req.body ?? {}) as { templateId?: string; strips?: { filled: number; png: string }[] };
   const tpl = await getDesignTemplate(String(b.templateId ?? ""));
   if (!tpl) return void res.status(404).json({ error: "no-such-template" });
-  const cafe = await updateCafe(req.params.id!, {
+  const card = await updateCard(req.params.id!, {
     reward: tpl.reward,
     background_color: tpl.bg,
     foreground_color: tpl.fg,
     label_color: tpl.label_color,
     stamp_style: tpl.stamp_style,
   });
-  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
 
-  if (tpl.logo) await setCafeLogo(cafe.id, tpl.logo);
-  if (tpl.banner) await setCafeBanner(cafe.id, tpl.banner);
+  if (tpl.logo) await setCardLogo(card.id, tpl.logo);
+  if (tpl.banner) await setCardBanner(card.id, tpl.banner);
 
   // Strips are all-or-nothing: a half-applied grid would show the old art for
   // some stamp counts and the new art for others.
@@ -235,11 +240,11 @@ adminRouter.post("/api/cafe/:id/apply-template", requireAdmin, async (req, res) 
       if (validateLogoPng(bytes)) { ok = false; break; }
       decoded.push({ filled: Math.trunc(s.filled), png: bytes });
     }
-    if (ok) await setStampStrips(cafe.id, decoded);
-    else await deleteStampStrips(cafe.id);
+    if (ok) await setStampStrips(card.id, decoded);
+    else await deleteStampStrips(card.id);
   }
 
-  void ensureClass(cafe).then((r) => {
+  void ensureClass(card).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });
   res.json({ ok: true });

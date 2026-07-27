@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { PKPass } from "passkit-generator";
 import { config, setupStatus } from "./config.js";
-import type { CafeRow, PassRow } from "./db.js";
+import type { CardRow, PassRow } from "./db.js";
 import { buildPassJson } from "./passModel.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +41,7 @@ export class NotConfiguredError extends Error {}
  */
 export function buildPkpass(
   row: PassRow,
-  cafe: CafeRow,
+  card: CardRow,
   logoPng?: Buffer | null,
   bannerPng?: Buffer | null,
   stampStripPng?: Buffer | null,
@@ -67,7 +67,7 @@ export function buildPkpass(
   const pass = new PKPass(
     {
       ...art,
-      "pass.json": Buffer.from(JSON.stringify(buildPassJson(row, cafe))),
+      "pass.json": Buffer.from(JSON.stringify(buildPassJson(row, card))),
     },
     {
       wwdr: readFileSync(path.join(certsDir, "wwdr.pem")),

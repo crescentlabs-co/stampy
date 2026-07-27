@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import jwt from "jsonwebtoken";
-import type { CafeRow, PassRow } from "../src/db.js";
+import type { CardRow, PassRow } from "../src/db.js";
 
 // Set the Google env BEFORE importing the modules under test (config reads env at import).
 process.env.GOOGLE_ISSUER_ID = "3388000000012345678";
@@ -12,7 +12,7 @@ const { buildLoyaltyClass, buildLoyaltyObject, buildSaveJwtClaims, logoUrl } = a
 );
 const { rgbToHex } = await import("../src/color.js");
 
-function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
+function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
     id: "default",
     name: "Kopi Corner",
@@ -39,7 +39,7 @@ function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
 function row(overrides: Partial<PassRow> = {}): PassRow {
   return {
     serial: "11111111-2222-3333-4444-555555555555",
-    cafe_id: "default",
+    card_id: "default",
     platform: "google",
     short_code: "ABC234",
     auth_token: "a".repeat(32),
@@ -65,7 +65,7 @@ describe("rgbToHex", () => {
 
 describe("buildLoyaltyClass", () => {
   it("builds the per-café class with hosted logo and branding", () => {
-    const cls = buildLoyaltyClass(cafe()) as any;
+    const cls = buildLoyaltyClass(card()) as any;
     expect(cls.id).toBe("3388000000012345678.stampy-default");
     expect(cls.issuerName).toBe("Kopi Corner");
     expect(cls.hexBackgroundColor).toBe("#3b2016");
@@ -74,20 +74,20 @@ describe("buildLoyaltyClass", () => {
   });
 
   it("points the logo at the café's own route, version-stamped after an upload", () => {
-    expect(logoUrl(cafe())).toBe("https://stampy.example.test/art/logo.png");
-    expect(logoUrl(cafe({ id: "kopi2" }))).toBe("https://stampy.example.test/c/kopi2/art/logo.png");
-    expect(logoUrl(cafe({ id: "kopi2" }), 1700000000000)).toBe(
+    expect(logoUrl(card())).toBe("https://stampy.example.test/art/logo.png");
+    expect(logoUrl(card({ id: "kopi2" }))).toBe("https://stampy.example.test/c/kopi2/art/logo.png");
+    expect(logoUrl(card({ id: "kopi2" }), 1700000000000)).toBe(
       "https://stampy.example.test/c/kopi2/art/logo.png?v=1700000000000",
     );
-    const cls = buildLoyaltyClass(cafe({ id: "kopi2" }), 42) as any;
+    const cls = buildLoyaltyClass(card({ id: "kopi2" }), 42) as any;
     expect(cls.programLogo.sourceUri.uri).toBe(
       "https://stampy.example.test/c/kopi2/art/logo.png?v=42",
     );
   });
 
   it("adds a heroImage only when a banner exists (version > 0)", () => {
-    expect((buildLoyaltyClass(cafe()) as any).heroImage).toBeUndefined();
-    const withBanner = buildLoyaltyClass(cafe({ id: "kopi2" }), 0, 99) as any;
+    expect((buildLoyaltyClass(card()) as any).heroImage).toBeUndefined();
+    const withBanner = buildLoyaltyClass(card({ id: "kopi2" }), 0, 99) as any;
     expect(withBanner.heroImage.sourceUri.uri).toBe(
       "https://stampy.example.test/c/kopi2/art/banner.png?v=99",
     );
@@ -96,21 +96,21 @@ describe("buildLoyaltyClass", () => {
 
 describe("buildLoyaltyObject", () => {
   it("carries the SAME barcode content as the Apple pass (serial) so one scanner works", () => {
-    const obj = buildLoyaltyObject(row(), cafe()) as any;
+    const obj = buildLoyaltyObject(row(), card()) as any;
     expect(obj.barcode.type).toBe("QR_CODE");
     expect(obj.barcode.value).toBe(row().serial);
     expect(obj.barcode.alternateText).toBe("Code ABC234");
   });
 
   it("shows stamp progress as the points balance", () => {
-    const obj = buildLoyaltyObject(row(), cafe()) as any;
+    const obj = buildLoyaltyObject(row(), card()) as any;
     expect(obj.loyaltyPoints.balance.string).toBe("3/10");
     const stamps = obj.textModulesData.find((t: any) => t.id === "stamps");
     expect(stamps.body).toBe("●●●○○○○○○○");
   });
 
   it("switches to reward-ready copy when full", () => {
-    const obj = buildLoyaltyObject(row({ stamp_count: 10 }), cafe()) as any;
+    const obj = buildLoyaltyObject(row({ stamp_count: 10 }), card()) as any;
     const stamps = obj.textModulesData.find((t: any) => t.id === "stamps");
     expect(stamps.header).toContain("REWARD READY");
     const reward = obj.textModulesData.find((t: any) => t.id === "reward");
@@ -118,16 +118,16 @@ describe("buildLoyaltyObject", () => {
   });
 
   it("includes the win-back message module only when a message exists", () => {
-    const without = buildLoyaltyObject(row(), cafe()) as any;
+    const without = buildLoyaltyObject(row(), card()) as any;
     expect(without.textModulesData.find((t: any) => t.id === "message")).toBeUndefined();
-    const withMsg = buildLoyaltyObject(row({ message: "We miss you!" }), cafe()) as any;
+    const withMsg = buildLoyaltyObject(row({ message: "We miss you!" }), card()) as any;
     expect(withMsg.textModulesData.find((t: any) => t.id === "message").body).toBe("We miss you!");
   });
 
   it("adds a hero image pointing at the current-count stamp strip only when strips exist", () => {
-    const none = buildLoyaltyObject(row({ stamp_count: 3 }), cafe(), 0) as any;
+    const none = buildLoyaltyObject(row({ stamp_count: 3 }), card(), 0) as any;
     expect(none.heroImage).toBeUndefined(); // 0 version = no rendered grid
-    const withStrips = buildLoyaltyObject(row({ stamp_count: 3 }), cafe(), 1720000000000) as any;
+    const withStrips = buildLoyaltyObject(row({ stamp_count: 3 }), card(), 1720000000000) as any;
     expect(withStrips.heroImage.sourceUri.uri).toContain("/art/stamps/3.png?v=1720000000000");
   });
 });
@@ -143,7 +143,7 @@ describe("save-to-wallet JWT", () => {
   });
 
   it("signs claims Google will accept (aud/typ/iss/payload)", () => {
-    const claims = buildSaveJwtClaims(row(), cafe(), "svc@project.iam.gserviceaccount.com");
+    const claims = buildSaveJwtClaims(row(), card(), "svc@project.iam.gserviceaccount.com");
     const token = jwt.sign(claims, privateKey, { algorithm: "RS256" });
     const decoded = jwt.verify(token, publicKey, { algorithms: ["RS256"] }) as any;
     expect(decoded.aud).toBe("google");

@@ -1,0 +1,250 @@
+/**
+ * `pnpm test:migration` — proves migrate() upgrades a REAL v1.2 database.
+ *
+ * The e2e suite only ever runs migrate() against an empty database, so the one
+ * path that actually matters on deploy — the upgrade — had no coverage. This
+ * builds the pre-v1.3 schema by hand (that fixture IS production's shape),
+ * fills it with the kind of rows a live café has, then runs migrate() and checks
+ * the things that would be catastrophic to get wrong:
+ *
+ *   - card ids survive byte-for-byte (printed QRs, Google class ids, art URLs)
+ *   - every pass keeps the card it was issued for
+ *   - every owner gains exactly one merchant, holding their cards
+ *   - every pass gains a customer
+ *   - the staff PIN still verifies
+ *   - it is idempotent — running it twice changes nothing
+ */
+import EmbeddedPostgres from "embedded-postgres";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+const dataDir = mkdtempSync(path.join(tmpdir(), "stampy-mig-"));
+const pg = new EmbeddedPostgres({
+  databaseDir: dataDir,
+  user: "s",
+  password: "s",
+  port: 5477,
+  persistent: false,
+});
+
+let failures = 0;
+function expect(cond: boolean, label: string): void {
+  if (cond) console.log("OK:", label);
+  else {
+    console.error("FAIL:", label);
+    failures++;
+  }
+}
+
+/** The schema exactly as v1.2 left it — cafés, not cards. */
+const LEGACY_SCHEMA = `
+  CREATE TABLE cafes (
+    id text PRIMARY KEY,
+    name text NOT NULL,
+    reward text NOT NULL DEFAULT 'Free coffee',
+    stamps_target integer NOT NULL DEFAULT 10,
+    stamps_start integer NOT NULL DEFAULT 2,
+    background_color text NOT NULL DEFAULT 'rgb(59, 32, 22)',
+    foreground_color text NOT NULL DEFAULT 'rgb(255, 250, 240)',
+    label_color text NOT NULL DEFAULT 'rgb(214, 178, 120)',
+    staff_pin text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    auto_winback_enabled boolean NOT NULL DEFAULT false,
+    auto_winback_days integer NOT NULL DEFAULT 14,
+    auto_winback_message text NOT NULL DEFAULT 'We miss you!',
+    stamp_style text NOT NULL DEFAULT '',
+    staff_pin_hash text NOT NULL DEFAULT '',
+    staff_session_epoch integer NOT NULL DEFAULT 1,
+    average_spend_cents integer NOT NULL DEFAULT 0,
+    currency text NOT NULL DEFAULT 'RM'
+  );
+  CREATE TABLE owners (
+    id text PRIMARY KEY,
+    email text NOT NULL UNIQUE,
+    password_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    reset_token_hash text,
+    reset_expires timestamptz,
+    staff_pin_hash text NOT NULL DEFAULT '',
+    staff_session_epoch integer NOT NULL DEFAULT 1
+  );
+  CREATE TABLE owner_cafes (
+    owner_id text NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
+    cafe_id text NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
+    PRIMARY KEY (owner_id, cafe_id)
+  );
+  CREATE TABLE passes (
+    serial text PRIMARY KEY,
+    cafe_id text NOT NULL REFERENCES cafes(id),
+    platform text NOT NULL DEFAULT 'apple',
+    short_code text NOT NULL UNIQUE,
+    auth_token text NOT NULL,
+    stamp_count integer NOT NULL DEFAULT 0,
+    stamps_target integer NOT NULL DEFAULT 10,
+    reward text NOT NULL DEFAULT '',
+    message text NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  );
+  CREATE INDEX idx_passes_cafe ON passes(cafe_id);
+  CREATE TABLE registrations (
+    device_library_id text NOT NULL,
+    push_token text NOT NULL,
+    serial text NOT NULL REFERENCES passes(serial) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (device_library_id, serial)
+  );
+  CREATE TABLE events (
+    id bigserial PRIMARY KEY,
+    cafe_id text NOT NULL REFERENCES cafes(id),
+    serial text NOT NULL,
+    type text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    actor text NOT NULL DEFAULT '',
+    forced boolean NOT NULL DEFAULT false
+  );
+  CREATE INDEX idx_events_cafe_time ON events(cafe_id, created_at);
+  CREATE TABLE cafe_logos (
+    cafe_id text PRIMARY KEY REFERENCES cafes(id) ON DELETE CASCADE,
+    png bytea NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()
+  );
+  CREATE TABLE cafe_banners (
+    cafe_id text PRIMARY KEY REFERENCES cafes(id) ON DELETE CASCADE,
+    png bytea NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()
+  );
+  CREATE TABLE cafe_stamp_strips (
+    cafe_id text NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
+    filled integer NOT NULL, png bytea NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (cafe_id, filled)
+  );
+  CREATE TABLE owner_logins (
+    owner_id text NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+`;
+
+async function main(): Promise<void> {
+  await pg.initialise();
+  await pg.start();
+  await pg.createDatabase("stampy");
+  process.env.DATABASE_URL = "postgresql://s:s@localhost:5477/stampy";
+  process.env.BASE_URL = "http://localhost:3000";
+
+  const db = await import("../src/db.js");
+  const { hashPassword, verifyPassword } = await import("../src/auth.js");
+  const sql = db.getPool();
+
+  // --- Build a live-looking v1.2 database -----------------------------------
+  await sql.query(LEGACY_SCHEMA);
+  const pinHash = hashPassword("4821");
+  await sql.query(
+    `INSERT INTO cafes (id, name, reward, stamps_target, staff_pin_hash, average_spend_cents, currency)
+     VALUES ('default','Kopi Corner','Free coffee',10,$1,450,'RM'),
+            ('ab12cd34','Pastry card','Free pastry',8,$1,0,'RM'),
+            ('zz99yy88','Someone Else','Free tea',6,$1,0,'RM')`,
+    [pinHash],
+  );
+  await sql.query(
+    `INSERT INTO owners (id, email, password_hash) VALUES
+       ('own-1','a@shop.my','x'), ('own-2','b@shop.my','x')`,
+  );
+  await sql.query(
+    `INSERT INTO owner_cafes (owner_id, cafe_id) VALUES
+       ('own-1','default'), ('own-1','ab12cd34'), ('own-2','zz99yy88')`,
+  );
+  await sql.query(
+    `INSERT INTO passes (serial, cafe_id, platform, short_code, auth_token, stamp_count, stamps_target, reward)
+     VALUES ('s-apple','default','apple','AAA111','t',3,10,'Free coffee'),
+            ('s-google','default','google','BBB222','t',1,10,'Free coffee'),
+            ('s-pastry','ab12cd34','apple','CCC333','t',5,8,'Free pastry'),
+            ('s-other','zz99yy88','apple','DDD444','t',2,6,'Free tea')`,
+  );
+  await sql.query(
+    `INSERT INTO events (cafe_id, serial, type) VALUES
+       ('default','s-apple','enroll'), ('default','s-apple','stamp'),
+       ('ab12cd34','s-pastry','stamp')`,
+  );
+  await sql.query(`INSERT INTO cafe_logos (cafe_id, png) VALUES ('default','\\x89504e47')`);
+
+  const beforeIds = (await sql.query<{ id: string }>(`SELECT id FROM cafes ORDER BY id`)).rows.map((r) => r.id);
+
+  // --- The upgrade ----------------------------------------------------------
+  await db.migrate();
+  await db.migrate(); // idempotency: a second boot must be a no-op
+
+  // --- The things that would be catastrophic to get wrong --------------------
+  const afterIds = (await sql.query<{ id: string }>(`SELECT id FROM cards ORDER BY id`)).rows.map((r) => r.id);
+  expect(
+    JSON.stringify(afterIds) === JSON.stringify(beforeIds),
+    `every card id survives the rename byte-for-byte (${afterIds.join(", ")})`,
+  );
+
+  const { classId } = await import("../src/googleModel.js");
+  expect(
+    classId({ id: "ab12cd34" }).endsWith(".stampy-ab12cd34"),
+    "the Google class id still derives from the unchanged card id",
+  );
+
+  const passes = (await sql.query<{ serial: string; card_id: string; customer_id: string | null }>(
+    `SELECT serial, card_id, customer_id FROM passes ORDER BY serial`,
+  )).rows;
+  expect(
+    passes.find((p) => p.serial === "s-pastry")?.card_id === "ab12cd34",
+    "every pass keeps the card it was issued for",
+  );
+  expect(passes.every((p) => p.customer_id), "every pass gained a customer");
+  expect(
+    new Set(passes.map((p) => p.customer_id)).size === passes.length,
+    "one customer per pass — the Apple/Google pair cannot be merged retroactively",
+  );
+
+  const merchants = (await sql.query<{ id: string; owner_id: string; name: string; average_spend_cents: number }>(
+    `SELECT id, owner_id, name, average_spend_cents FROM merchants ORDER BY owner_id`,
+  )).rows;
+  expect(merchants.length === 2, `one merchant per owner (got ${merchants.length})`);
+  expect(
+    merchants[0]?.name === "Kopi Corner" && merchants[0]?.average_spend_cents === 450,
+    "the merchant inherits its name and money settings from the owner's oldest card",
+  );
+
+  const linked = (await sql.query<{ id: string; merchant_id: string | null }>(
+    `SELECT id, merchant_id FROM cards ORDER BY id`,
+  )).rows;
+  const byId = Object.fromEntries(linked.map((c) => [c.id, c.merchant_id]));
+  expect(
+    byId["default"] === byId["ab12cd34"] && byId["default"] != null,
+    "both of owner 1's cards hang off the same merchant",
+  );
+  expect(
+    byId["zz99yy88"] !== byId["default"],
+    "another owner's card belongs to a different merchant",
+  );
+
+  const slugs = (await sql.query<{ slug: string }>(`SELECT slug FROM merchant_slugs ORDER BY slug`)).rows;
+  expect(slugs.some((s) => s.slug === "kopi-corner"), `a readable slug is reserved (${slugs.map((s) => s.slug).join(", ")})`);
+
+  const owner1 = (await sql.query<{ staff_pin_hash: string }>(
+    `SELECT staff_pin_hash FROM owners WHERE id = 'own-1'`,
+  )).rows[0]!;
+  expect(verifyPassword("4821", owner1.staff_pin_hash), "the staff PIN still works after the upgrade");
+
+  const logo = (await sql.query(`SELECT png FROM card_logos WHERE card_id = 'default'`)).rowCount;
+  expect(logo === 1, "uploaded art follows its card through the rename");
+
+  const custCount = (await sql.query<{ n: string }>(`SELECT count(*) AS n FROM customers`)).rows[0]!.n;
+  expect(Number(custCount) === 4, `running migrate twice does not duplicate customers (got ${custCount})`);
+
+  console.log(failures === 0 ? "\nMIGRATION OK ✅" : `\n${failures} FAILURE(S) ❌`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    failures++;
+  })
+  .finally(async () => {
+    await pg.stop();
+    process.exit(failures === 0 ? 0 : 1);
+  });

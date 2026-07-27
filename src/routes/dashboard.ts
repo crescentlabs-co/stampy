@@ -6,13 +6,13 @@
  *   POST /dashboard/api/login       { email, password } → session cookie
  *   POST /dashboard/api/logout
  *   GET  /dashboard/api/overview    cafés + metrics for the logged-in owner
- *   POST /dashboard/api/cafes       create a new café
- *   POST /dashboard/api/cafe/:id    update café fields (name, reward, target, PIN…)
+ *   POST /dashboard/api/cards       create a new café
+ *   POST /dashboard/api/card/:id    update café fields (name, reward, target, PIN…)
  *
  * Signup is open (Stage 2): any café owner can create an account and gets a
  * fresh, isolated starter card. The very first signup on a deployment instead
  * claims the env-seeded default café (bootstrap). Owners only ever see cafés
- * linked to them via owner_cafes.
+ * linked to them via owner_cards.
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
@@ -25,36 +25,38 @@ import {
 } from "../auth.js";
 import {
   cafeBannerVersion,
-  cafeCardCounts,
-  cafeCustomers,
+  cardCounts,
+  cardCustomers,
   cafeLogoVersion,
-  cafeMetrics,
-  cafesForOwner,
+  cardMetrics,
+  cardsForOwner,
+  ensureMerchantForOwner,
+  merchantForOwner,
   clearResetToken,
   countOwners,
-  createCafe,
+  createCard,
   createOwner,
-  DEFAULT_CAFE_ID,
-  deleteCafeBanner,
-  deleteCafeLogo,
+  DEFAULT_CARD_ID,
+  deleteCardBanner,
+  deleteCardLogo,
   deleteStampStrips,
   generateStaffPin,
   getOwner,
   getOwnerByEmail,
   getOwnerByResetToken,
-  linkOwnerCafe,
+  linkOwnerCard,
   logOwnerLogin,
-  ownerHasCafe,
-  setCafeBanner,
-  setCafeLogo,
+  ownerHasCard,
+  setCardBanner,
+  setCardLogo,
   setMessage,
   setResetToken,
   setStaffPin,
   setStampStrips,
   stampStripsVersion,
-  updateCafe,
+  updateCard,
   updateOwnerPassword,
-  type CafeRow,
+  type CardRow,
   type OwnerRow,
 } from "../db.js";
 import { applyAndPush } from "../cardActions.js";
@@ -118,21 +120,27 @@ dashboardRouter.post("/api/signup", async (req, res) => {
   // One staff PIN per owner, random from the start — never the shared,
   // guessable "1234". They see it in Settings and can replace it there.
   await setStaffPin(owner.id, generateStaffPin());
+  // The business, distinct from the card it runs. Its id is what the /j/ poster
+  // QR encodes, so it is minted here and never changes.
+  const shopName = (cafeName ?? "").trim().slice(0, 60) || "My shop";
+  const merchant = await ensureMerchantForOwner(owner.id, shopName);
 
   if (isFirstOwner) {
-    // Bootstrap: the first account on a deployment claims the env-seeded café.
-    await linkOwnerCafe(owner.id, DEFAULT_CAFE_ID);
+    // Bootstrap: the first account on a deployment claims the env-seeded card.
+    await linkOwnerCard(owner.id, DEFAULT_CARD_ID);
+    await updateCard(DEFAULT_CARD_ID, { merchant_id: merchant.id });
   } else {
     // Every later signup gets its own isolated starter card.
-    const cafe = await createCafe({
-      name: (cafeName ?? "").trim().slice(0, 60) || "My Café",
+    const card = await createCard({
+      merchantId: merchant.id,
+      name: shopName,
       reward: "Free coffee",
       stampsTarget: 10,
       stampsStart: 2,
     });
-    await linkOwnerCafe(owner.id, cafe.id);
+    await linkOwnerCard(owner.id, card.id);
     // Mirror the new card into Google's system (graceful no-op until configured).
-    void ensureClass(cafe).then((r) => {
+    void ensureClass(card).then((r) => {
       if (!r.ok && r.reason !== "google-not-configured") {
         console.error("[signup] google class sync failed:", r);
       }
@@ -244,43 +252,43 @@ dashboardRouter.post("/api/reset", async (req, res) => {
 });
 
 dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res) => {
-  const cafes = await cafesForOwner(req.owner!.id);
+  const cards = await cardsForOwner(req.owner!.id);
   const out = [];
-  for (const cafe of cafes) {
+  for (const card of cards) {
     const [logoVersion, bannerVersion, stampsVersion] = await Promise.all([
-      cafeLogoVersion(cafe.id),
-      cafeBannerVersion(cafe.id),
-      stampStripsVersion(cafe.id),
+      cafeLogoVersion(card.id),
+      cafeBannerVersion(card.id),
+      stampStripsVersion(card.id),
     ]);
     out.push({
-      id: cafe.id,
-      name: cafe.name,
-      reward: cafe.reward,
-      stampsTarget: cafe.stamps_target,
-      stampsStart: cafe.stamps_start,
+      id: card.id,
+      name: card.name,
+      reward: card.reward,
+      stampsTarget: card.stamps_target,
+      stampsStart: card.stamps_start,
       // The PIN is never sent back: only its scrypt hash is stored, so there is
       // nothing to reveal. A forgotten PIN is replaced via /rotate-pin.
-      averageSpend: cafe.average_spend_cents / 100,
-      currency: cafe.currency,
+      averageSpend: card.average_spend_cents / 100,
+      currency: card.currency,
       // Colours cross the API as hex — that's what <input type="color"> speaks.
-      bg: rgbToHex(cafe.background_color),
-      fg: rgbToHex(cafe.foreground_color),
-      label: rgbToHex(cafe.label_color),
+      bg: rgbToHex(card.background_color),
+      fg: rgbToHex(card.foreground_color),
+      label: rgbToHex(card.label_color),
       logoVersion, // 0 = no upload; used to cache-bust the preview image
       bannerVersion,
-      stampStyle: cafe.stamp_style,
+      stampStyle: card.stamp_style,
       stampsVersion, // 0 = no rendered stamp grid (plain text dots)
-      autoWinbackEnabled: cafe.auto_winback_enabled,
-      autoWinbackDays: cafe.auto_winback_days,
-      autoWinbackMessage: cafe.auto_winback_message,
-      metrics: await cafeMetrics(cafe.id),
+      autoWinbackEnabled: card.auto_winback_enabled,
+      autoWinbackDays: card.auto_winback_days,
+      autoWinbackMessage: card.auto_winback_message,
+      metrics: await cardMetrics(card.id),
     });
   }
-  res.json({ email: req.owner!.email, cafes: out });
+  res.json({ email: req.owner!.email, cards: out });
 });
 
 /** Add another card. It shares the owner's existing staff PIN and stamper page. */
-dashboardRouter.post("/api/cafes", requireOwner, async (req: OwnerRequest, res) => {
+dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) => {
   const { name, reward, stampsTarget, stampsStart } = (req.body ?? {}) as {
     name?: string;
     reward?: string;
@@ -288,14 +296,16 @@ dashboardRouter.post("/api/cafes", requireOwner, async (req: OwnerRequest, res) 
     stampsStart?: number;
   };
   if (!name?.trim()) return void res.status(400).json({ error: "missing-name" });
-  const cafe = await createCafe({
+  const merchant = await ensureMerchantForOwner(req.owner!.id, name.trim());
+  const card = await createCard({
+    merchantId: merchant.id,
     name: name.trim().slice(0, 60),
     reward: (reward ?? "Free coffee").trim().slice(0, 60),
     stampsTarget: clampInt(stampsTarget, 1, 30, 10),
     stampsStart: clampInt(stampsStart, 0, 29, 2),
   });
-  await linkOwnerCafe(req.owner!.id, cafe.id);
-  res.json({ ok: true, id: cafe.id });
+  await linkOwnerCard(req.owner!.id, card.id);
+  res.json({ ok: true, id: card.id });
 });
 
 /**
@@ -304,7 +314,7 @@ dashboardRouter.post("/api/cafes", requireOwner, async (req: OwnerRequest, res) 
  * single chance to write it down. Every staff phone has to sign in again with
  * it, on every card.
  *
- * Was per-café (`/api/cafe/:id/rotate-pin`), which gave an owner with two cards
+ * Was per-café (`/api/card/:id/rotate-pin`), which gave an owner with two cards
  * two PINs and two stamper links for one counter.
  */
 dashboardRouter.post("/api/staff-pin", requireOwner, async (req: OwnerRequest, res) => {
@@ -316,13 +326,13 @@ dashboardRouter.post("/api/staff-pin", requireOwner, async (req: OwnerRequest, r
   res.json({ ok: true, staffPin: pin });
 });
 
-dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
+dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
   }
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const fields: Parameters<typeof updateCafe>[1] = {};
+  const fields: Parameters<typeof updateCard>[1] = {};
   if (typeof body.name === "string" && body.name.trim()) fields.name = body.name.trim().slice(0, 60);
   if (typeof body.reward === "string" && body.reward.trim()) fields.reward = body.reward.trim().slice(0, 60);
   if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 30, 10);
@@ -349,11 +359,11 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
   }
   // The staff PIN is NOT a card field — it belongs to the owner and lives at
   // POST /api/staff-pin. Anything sent here is ignored on purpose.
-  const cafe = await updateCafe(cafeId, fields);
-  if (!cafe) return void res.status(404).json({ error: "no-such-cafe" });
+  const card = await updateCard(cardId, fields);
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
   // Mirror branding/name changes into the Google-hosted card class (no-op
   // result until Google credentials are configured).
-  void ensureClass(cafe).then((r) => {
+  void ensureClass(card).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") {
       console.error("[dashboard] google class sync failed:", r);
     }
@@ -368,10 +378,10 @@ dashboardRouter.post("/api/cafe/:id", requireOwner, async (req: OwnerRequest, re
  * is version-stamped, so Google re-fetches). Apple cards pick the logo up on
  * their next pass re-fetch.
  */
-dashboardRouter.post("/api/cafe/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
+dashboardRouter.post("/api/card/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
   }
   const { png } = (req.body ?? {}) as { png?: string };
   if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
@@ -383,10 +393,10 @@ dashboardRouter.post("/api/cafe/:id/logo", requireOwner, async (req: OwnerReques
   }
   const reject = validateLogoPng(bytes);
   if (reject) return void res.status(400).json({ error: reject });
-  await setCafeLogo(cafeId, bytes);
-  const cafe = await updateCafe(cafeId, {}); // fetch fresh row
-  if (cafe) {
-    void ensureClass(cafe).then((r) => {
+  await setCardLogo(cardId, bytes);
+  const card = await updateCard(cardId, {}); // fetch fresh row
+  if (card) {
+    void ensureClass(card).then((r) => {
       if (!r.ok && r.reason !== "google-not-configured") {
         console.error("[dashboard] google logo sync failed:", r);
       }
@@ -395,39 +405,39 @@ dashboardRouter.post("/api/cafe/:id/logo", requireOwner, async (req: OwnerReques
   res.json({ ok: true });
 });
 
-dashboardRouter.delete("/api/cafe/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
+dashboardRouter.delete("/api/card/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
   }
-  await deleteCafeLogo(cafeId);
-  await syncGoogle(cafeId);
+  await deleteCardLogo(cardId);
+  await syncGoogle(cardId);
   res.json({ ok: true });
 });
 
 /** Banner image (Apple strip / Google hero) — same upload contract as the logo. */
-dashboardRouter.post("/api/cafe/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
+dashboardRouter.post("/api/card/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
   }
   const { png } = (req.body ?? {}) as { png?: string };
   if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
   const bytes = Buffer.from(png, "base64");
   const reject = validateLogoPng(bytes);
   if (reject) return void res.status(400).json({ error: reject });
-  await setCafeBanner(cafeId, bytes);
-  await syncGoogle(cafeId);
+  await setCardBanner(cardId, bytes);
+  await syncGoogle(cardId);
   res.json({ ok: true });
 });
 
-dashboardRouter.delete("/api/cafe/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
+dashboardRouter.delete("/api/card/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
   }
-  await deleteCafeBanner(cafeId);
-  await syncGoogle(cafeId);
+  await deleteCardBanner(cardId);
+  await syncGoogle(cardId);
   res.json({ ok: true });
 });
 
@@ -437,10 +447,10 @@ dashboardRouter.delete("/api/cafe/:id/banner", requireOwner, async (req: OwnerRe
  * icon is selected (for restoring the designer); the PNGs are what the card
  * shows. Stored transactionally so a card never has a half-updated grid.
  */
-dashboardRouter.post("/api/cafe/:id/stamps", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
+dashboardRouter.post("/api/card/:id/stamps", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
   }
   const { style, strips } = (req.body ?? {}) as {
     style?: string;
@@ -459,31 +469,31 @@ dashboardRouter.post("/api/cafe/:id/stamps", requireOwner, async (req: OwnerRequ
     if (reject) return void res.status(400).json({ error: reject });
     decoded.push({ filled: Math.trunc(s.filled), png: bytes });
   }
-  await setStampStrips(cafeId, decoded);
-  await updateCafe(cafeId, { stamp_style: (style ?? "").slice(0, 40) });
-  await syncGoogle(cafeId); // refresh the Google hero image (version-stamped)
+  await setStampStrips(cardId, decoded);
+  await updateCard(cardId, { stamp_style: (style ?? "").slice(0, 40) });
+  await syncGoogle(cardId); // refresh the Google hero image (version-stamped)
   res.json({ ok: true });
 });
 
-dashboardRouter.delete("/api/cafe/:id/stamps", requireOwner, async (req: OwnerRequest, res) => {
-  const cafeId = req.params.id!;
-  if (!(await ownerHasCafe(req.owner!.id, cafeId))) {
-    return void res.status(403).json({ error: "not-your-cafe" });
+dashboardRouter.delete("/api/card/:id/stamps", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
   }
-  await deleteStampStrips(cafeId);
-  await updateCafe(cafeId, { stamp_style: "" });
-  await syncGoogle(cafeId);
+  await deleteStampStrips(cardId);
+  await updateCard(cardId, { stamp_style: "" });
+  await syncGoogle(cardId);
   res.json({ ok: true });
 });
 
 // ----------------------------------------------- owner-level customers / nudge ----
 // The redesigned Customers view spans ALL of an owner's cards (not one selected
-// card), so these aggregate across cafesForOwner and let the owner target which
+// card), so these aggregate across cardsForOwner and let the owner target which
 // card(s) to message. Isolation still holds — only the owner's own cards.
 
 /** Which of the owner's cards a request targets: the given ids, filtered to owned; else all. */
-async function targetedCafes(ownerId: string, cardIds: unknown): Promise<CafeRow[]> {
-  const owned = await cafesForOwner(ownerId);
+async function targetedCards(ownerId: string, cardIds: unknown): Promise<CardRow[]> {
+  const owned = await cardsForOwner(ownerId);
   if (!Array.isArray(cardIds) || cardIds.length === 0) return owned;
   const wanted = new Set(cardIds.map(String));
   return owned.filter((c) => wanted.has(c.id));
@@ -542,11 +552,11 @@ interface CustomerView {
 }
 
 /** Every active card of the owner's targeted cafés, decorated for the Customers view. */
-async function customerViews(cards: CafeRow[]): Promise<CustomerView[]> {
+async function customerViews(cards: CardRow[]): Promise<CustomerView[]> {
   const now = Date.now();
   const out: CustomerView[] = [];
-  for (const cafe of cards) {
-    for (const c of await cafeCustomers(cafe.id)) {
+  for (const card of cards) {
+    for (const c of await cardCustomers(card.id)) {
       // last_visit, not updated_at — a nudge must not reset the lapse clock.
       const lastDays = Math.floor((now - new Date(c.last_visit).getTime()) / 86400000);
       const allowed = canNudge({
@@ -557,8 +567,8 @@ async function customerViews(cards: CafeRow[]): Promise<CustomerView[]> {
       out.push({
         serial: c.serial,
         code: c.code,
-        cardId: cafe.id,
-        cardName: cafe.name,
+        cardId: card.id,
+        cardName: card.name,
         stamps: c.stamps,
         target: c.target,
         lastDays,
@@ -580,7 +590,7 @@ async function customerViews(cards: CafeRow[]): Promise<CustomerView[]> {
 
 /** GET /api/customers?cardId=all|<id> — cohort summary, counts, and the searchable list. */
 dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, res) => {
-  const owned = await cafesForOwner(req.owner!.id);
+  const owned = await cardsForOwner(req.owner!.id);
   const cardId = String(req.query.cardId ?? "all");
   const cards = cardId === "all" ? owned : owned.filter((c) => c.id === cardId);
   const customers = await customerViews(cards);
@@ -609,8 +619,8 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
   let active = 0;
   let issuedNeverAdded = 0;
   let removed = 0;
-  for (const cafe of cards) {
-    const n = await cafeCardCounts(cafe.id);
+  for (const card of cards) {
+    const n = await cardCounts(card.id);
     active += n.active;
     issuedNeverAdded += n.issuedNeverAdded;
     removed += n.removed;
@@ -642,9 +652,9 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   const message = (body.message ?? "").trim().slice(0, 200);
   if (!message) return void res.status(400).json({ error: "missing-message" });
 
-  const cafes = await targetedCafes(req.owner!.id, body.cardIds);
-  const cafeById = new Map(cafes.map((c) => [c.id, c]));
-  const everyone = await customerViews(cafes); // active cards of owned cafés only
+  const cards = await targetedCards(req.owner!.id, body.cardIds);
+  const cafeById = new Map(cards.map((c) => [c.id, c]));
+  const everyone = await customerViews(cards); // active cards of owned cafés only
 
   const bucketKeys = new Set<string>(BUCKETS.map((b) => b.key));
   let targets = everyone;
@@ -668,8 +678,8 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   let sent = 0;
   let failed = 0;
   for (const c of serials) {
-    const cafe = cafeById.get(c.cardId)!;
-    const r = await applyAndPush(cafe, c.serial, "nudge", () => setMessage(c.serial, message), {
+    const card = cafeById.get(c.cardId)!;
+    const r = await applyAndPush(card, c.serial, "nudge", () => setMessage(c.serial, message), {
       nudgeText: message,
       actor: `owner:${req.owner!.id}`,
     });
@@ -680,10 +690,10 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
 });
 
 /** Re-sync a café's Google-hosted class after a branding/art change (graceful no-op unconfigured). */
-async function syncGoogle(cafeId: string): Promise<void> {
-  const cafe = await updateCafe(cafeId, {}); // fetch fresh row
-  if (!cafe) return;
-  void ensureClass(cafe).then((r) => {
+async function syncGoogle(cardId: string): Promise<void> {
+  const card = await updateCard(cardId, {}); // fetch fresh row
+  if (!card) return;
+  void ensureClass(card).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") {
       console.error("[dashboard] google class sync failed:", r);
     }

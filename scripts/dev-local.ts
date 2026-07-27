@@ -37,7 +37,7 @@ async function main() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "dev@stampy.test", password: "password123" }),
   });
-  await db.updateCafe("default", { average_spend_cents: 450, currency: "RM" });
+  await db.updateCard("default", { average_spend_cents: 450, currency: "RM" });
   // Signup mints a random staff PIN (never the guessable default), so pin it to
   // a known one here — the PIN belongs to the owner, not the café.
   const devOwner = (await db.getOwnerByEmail("dev@stampy.test"))!;
@@ -67,7 +67,7 @@ async function main() {
     // Joined a few weeks before their first visit, so time-to-value is visible.
     const joinedDaysAgo = age + visits * 7 + 3;
     const p = await db.createPass({
-      serial, cafeId: "default", platform: "apple",
+      serial, cardId: "default", platform: "apple",
       shortCode: db.generateShortCode(), authToken: "t".repeat(24),
       stampCount: redeemed ? 2 : Math.min(visits, 9), stampsTarget: 10, reward: "Free coffee",
     });
@@ -106,7 +106,7 @@ async function main() {
   // can't show what that column looks like.
   const goneSerial = crypto.randomUUID();
   await db.createPass({
-    serial: goneSerial, cafeId: "default", platform: "apple",
+    serial: goneSerial, cardId: "default", platform: "apple",
     shortCode: db.generateShortCode(), authToken: "t".repeat(24),
     stampCount: 3, stampsTarget: 10, reward: "Free coffee",
   });
@@ -118,7 +118,7 @@ async function main() {
 
   // And one that never made it into a wallet at all (a cancelled Add sheet).
   await db.createPass({
-    serial: crypto.randomUUID(), cafeId: "default", platform: "apple",
+    serial: crypto.randomUUID(), cardId: "default", platform: "apple",
     shortCode: db.generateShortCode(), authToken: "t".repeat(24),
     stampCount: 0, stampsTarget: 10, reward: "Free coffee",
   });

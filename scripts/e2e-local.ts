@@ -24,18 +24,18 @@ async function main() {
   await pg.createDatabase("stampy");
   process.env.DATABASE_URL = "postgresql://stampy:stampy@localhost:5499/stampy";
   process.env.BASE_URL = "http://localhost:3000";
-  process.env.ADMIN_EMAIL = "owner@test.my, second@cafe.my"; // comma-listed: BOTH are admins
+  process.env.ADMIN_EMAIL = "owner@test.my, second@card.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCafe, logEvent, getOwnerByEmail, setResetToken, updateCafe, getPool, verifyStaffPin, setStaffPin: setStaffPinFor } =
+  const { migrate, createPass, generateShortCode, getCard, logEvent, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor } =
     await import("../src/db.js");
   const { createHash } = await import("node:crypto");
   await migrate();
   await migrate(); // idempotency check
   console.log("MIGRATE OK (x2, idempotent)");
 
-  const cafe = await getCafe("default");
-  if (!cafe || cafe.name !== "Kopi Corner") throw new Error("default cafe seed failed");
-  console.log("SEED OK:", cafe.name, cafe.reward, cafe.stamps_target, cafe.stamps_start);
+  const card = await getCard("default");
+  if (!card || card.name !== "Kopi Corner") throw new Error("default card seed failed");
+  console.log("SEED OK:", card.name, card.reward, card.stamps_target, card.stamps_start);
 
   // Boot the real server against this DB.
   await import("../src/server.js");
@@ -86,25 +86,25 @@ async function main() {
   const signup2 = await fetch(base + "/dashboard/api/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "second@cafe.my", password: "password123", cafeName: "Second Owner Café" }),
+    body: JSON.stringify({ email: "second@card.my", password: "password123", cafeName: "Second Owner Café" }),
   });
   const cookie2 = signup2.headers.get("set-cookie")?.split(";")[0] ?? "";
   expect(signup2.status === 200 && cookie2.startsWith("stampy_session="), "self-serve signup is open");
   const ov2nd = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookie2 } })).body);
   expect(
-    ov2nd.cafes.length === 1 &&
-      ov2nd.cafes[0].name === "Second Owner Café" &&
-      ov2nd.cafes[0].id !== "default",
+    ov2nd.cards.length === 1 &&
+      ov2nd.cards[0].name === "Second Owner Café" &&
+      ov2nd.cards[0].id !== "default",
     "second owner sees only their own starter card (not the default café)",
   );
   // The PIN is stored only as a scrypt hash, so there is nothing for the API to
   // hand back — the dashboard can set or replace it, never read it.
-  expect(ov2nd.cafes[0].staffPin === undefined, "the overview API never returns a staff PIN");
+  expect(ov2nd.cards[0].staffPin === undefined, "the overview API never returns a staff PIN");
   // The PIN belongs to the OWNER now — one counter, one PIN, however many cards.
-  const secondOwner = (await getOwnerByEmail("second@cafe.my"))!;
+  const secondOwner = (await getOwnerByEmail("second@card.my"))!;
   expect(secondOwner.staff_pin_hash.startsWith("scrypt$"), "a new owner's PIN is stored hashed, never in plaintext");
   expect(!verifyStaffPin(secondOwner, "1234"), "a new owner gets a random PIN, not the shared default");
-  const starter = (await getCafe(ov2nd.cafes[0].id))!;
+  const starter = (await getCard(ov2nd.cards[0].id))!;
   expect(starter.staff_pin === "" && starter.staff_pin_hash === "", "a card carries no PIN of its own");
 
   const dupSignup = await fetch(base + "/dashboard/api/signup", {
@@ -124,17 +124,17 @@ async function main() {
   const overview1 = JSON.parse(
     (await get("/dashboard/api/overview", { headers: { cookie } })).body,
   );
-  expect(overview1.cafes.length === 1 && overview1.cafes[0].id === "default", "overview lists default café");
+  expect(overview1.cards.length === 1 && overview1.cards[0].id === "default", "overview lists default café");
 
   // Edit café via dashboard
-  const pinHashBefore = (await getCafe("default"))!.staff_pin_hash;
-  const edit = await fetch(base + "/dashboard/api/cafe/default", {
+  const pinHashBefore = (await getCard("default"))!.staff_pin_hash;
+  const edit = await fetch(base + "/dashboard/api/card/default", {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ reward: "Free latte", staffPin: "9876", stampsTarget: 8 }),
   });
   expect(edit.status === 200, "café edit saves");
-  const cafeAfter = await getCafe("default");
+  const cafeAfter = await getCard("default");
   expect(cafeAfter!.reward === "Free latte", "café edit persisted");
   expect(
     cafeAfter!.staff_pin_hash === pinHashBefore,
@@ -161,7 +161,7 @@ async function main() {
   const { migrate: remigrate } = await import("../src/db.js");
   await getPool().query(`UPDATE owners SET staff_pin_hash = '' WHERE email = 'owner@test.my'`);
   await getPool().query(
-    `UPDATE cafes SET staff_pin_hash = $1 WHERE id = 'default'`,
+    `UPDATE cards SET staff_pin_hash = $1 WHERE id = 'default'`,
     [(await getOwnerByEmail("owner@test.my"))!.password_hash], // any valid scrypt hash
   );
   await remigrate();
@@ -189,7 +189,7 @@ async function main() {
   const mk = async (platform: "apple" | "google" = "apple") =>
     createPass({
       serial: crypto.randomUUID(),
-      cafeId: "default",
+      cardId: "default",
       platform,
       shortCode: generateShortCode(),
       authToken: "t".repeat(24),
@@ -203,21 +203,21 @@ async function main() {
   await logEvent("default", p2.serial, "enroll");
 
   // --- Staff auth: the PIN is exchanged once for a session, not replayed ---
-  const staffLogin = async (cafeId: string, pin: string) => {
+  const staffLogin = async (cardId: string, pin: string) => {
     const r = await fetch(base + "/staff/api/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-cafe-id": cafeId },
+      headers: { "Content-Type": "application/json", "x-card-id": cardId },
       body: JSON.stringify({ pin }),
     });
     return { status: r.status, cookie: r.headers.get("set-cookie")?.split(";")[0] ?? "" };
   };
 
   const noSession = await fetch(base + "/staff/api/passes", {
-    headers: { "Content-Type": "application/json", "x-cafe-id": "default" },
+    headers: { "Content-Type": "application/json", "x-card-id": "default" },
   });
   expect(noSession.status === 401, "staff API refuses a device with no session");
   const oldWay = await fetch(base + "/staff/api/passes", {
-    headers: { "Content-Type": "application/json", "x-cafe-id": "default", "x-staff-pin": "9876" },
+    headers: { "Content-Type": "application/json", "x-card-id": "default", "x-staff-pin": "9876" },
   });
   expect(oldWay.status === 401, "the old x-staff-pin bearer header is no longer accepted");
 
@@ -229,7 +229,7 @@ async function main() {
     staff1.status === 200 && /^stampy_staff_[0-9a-f-]+=/.test(staff1.cookie),
     "the right PIN issues a staff session cookie",
   );
-  const staffHeaders = { "Content-Type": "application/json", "x-cafe-id": "default", cookie: staff1.cookie };
+  const staffHeaders = { "Content-Type": "application/json", "x-card-id": "default", cookie: staff1.cookie };
   expect(
     (await staffLogin("default", "9876")).cookie !== staff1.cookie,
     "each sign-in mints a distinct device session (so events are attributable per phone)",
@@ -288,8 +288,8 @@ async function main() {
   // Redeem restarts the card at the café's welcome-stamp count, NOT 0 — a
   // returning customer must never be worse off than a brand-new one.
   expect(
-    JSON.parse(await redeem.text()).pass.stamps === cafe.stamps_start,
-    `redeem restarts at the welcome-stamp count (${cafe.stamps_start})`,
+    JSON.parse(await redeem.text()).pass.stamps === card.stamps_start,
+    `redeem restarts at the welcome-stamp count (${card.stamps_start})`,
   );
 
   // --- Anti-spam cooldown: a fresh card stamps once, then blocks rapid repeats ---
@@ -318,12 +318,12 @@ async function main() {
 
   // Metrics reflect the events
   const overview2 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
-  const m = overview2.cafes[0].metrics;
+  const m = overview2.cards[0].metrics;
   expect(m.cards === 3, `metrics: 3 cards incl. the cooldown-test card (got ${m.cards})`);
   expect(m.stamps >= 2 && m.redemptions === 1, `metrics: stamps=${m.stamps} redemptions=${m.redemptions}`);
 
   // New café via dashboard, isolated from default
-  const newCafe = await fetch(base + "/dashboard/api/cafes", {
+  const newCafe = await fetch(base + "/dashboard/api/cards", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ name: "Second Café" }),
   });
@@ -333,14 +333,14 @@ async function main() {
   // same sign-in (one counter, one PIN). Another owner's card is not — see the
   // cross-owner check further down.
   const sameOwnerCard = await fetch(base + "/staff/api/passes", {
-    headers: { ...staffHeaders, "x-cafe-id": newCafeOut.id },
+    headers: { ...staffHeaders, "x-card-id": newCafeOut.id },
   });
   expect(sameOwnerCard.status === 200, "one staff session covers every card the same owner runs");
 
   // The one PIN signs in against any of the owner's cards.
   const staff2 = await staffLogin(newCafeOut.id, "9876");
   expect(staff2.status === 200, "the owner's PIN signs in against their second card too");
-  const staff2Headers = { "Content-Type": "application/json", "x-cafe-id": newCafeOut.id, cookie: staff2.cookie };
+  const staff2Headers = { "Content-Type": "application/json", "x-card-id": newCafeOut.id, cookie: staff2.cookie };
   const otherList = await fetch(base + "/staff/api/passes", { headers: staff2Headers });
   expect(JSON.parse(await otherList.text()).passes.length === 0, "cards are isolated (no cross-card customers)");
   // Sharing a sign-in must NOT let one card's stamper touch another's customers
@@ -373,27 +373,27 @@ async function main() {
 
   // --- Self-serve branding: colours (hex↔rgb boundary) + logo upload ---
   const ov3 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
-  const dflt = ov3.cafes.find((c: any) => c.id === "default");
+  const dflt = ov3.cards.find((c: any) => c.id === "default");
   expect(dflt.bg === "#3b2016" && dflt.logoVersion === 0, "overview exposes hex colours + no logo yet");
 
-  const colorEdit = await fetch(base + "/dashboard/api/cafe/default", {
+  const colorEdit = await fetch(base + "/dashboard/api/card/default", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ bg: "#112233", label: "#abc" }),
   });
   expect(colorEdit.status === 200, "colour edit saves");
-  const cafeColored = await getCafe("default");
+  const cafeColored = await getCard("default");
   expect(
     cafeColored!.background_color === "rgb(17, 34, 51)" &&
       cafeColored!.label_color === "rgb(170, 187, 204)",
     "hex colours stored as rgb() for PassKit (incl. #abc shorthand)",
   );
   const ov4 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
-  expect(ov4.cafes.find((c: any) => c.id === "default").bg === "#112233", "overview returns the saved hex back");
+  expect(ov4.cards.find((c: any) => c.id === "default").bg === "#112233", "overview returns the saved hex back");
 
   // 1×1 transparent PNG
   const pngB64 =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
-  const upload = await fetch(base + "/dashboard/api/cafe/default/logo", {
+  const upload = await fetch(base + "/dashboard/api/card/default/logo", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ png: pngB64 }),
   });
@@ -401,15 +401,15 @@ async function main() {
   const servedLogo = Buffer.from(await (await fetch(base + "/art/logo.png")).arrayBuffer());
   expect(servedLogo.equals(Buffer.from(pngB64, "base64")), "uploaded logo bytes served back at /art/logo.png");
   const ov5 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
-  expect(ov5.cafes.find((c: any) => c.id === "default").logoVersion > 0, "overview reports the logo version");
+  expect(ov5.cards.find((c: any) => c.id === "default").logoVersion > 0, "overview reports the logo version");
 
-  const badUpload = await fetch(base + "/dashboard/api/cafe/default/logo", {
+  const badUpload = await fetch(base + "/dashboard/api/card/default/logo", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ png: Buffer.from("definitely not a png").toString("base64") }),
   });
   expect(badUpload.status === 400, "non-PNG upload rejected");
 
-  const noAuthUpload = await fetch(base + "/dashboard/api/cafe/default/logo", {
+  const noAuthUpload = await fetch(base + "/dashboard/api/card/default/logo", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ png: pngB64 }),
   });
@@ -423,7 +423,7 @@ async function main() {
     "café without an upload still serves the default logo (per-café isolation)",
   );
 
-  const rmLogo = await fetch(base + "/dashboard/api/cafe/default/logo", {
+  const rmLogo = await fetch(base + "/dashboard/api/card/default/logo", {
     method: "DELETE", headers: { cookie },
   });
   expect(rmLogo.status === 200, "logo delete works");
@@ -432,7 +432,7 @@ async function main() {
 
   // --- Banner image (optional; 404 until set) ---
   expect((await get("/art/banner.png")).status === 404, "no banner → 404 (optional art)");
-  const bannerUp = await fetch(base + "/dashboard/api/cafe/default/banner", {
+  const bannerUp = await fetch(base + "/dashboard/api/card/default/banner", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ png: pngB64 }),
   });
@@ -440,13 +440,13 @@ async function main() {
   const servedBanner = await get("/art/banner.png");
   expect(servedBanner.status === 200, "banner served after upload");
   const ovBanner = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
-  expect(ovBanner.cafes.find((c: any) => c.id === "default").bannerVersion > 0, "overview reports banner version");
-  const rmBanner = await fetch(base + "/dashboard/api/cafe/default/banner", { method: "DELETE", headers: { cookie } });
+  expect(ovBanner.cards.find((c: any) => c.id === "default").bannerVersion > 0, "overview reports banner version");
+  const rmBanner = await fetch(base + "/dashboard/api/card/default/banner", { method: "DELETE", headers: { cookie } });
   expect(rmBanner.status === 200 && (await get("/art/banner.png")).status === 404, "banner delete reverts to none");
 
   // --- Rich stamp grid: one strip PNG per count (Apple strip / Google hero) ---
   expect((await get("/art/stamps/2.png")).status === 404, "no stamp grid → strip 404 (falls back to text dots)");
-  const stampUp = await fetch(base + "/dashboard/api/cafe/default/stamps", {
+  const stampUp = await fetch(base + "/dashboard/api/card/default/stamps", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ style: "☕", strips: [
       { filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }, { filled: 2, png: pngB64 },
@@ -456,19 +456,19 @@ async function main() {
   const servedStrip = Buffer.from(await (await fetch(base + "/art/stamps/1.png")).arrayBuffer());
   expect(servedStrip.equals(Buffer.from(pngB64, "base64")), "uploaded strip bytes served back at /art/stamps/1.png");
   const ovStamp = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
-  const dfltStamp = ovStamp.cafes.find((c: any) => c.id === "default");
+  const dfltStamp = ovStamp.cards.find((c: any) => c.id === "default");
   expect(dfltStamp.stampStyle === "☕" && dfltStamp.stampsVersion > 0, "overview reports stamp style + version");
-  const badStamp = await fetch(base + "/dashboard/api/cafe/default/stamps", {
+  const badStamp = await fetch(base + "/dashboard/api/card/default/stamps", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ style: "x", strips: [{ filled: 0, png: "bm90LWEtcG5n" }] }),
   });
   expect(badStamp.status === 400, "non-PNG strip rejected");
-  const noAuthStamp = await fetch(base + "/dashboard/api/cafe/default/stamps", {
+  const noAuthStamp = await fetch(base + "/dashboard/api/card/default/stamps", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ style: "x", strips: [{ filled: 0, png: pngB64 }] }),
   });
   expect(noAuthStamp.status === 401, "stamp-grid upload requires owner login");
-  const rmStamp = await fetch(base + "/dashboard/api/cafe/default/stamps", { method: "DELETE", headers: { cookie } });
+  const rmStamp = await fetch(base + "/dashboard/api/card/default/stamps", { method: "DELETE", headers: { cookie } });
   expect(rmStamp.status === 200 && (await get("/art/stamps/1.png")).status === 404, "stamp-grid delete reverts to text dots");
 
   // --- Change password (verifies current, then updates) ---
@@ -506,20 +506,20 @@ async function main() {
   // The per-café customers/nudge endpoints are gone — the Customers tab spans
   // every card the owner has, so the owner-level pair below replaced them.
   expect(
-    (await get("/dashboard/api/cafe/default/customers", { headers: { cookie: cookieNow } })).status === 404,
+    (await get("/dashboard/api/card/default/customers", { headers: { cookie: cookieNow } })).status === 404,
     "the superseded per-café customers endpoint is gone",
   );
-  const deadNudge = await fetch(base + "/dashboard/api/cafe/default/nudge", {
+  const deadNudge = await fetch(base + "/dashboard/api/card/default/nudge", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ message: "hi", target: "all" }),
   });
   expect(deadNudge.status === 404, "the superseded per-café nudge endpoint is gone");
 
-  // --- Admin console (ADMIN_EMAIL = "owner@test.my, second@cafe.my") ---
+  // --- Admin console (ADMIN_EMAIL = "owner@test.my, second@card.my") ---
   // A genuinely non-admin owner (not in the comma list) is refused.
   const outsider = await fetch(base + "/dashboard/api/signup", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "outsider@cafe.my", password: "password123", cafeName: "Outsider" }),
+    body: JSON.stringify({ email: "outsider@card.my", password: "password123", cafeName: "Outsider" }),
   });
   const cookieOutsider = outsider.headers.get("set-cookie")?.split(";")[0] ?? "";
   const adminForbidden = await get("/admin/api/overview", { headers: { cookie: cookieOutsider } });
@@ -530,21 +530,21 @@ async function main() {
   expect(adminSecond.status === 200, "a second comma-listed ADMIN_EMAIL is also an admin");
 
   const adminOk = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
-  expect(adminOk.cafes.length >= 2, "admin sees every café on the platform");
+  expect(adminOk.cards.length >= 2, "admin sees every café on the platform");
   expect(
-    adminOk.cafes.some((c: any) => (c.owners || "").includes("second@cafe.my")),
+    adminOk.cards.some((c: any) => (c.owners || "").includes("second@card.my")),
     "admin sees which owner email is tied to each café",
   );
   // Merchant health: is the counter alive, and does the owner ever look?
   expect(
-    adminOk.cafes.every((c: any) =>
+    adminOk.cards.every((c: any) =>
       typeof c.stamps_7d === "number" && typeof c.added === "number" &&
       typeof c.removed === "number" && typeof c.never_added === "number" &&
       "last_stamp_at" in c && "last_owner_login" in c),
     "admin sees each merchant's recent activity and the wallet add/remove split",
   );
   expect(
-    adminOk.cafes.find((c: any) => c.id === "default").last_owner_login !== null,
+    adminOk.cards.find((c: any) => c.id === "default").last_owner_login !== null,
     "an owner signing in is recorded — nothing tracked that before",
   );
   expect(
@@ -561,7 +561,7 @@ async function main() {
   );
   expect(JSON.stringify(adminOk).indexOf("password") === -1, "admin overview never includes any password field");
 
-  const owner2 = adminOk.owners.find((o: any) => o.email === "second@cafe.my");
+  const owner2 = adminOk.owners.find((o: any) => o.email === "second@card.my");
   const reset = await fetch(base + "/admin/api/owner/" + owner2.id + "/reset-password", {
     method: "POST", headers: { cookie: cookieNow },
   });
@@ -569,17 +569,17 @@ async function main() {
   expect(reset.status === 200 && resetOut.tempPassword, "admin can mint a temp password (never sees the old)");
   const loginTemp = await fetch(base + "/dashboard/api/login", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "second@cafe.my", password: resetOut.tempPassword }),
+    body: JSON.stringify({ email: "second@card.my", password: resetOut.tempPassword }),
   });
   expect(loginTemp.status === 200, "the reset temp password logs the owner in");
 
   // --- Done-for-you: admin creates a fully-designed café + owner account ---
-  const dfyForbidden = await fetch(base + "/admin/api/cafe", {
+  const dfyForbidden = await fetch(base + "/admin/api/card", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieOutsider },
     body: JSON.stringify({ cafeName: "Sneaky", ownerEmail: "x@y.my" }),
   });
   expect(dfyForbidden.status === 403, "a non-admin can't create a café via the admin console");
-  const dfy = await fetch(base + "/admin/api/cafe", {
+  const dfy = await fetch(base + "/admin/api/card", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({
       cafeName: "Nasi Lemak House", ownerEmail: "nasi@lemak.my", reward: "Free plate",
@@ -588,19 +588,19 @@ async function main() {
     }),
   });
   const dfyOut = JSON.parse(await dfy.text());
-  expect(dfy.status === 200 && dfyOut.cafeId && dfyOut.tempPassword, "admin creates a café + owner in one step");
+  expect(dfy.status === 200 && dfyOut.cardId && dfyOut.tempPassword, "admin creates a café + owner in one step");
   const dfyLogin = await fetch(base + "/dashboard/api/login", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "nasi@lemak.my", password: dfyOut.tempPassword }),
   });
   expect(dfyLogin.status === 200, "the new owner logs in with their temp password");
-  const dfyDup = await fetch(base + "/admin/api/cafe", {
+  const dfyDup = await fetch(base + "/admin/api/card", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ cafeName: "Dup", ownerEmail: "nasi@lemak.my" }),
   });
   expect(dfyDup.status === 409, "creating a café for an existing email → 409 email-taken");
   // The created café carries its rendered stamp grid + isolation from other owners.
-  expect((await get("/c/" + dfyOut.cafeId + "/art/stamps/1.png")).status === 200, "the done-for-you café serves its rendered stamp strip");
+  expect((await get("/c/" + dfyOut.cardId + "/art/stamps/1.png")).status === 200, "the done-for-you café serves its rendered stamp strip");
 
   // --- Reusable card designs: mock one up now, push it onto a card later ---
   const tplNew = await fetch(base + "/admin/api/templates", {
@@ -622,12 +622,12 @@ async function main() {
     "a non-admin can't read the design library",
   );
 
-  const applied = await fetch(base + "/admin/api/cafe/" + dfyOut.cafeId + "/apply-template", {
+  const applied = await fetch(base + "/admin/api/card/" + dfyOut.cardId + "/apply-template", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ templateId: tplOut.id, strips: [{ filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }] }),
   });
   expect(applied.status === 200, "a design pushes onto a merchant's existing card");
-  const appliedCafe = (await getCafe(dfyOut.cafeId))!;
+  const appliedCafe = (await getCard(dfyOut.cardId))!;
   expect(
     appliedCafe.reward === "Free kopi" && appliedCafe.stamp_style === "☕" &&
       appliedCafe.background_color === "rgb(18, 48, 71)",
@@ -635,19 +635,19 @@ async function main() {
   );
   // The card's identity and links are NOT part of a design.
   expect(appliedCafe.name === "Nasi Lemak House", "applying a design never renames the card");
-  expect((await get("/c/" + dfyOut.cafeId)).status === 200, "and the sign-up link still works");
+  expect((await get("/c/" + dfyOut.cardId)).status === 200, "and the sign-up link still works");
 
   expect(
-    (await get("/admin/api/cafe/" + dfyOut.cafeId + "/apply-template", { headers: { cookie: cookieNow } })).status === 404,
+    (await get("/admin/api/card/" + dfyOut.cardId + "/apply-template", { headers: { cookie: cookieNow } })).status === 404,
     "applying a design is a POST, not something a stray GET can trigger",
   );
-  const sheet = await get("/admin/cafe/" + dfyOut.cafeId + "/sheet", { headers: { cookie: cookieNow } });
+  const sheet = await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieNow } });
   expect(
-    sheet.status === 200 && sheet.body.includes("/c/" + dfyOut.cafeId + "/qr") && sheet.body.includes("Free kopi"),
+    sheet.status === 200 && sheet.body.includes("/c/" + dfyOut.cardId + "/qr") && sheet.body.includes("Free kopi"),
     "the printable counter sheet carries the card's QR and reward",
   );
   expect(
-    (await get("/admin/cafe/" + dfyOut.cafeId + "/sheet", { headers: { cookie: cookieOutsider } })).status === 403,
+    (await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieOutsider } })).status === 403,
     "the counter sheet is admin-only",
   );
 
@@ -802,13 +802,13 @@ async function main() {
   // guessed belongs to the owner, whichever of their cards the attacker points
   // at. Hammered against a throwaway owner so it can't block a real sign-in
   // later in this run (which is exactly what a per-café key used to hide).
-  const outsiderCard2 = JSON.parse(await (await fetch(base + "/dashboard/api/cafes", {
+  const outsiderCard2 = JSON.parse(await (await fetch(base + "/dashboard/api/cards", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieOutsider },
     body: JSON.stringify({ name: "Outsider second card" }),
   })).text());
   const outsiderCard1 = JSON.parse(
     (await get("/dashboard/api/overview", { headers: { cookie: cookieOutsider } })).body,
-  ).cafes[0].id;
+  ).cards[0].id;
   let firstPin = 0, lastPin = 0;
   for (let i = 0; i < 22; i++) {
     const r = await staffLogin(outsiderCard1, "0000");
@@ -869,17 +869,17 @@ async function main() {
   await runAutoWinback(); // default café has auto-winback OFF → nobody nudged
   expect((await nudgeCount()) === 0, "auto win-back sends nothing while the café hasn't opted in");
 
-  await updateCafe("default", { auto_winback_enabled: true, auto_winback_days: 14, auto_winback_message: "Auto: we miss you" });
+  await updateCard("default", { auto_winback_enabled: true, auto_winback_days: 14, auto_winback_message: "Auto: we miss you" });
   await runAutoWinback();
   expect((await nudgeCount()) === 1, "auto win-back nudges a lapsing customer once opted in");
   await runAutoWinback(); // immediate re-run
   expect((await nudgeCount()) === 1, "auto win-back does NOT re-nudge within the window");
-  await updateCafe("default", { auto_winback_enabled: false }); // leave it off for cleanliness
+  await updateCard("default", { auto_winback_enabled: false }); // leave it off for cleanliness
 
   // --- Lapse is measured from the last visit, not updated_at (regression) ---
   // Nudging used to bump passes.updated_at, which lapse was measured from, so
   // win-back messages silently un-lapsed the very customers being chased.
-  const { lapsingSerials, cafeMetrics, pruneAbandonedPasses, upsertRegistration, setMessage } =
+  const { lapsingSerials, cardMetrics, pruneAbandonedPasses, upsertRegistration, setMessage } =
     await import("../src/db.js");
   const lap = await mk();
   await getPool().query(
@@ -898,7 +898,7 @@ async function main() {
 
   // --- "Customers" counts real cards only, not every minted pass row ---
   const ghost = await mk(); // never stamped, never added to a wallet
-  const before = await cafeMetrics("default");
+  const before = await cardMetrics("default");
   expect(before.cards > before.active, "issued count includes the phantom card, active count does not");
   const ghostActive = async () =>
     (await getPool().query<{ n: number }>(
@@ -956,8 +956,8 @@ async function main() {
   await fetch(base + regUrl("dev-http-2", wp.serial), { method: "DELETE", headers: passAuth });
   expect((await typeOf(wp.serial)).includes("pass_removed"), "the last device dropping the pass is logged as pass_removed");
 
-  const { cafeCardCounts, nudgeState } = await import("../src/db.js");
-  expect((await cafeCardCounts("default")).removed >= 1, "a deleted card shows up in the removed count");
+  const { cardCounts, nudgeState } = await import("../src/db.js");
+  expect((await cardCounts("default")).removed >= 1, "a deleted card shows up in the removed count");
   expect((await nudgeState(wp.serial))!.removed === true, "a deleted card is flagged as unreachable");
   // Re-adding recovers on its own — the fresh registrations row clears the flag.
   await fetch(base + regUrl("dev-http-1", wp.serial), {
@@ -1078,17 +1078,17 @@ async function main() {
   );
 
   // Net stamp count: an undone stamp must not inflate the headline number.
-  const netBefore = (await cafeMetrics("default")).stamps;
+  const netBefore = (await cardMetrics("default")).stamps;
   const nz = await mk();
   await post("/stamp", { serial: nz.serial });
   await post("/undo", { serial: nz.serial });
-  expect((await cafeMetrics("default")).stamps === netBefore, "a stamp that is undone doesn't inflate the stamp count");
+  expect((await cardMetrics("default")).stamps === netBefore, "a stamp that is undone doesn't inflate the stamp count");
 
   // --- Win-back effectiveness + the churn stop-rule ---
   const { nudgeOutcomes, unansweredNudges } = await import("../src/db.js");
   const ch = await mk();
   await getPool().query("UPDATE passes SET created_at = now() - interval '60 days' WHERE serial = $1", [ch.serial]);
-  await updateCafe("default", { auto_winback_enabled: true, auto_winback_days: 14 });
+  await updateCard("default", { auto_winback_enabled: true, auto_winback_days: 14 });
   for (let i = 0; i < 9; i++) {
     // Back-dating the nudges re-opens both throttles — the café's own window and
     // the shared 2-per-week limit — so the give-up rule is what stops us.
@@ -1103,23 +1103,23 @@ async function main() {
   const outAfter = await nudgeOutcomes("default");
   expect(outAfter.returned === outBefore.returned + 1, "a stamp after the last nudge counts as a win-back that worked");
   expect((await unansweredNudges(ch.serial)) === 0, "a visit resets the unanswered-nudge counter");
-  await updateCafe("default", { auto_winback_enabled: false });
+  await updateCard("default", { auto_winback_enabled: false });
 
   const adminWb = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
-  const defRow = adminWb.cafes.find((c: any) => c.id === "default");
+  const defRow = adminWb.cards.find((c: any) => c.id === "default");
   expect(
     defRow.nudged >= 1 && defRow.nudge_returned >= 1 && defRow.forced_stamps >= 1 && defRow.undos >= 1,
     "admin surfaces win-back outcomes and the counter-audit counters",
   );
 
   // --- Value tracking: average spend turns stamps into a money figure ---
-  const spend = await fetch(base + "/dashboard/api/cafe/default", {
+  const spend = await fetch(base + "/dashboard/api/card/default", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ averageSpend: 4.5, currency: "RM" }),
   });
   expect(spend.status === 200, "average spend saves");
   const ovSpend = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
-  const defCard = ovSpend.cafes.find((c: any) => c.id === "default");
+  const defCard = ovSpend.cards.find((c: any) => c.id === "default");
   expect(defCard.averageSpend === 4.5 && defCard.currency === "RM", "average spend round-trips through cents without float drift");
 
   // --- Dashboard IA: four tabs, each one job ---
@@ -1133,7 +1133,7 @@ async function main() {
   expect(!dashIa.includes('data-f="staffPin"'), "the PIN is no longer a field in the card designer");
 
   // --- One PIN covers every card the owner runs ---
-  const secondCard = JSON.parse((await (await fetch(base + "/dashboard/api/cafes", {
+  const secondCard = JSON.parse((await (await fetch(base + "/dashboard/api/cards", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ name: "Pastry card" }),
   })).text()));
@@ -1144,13 +1144,13 @@ async function main() {
     "the stamper offers every card the owner runs, on one sign-in",
   );
   expect(
-    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-cafe-id": secondCard.id } })).status === 200,
+    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-card-id": secondCard.id } })).status === 200,
     "the same staff session stamps the second card without signing in again",
   );
   // A café belonging to somebody else is still refused, header or not.
   expect(
     (await fetch(base + "/staff/api/passes", {
-      headers: { cookie: staff1.cookie, "x-cafe-id": ov2nd.cafes[0].id },
+      headers: { cookie: staff1.cookie, "x-card-id": ov2nd.cards[0].id },
     })).status === 401,
     "a staff session can't be pointed at another owner's card",
   );
@@ -1162,16 +1162,16 @@ async function main() {
   // and since PINs are 4-6 digits and can collide, could have signed in there.
   const bareStaff = await get("/staff", { headers: { cookie: cookie2 } });
   expect(
-    bareStaff.status === 200 && !bareStaff.body.includes('let cafeId = "default"'),
+    bareStaff.status === 200 && !bareStaff.body.includes('let cardId = "default"'),
     "a bare /staff does not silently claim the default café",
   );
   expect(
-    bareStaff.body.includes('let cafeId = "' + ov2nd.cafes[0].id + '"'),
+    bareStaff.body.includes('let cardId = "' + ov2nd.cards[0].id + '"'),
     "a bare /staff resolves to the logged-in owner's own card",
   );
   // A staff phone that bookmarked plain /staff keeps working, on ITS owner's card.
   const bookmarked = await fetch(base + "/staff/api/passes", { headers: { cookie: staff1.cookie } });
-  expect(bookmarked.status === 200, "a staff phone with no x-cafe-id still reaches its own counter");
+  expect(bookmarked.status === 200, "a staff phone with no x-card-id still reaches its own counter");
   // And the owner's Settings link carries the card id, which is what fixes it.
   expect(
     (await get("/dashboard")).body.includes('href="/staff?c='),
@@ -1194,7 +1194,7 @@ async function main() {
   const afterRotate = await fetch(base + "/staff/api/passes", { headers: staffHeaders });
   expect(afterRotate.status === 401, "rotating the PIN revokes every existing staff session");
   expect(
-    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-cafe-id": secondCard.id } })).status === 401,
+    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-card-id": secondCard.id } })).status === 401,
     "and it revokes them on every card at once",
   );
   expect((await get("/staff", { headers: { cookie: staff1.cookie } })).body.includes("Staff login"),
@@ -1207,7 +1207,7 @@ async function main() {
   );
   // The second owner's PIN is untouched by the first owner rotating theirs.
   expect(
-    !verifyStaffPin((await getOwnerByEmail("second@cafe.my"))!, rotOut.staffPin),
+    !verifyStaffPin((await getOwnerByEmail("second@card.my"))!, rotOut.staffPin),
     "one owner's PIN never works at another owner's counter",
   );
 

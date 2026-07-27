@@ -1,9 +1,9 @@
 /**
  * Postgres access layer.
  *
- *   cafes          — one row per café (branding, reward, staff PIN)
+ *   cards          — one row per café (branding, reward, staff PIN)
  *   owners         — dashboard logins (email + scrypt password hash)
- *   owner_cafes    — which owners manage which cafés
+ *   owner_cards    — which owners manage which cafés
  *   passes         — one row per issued card (serial, auth token, stamp count)
  *   registrations  — one row per (device, pass) pair that Apple registered for
  *                    push updates; stores the APNs push token
@@ -14,13 +14,13 @@
  * runs SQL by hand — adding the Postgres plugin in Railway is enough.
  */
 import pg from "pg";
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { hashPassword, verifyPassword } from "./auth.js";
-import { config, seedCafe } from "./config.js";
+import { config, seedCard } from "./config.js";
 
 const { Pool } = pg;
 
-export interface CafeRow {
+export interface CardRow {
   id: string;
   name: string;
   reward: string;
@@ -71,7 +71,7 @@ export type Platform = "apple" | "google";
 
 export interface PassRow {
   serial: string;
-  cafe_id: string;
+  card_id: string;
   /** Which wallet the card lives in — decides how updates are delivered. */
   platform: Platform;
   /** Short human-typeable code printed on the card — staff fallback when the camera won't scan. */
@@ -121,7 +121,7 @@ export interface EventMeta {
 }
 
 /** Default café id — seeded from env on first boot so v0.1 behavior is unchanged. */
-export const DEFAULT_CAFE_ID = "default";
+export const DEFAULT_CARD_ID = "default";
 
 let pool: pg.Pool | null = null;
 
@@ -144,9 +144,79 @@ export function getPool(): pg.Pool {
   return pool;
 }
 
+/**
+ * v1.3: `cards` becomes `cards`.
+ *
+ * A row in that table was never a café — it is ONE loyalty programme, and a
+ * merchant can run several. Calling it `cards` is what produced a separate staff
+ * PIN per card, and a stamper that resolved to another merchant's counter: both
+ * bugs read the name and believed it. Every future reader would too.
+ *
+ * This is the one non-additive migration in the project (see CLAUDE.md). Two
+ * things make it safe:
+ *
+ *  - **The ids do not change.** Today's `cards.id` becomes `cards.id` verbatim.
+ *    That id is baked into printed QR posters, into every issued Android card's
+ *    Google class id, into the art URLs inside live Google classes, and into
+ *    enrolment cookie names. Re-keying would silently stop every Android card
+ *    from ever updating again.
+ *  - **Postgres DDL is transactional.** The whole rename is one transaction, so
+ *    it either fully applies or fully rolls back — there is no half-migrated
+ *    state to wake up to.
+ *
+ * Guarded on the catalogue, so it runs exactly once and a fresh database skips
+ * it entirely and creates `cards` directly below.
+ */
+async function renameCafesToCards(): Promise<void> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const exists = async (t: string) =>
+      (await client.query<{ r: string | null }>(`SELECT to_regclass($1) AS r`, [t])).rows[0]?.r != null;
+    // NOTE TO ANY FUTURE SEARCH-AND-REPLACE: the legacy names below are DATA,
+    // not identifiers to be modernised. Rewriting them turns this into a no-op,
+    // and then the schema block underneath creates an EMPTY `cards` table beside
+    // the real rows. `pnpm test:migration` exists to catch exactly that.
+    const legacy = await exists("cafes");
+    const modern = await exists("cards");
+    if (legacy && modern) {
+      throw new Error(
+        "migrate: both `cafes` and `cards` exist — a previous upgrade half-applied. " +
+          "Restore the pre-upgrade snapshot rather than letting this continue.",
+      );
+    }
+    if (legacy) {
+      await client.query(`
+        ALTER TABLE cafes RENAME TO cards;
+        ALTER TABLE IF EXISTS passes RENAME COLUMN cafe_id TO card_id;
+        ALTER TABLE IF EXISTS events RENAME COLUMN cafe_id TO card_id;
+        ALTER TABLE IF EXISTS owner_cafes RENAME TO owner_cards;
+        ALTER TABLE IF EXISTS owner_cards RENAME COLUMN cafe_id TO card_id;
+        ALTER TABLE IF EXISTS cafe_logos RENAME TO card_logos;
+        ALTER TABLE IF EXISTS card_logos RENAME COLUMN cafe_id TO card_id;
+        ALTER TABLE IF EXISTS cafe_banners RENAME TO card_banners;
+        ALTER TABLE IF EXISTS card_banners RENAME COLUMN cafe_id TO card_id;
+        ALTER TABLE IF EXISTS cafe_stamp_strips RENAME TO card_stamp_strips;
+        ALTER TABLE IF EXISTS card_stamp_strips RENAME COLUMN cafe_id TO card_id;
+        ALTER INDEX IF EXISTS idx_passes_cafe RENAME TO idx_passes_card;
+        ALTER INDEX IF EXISTS idx_events_cafe_time RENAME TO idx_events_card_time;
+      `);
+      console.log("[migrate] renamed cafes → cards (every id unchanged)");
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function migrate(): Promise<void> {
+  // Must run before anything else: everything below is written in the new names.
+  await renameCafesToCards();
   await getPool().query(`
-    CREATE TABLE IF NOT EXISTS cafes (
+    CREATE TABLE IF NOT EXISTS cards (
       id               text PRIMARY KEY,
       name             text NOT NULL,
       reward           text NOT NULL DEFAULT 'Free coffee',
@@ -164,14 +234,14 @@ export async function migrate(): Promise<void> {
       password_hash text NOT NULL,
       created_at    timestamptz NOT NULL DEFAULT now()
     );
-    CREATE TABLE IF NOT EXISTS owner_cafes (
+    CREATE TABLE IF NOT EXISTS owner_cards (
       owner_id text NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
-      cafe_id  text NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
-      PRIMARY KEY (owner_id, cafe_id)
+      card_id  text NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+      PRIMARY KEY (owner_id, card_id)
     );
     CREATE TABLE IF NOT EXISTS passes (
       serial        text PRIMARY KEY,
-      cafe_id       text NOT NULL REFERENCES cafes(id),
+      card_id       text NOT NULL REFERENCES cards(id),
       platform      text NOT NULL DEFAULT 'apple',
       short_code    text NOT NULL UNIQUE,
       auth_token    text NOT NULL,
@@ -182,7 +252,7 @@ export async function migrate(): Promise<void> {
       created_at    timestamptz NOT NULL DEFAULT now(),
       updated_at    timestamptz NOT NULL DEFAULT now()
     );
-    CREATE INDEX IF NOT EXISTS idx_passes_cafe ON passes(cafe_id);
+    CREATE INDEX IF NOT EXISTS idx_passes_card ON passes(card_id);
     CREATE TABLE IF NOT EXISTS registrations (
       device_library_id text NOT NULL,
       push_token        text NOT NULL,
@@ -193,24 +263,24 @@ export async function migrate(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_registrations_serial ON registrations(serial);
     CREATE TABLE IF NOT EXISTS events (
       id         bigserial PRIMARY KEY,
-      cafe_id    text NOT NULL REFERENCES cafes(id),
+      card_id    text NOT NULL REFERENCES cards(id),
       serial     text NOT NULL,
       type       text NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE INDEX IF NOT EXISTS idx_events_cafe_time ON events(cafe_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_events_card_time ON events(card_id, created_at);
     -- v0.3: pre-existing deployments get the platform column added in place.
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS platform text NOT NULL DEFAULT 'apple';
-    -- v0.4: per-café uploaded logos. Bytes live in Postgres (Railway's disk is
-    -- ephemeral) and in their own table so SELECTs on cafes stay lightweight.
-    CREATE TABLE IF NOT EXISTS cafe_logos (
-      cafe_id    text PRIMARY KEY REFERENCES cafes(id) ON DELETE CASCADE,
+    -- v0.4: per-card uploaded logos. Bytes live in Postgres (Railway's disk is
+    -- ephemeral) and in their own table so SELECTs on cards stay lightweight.
+    CREATE TABLE IF NOT EXISTS card_logos (
+      card_id    text PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
       png        bytea NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
-    -- v0.7: optional per-café banner image (Apple strip.png / Google heroImage).
-    CREATE TABLE IF NOT EXISTS cafe_banners (
-      cafe_id    text PRIMARY KEY REFERENCES cafes(id) ON DELETE CASCADE,
+    -- v0.7: optional per-card banner image (Apple strip.png / Google heroImage).
+    CREATE TABLE IF NOT EXISTS card_banners (
+      card_id    text PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
       png        bytea NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -220,32 +290,32 @@ export async function migrate(): Promise<void> {
     ALTER TABLE owners ADD COLUMN IF NOT EXISTS reset_expires timestamptz;
     -- v0.9: opt-in automated win-back — a background job messages customers who
     -- haven't stamped in N days. Off by default so behaviour is unchanged.
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_enabled boolean NOT NULL DEFAULT false;
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_days integer NOT NULL DEFAULT 14;
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS auto_winback_message text NOT NULL DEFAULT 'We miss you! Your next stamp is waiting ☕️';
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS auto_winback_enabled boolean NOT NULL DEFAULT false;
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS auto_winback_days integer NOT NULL DEFAULT 14;
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS auto_winback_message text NOT NULL DEFAULT 'We miss you! Your next stamp is waiting ☕️';
     -- v1.0: rich rendered stamp grid. The owner's browser renders one strip PNG
     -- per stamp count (0..target); Apple uses it as the strip image, Google as
     -- the hero image. Bytes live in Postgres (ephemeral disk) keyed by count.
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS stamp_style text NOT NULL DEFAULT '';
-    CREATE TABLE IF NOT EXISTS cafe_stamp_strips (
-      cafe_id    text NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS stamp_style text NOT NULL DEFAULT '';
+    CREATE TABLE IF NOT EXISTS card_stamp_strips (
+      card_id    text NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
       filled     integer NOT NULL,
       png        bytea NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (cafe_id, filled)
+      PRIMARY KEY (card_id, filled)
     );
     -- v1.1: the staff PIN is stored only as a scrypt hash, like a password, so a
     -- database leak can't be replayed at the counter. The old plaintext column
     -- stays (additive migrations only) but is blanked by the backfill below.
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS staff_pin_hash text NOT NULL DEFAULT '';
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS staff_pin_hash text NOT NULL DEFAULT '';
     -- Bumped whenever the PIN changes. It is baked into each staff session
     -- cookie, so changing the PIN signs every staff phone out — that's the
     -- break-glass control when a stamper link or PIN gets out.
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS staff_session_epoch integer NOT NULL DEFAULT 1;
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS staff_session_epoch integer NOT NULL DEFAULT 1;
     -- v1.1: value tracking — stamps × average spend gives the owner a money figure.
     -- Cents, not numeric: pg returns numeric as a string, integers as numbers.
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS average_spend_cents integer NOT NULL DEFAULT 0;
-    ALTER TABLE cafes ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'RM';
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS average_spend_cents integer NOT NULL DEFAULT 0;
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'RM';
     -- v1.1: audit trail — who caused each event, and whether a stamp was forced
     -- past the anti-spam cooldown. Empty actor = written before this existed.
     ALTER TABLE events ADD COLUMN IF NOT EXISTS actor text NOT NULL DEFAULT '';
@@ -254,7 +324,7 @@ export async function migrate(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_events_serial_type ON events(serial, type);
     -- v1.2: the staff PIN moves up to the OWNER. One counter, one PIN, one
     -- stamper link, however many cards they run — the per-café PIN was an
-    -- accident of "+ Add card" creating a whole new café row. The cafes columns
+    -- accident of "+ Add card" creating a whole new card row. The cards columns
     -- stay (additive only) but are no longer read; the backfill below lifts each
     -- owner's existing PIN up so nobody has to be told a new one.
     ALTER TABLE owners ADD COLUMN IF NOT EXISTS staff_pin_hash text NOT NULL DEFAULT '';
@@ -284,19 +354,59 @@ export async function migrate(): Promise<void> {
       banner      bytea,
       created_at  timestamptz NOT NULL DEFAULT now()
     );
+    -- v1.3: the BUSINESS, finally distinct from the card it runs. One merchant
+    -- per login for now; the unique index is what enforces that, and dropping it
+    -- is how you'd allow several later.
+    CREATE TABLE IF NOT EXISTS merchants (
+      id                  text PRIMARY KEY,
+      owner_id            text NOT NULL REFERENCES owners(id) ON DELETE CASCADE,
+      name                text NOT NULL,
+      default_card_id     text,
+      average_spend_cents integer NOT NULL DEFAULT 0,
+      currency            text NOT NULL DEFAULT 'RM',
+      created_at          timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_merchants_owner ON merchants(owner_id);
+    -- Rows are only ever ADDED. A merchant who renames keeps their old slug
+    -- resolving forever, because it may be printed on a poster or an NFC tag
+    -- that nobody is going to reprint.
+    CREATE TABLE IF NOT EXISTS merchant_slugs (
+      slug        text PRIMARY KEY,
+      merchant_id text NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      created_at  timestamptz NOT NULL DEFAULT now()
+    );
+    -- v1.3: a person, scoped to one merchant. Deliberately holds NO name, email
+    -- or phone — the privacy page promises exactly that, and the identity comes
+    -- from a signed cookie instead. That means it identifies a BROWSER, not a
+    -- human: a new phone reads as a new customer and there is no fixing that
+    -- without asking for something we have promised not to ask for.
+    CREATE TABLE IF NOT EXISTS customers (
+      id          text PRIMARY KEY,
+      merchant_id text NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      created_at  timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_customers_merchant ON customers(merchant_id);
+    -- Nullable: the env-seeded default card has no owner, so no merchant, until
+    -- somebody signs up and claims it.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS merchant_id text REFERENCES merchants(id);
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS customer_id text REFERENCES customers(id);
+    CREATE INDEX IF NOT EXISTS idx_passes_customer ON passes(customer_id);
+    -- Which poster/link they scanned, when the join URL carries ?s=. Recorded
+    -- now so the history exists; nothing reports on it yet.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT '';
   `);
 
-  // Seed the default café from env vars on first boot (v0.1 compatibility).
+  // Seed the default card from env vars on first boot (v0.1 compatibility).
   await getPool().query(
-    `INSERT INTO cafes (id, name, reward, stamps_target, stamps_start, staff_pin)
+    `INSERT INTO cards (id, name, reward, stamps_target, stamps_start, staff_pin)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (id) DO NOTHING`,
     [
-      DEFAULT_CAFE_ID,
-      seedCafe.name,
-      seedCafe.reward,
-      seedCafe.stampsTarget,
-      seedCafe.stampsStart,
+      DEFAULT_CARD_ID,
+      seedCard.name,
+      seedCard.reward,
+      seedCard.stampsTarget,
+      seedCard.stampsStart,
       config.staffPin,
     ],
   );
@@ -304,34 +414,290 @@ export async function migrate(): Promise<void> {
   // One-time backfill: hash any PIN still sitting in plaintext (including the
   // seed row just inserted), then blank the plaintext so it stops existing.
   // Hashing needs scrypt, so it can't be done in SQL. Runs on every boot but
-  // matches nothing once every café is migrated.
+  // matches nothing once every card is migrated.
   const stale = await getPool().query<{ id: string; staff_pin: string }>(
-    `SELECT id, staff_pin FROM cafes WHERE staff_pin_hash = '' AND staff_pin <> ''`,
+    `SELECT id, staff_pin FROM cards WHERE staff_pin_hash = '' AND staff_pin <> ''`,
   );
   for (const row of stale.rows) {
-    await getPool().query(`UPDATE cafes SET staff_pin_hash = $2, staff_pin = '' WHERE id = $1`, [
+    await getPool().query(`UPDATE cards SET staff_pin_hash = $2, staff_pin = '' WHERE id = $1`, [
       row.id,
       hashPassword(row.staff_pin),
     ]);
   }
   if (stale.rows.length) console.log(`[migrate] hashed ${stale.rows.length} staff PIN(s)`);
 
-  // Lift each owner's PIN up from their oldest café, so an existing counter
+  // Lift each owner's PIN up from their oldest card, so an existing counter
   // keeps working with the PIN it already knows. Owners with several cards had
   // several PINs; the first card's wins, and the others simply stop being read.
   const lifted = await getPool().query(
     `UPDATE owners o
         SET staff_pin_hash = c.staff_pin_hash
        FROM (SELECT DISTINCT ON (oc.owner_id) oc.owner_id, ca.staff_pin_hash
-               FROM owner_cafes oc JOIN cafes ca ON ca.id = oc.cafe_id
+               FROM owner_cards oc JOIN cards ca ON ca.id = oc.card_id
               WHERE ca.staff_pin_hash <> ''
               ORDER BY oc.owner_id, ca.created_at) c
       WHERE c.owner_id = o.id AND o.staff_pin_hash = ''`,
   );
   if (lifted.rowCount) console.log(`[migrate] moved ${lifted.rowCount} staff PIN(s) to the owner`);
+
+  await backfillMerchants();
+  await backfillCustomers();
 }
 
-// ----------------------------------------------------------------- cafes ----
+/**
+ * v1.3: give every existing owner a merchant, and hang their cards off it.
+ *
+ * The business name and its money settings come from the owner's OLDEST card,
+ * because that is the row that was doubling as the business until now. Runs on
+ * every boot and matches nothing once everyone has one.
+ */
+async function backfillMerchants(): Promise<void> {
+  const orphans = await getPool().query<{
+    owner_id: string;
+    name: string | null;
+    average_spend_cents: number | null;
+    currency: string | null;
+  }>(
+    `SELECT o.id AS owner_id, c.name, c.average_spend_cents, c.currency
+       FROM owners o
+       LEFT JOIN LATERAL (
+         SELECT ca.name, ca.average_spend_cents, ca.currency
+           FROM owner_cards oc JOIN cards ca ON ca.id = oc.card_id
+          WHERE oc.owner_id = o.id
+          ORDER BY ca.created_at LIMIT 1
+       ) c ON true
+      WHERE NOT EXISTS (SELECT 1 FROM merchants m WHERE m.owner_id = o.id)`,
+  );
+  for (const row of orphans.rows) {
+    const id = generateShortCode(8).toLowerCase();
+    const name = row.name?.trim() || "My shop";
+    await getPool().query(
+      `INSERT INTO merchants (id, owner_id, name, average_spend_cents, currency)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, row.owner_id, name, row.average_spend_cents ?? 0, row.currency ?? "RM"],
+    );
+    await claimSlug(id, name);
+  }
+  // Attach cards to their owner's merchant. Left alone if a card has no owner —
+  // that is the env-seeded default card before anyone has signed up.
+  const linked = await getPool().query(
+    `UPDATE cards c SET merchant_id = m.id
+       FROM owner_cards oc JOIN merchants m ON m.owner_id = oc.owner_id
+      WHERE oc.card_id = c.id AND c.merchant_id IS NULL`,
+  );
+  if (orphans.rows.length) {
+    console.log(`[migrate] created ${orphans.rows.length} merchant(s), linked ${linked.rowCount} card(s)`);
+  }
+}
+
+/**
+ * v1.3: every existing pass gets a customer.
+ *
+ * The id is derived from the serial rather than random, which makes this
+ * idempotent and lets it run as one statement instead of a loop over every pass.
+ *
+ * One customer per PASS, not per person: someone who already holds an Apple and
+ * a Google card at the same shop becomes two customers here. There is no signal
+ * in the data to do better retroactively — the cookie that could have linked
+ * them was scoped per card and per platform. From now on it links them.
+ */
+async function backfillCustomers(): Promise<void> {
+  const res = await getPool().query(
+    `WITH need AS (
+       SELECT p.serial, c.merchant_id, p.created_at,
+              md5(p.serial || ':customer') AS cid
+         FROM passes p JOIN cards c ON c.id = p.card_id
+        WHERE p.customer_id IS NULL AND c.merchant_id IS NOT NULL
+     ), ins AS (
+       INSERT INTO customers (id, merchant_id, created_at)
+       SELECT cid, merchant_id, created_at FROM need
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id
+     )
+     UPDATE passes p SET customer_id = n.cid FROM need n WHERE p.serial = n.serial`,
+  );
+  if (res.rowCount) console.log(`[migrate] gave ${res.rowCount} pass(es) a customer`);
+}
+
+// ------------------------------------------------------------- merchants ----
+
+export interface MerchantRow {
+  id: string;
+  owner_id: string;
+  /** The BUSINESS name — this is what customers see as the pass issuer. */
+  name: string;
+  /** Which card a bare /j/ link issues. Null = the merchant's only card. */
+  default_card_id: string | null;
+  average_spend_cents: number;
+  currency: string;
+  created_at: Date;
+}
+
+export interface CustomerRecord {
+  id: string;
+  merchant_id: string;
+  created_at: Date;
+}
+
+/** A readable URL fragment. Never trusted to be unique — `claimSlug` settles that. */
+function slugify(name: string): string {
+  const s = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 40);
+  return s || "shop";
+}
+
+/**
+ * Reserve a readable alias for a merchant. Slugs are only ever ADDED — a merchant
+ * who renames keeps every older slug pointing at them, because one of them may be
+ * printed on a poster or written to an NFC tag that nobody is going to redo.
+ * Returns the slug actually taken, which may carry a numeric suffix.
+ */
+export async function claimSlug(merchantId: string, name: string): Promise<string> {
+  const base = slugify(name);
+  for (let n = 1; n <= 50; n++) {
+    const slug = n === 1 ? base : `${base}-${n}`;
+    const taken = await getPool().query<{ merchant_id: string }>(
+      `INSERT INTO merchant_slugs (slug, merchant_id) VALUES ($1, $2)
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING merchant_id`,
+      [slug, merchantId],
+    );
+    if (taken.rowCount) return slug;
+    const mine = await getPool().query(
+      `SELECT 1 FROM merchant_slugs WHERE slug = $1 AND merchant_id = $2`,
+      [slug, merchantId],
+    );
+    if (mine.rowCount) return slug; // already ours from an earlier boot
+  }
+  return merchantId; // absurd collision count — the id always works as a fallback
+}
+
+export async function getMerchant(id: string): Promise<MerchantRow | null> {
+  const res = await getPool().query<MerchantRow>(`SELECT * FROM merchants WHERE id = $1`, [id]);
+  return res.rows[0] ?? null;
+}
+
+/**
+ * Resolve whatever was in a /j/ link: the merchant's permanent id, or any slug it
+ * has ever held. `viaSlug` tells the route whether to redirect to the canonical
+ * form, so a retired name still works but doesn't linger in the address bar.
+ */
+export async function getMerchantByRef(
+  ref: string,
+): Promise<{ merchant: MerchantRow; viaSlug: boolean } | null> {
+  const direct = await getMerchant(ref);
+  if (direct) return { merchant: direct, viaSlug: false };
+  const res = await getPool().query<MerchantRow>(
+    `SELECT m.* FROM merchants m JOIN merchant_slugs s ON s.merchant_id = m.id WHERE s.slug = $1`,
+    [ref.toLowerCase()],
+  );
+  return res.rows[0] ? { merchant: res.rows[0], viaSlug: true } : null;
+}
+
+export async function merchantForOwner(ownerId: string): Promise<MerchantRow | null> {
+  const res = await getPool().query<MerchantRow>(
+    `SELECT * FROM merchants WHERE owner_id = $1`,
+    [ownerId],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** The merchant that runs this card. Null only for the unclaimed seeded card. */
+export async function merchantForCard(cardId: string): Promise<MerchantRow | null> {
+  const res = await getPool().query<MerchantRow>(
+    `SELECT m.* FROM merchants m JOIN cards c ON c.merchant_id = m.id WHERE c.id = $1`,
+    [cardId],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Create the merchant for a brand-new owner, with its first slug. Idempotent. */
+export async function ensureMerchantForOwner(ownerId: string, name: string): Promise<MerchantRow> {
+  const existing = await merchantForOwner(ownerId);
+  if (existing) return existing;
+  const id = generateShortCode(8).toLowerCase();
+  const clean = name.trim().slice(0, 60) || "My shop";
+  const res = await getPool().query<MerchantRow>(
+    `INSERT INTO merchants (id, owner_id, name) VALUES ($1, $2, $3) RETURNING *`,
+    [id, ownerId, clean],
+  );
+  await claimSlug(id, clean);
+  return res.rows[0]!;
+}
+
+export async function updateMerchant(
+  id: string,
+  fields: Partial<Pick<MerchantRow, "name" | "default_card_id" | "average_spend_cents" | "currency">>,
+): Promise<MerchantRow | null> {
+  const keys = Object.keys(fields) as (keyof typeof fields)[];
+  if (!keys.length) return getMerchant(id);
+  const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
+  const res = await getPool().query<MerchantRow>(
+    `UPDATE merchants SET ${sets} WHERE id = $1 RETURNING *`,
+    [id, ...keys.map((k) => fields[k])],
+  );
+  // A rename must not orphan a printed poster, so the new name gets a slug too
+  // and every previous one keeps resolving.
+  if (res.rows[0] && fields.name) await claimSlug(id, fields.name);
+  return res.rows[0] ?? null;
+}
+
+export async function cardsForMerchant(merchantId: string): Promise<CardRow[]> {
+  const res = await getPool().query<CardRow>(
+    `SELECT * FROM cards WHERE merchant_id = $1 ORDER BY created_at`,
+    [merchantId],
+  );
+  return res.rows;
+}
+
+/**
+ * Which card a /j/ link should issue: the merchant's explicit choice, else their
+ * only card. Null when they somehow have none, or several with no default set —
+ * the route renders a picker for that, which V1 can never reach.
+ */
+export async function joinTargetCard(merchant: MerchantRow): Promise<CardRow | null> {
+  const cards = await cardsForMerchant(merchant.id);
+  if (merchant.default_card_id) {
+    const chosen = cards.find((c) => c.id === merchant.default_card_id);
+    if (chosen) return chosen;
+  }
+  return cards.length === 1 ? cards[0]! : null;
+}
+
+// ------------------------------------------------------------- customers ----
+
+/** A person at one merchant. Holds no PII — see the customers table comment. */
+export async function createCustomer(merchantId: string): Promise<CustomerRecord> {
+  const res = await getPool().query<CustomerRecord>(
+    `INSERT INTO customers (id, merchant_id) VALUES ($1, $2) RETURNING *`,
+    [randomUUID(), merchantId],
+  );
+  return res.rows[0]!;
+}
+
+export async function getCustomer(id: string): Promise<CustomerRecord | null> {
+  const res = await getPool().query<CustomerRecord>(`SELECT * FROM customers WHERE id = $1`, [id]);
+  return res.rows[0] ?? null;
+}
+
+/** This customer's pass for a given card and platform, if they already have one. */
+export async function passForCustomer(
+  customerId: string,
+  cardId: string,
+  platform: Platform,
+): Promise<PassRow | null> {
+  const res = await getPool().query<PassRow>(
+    `SELECT * FROM passes WHERE customer_id = $1 AND card_id = $2 AND platform = $3 LIMIT 1`,
+    [customerId, cardId, platform],
+  );
+  return res.rows[0] ?? null;
+}
+
+// ----------------------------------------------------------------- cards ----
 
 /** Human-typeable code alphabet — no 0/O/1/I/L confusion. */
 const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -342,23 +708,27 @@ export function generateShortCode(length = 6): string {
   return out;
 }
 
-export async function getCafe(id: string): Promise<CafeRow | null> {
-  const res = await getPool().query<CafeRow>(`SELECT * FROM cafes WHERE id = $1`, [id]);
+export async function getCard(id: string): Promise<CardRow | null> {
+  const res = await getPool().query<CardRow>(`SELECT * FROM cards WHERE id = $1`, [id]);
   return res.rows[0] ?? null;
 }
 
 /** A card. The staff PIN is NOT set here — it belongs to the owner (setStaffPin). */
-export async function createCafe(row: {
+export async function createCard(row: {
+  merchantId: string;
   name: string;
   reward: string;
   stampsTarget: number;
   stampsStart: number;
-}): Promise<CafeRow> {
+}): Promise<CardRow> {
+  // The id is generated here and then never changes: it is printed on posters,
+  // baked into every issued Android card's Google class id, and used in the art
+  // URLs inside live Google classes. See renameCafesToCards.
   const id = generateShortCode(8).toLowerCase();
-  const res = await getPool().query<CafeRow>(
-    `INSERT INTO cafes (id, name, reward, stamps_target, stamps_start, staff_pin, staff_pin_hash)
-     VALUES ($1, $2, $3, $4, $5, '', '') RETURNING *`,
-    [id, row.name, row.reward, row.stampsTarget, row.stampsStart],
+  const res = await getPool().query<CardRow>(
+    `INSERT INTO cards (id, merchant_id, name, reward, stamps_target, stamps_start, staff_pin, staff_pin_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, '', '') RETURNING *`,
+    [id, row.merchantId, row.name, row.reward, row.stampsTarget, row.stampsStart],
   );
   return res.rows[0]!;
 }
@@ -388,13 +758,13 @@ export async function setStaffPin(ownerId: string, pin: string): Promise<void> {
  * every staff request resolves this first. Null means an orphaned café (only
  * possible for the env-seeded default before anyone signs up).
  */
-export async function ownerForCafe(cafeId: string): Promise<OwnerRow | null> {
+export async function ownerForCard(cardId: string): Promise<OwnerRow | null> {
   const res = await getPool().query<OwnerRow>(
     `SELECT o.* FROM owners o
-       JOIN owner_cafes oc ON oc.owner_id = o.id
-      WHERE oc.cafe_id = $1
+       JOIN owner_cards oc ON oc.owner_id = o.id
+      WHERE oc.card_id = $1
       ORDER BY o.created_at LIMIT 1`,
-    [cafeId],
+    [cardId],
   );
   return res.rows[0] ?? null;
 }
@@ -404,9 +774,10 @@ export function generateStaffPin(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
-export async function updateCafe(
+export async function updateCard(
   id: string,
   fields: Partial<{
+    merchant_id: string;
     name: string;
     reward: string;
     stamps_target: number;
@@ -421,12 +792,12 @@ export async function updateCafe(
     average_spend_cents: number;
     currency: string;
   }>,
-): Promise<CafeRow | null> {
+): Promise<CardRow | null> {
   const keys = Object.keys(fields) as (keyof typeof fields)[];
-  if (!keys.length) return getCafe(id);
+  if (!keys.length) return getCard(id);
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
-  const res = await getPool().query<CafeRow>(
-    `UPDATE cafes SET ${sets} WHERE id = $1 RETURNING *`,
+  const res = await getPool().query<CardRow>(
+    `UPDATE cards SET ${sets} WHERE id = $1 RETURNING *`,
     [id, ...keys.map((k) => fields[k])],
   );
   return res.rows[0] ?? null;
@@ -434,63 +805,63 @@ export async function updateCafe(
 
 // ----------------------------------------------------------- café logos ----
 
-export async function getCafeLogo(
-  cafeId: string,
+export async function getCardLogo(
+  cardId: string,
 ): Promise<{ png: Buffer; updated_at: Date } | null> {
   const res = await getPool().query<{ png: Buffer; updated_at: Date }>(
-    `SELECT png, updated_at FROM cafe_logos WHERE cafe_id = $1`,
-    [cafeId],
+    `SELECT png, updated_at FROM card_logos WHERE card_id = $1`,
+    [cardId],
   );
   return res.rows[0] ?? null;
 }
 
-export async function setCafeLogo(cafeId: string, png: Buffer): Promise<void> {
+export async function setCardLogo(cardId: string, png: Buffer): Promise<void> {
   await getPool().query(
-    `INSERT INTO cafe_logos (cafe_id, png, updated_at) VALUES ($1, $2, now())
-     ON CONFLICT (cafe_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
-    [cafeId, png],
+    `INSERT INTO card_logos (card_id, png, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (card_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
+    [cardId, png],
   );
 }
 
-export async function deleteCafeLogo(cafeId: string): Promise<void> {
-  await getPool().query(`DELETE FROM cafe_logos WHERE cafe_id = $1`, [cafeId]);
+export async function deleteCardLogo(cardId: string): Promise<void> {
+  await getPool().query(`DELETE FROM card_logos WHERE card_id = $1`, [cardId]);
 }
 
 /** Epoch-ms of the logo's last change, or 0 when none — used to cache-bust Google's fetch. */
-export async function cafeLogoVersion(cafeId: string): Promise<number> {
+export async function cafeLogoVersion(cardId: string): Promise<number> {
   const res = await getPool().query<{ updated_at: Date }>(
-    `SELECT updated_at FROM cafe_logos WHERE cafe_id = $1`,
-    [cafeId],
+    `SELECT updated_at FROM card_logos WHERE card_id = $1`,
+    [cardId],
   );
   const row = res.rows[0];
   return row ? new Date(row.updated_at).getTime() : 0;
 }
 
 // Banner image (optional): Apple strip.png / Google heroImage. Same shape as logos.
-export async function getCafeBanner(cafeId: string): Promise<{ png: Buffer } | null> {
+export async function getCardBanner(cardId: string): Promise<{ png: Buffer } | null> {
   const res = await getPool().query<{ png: Buffer }>(
-    `SELECT png FROM cafe_banners WHERE cafe_id = $1`,
-    [cafeId],
+    `SELECT png FROM card_banners WHERE card_id = $1`,
+    [cardId],
   );
   return res.rows[0] ?? null;
 }
 
-export async function setCafeBanner(cafeId: string, png: Buffer): Promise<void> {
+export async function setCardBanner(cardId: string, png: Buffer): Promise<void> {
   await getPool().query(
-    `INSERT INTO cafe_banners (cafe_id, png, updated_at) VALUES ($1, $2, now())
-     ON CONFLICT (cafe_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
-    [cafeId, png],
+    `INSERT INTO card_banners (card_id, png, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (card_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
+    [cardId, png],
   );
 }
 
-export async function deleteCafeBanner(cafeId: string): Promise<void> {
-  await getPool().query(`DELETE FROM cafe_banners WHERE cafe_id = $1`, [cafeId]);
+export async function deleteCardBanner(cardId: string): Promise<void> {
+  await getPool().query(`DELETE FROM card_banners WHERE card_id = $1`, [cardId]);
 }
 
-export async function cafeBannerVersion(cafeId: string): Promise<number> {
+export async function cafeBannerVersion(cardId: string): Promise<number> {
   const res = await getPool().query<{ updated_at: Date }>(
-    `SELECT updated_at FROM cafe_banners WHERE cafe_id = $1`,
-    [cafeId],
+    `SELECT updated_at FROM card_banners WHERE card_id = $1`,
+    [cardId],
   );
   const row = res.rows[0];
   return row ? new Date(row.updated_at).getTime() : 0;
@@ -499,27 +870,27 @@ export async function cafeBannerVersion(cafeId: string): Promise<number> {
 // ---- stamp strips: one rendered PNG per stamp count (rich stamp grid) ----
 
 /** The strip for a given filled count, clamped by the caller. null ⇒ fall back to text dots. */
-export async function getStampStrip(cafeId: string, filled: number): Promise<{ png: Buffer } | null> {
+export async function getStampStrip(cardId: string, filled: number): Promise<{ png: Buffer } | null> {
   const res = await getPool().query<{ png: Buffer }>(
-    `SELECT png FROM cafe_stamp_strips WHERE cafe_id = $1 AND filled = $2`,
-    [cafeId, filled],
+    `SELECT png FROM card_stamp_strips WHERE card_id = $1 AND filled = $2`,
+    [cardId, filled],
   );
   return res.rows[0] ?? null;
 }
 
 /** Replaces the whole set of strips for a café in one transaction (all counts change together). */
 export async function setStampStrips(
-  cafeId: string,
+  cardId: string,
   strips: { filled: number; png: Buffer }[],
 ): Promise<void> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    await client.query(`DELETE FROM cafe_stamp_strips WHERE cafe_id = $1`, [cafeId]);
+    await client.query(`DELETE FROM card_stamp_strips WHERE card_id = $1`, [cardId]);
     for (const s of strips) {
       await client.query(
-        `INSERT INTO cafe_stamp_strips (cafe_id, filled, png, updated_at) VALUES ($1, $2, $3, now())`,
-        [cafeId, s.filled, s.png],
+        `INSERT INTO card_stamp_strips (card_id, filled, png, updated_at) VALUES ($1, $2, $3, now())`,
+        [cardId, s.filled, s.png],
       );
     }
     await client.query("COMMIT");
@@ -531,23 +902,23 @@ export async function setStampStrips(
   }
 }
 
-export async function deleteStampStrips(cafeId: string): Promise<void> {
-  await getPool().query(`DELETE FROM cafe_stamp_strips WHERE cafe_id = $1`, [cafeId]);
+export async function deleteStampStrips(cardId: string): Promise<void> {
+  await getPool().query(`DELETE FROM card_stamp_strips WHERE card_id = $1`, [cardId]);
 }
 
-export async function hasStampStrips(cafeId: string): Promise<boolean> {
+export async function hasStampStrips(cardId: string): Promise<boolean> {
   const res = await getPool().query(
-    `SELECT 1 FROM cafe_stamp_strips WHERE cafe_id = $1 LIMIT 1`,
-    [cafeId],
+    `SELECT 1 FROM card_stamp_strips WHERE card_id = $1 LIMIT 1`,
+    [cardId],
   );
   return res.rowCount! > 0;
 }
 
 /** Max updated_at epoch across a café's strips — feeds Google's ?v= cache-buster. */
-export async function stampStripsVersion(cafeId: string): Promise<number> {
+export async function stampStripsVersion(cardId: string): Promise<number> {
   const res = await getPool().query<{ updated_at: Date }>(
-    `SELECT max(updated_at) AS updated_at FROM cafe_stamp_strips WHERE cafe_id = $1`,
-    [cafeId],
+    `SELECT max(updated_at) AS updated_at FROM card_stamp_strips WHERE card_id = $1`,
+    [cardId],
   );
   const row = res.rows[0];
   return row?.updated_at ? new Date(row.updated_at).getTime() : 0;
@@ -600,11 +971,11 @@ const ACTIVE_PASS_SQL = `(
 
 // Stamps actually given. A staff `undo` corrects a mis-scan, so it has to come
 // back off the total — otherwise the headline number overstates real activity.
-// Assumes the cafes table is aliased `c`.
+// Assumes the cards table is aliased `c`.
 const NET_STAMPS_SQL = `(
        SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
                      - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
-         FROM events e WHERE e.cafe_id = c.id
+         FROM events e WHERE e.card_id = c.id
      )`;
 
 // How many nudges have gone out since this card's last visit. Non-zero means we
@@ -647,18 +1018,18 @@ const CUSTOMER_COLUMNS_SQL = `p.serial, p.short_code AS code, p.stamp_count AS s
  * `false` returns every pass row ever minted, including the ones abandoned at the
  * Add sheet; only the housekeeping/admin paths want that.
  */
-export async function cafeCustomers(cafeId: string, activeOnly = true): Promise<CustomerRow[]> {
+export async function cardCustomers(cardId: string, activeOnly = true): Promise<CustomerRow[]> {
   const res = await getPool().query<CustomerRow>(
     `SELECT ${CUSTOMER_COLUMNS_SQL}
        FROM passes p
-      WHERE p.cafe_id = $1 ${activeOnly ? `AND ${ACTIVE_PASS_SQL}` : ""}
+      WHERE p.card_id = $1 ${activeOnly ? `AND ${ACTIVE_PASS_SQL}` : ""}
       ORDER BY last_visit DESC`,
-    [cafeId],
+    [cardId],
   );
   return res.rows;
 }
 
-export interface CafeCardCounts {
+export interface CardCounts {
   /** Cards that reached a wallet or were stamped — the number we call "customers". */
   active: number;
   /** Minted but never stamped and never confirmed in a wallet: mostly abandoned Add sheets. */
@@ -673,15 +1044,15 @@ export interface CafeCardCounts {
  * counted in `active` when they were ever stamped — deleting the pass doesn't
  * un-happen the visits.
  */
-export async function cafeCardCounts(cafeId: string): Promise<CafeCardCounts> {
+export async function cardCounts(cardId: string): Promise<CardCounts> {
   const res = await getPool().query<{ active: string; never_added: string; removed: string }>(
     `SELECT count(*) FILTER (WHERE ${ACTIVE_PASS_SQL})::text AS active,
             count(*) FILTER (WHERE NOT ${ACTIVE_PASS_SQL}
               AND NOT EXISTS (SELECT 1 FROM events e
                                WHERE e.serial = p.serial AND e.type = 'pass_added'))::text AS never_added,
             count(*) FILTER (WHERE ${REMOVED_PASS_SQL})::text AS removed
-       FROM passes p WHERE p.cafe_id = $1`,
-    [cafeId],
+       FROM passes p WHERE p.card_id = $1`,
+    [cardId],
   );
   const row = res.rows[0];
   return {
@@ -692,19 +1063,19 @@ export async function cafeCardCounts(cafeId: string): Promise<CafeCardCounts> {
 }
 
 /** Serials whose card hasn't been stamped in `days` days — the lapsing set. */
-export async function lapsingSerials(cafeId: string, days: number): Promise<string[]> {
+export async function lapsingSerials(cardId: string, days: number): Promise<string[]> {
   const res = await getPool().query<{ serial: string }>(
     `SELECT p.serial FROM passes p
-      WHERE p.cafe_id = $1
+      WHERE p.card_id = $1
         AND ${LAST_VISIT_SQL} < now() - ($2 || ' days')::interval`,
-    [cafeId, String(Math.max(0, Math.trunc(days)))],
+    [cardId, String(Math.max(0, Math.trunc(days)))],
   );
   return res.rows.map((r) => r.serial);
 }
 
 // ----------------------------------------------------------------- admin ----
 
-export interface AdminCafeRow {
+export interface AdminCardRow {
   id: string;
   name: string;
   owners: string | null;
@@ -741,48 +1112,48 @@ export interface AdminCafeRow {
 
 /** Every café on the platform with its owner email(s), metrics, and art flags.
  *  Never selects a password or a PIN — only hashes exist and neither is surfaced. */
-export async function allCafesWithStats(): Promise<AdminCafeRow[]> {
-  const res = await getPool().query<AdminCafeRow>(
+export async function allCardsWithStats(): Promise<AdminCardRow[]> {
+  const res = await getPool().query<AdminCardRow>(
     `SELECT c.id, c.name, c.created_at, c.stamps_target,
             (SELECT string_agg(o.email, ', ' ORDER BY o.email)
-               FROM owner_cafes oc JOIN owners o ON o.id = oc.owner_id
-              WHERE oc.cafe_id = c.id) AS owners,
-            EXISTS (SELECT 1 FROM cafe_logos l WHERE l.cafe_id = c.id) AS has_logo,
-            EXISTS (SELECT 1 FROM cafe_banners b WHERE b.cafe_id = c.id) AS has_banner,
+               FROM owner_cards oc JOIN owners o ON o.id = oc.owner_id
+              WHERE oc.card_id = c.id) AS owners,
+            EXISTS (SELECT 1 FROM card_logos l WHERE l.card_id = c.id) AS has_logo,
+            EXISTS (SELECT 1 FROM card_banners b WHERE b.card_id = c.id) AS has_banner,
             (SELECT count(*)::int FROM passes p
-              WHERE p.cafe_id = c.id AND ${ACTIVE_PASS_SQL}) AS active,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id) AS cards,
+              WHERE p.card_id = c.id AND ${ACTIVE_PASS_SQL}) AS active,
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id) AS cards,
             ${NET_STAMPS_SQL} AS stamps,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'redeem') AS redemptions,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'redeem') AS redemptions,
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
               AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'nudge')) AS nudged,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
               AND EXISTS (SELECT 1 FROM events s WHERE s.serial = p.serial AND s.type = 'stamp'
                             AND s.created_at > (SELECT max(n.created_at) FROM events n
                                                  WHERE n.serial = p.serial AND n.type = 'nudge'))) AS nudge_returned,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.forced) AS forced_stamps,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'undo') AS undos,
-            (SELECT max(e.created_at) FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp') AS last_stamp_at,
+            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.forced) AS forced_stamps,
+            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'undo') AS undos,
+            (SELECT max(e.created_at) FROM events e WHERE e.card_id = c.id AND e.type = 'stamp') AS last_stamp_at,
             (SELECT max(l.created_at) FROM owner_logins l
-               JOIN owner_cafes oc ON oc.owner_id = l.owner_id
-              WHERE oc.cafe_id = c.id) AS last_owner_login,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp'
+               JOIN owner_cards oc ON oc.owner_id = l.owner_id
+              WHERE oc.card_id = c.id) AS last_owner_login,
+            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'stamp'
                AND e.created_at > now() - interval '7 days') AS stamps_7d,
-            (SELECT count(*)::int FROM events e WHERE e.cafe_id = c.id AND e.type = 'stamp'
+            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'stamp'
                AND e.created_at > now() - interval '30 days') AS stamps_30d,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')) AS added,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id AND ${REMOVED_PASS_SQL}) AS removed,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id AND NOT ${ACTIVE_PASS_SQL}
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REMOVED_PASS_SQL}) AS removed,
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND NOT ${ACTIVE_PASS_SQL}
                AND NOT EXISTS (SELECT 1 FROM events e
                                 WHERE e.serial = p.serial AND e.type = 'pass_added')) AS never_added,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
                AND ${LAST_VISIT_SQL} > now() - interval '7 days'
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_7d,
-            (SELECT count(*)::int FROM passes p WHERE p.cafe_id = c.id
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
                AND ${LAST_VISIT_SQL} > now() - interval '30 days'
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_30d
-       FROM cafes c
+       FROM cards c
       ORDER BY c.created_at DESC`,
   );
   return res.rows;
@@ -889,37 +1260,37 @@ export interface AdminRetentionRow {
 export async function adminRetention(): Promise<AdminRetentionRow[]> {
   const res = await getPool().query<AdminRetentionRow>(
     `WITH visits AS (
-       SELECT p.cafe_id, p.serial, p.created_at,
+       SELECT p.card_id, p.serial, p.created_at,
               count(*) FILTER (WHERE e.type = 'stamp')::int AS n,
               min(e.created_at) FILTER (WHERE e.type = 'stamp') AS first_stamp,
               max(e.created_at) FILTER (WHERE e.type = 'stamp') AS last_stamp,
               min(e.created_at) FILTER (WHERE e.type = 'redeem') AS first_redeem
          FROM passes p LEFT JOIN events e ON e.serial = p.serial
-        GROUP BY p.cafe_id, p.serial, p.created_at
+        GROUP BY p.card_id, p.serial, p.created_at
      ),
      started AS (SELECT * FROM visits WHERE n > 0)
      SELECT c.id, c.name,
             COALESCE((SELECT count(*) FILTER (WHERE n >= 2)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.cafe_id = c.id), 0)::float8 AS second_visit_rate,
+                        FROM started s WHERE s.card_id = c.id), 0)::float8 AS second_visit_rate,
             COALESCE((SELECT count(*) FILTER (WHERE n >= 3)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.cafe_id = c.id), 0)::float8 AS third_visit_rate,
+                        FROM started s WHERE s.card_id = c.id), 0)::float8 AS third_visit_rate,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
                       ORDER BY extract(epoch FROM (last_stamp - first_stamp)) / 86400.0 / (n - 1))
-               FROM started s WHERE s.cafe_id = c.id AND n >= 2)::float8 AS median_gap_days,
+               FROM started s WHERE s.card_id = c.id AND n >= 2)::float8 AS median_gap_days,
             COALESCE((SELECT count(*) FILTER (WHERE first_redeem IS NOT NULL)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.cafe_id = c.id), 0)::float8 AS completion_rate,
+                        FROM started s WHERE s.card_id = c.id), 0)::float8 AS completion_rate,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
                       ORDER BY extract(epoch FROM (first_redeem - s.created_at)) / 86400.0)
-               FROM started s WHERE s.cafe_id = c.id AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
+               FROM started s WHERE s.card_id = c.id AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
                       ORDER BY extract(epoch FROM (first_stamp - s.created_at)) / 86400.0)
-               FROM started s WHERE s.cafe_id = c.id)::float8 AS median_days_to_first_stamp,
+               FROM started s WHERE s.card_id = c.id)::float8 AS median_days_to_first_stamp,
             (SELECT count(*)::int FROM passes p
-              WHERE p.cafe_id = c.id AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
+              WHERE p.card_id = c.id AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
             ${aliveRateSql(30)} AS alive_30,
             ${aliveRateSql(60)} AS alive_60,
             ${aliveRateSql(90)} AS alive_90
-       FROM cafes c
+       FROM cards c
       ORDER BY c.created_at DESC`,
   );
   return res.rows;
@@ -937,12 +1308,12 @@ function aliveRateSql(days: number): string {
                                  AND e.created_at > now() - interval '${days} days')
               )::numeric / NULLIF(count(*), 0)
          FROM passes p
-        WHERE p.cafe_id = c.id AND p.created_at < now() - interval '${days} days'
+        WHERE p.card_id = c.id AND p.created_at < now() - interval '${days} days'
      ), 0)::float8`;
 }
 
 export interface AdminStaffRow {
-  cafe_id: string;
+  card_id: string;
   cafe_name: string;
   /** `staff:<deviceId>` — a PHONE, not a person. A re-sign-in mints a new one. */
   actor: string;
@@ -964,15 +1335,15 @@ export interface AdminStaffRow {
  */
 export async function adminStaffAudit(): Promise<AdminStaffRow[]> {
   const res = await getPool().query<AdminStaffRow>(
-    `SELECT e.cafe_id, c.name AS cafe_name, e.actor,
+    `SELECT e.card_id, c.name AS cafe_name, e.actor,
             count(*) FILTER (WHERE e.type = 'stamp')::int AS stamps,
             count(*) FILTER (WHERE e.type = 'redeem')::int AS redeems,
             count(*) FILTER (WHERE e.type = 'undo')::int AS undos,
             count(*) FILTER (WHERE e.forced)::int AS forced,
             min(e.created_at) AS first_seen, max(e.created_at) AS last_seen
-       FROM events e JOIN cafes c ON c.id = e.cafe_id
+       FROM events e JOIN cards c ON c.id = e.card_id
       WHERE e.actor LIKE 'staff:%'
-      GROUP BY e.cafe_id, c.name, e.actor
+      GROUP BY e.card_id, c.name, e.actor
       ORDER BY count(*) FILTER (WHERE e.type = 'stamp') DESC
       LIMIT 100`,
   );
@@ -1047,26 +1418,26 @@ export async function clearResetToken(ownerId: string): Promise<void> {
   );
 }
 
-export async function linkOwnerCafe(ownerId: string, cafeId: string): Promise<void> {
+export async function linkOwnerCard(ownerId: string, cardId: string): Promise<void> {
   await getPool().query(
-    `INSERT INTO owner_cafes (owner_id, cafe_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-    [ownerId, cafeId],
+    `INSERT INTO owner_cards (owner_id, card_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [ownerId, cardId],
   );
 }
 
-export async function cafesForOwner(ownerId: string): Promise<CafeRow[]> {
-  const res = await getPool().query<CafeRow>(
-    `SELECT c.* FROM cafes c JOIN owner_cafes oc ON oc.cafe_id = c.id
+export async function cardsForOwner(ownerId: string): Promise<CardRow[]> {
+  const res = await getPool().query<CardRow>(
+    `SELECT c.* FROM cards c JOIN owner_cards oc ON oc.card_id = c.id
       WHERE oc.owner_id = $1 ORDER BY c.created_at`,
     [ownerId],
   );
   return res.rows;
 }
 
-export async function ownerHasCafe(ownerId: string, cafeId: string): Promise<boolean> {
+export async function ownerHasCard(ownerId: string, cardId: string): Promise<boolean> {
   const res = await getPool().query(
-    `SELECT 1 FROM owner_cafes WHERE owner_id = $1 AND cafe_id = $2`,
-    [ownerId, cafeId],
+    `SELECT 1 FROM owner_cards WHERE owner_id = $1 AND card_id = $2`,
+    [ownerId, cardId],
   );
   return res.rows.length > 0;
 }
@@ -1075,7 +1446,7 @@ export async function ownerHasCafe(ownerId: string, cafeId: string): Promise<boo
 
 export async function createPass(row: {
   serial: string;
-  cafeId: string;
+  cardId: string;
   platform: Platform;
   shortCode: string;
   authToken: string;
@@ -1084,9 +1455,9 @@ export async function createPass(row: {
   reward: string;
 }): Promise<PassRow> {
   const res = await getPool().query<PassRow>(
-    `INSERT INTO passes (serial, cafe_id, platform, short_code, auth_token, stamp_count, stamps_target, reward)
+    `INSERT INTO passes (serial, card_id, platform, short_code, auth_token, stamp_count, stamps_target, reward)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [row.serial, row.cafeId, row.platform, row.shortCode, row.authToken, row.stampCount, row.stampsTarget, row.reward],
+    [row.serial, row.cardId, row.platform, row.shortCode, row.authToken, row.stampCount, row.stampsTarget, row.reward],
   );
   return res.rows[0]!;
 }
@@ -1096,22 +1467,22 @@ export async function getPass(serial: string): Promise<PassRow | null> {
   return res.rows[0] ?? null;
 }
 
-export async function getPassByShortCode(cafeId: string, shortCode: string): Promise<PassRow | null> {
+export async function getPassByShortCode(cardId: string, shortCode: string): Promise<PassRow | null> {
   const res = await getPool().query<PassRow>(
-    `SELECT * FROM passes WHERE cafe_id = $1 AND short_code = $2`,
-    [cafeId, shortCode.toUpperCase().trim()],
+    `SELECT * FROM passes WHERE card_id = $1 AND short_code = $2`,
+    [cardId, shortCode.toUpperCase().trim()],
   );
   return res.rows[0] ?? null;
 }
 
 /** Cards for the staff list, most-recently-active first (last stamp, else created)
  *  — newest-enrolled ordering buried the customers staff actually serve. */
-export async function listRecentPasses(cafeId: string, limit = 20): Promise<PassRow[]> {
+export async function listRecentPasses(cardId: string, limit = 20): Promise<PassRow[]> {
   const res = await getPool().query<PassRow>(
     `SELECT p.* FROM passes p
-      WHERE p.cafe_id = $1
+      WHERE p.card_id = $1
       ORDER BY ${LAST_VISIT_SQL} DESC LIMIT $2`,
-    [cafeId, limit],
+    [cardId, limit],
   );
   return res.rows;
 }
@@ -1137,8 +1508,8 @@ export async function redeemPass(serial: string): Promise<PassRow | null> {
     `UPDATE passes p
         SET stamp_count = LEAST(GREATEST(c.stamps_start, 0), p.stamps_target),
             updated_at  = now()
-       FROM cafes c
-      WHERE p.serial = $1 AND c.id = p.cafe_id
+       FROM cards c
+      WHERE p.serial = $1 AND c.id = p.card_id
       RETURNING p.*`,
     [serial],
   );
@@ -1175,22 +1546,22 @@ export async function lastNudgeAt(serial: string): Promise<Date | null> {
 }
 
 /** Every café that has opted into automated win-back. */
-export async function cafesWithAutoWinback(): Promise<CafeRow[]> {
-  const res = await getPool().query<CafeRow>(
-    `SELECT * FROM cafes WHERE auto_winback_enabled = true`,
+export async function cardsWithAutoWinback(): Promise<CardRow[]> {
+  const res = await getPool().query<CardRow>(
+    `SELECT * FROM cards WHERE auto_winback_enabled = true`,
   );
   return res.rows;
 }
 
 export async function logEvent(
-  cafeId: string,
+  cardId: string,
   serial: string,
   type: EventType,
   meta: EventMeta = {},
 ): Promise<void> {
   await getPool().query(
-    `INSERT INTO events (cafe_id, serial, type, actor, forced) VALUES ($1, $2, $3, $4, $5)`,
-    [cafeId, serial, type, meta.actor ?? "", meta.forced === true],
+    `INSERT INTO events (card_id, serial, type, actor, forced) VALUES ($1, $2, $3, $4, $5)`,
+    [cardId, serial, type, meta.actor ?? "", meta.forced === true],
   );
 }
 
@@ -1234,19 +1605,19 @@ export interface NudgeOutcomes {
 }
 
 /** Did win-back messages actually bring people back? Per café, all time. */
-export async function nudgeOutcomes(cafeId: string): Promise<NudgeOutcomes> {
+export async function nudgeOutcomes(cardId: string): Promise<NudgeOutcomes> {
   const res = await getPool().query<{ returned: number; no_return: number; never_nudged: number }>(
     `WITH x AS (
        SELECT (SELECT max(created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'nudge') AS last_nudge,
               (SELECT max(created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'stamp') AS last_stamp
-         FROM passes p WHERE p.cafe_id = $1
+         FROM passes p WHERE p.card_id = $1
      )
      SELECT
        count(*) FILTER (WHERE last_nudge IS NOT NULL AND last_stamp IS NOT NULL AND last_stamp > last_nudge)::int AS returned,
        count(*) FILTER (WHERE last_nudge IS NOT NULL AND (last_stamp IS NULL OR last_stamp <= last_nudge))::int AS no_return,
        count(*) FILTER (WHERE last_nudge IS NULL)::int AS never_nudged
      FROM x`,
-    [cafeId],
+    [cardId],
   );
   const r = res.rows[0];
   return {
@@ -1267,7 +1638,7 @@ export interface CafeMetrics {
   redemptions30d: number;
 }
 
-export async function cafeMetrics(cafeId: string): Promise<CafeMetrics> {
+export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
   const res = await getPool().query<{
     active: string;
     cards: string;
@@ -1277,16 +1648,16 @@ export async function cafeMetrics(cafeId: string): Promise<CafeMetrics> {
     redemptions30d: string;
   }>(
     `SELECT
-       (SELECT count(*) FROM passes p WHERE p.cafe_id = $1 AND ${ACTIVE_PASS_SQL})::text AS active,
-       (SELECT count(*) FROM passes WHERE cafe_id = $1)::text AS cards,
+       (SELECT count(*) FROM passes p WHERE p.card_id = $1 AND ${ACTIVE_PASS_SQL})::text AS active,
+       (SELECT count(*) FROM passes WHERE card_id = $1)::text AS cards,
        GREATEST(count(*) FILTER (WHERE type = 'stamp')
               - count(*) FILTER (WHERE type = 'undo'), 0)::text AS stamps,
        count(*) FILTER (WHERE type = 'redeem')::text AS redemptions,
        GREATEST(count(*) FILTER (WHERE type = 'stamp' AND created_at > now() - interval '30 days')
               - count(*) FILTER (WHERE type = 'undo'  AND created_at > now() - interval '30 days'), 0)::text AS "stamps30d",
        count(*) FILTER (WHERE type = 'redeem' AND created_at > now() - interval '30 days')::text AS "redemptions30d"
-     FROM events WHERE cafe_id = $1`,
-    [cafeId],
+     FROM events WHERE card_id = $1`,
+    [cardId],
   );
   const r = res.rows[0]!;
   return {
@@ -1371,8 +1742,8 @@ export async function deleteRegistration(deviceLibraryId: string, serial: string
 /** Log an add/remove against the pass's café, skipping silently if the pass is gone. */
 async function logPassLifecycle(serial: string, type: EventType): Promise<void> {
   await getPool().query(
-    `INSERT INTO events (cafe_id, serial, type, actor)
-     SELECT p.cafe_id, p.serial, $2, 'customer' FROM passes p WHERE p.serial = $1`,
+    `INSERT INTO events (card_id, serial, type, actor)
+     SELECT p.card_id, p.serial, $2, 'customer' FROM passes p WHERE p.serial = $1`,
     [serial, type],
   );
 }

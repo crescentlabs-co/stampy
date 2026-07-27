@@ -95,32 +95,32 @@ export function parseSessionCookie(value: string | undefined): string | null {
 const ENROLL_DAYS = 400;
 
 /** Strips anything unsafe in a Set-Cookie name; café ids are alphanumeric anyway. */
-function safeId(cafeId: string): string {
-  return cafeId.replace(/[^A-Za-z0-9_-]/g, "");
+function safeId(cardId: string): string {
+  return cardId.replace(/[^A-Za-z0-9_-]/g, "");
 }
 
-export function enrollCookieName(cafeId: string): string {
-  return `stampy_card_${safeId(cafeId)}`;
+export function enrollCookieName(cardId: string): string {
+  return `stampy_card_${safeId(cardId)}`;
 }
 
 export function createEnrollCookie(serial: string): string {
   return seal(`${serial}.${Date.now() + ENROLL_DAYS * 24 * 60 * 60 * 1000}`);
 }
 
-/** The serial previously issued to this browser for `cafeId`, or null. */
-export function readEnrollCookie(req: Request, cafeId: string): string | null {
-  const payload = unseal(readCookie(req, enrollCookieName(cafeId)));
+/** The serial previously issued to this browser for `cardId`, or null. */
+export function readEnrollCookie(req: Request, cardId: string): string | null {
+  const payload = unseal(readCookie(req, enrollCookieName(cardId)));
   if (payload === null) return null;
   const [serial, expiresStr] = payload.split(".");
   if (!serial || !fresh(expiresStr)) return null;
   return serial;
 }
 
-export function setEnrollCookie(res: Response, cafeId: string, serial: string): void {
+export function setEnrollCookie(res: Response, cardId: string, serial: string): void {
   const value = createEnrollCookie(serial);
   res.append(
     "Set-Cookie",
-    `${enrollCookieName(cafeId)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ENROLL_DAYS * 24 * 60 * 60}`,
+    `${enrollCookieName(cardId)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ENROLL_DAYS * 24 * 60 * 60}`,
   );
 }
 

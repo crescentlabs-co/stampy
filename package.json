@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Digital loyalty stamp cards in Apple Wallet for Malaysian cafés — no customer app.",
+  "description": "Digital loyalty stamp cards in Apple Wallet for Malaysian caf\u00e9s \u2014 no customer app.",
   "engines": {
     "node": ">=22"
   },
@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit",
     "art": "tsx scripts/generate-art.ts",
     "prepare-certs": "tsx scripts/prepare-certs.ts",
-    "prepare-google": "tsx scripts/prepare-google.ts"
+    "prepare-google": "tsx scripts/prepare-google.ts",
+    "test:migration": "tsx scripts/migration-test.ts"
   },
   "dependencies": {
     "express": "^4.21.2",

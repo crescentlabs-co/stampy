@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildPassJson, isRewardReady, stampDots } from "../src/passModel.js";
-import type { CafeRow, PassRow } from "../src/db.js";
+import type { CardRow, PassRow } from "../src/db.js";
 
-function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
+function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
     id: "default",
     name: "Kopi Corner",
@@ -29,7 +29,7 @@ function cafe(overrides: Partial<CafeRow> = {}): CafeRow {
 function row(overrides: Partial<PassRow> = {}): PassRow {
   return {
     serial: "11111111-2222-3333-4444-555555555555",
-    cafe_id: "default",
+    card_id: "default",
     platform: "apple",
     short_code: "ABC234",
     auth_token: "a".repeat(32),
@@ -62,7 +62,7 @@ describe("isRewardReady", () => {
 
 describe("buildPassJson", () => {
   it("includes the PassKit essentials", () => {
-    const p = buildPassJson(row(), cafe()) as any;
+    const p = buildPassJson(row(), card()) as any;
     expect(p.formatVersion).toBe(1);
     expect(p.serialNumber).toBe(row().serial);
     expect(p.authenticationToken.length).toBeGreaterThanOrEqual(16);
@@ -71,14 +71,14 @@ describe("buildPassJson", () => {
   });
 
   it("brands the pass from the café row", () => {
-    const p = buildPassJson(row(), cafe({ name: "Teh Tarik Place", background_color: "rgb(1, 2, 3)" })) as any;
+    const p = buildPassJson(row(), card({ name: "Teh Tarik Place", background_color: "rgb(1, 2, 3)" })) as any;
     expect(p.organizationName).toBe("Teh Tarik Place");
     expect(p.logoText).toBe("Teh Tarik Place");
     expect(p.backgroundColor).toBe("rgb(1, 2, 3)");
   });
 
   it("surfaces the short code for the staff typed fallback", () => {
-    const p = buildPassJson(row(), cafe()) as any;
+    const p = buildPassJson(row(), card()) as any;
     expect(p.barcodes[0].altText).toBe("Code ABC234");
     const codeField = p.storeCard.backFields.find((f: any) => f.key === "code");
     expect(codeField.value).toBe("ABC234");
@@ -86,7 +86,7 @@ describe("buildPassJson", () => {
   });
 
   it("puts changeMessage on exactly two fields (one banner per event)", () => {
-    const p = buildPassJson(row(), cafe()) as any;
+    const p = buildPassJson(row(), card()) as any;
     const all = [
       ...p.storeCard.headerFields,
       ...p.storeCard.primaryFields,
@@ -101,7 +101,7 @@ describe("buildPassJson", () => {
   });
 
   it("switches to reward-ready copy when full", () => {
-    const p = buildPassJson(row({ stamp_count: 10 }), cafe()) as any;
+    const p = buildPassJson(row({ stamp_count: 10 }), card()) as any;
     expect(p.storeCard.secondaryFields[0].label).toContain("REWARD READY");
     expect(p.storeCard.headerFields[0].changeMessage).toContain("Card full");
   });
