@@ -73,11 +73,6 @@ export function buildLoyaltyClass(
 }
 
 /**
- * @param stampStripsVersion 0 ⇒ café has no rendered stamp grid (keep points +
- *   dots only); >0 ⇒ show the grid for the current count as the hero image
- *   (the version busts Google's cache so the image swaps on each stamp).
- */
-/**
  * Only the fields a stamp actually changes — the body of the PATCH sent on
  * every stamp, undo and redeem.
  *
@@ -85,17 +80,31 @@ export function buildLoyaltyClass(
  * prefer it, so the identity half (id, classId, barcode, accountId…) has no
  * business being re-sent several times a day per customer. buildLoyaltyObject
  * spreads this, so the two can never describe a card differently.
+ *
+ * **The hero image is the shop's banner, and never the stamp grid.** This used
+ * to point at /art/stamps/{count}.png, which meant every single stamp handed
+ * Google a URL it had never seen and had to fetch and process before the card
+ * could render — measured at ~20s to reach an Android phone, against 3-5s with
+ * no image at all. The banner URL is identical on every stamp, so Google
+ * fetches it once. Progress is carried by loyaltyPoints and the dots below it,
+ * which are text and arrive quickly.
+ *
+ * Apple is unaffected and keeps the rendered grid: a .pkpass embeds the image
+ * bytes, so there is nothing for the phone to go and fetch (src/passBuilder.ts).
+ *
+ * @param bannerVersion 0 ⇒ no banner uploaded, and heroImage is set to null
+ *   rather than omitted — omitting it would leave the last stamp-grid image
+ *   frozen on every card issued before this change, showing a full grid beside
+ *   a number that disagrees with it.
  */
 export function buildLoyaltyPatch(
   row: PassRow,
   card: CardRow,
-  stampStripsVersion = 0,
+  bannerVersion = 0,
   business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
-  const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
-  const base = card.id === DEFAULT_CARD_ID ? "" : `/c/${card.id}`;
-  const patch: Record<string, unknown> = {
+  return {
     loyaltyPoints: {
       label: "Stamps",
       balance: { string: `${row.stamp_count}/${row.stamps_target}` },
@@ -113,25 +122,21 @@ export function buildLoyaltyPatch(
       },
       ...(row.message ? [{ id: "message", header: business, body: row.message }] : []),
     ],
+    heroImage: bannerVersion
+      ? {
+          sourceUri: { uri: artUrl(card, "banner", bannerVersion) },
+          contentDescription: {
+            defaultValue: { language: "en", value: `${card.name} banner` },
+          },
+        }
+      : null,
   };
-  // The URL carries the stamp count, so every stamp points Google at an image
-  // it has never fetched. That is the one part of the delay to the phone that
-  // is ours rather than Google's — see the timing logs in googleWallet.ts.
-  if (stampStripsVersion) {
-    patch.heroImage = {
-      sourceUri: { uri: `${config.baseUrl}${base}/art/stamps/${filled}.png?v=${stampStripsVersion}` },
-      contentDescription: {
-        defaultValue: { language: "en", value: `${card.name} stamps: ${row.stamp_count} of ${row.stamps_target}` },
-      },
-    };
-  }
-  return patch;
 }
 
 export function buildLoyaltyObject(
   row: PassRow,
   card: CardRow,
-  stampStripsVersion = 0,
+  bannerVersion = 0,
   business = card.name,
 ): Record<string, unknown> {
   return {
@@ -147,7 +152,7 @@ export function buildLoyaltyObject(
       value: row.serial,
       alternateText: `Code ${row.short_code}`,
     },
-    ...buildLoyaltyPatch(row, card, stampStripsVersion, business),
+    ...buildLoyaltyPatch(row, card, bannerVersion, business),
   };
 }
 

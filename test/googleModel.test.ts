@@ -125,11 +125,12 @@ describe("buildLoyaltyObject", () => {
     expect(withMsg.textModulesData.find((t: any) => t.id === "message").body).toBe("We miss you!");
   });
 
-  it("adds a hero image pointing at the current-count stamp strip only when strips exist", () => {
-    const none = buildLoyaltyObject(row({ stamp_count: 3 }), card(), 0) as any;
-    expect(none.heroImage).toBeUndefined(); // 0 version = no rendered grid
-    const withStrips = buildLoyaltyObject(row({ stamp_count: 3 }), card(), 1720000000000) as any;
-    expect(withStrips.heroImage.sourceUri.uri).toContain("/art/stamps/3.png?v=1720000000000");
+  it("uses the shop's banner as the hero image, never the stamp grid", () => {
+    const obj = buildLoyaltyObject(row({ stamp_count: 3 }), card(), 1720000000000) as any;
+    expect(obj.heroImage.sourceUri.uri).toBe(
+      "https://stampy.example.test/art/banner.png?v=1720000000000",
+    );
+    expect(obj.heroImage.sourceUri.uri).not.toContain("/art/stamps/");
   });
 });
 
@@ -170,7 +171,7 @@ describe("buildLoyaltyPatch", () => {
   // on the slowest hop in the product.
   it("carries only what a stamp changes", () => {
     const patch = buildLoyaltyPatch(row({ stamp_count: 7 }), card()) as any;
-    expect(Object.keys(patch).sort()).toEqual(["loyaltyPoints", "textModulesData"]);
+    expect(Object.keys(patch).sort()).toEqual(["heroImage", "loyaltyPoints", "textModulesData"]);
     expect(patch.loyaltyPoints.balance.string).toBe("7/10");
   });
 
@@ -181,11 +182,36 @@ describe("buildLoyaltyPatch", () => {
     }
   });
 
-  it("includes the stamp grid only when the card has one rendered", () => {
-    expect((buildLoyaltyPatch(row({ stamp_count: 3 }), card()) as any).heroImage).toBeUndefined();
-    const withArt = buildLoyaltyPatch(row({ stamp_count: 3 }), card(), 1700000000000) as any;
-    expect(withArt.heroImage.sourceUri.uri).toBe(
-      "https://stampy.example.test/art/stamps/3.png?v=1700000000000",
+  // THE fix for the 20-second Android stamp. The hero image used to carry the
+  // stamp count in its URL, so every stamp handed Google an image it had never
+  // seen and had to fetch and process before the card could render. If this
+  // ever varies by count again, that delay comes straight back.
+  it("points at the same image no matter how many stamps the card has", () => {
+    const at3 = buildLoyaltyPatch(row({ stamp_count: 3 }), card(), 1700000000000) as any;
+    const at7 = buildLoyaltyPatch(row({ stamp_count: 7 }), card(), 1700000000000) as any;
+    expect(at3.heroImage.sourceUri.uri).toBe(at7.heroImage.sourceUri.uri);
+    expect(at3.heroImage.sourceUri.uri).toBe(
+      "https://stampy.example.test/art/banner.png?v=1700000000000",
+    );
+    // Progress still moves — just in text, which is the part that arrives fast.
+    expect(at3.loyaltyPoints.balance.string).toBe("3/10");
+    expect(at7.loyaltyPoints.balance.string).toBe("7/10");
+    expect(at3.textModulesData[0].body).not.toBe(at7.textModulesData[0].body);
+  });
+
+  // Explicitly null, not absent: PATCH leaves omitted fields alone, so a card
+  // issued before this change would keep its last stamp-grid image forever —
+  // a full grid sitting beside a number that disagrees with it.
+  it("clears the hero image when the shop has no banner", () => {
+    const patch = buildLoyaltyPatch(row({ stamp_count: 3 }), card(), 0) as any;
+    expect(patch.heroImage).toBeNull();
+    expect("heroImage" in patch).toBe(true);
+  });
+
+  it("scopes the banner to the card when it isn't the default one", () => {
+    const patch = buildLoyaltyPatch(row(), card({ id: "abc12345" }), 99) as any;
+    expect(patch.heroImage.sourceUri.uri).toBe(
+      "https://stampy.example.test/c/abc12345/art/banner.png?v=99",
     );
   });
 

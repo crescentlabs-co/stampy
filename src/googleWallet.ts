@@ -14,7 +14,6 @@ import {
   businessNameForCard,
   cafeBannerVersion,
   cafeLogoVersion,
-  stampStripsVersion,
   type CardRow,
   type PassRow,
 } from "./db.js";
@@ -160,11 +159,11 @@ export async function ensureClass(card: CardRow): Promise<GoogleResult> {
 export async function createObject(row: PassRow, card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const [stripsV, business] = await Promise.all([
-      stampStripsVersion(card.id).catch(() => 0),
+    const [bannerV, business] = await Promise.all([
+      cafeBannerVersion(card.id).catch(() => 0),
       businessNameForCard(card),
     ]);
-    const obj = buildLoyaltyObject(row, card, stripsV, business);
+    const obj = buildLoyaltyObject(row, card, bannerV, business);
     const inserted = await api("POST", "/loyaltyObject", obj);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyObject/${obj.id as string}`, obj));
@@ -193,14 +192,14 @@ export function saveJwtUrl(row: PassRow, card: CardRow): string | null {
 export async function patchBalance(row: PassRow, card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const [stripsV, business] = await Promise.all([
-      stampStripsVersion(card.id).catch(() => 0),
+    const [bannerV, business] = await Promise.all([
+      cafeBannerVersion(card.id).catch(() => 0),
       businessNameForCard(card),
     ]);
     // Only what changed: PATCH leaves everything else as it is, so the card's
     // identity and barcode are not re-sent on every stamp.
     const patch = {
-      ...buildLoyaltyPatch(row, card, stripsV, business),
+      ...buildLoyaltyPatch(row, card, bannerV, business),
       notifyPreference: "NOTIFY_ON_UPDATE",
     };
     return toResult(await api("PATCH", `/loyaltyObject/${objectId(row)}`, patch));
