@@ -309,6 +309,10 @@ async function updateAndPush(
     // A customer hands over whichever card they have; the phone shouldn't have
     // to be showing that one already.
     merchantId: req.merchant?.id,
+    // The counter must not wait on a wallet. Google can take many seconds to
+    // reach an Android phone, and holding the queue for it helps nobody: the
+    // stamp is already committed, and this screen is the receipt.
+    deferPush: true,
   });
   if (!result) return void res.status(404).json({ error: "no-such-card" });
   res.json({

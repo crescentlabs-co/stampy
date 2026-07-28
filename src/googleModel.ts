@@ -77,7 +77,16 @@ export function buildLoyaltyClass(
  *   dots only); >0 ⇒ show the grid for the current count as the hero image
  *   (the version busts Google's cache so the image swaps on each stamp).
  */
-export function buildLoyaltyObject(
+/**
+ * Only the fields a stamp actually changes — the body of the PATCH sent on
+ * every stamp, undo and redeem.
+ *
+ * PATCH leaves omitted fields alone, which is Google's own stated reason to
+ * prefer it, so the identity half (id, classId, barcode, accountId…) has no
+ * business being re-sent several times a day per customer. buildLoyaltyObject
+ * spreads this, so the two can never describe a card differently.
+ */
+export function buildLoyaltyPatch(
   row: PassRow,
   card: CardRow,
   stampStripsVersion = 0,
@@ -86,19 +95,7 @@ export function buildLoyaltyObject(
   const ready = isRewardReady(row);
   const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
   const base = card.id === DEFAULT_CARD_ID ? "" : `/c/${card.id}`;
-  const obj: Record<string, unknown> = {
-    id: objectId(row),
-    classId: classId(card),
-    state: "ACTIVE",
-    accountId: row.serial,
-    accountName: `Card ${row.short_code}`,
-    // Same QR content as the Apple pass (the serial), so the SAME staff
-    // scanner stamps both platforms; altText covers the typed fallback.
-    barcode: {
-      type: "QR_CODE",
-      value: row.serial,
-      alternateText: `Code ${row.short_code}`,
-    },
+  const patch: Record<string, unknown> = {
     loyaltyPoints: {
       label: "Stamps",
       balance: { string: `${row.stamp_count}/${row.stamps_target}` },
@@ -117,15 +114,41 @@ export function buildLoyaltyObject(
       ...(row.message ? [{ id: "message", header: business, body: row.message }] : []),
     ],
   };
+  // The URL carries the stamp count, so every stamp points Google at an image
+  // it has never fetched. That is the one part of the delay to the phone that
+  // is ours rather than Google's — see the timing logs in googleWallet.ts.
   if (stampStripsVersion) {
-    obj.heroImage = {
+    patch.heroImage = {
       sourceUri: { uri: `${config.baseUrl}${base}/art/stamps/${filled}.png?v=${stampStripsVersion}` },
       contentDescription: {
         defaultValue: { language: "en", value: `${card.name} stamps: ${row.stamp_count} of ${row.stamps_target}` },
       },
     };
   }
-  return obj;
+  return patch;
+}
+
+export function buildLoyaltyObject(
+  row: PassRow,
+  card: CardRow,
+  stampStripsVersion = 0,
+  business = card.name,
+): Record<string, unknown> {
+  return {
+    id: objectId(row),
+    classId: classId(card),
+    state: "ACTIVE",
+    accountId: row.serial,
+    accountName: `Card ${row.short_code}`,
+    // Same QR content as the Apple pass (the serial), so the SAME staff
+    // scanner stamps both platforms; altText covers the typed fallback.
+    barcode: {
+      type: "QR_CODE",
+      value: row.serial,
+      alternateText: `Code ${row.short_code}`,
+    },
+    ...buildLoyaltyPatch(row, card, stampStripsVersion, business),
+  };
 }
 
 /**

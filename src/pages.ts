@@ -998,11 +998,21 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
           // The customer can hand over any of the shop's cards, so name the one
           // it landed on when that isn't the card currently on screen.
           const other = out.card && out.card.id !== cardId ? " on " + out.card.name : "";
-          toast(doneMsg + other + (out.push.registeredDevices === 0
-            ? " (card not opened on a phone yet — no push)"
-            : out.push.sent > 0 ? " — pushed to phone ✓" : " — push failed ✗"));
+          // The count, not the push. The wallet update is sent in the background
+          // now, so claiming "pushed to phone ✓" here would be a guess — and the
+          // stamp is already saved either way, which is what staff need to know.
+          const count = out.pass ? " — " + out.pass.stamps + " of " + out.pass.target : "";
+          toast(doneMsg + other + count);
         }
-        await load();
+        // Redraw from the response rather than waiting on a second round trip.
+        // The server already told us the new state; fetching it again only
+        // holds the button locked while a queue waits.
+        if (out.pass) {
+          const i = allPasses.findIndex((p) => p.serial === out.pass.serial);
+          if (i >= 0) allPasses[i] = out.pass; else allPasses.unshift(out.pass);
+          renderReady(); renderList();
+        }
+        void load();
         return out;
       } finally { busy = false; }
     }

@@ -423,9 +423,19 @@ async function main() {
     gStamp.status === 200 && gStampOut.pass.stamps === 3,
     "google-platform card: stamp still updates the DB (2 → 3)",
   );
+  // The counter no longer waits on the wallet: the response says the delivery
+  // is in flight rather than claiming an outcome it cannot know yet.
+  expect(gStampOut.push.pending === true, "the staff response does not wait for the wallet push");
+  expect(gStampOut.push.sent === 0, "...and does not claim a push that has not happened");
+  // The background delivery still has to survive missing Google credentials —
+  // an unhandled rejection out here would take the whole server down.
+  await new Promise((r) => setTimeout(r, 300));
+  const gStamp2 = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: gp.serial, force: true }),
+  });
   expect(
-    gStampOut.push.detail[0].reason === "google-not-configured",
-    "google dispatch reports google-not-configured gracefully (no throw)",
+    gStamp2.status === 200 && JSON.parse(await gStamp2.text()).pass.stamps === 4,
+    "a background push that could not be configured never breaks the next stamp",
   );
 
   const logo = await get("/art/logo.png");

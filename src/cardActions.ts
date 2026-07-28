@@ -30,6 +30,10 @@ export interface PushSummary {
   failed: number;
   registeredDevices: number;
   detail: { status?: number; reason?: string }[];
+  /** Round trip to the platform in ms. Absent when the push hasn't run yet. */
+  ms?: number;
+  /** True when delivery was handed to the background and nothing is known yet. */
+  pending?: boolean;
 }
 
 /** Per-call extras: the nudge body (Google shows it as a message) plus audit fields. */
@@ -41,6 +45,34 @@ export interface ApplyOptions extends EventMeta {
    * without it, whatever card the phone happened to be showing would refuse.
    */
   merchantId?: string;
+  /**
+   * Return as soon as the stamp is committed and logged, and deliver to the
+   * wallet in the background. The staff stamper sets this: at a counter the
+   * staff screen is the receipt, and making it wait on Google — which can take
+   * many seconds to reach an Android phone — holds up the queue for something
+   * neither the customer nor the till is looking at.
+   *
+   * Never set for a nudge: logMessage records whether the message actually
+   * arrived, and that row is the only history of what was sent.
+   */
+  deferPush?: boolean;
+}
+
+/**
+ * Serialises background pushes per pass. Two quick stamps would otherwise race,
+ * and the loser could land last and put a stale count back on the phone.
+ */
+const pushQueue = new Map<string, Promise<unknown>>();
+
+function queuePush(serial: string, run: () => Promise<unknown>): void {
+  const next = (pushQueue.get(serial) ?? Promise.resolve())
+    .catch(() => {})
+    .then(run)
+    .catch((err) => console.error("[push] background delivery failed:", serial, err));
+  pushQueue.set(serial, next);
+  void next.finally(() => {
+    if (pushQueue.get(serial) === next) pushQueue.delete(serial);
+  });
 }
 
 /**
@@ -60,7 +92,7 @@ export async function applyAndPush(
   update: () => Promise<PassRow | null>,
   opts: ApplyOptions = {},
 ): Promise<{ row: PassRow; push: PushSummary; card: CardRow } | null> {
-  const { nudgeText, merchantId, ...meta } = opts;
+  const { nudgeText, merchantId, deferPush, ...meta } = opts;
   const existing = await getPass(serial);
   if (!existing) return null;
 
@@ -87,34 +119,25 @@ export async function applyAndPush(
     stampsTarget: row.stamps_target,
   });
 
-  let push: PushSummary;
-  if (row.platform === "google") {
-    const result =
-      eventType === "nudge" && nudgeText
-        ? await addMessage(row, card, nudgeText)
-        : await patchBalance(row, card);
-    push = {
-      sent: result.ok ? 1 : 0,
-      failed: result.ok ? 0 : 1,
-      registeredDevices: 1, // Google hosts the card — no per-device registrations.
-      detail: [{ status: result.status, reason: result.reason }],
-    };
-  } else {
-    const pushResults = await pushPassUpdate(await pushTokensForSerial(serial));
-    push = {
-      sent: pushResults.filter((r) => r.ok).length,
-      failed: pushResults.filter((r) => !r.ok).length,
-      registeredDevices: pushResults.length,
-      detail: pushResults.map((r) => ({ status: r.status, reason: r.reason })),
-    };
-    // 410 Unregistered: Apple is telling us the card is off that device.
-    // Free churn evidence that used to be read once and thrown away.
-    for (const dead of pushResults.filter((r) => r.status === 410)) {
-      await dropDeadRegistration(dead.token).catch((err) =>
-        console.error("[pass_dropped] not recorded:", err),
-      );
-    }
+  // Sits right after the stamp that caused it, which is the order that matters.
+  // It used to be logged after delivery, which now happens on another timeline.
+  if (justCompleted) {
+    await logEvent(card.id, serial, "completed", {
+      ...meta,
+      stampsAfter: row.stamp_count,
+      stampsTarget: row.stamps_target,
+    }).catch((err) => console.error("[completed] not logged:", err));
   }
+
+  if (deferPush) {
+    // The stamp is committed and logged by now, so a delivery that never
+    // succeeds loses a notification, never the stamp itself — and the next
+    // stamp re-sends the whole current state anyway.
+    queuePush(serial, () => deliver(serial, card, eventType));
+    return { row, push: { sent: 0, failed: 0, registeredDevices: 0, detail: [], pending: true }, card };
+  }
+
+  const push = await deliver(serial, card, eventType, nudgeText, row);
 
   // What was ACTUALLY sent, and whether it arrived. passes.message keeps only
   // the latest wording and the next nudge overwrites it, so without this row
@@ -135,15 +158,60 @@ export async function applyAndPush(
     }).catch((err) => console.error("[message] not recorded:", err));
   }
 
-  // Logged after delivery so the completion sits in the timeline where it
-  // happened, not before the stamp that caused it.
-  if (justCompleted) {
-    await logEvent(card.id, serial, "completed", {
-      ...meta,
-      stampsAfter: row.stamp_count,
-      stampsTarget: row.stamps_target,
-    }).catch((err) => console.error("[completed] not logged:", err));
+  return { row, push, card };
+}
+
+/**
+ * Send the pass's CURRENT state to whichever platform holds it.
+ *
+ * `fresh` is the row the caller already has; background callers omit it and the
+ * pass is re-read here instead, so a delivery that waited behind another one
+ * sends what is true now rather than what was true when it was queued.
+ *
+ * Retries a failure once — most are transient — and never throws.
+ */
+async function deliver(
+  serial: string,
+  card: CardRow,
+  eventType: EventType,
+  nudgeText?: string,
+  fresh?: PassRow,
+): Promise<PushSummary> {
+  const row = fresh ?? (await getPass(serial));
+  if (!row) return { sent: 0, failed: 0, registeredDevices: 0, detail: [] };
+
+  if (row.platform === "google") {
+    let result =
+      eventType === "nudge" && nudgeText
+        ? await addMessage(row, card, nudgeText)
+        : await patchBalance(row, card);
+    if (!result.ok && result.reason !== "google-not-configured" && !nudgeText) {
+      await new Promise((r) => setTimeout(r, 1000));
+      result = await patchBalance(row, card);
+    }
+    return {
+      sent: result.ok ? 1 : 0,
+      failed: result.ok ? 0 : 1,
+      registeredDevices: 1, // Google hosts the card — no per-device registrations.
+      detail: [{ status: result.status, reason: result.reason }],
+      ms: result.ms,
+    };
   }
 
-  return { row, push, card };
+  const started = Date.now();
+  const pushResults = await pushPassUpdate(await pushTokensForSerial(serial));
+  // 410 Unregistered: Apple is telling us the card is off that device.
+  // Free churn evidence that used to be read once and thrown away.
+  for (const dead of pushResults.filter((r) => r.status === 410)) {
+    await dropDeadRegistration(dead.token).catch((err) =>
+      console.error("[pass_dropped] not recorded:", err),
+    );
+  }
+  return {
+    sent: pushResults.filter((r) => r.ok).length,
+    failed: pushResults.filter((r) => !r.ok).length,
+    registeredDevices: pushResults.length,
+    detail: pushResults.map((r) => ({ status: r.status, reason: r.reason })),
+    ms: Date.now() - started,
+  };
 }

@@ -7,9 +7,8 @@ import type { CardRow, PassRow } from "../src/db.js";
 process.env.GOOGLE_ISSUER_ID = "3388000000012345678";
 process.env.BASE_URL = "https://stampy.example.test";
 
-const { buildLoyaltyClass, buildLoyaltyObject, buildSaveJwtClaims, logoUrl } = await import(
-  "../src/googleModel.js"
-);
+const { buildLoyaltyClass, buildLoyaltyObject, buildLoyaltyPatch, buildSaveJwtClaims, logoUrl } =
+  await import("../src/googleModel.js");
 const { rgbToHex } = await import("../src/color.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
@@ -162,5 +161,42 @@ describe("save-to-wallet JWT", () => {
     const cls = buildLoyaltyClass(card({ name: "Pastry card" }), 0, 0, "Kopi Corner") as any;
     expect(cls.issuerName).toBe("Kopi Corner");
     expect(cls.programName).toBe("Pastry card");
+  });
+});
+
+describe("buildLoyaltyPatch", () => {
+  // A stamp happens several times a day per customer. PATCH leaves omitted
+  // fields alone, so re-sending the card's identity every time is pure weight
+  // on the slowest hop in the product.
+  it("carries only what a stamp changes", () => {
+    const patch = buildLoyaltyPatch(row({ stamp_count: 7 }), card()) as any;
+    expect(Object.keys(patch).sort()).toEqual(["loyaltyPoints", "textModulesData"]);
+    expect(patch.loyaltyPoints.balance.string).toBe("7/10");
+  });
+
+  it("omits the fields that never change", () => {
+    const patch = buildLoyaltyPatch(row(), card()) as any;
+    for (const frozen of ["id", "classId", "barcode", "accountId", "accountName", "state"]) {
+      expect(patch[frozen]).toBeUndefined();
+    }
+  });
+
+  it("includes the stamp grid only when the card has one rendered", () => {
+    expect((buildLoyaltyPatch(row({ stamp_count: 3 }), card()) as any).heroImage).toBeUndefined();
+    const withArt = buildLoyaltyPatch(row({ stamp_count: 3 }), card(), 1700000000000) as any;
+    expect(withArt.heroImage.sourceUri.uri).toBe(
+      "https://stampy.example.test/art/stamps/3.png?v=1700000000000",
+    );
+  });
+
+  // The full object is the patch plus identity: build them separately and they
+  // drift, and a card that renders one way on save renders another on a stamp.
+  it("is a strict subset of the full object", () => {
+    const r = row({ stamp_count: 4, message: "See you soon" });
+    const patch = buildLoyaltyPatch(r, card(), 42) as any;
+    const full = buildLoyaltyObject(r, card(), 42) as any;
+    for (const key of Object.keys(patch)) {
+      expect(full[key]).toEqual(patch[key]);
+    }
   });
 });
