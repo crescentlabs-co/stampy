@@ -61,6 +61,14 @@ export function buildLoyaltyClass(
       contentDescription: { defaultValue: { language: "en", value: `${card.name} banner` } },
     };
   }
+  // Google has no console UI for this — the callback URL is only ever set by
+  // PATCHing it onto the class, here. Every save/delete of any object under
+  // this class then POSTs to routes/googleCallback.ts.
+  if (config.baseUrl && config.googleCallbackSecret) {
+    cls.callbackOptions = {
+      url: `${config.baseUrl}/google/callback?token=${config.googleCallbackSecret}`,
+    };
+  }
   return cls;
 }
 
