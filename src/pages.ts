@@ -90,6 +90,16 @@ function page(title: string, body: string, extraCss = "", script = ""): string {
 
 // ------------------------------------------------------------- customer ----
 
+/**
+ * A link, not a tick-box: we ask customers for no name, email or phone, and a
+ * consent gate at a counter costs real sign-ups. It sits BELOW the buttons so
+ * the Add button stays at thumb height, and leads with the fact rather than the
+ * links — "no name, no phone, no email" is the reason to join, not fine print.
+ */
+const legalLine = `<p class="muted" style="margin-top:10px;font-size:.78rem">No name, no phone number, no email — ever.
+  Adding this card means you accept our <a href="/terms" target="_blank">Terms</a> and
+  <a href="/privacy" target="_blank">Privacy Policy</a>.</p>`;
+
 export function landingPage(
   card: CardRow,
   appleReady: boolean,
@@ -133,12 +143,9 @@ export function landingPage(
         buttons
           ? `<div id="wallets">${buttons}</div>
              <p class="muted" style="margin-top:14px">You start with a few free stamps as a welcome gift 🎁</p>
-             <!-- A link, not a tick-box: we ask customers for no name, email or
-                  phone, and a consent gate at a counter costs real sign-ups. -->
-             <p class="muted" style="margin-top:10px;font-size:.78rem">Adding this card means you accept our
-               <a href="/terms" target="_blank">Terms</a> and <a href="/privacy" target="_blank">Privacy Policy</a>.
-               We never ask for your name, email or phone number.</p>`
-          : `<p class="sub"><strong>Almost ready!</strong> Cards can’t be issued yet — the café is still being set up.</p>`
+             ${legalLine}`
+          : `<p class="sub"><strong>Almost ready!</strong> Cards can’t be issued yet — the café is still being set up.</p>
+             ${legalLine}`
       }
     </div>`,
     "",
@@ -775,36 +782,77 @@ function contactLine(contactEmail: string): string {
     : `reach us through the account you signed up with in your <a href="/dashboard">dashboard</a>`;
 }
 
-const UPDATED = "21 July 2026";
+const UPDATED = "28 July 2026";
+
+/**
+ * The PDPA (s.7(3)) requires the notice in English AND Bahasa Malaysia, so
+ * these two pages are one obligation in two languages, not a page and a
+ * translation. Change one, change the other — a discrepancy between them is
+ * worse than either version alone.
+ */
+function langToggle(current: "en" | "bm"): string {
+  return current === "en"
+    ? `<p class="upd"><a href="/privacy?lang=bm">Baca dalam Bahasa Malaysia</a></p>`
+    : `<p class="upd"><a href="/privacy">Read in English</a></p>`;
+}
 
 export function privacyPage(contactEmail = ""): string {
   const body = `<article class="legal">
     <a class="back" href="/">&larr; Back to Stampy</a>
     <h1>Privacy Policy</h1>
     <p class="upd">Last updated ${UPDATED}</p>
-    <p>Stampy provides digital loyalty stamp cards that live in Apple Wallet and Google Wallet. This policy explains what we collect and why, in plain language. We follow the spirit of Malaysia&rsquo;s Personal Data Protection Act (PDPA).</p>
+    ${langToggle("en")}
+    <p>Stampy provides digital loyalty stamp cards that live in Apple Wallet and Google Wallet. This policy explains what we collect and why, in plain language. It is written to meet Malaysia&rsquo;s Personal Data Protection Act 2010 (PDPA).</p>
 
-    <h2>What we collect</h2>
-    <p><strong>From café owners</strong> — your email address, a securely hashed password (we can never see your actual password), and the card details you enter: café name, reward, colours, and any logo or banner you upload.</p>
-    <p><strong>From customers</strong> — we do <strong>not</strong> ask your customers for their name, email, or phone number, and there is no customer account. When a customer adds a loyalty card, we store only a random card ID, a short card code, the current stamp count, and the times stamps were added or a reward was claimed. On its own this cannot identify a person.</p>
-    <p><strong>Wallet platforms</strong> — Apple and Google host the card on the customer&rsquo;s own device. We send them the card&rsquo;s content and updates so the card can refresh and show notifications; their handling of that data is governed by their own privacy policies.</p>
+    <h2>The short version, for customers</h2>
+    <p>We never ask you for your name, phone number or email address, and there is no account to create. Your loyalty card is a card in your phone&rsquo;s wallet — nothing more. <strong>If you want to stop, delete the card from your wallet.</strong> That is the whole opt-out: no form, no email, nothing to cancel.</p>
 
-    <h2>How we use it</h2>
+    <h2>What we collect from customers</h2>
+    <p>We do <strong>not</strong> ask for, and never hold, your name, email address, phone number, date of birth or payment details. What we do hold, from the moment you add a card:</p>
     <ul>
-      <li>To run the loyalty program: issue cards, add stamps, and show the reward.</li>
-      <li>To update a customer&rsquo;s card and send loyalty notifications (a new stamp, or a &ldquo;we miss you&rdquo; message) through their wallet.</li>
-      <li>To show café owners their own metrics (how many cards, stamps, and rewards).</li>
+      <li><strong>A random card number and a short card code</strong> — the identifiers printed in the card&rsquo;s barcode, so staff can scan it.</li>
+      <li><strong>Your stamps</strong> — the current count, and the date and time of each stamp, reward and correction.</li>
+      <li><strong>Which wallet you use</strong> — Apple or Google.</li>
+      <li><strong>Technical information your browser sends</strong> when you open a join page: the browser and device type it identifies itself as, and the link or page you arrived from. We use this to tell real customers from link previews and web crawlers, and to see where sign-ups come from.</li>
+      <li><strong>A delivery address for your card</strong> — for Apple, a push token from your device; for Google, the card&rsquo;s reference in Google&rsquo;s system. This is what lets the card update itself when you get a stamp.</li>
+      <li><strong>The loyalty messages sent to your card</strong> — the wording of each message and whether it arrived.</li>
+      <li><strong>A cookie in your browser</strong>, set for the shop you joined, so a second visit adds a stamp to the card you already have instead of issuing you another one. It contains a random reference and nothing else.</li>
     </ul>
-    <p>We do <strong>not</strong> sell your data or your customers&rsquo; data, and we don&rsquo;t use it for advertising.</p>
+    <p>None of this is your identity. It identifies a <em>card in a browser</em>: a new phone reads as a new customer, and we accept that rather than ask you who you are. Each shop is separate — if you hold cards at two shops, those are two unconnected records, and neither shop can see the other.</p>
+
+    <h2>What we collect from café owners</h2>
+    <p>Your email address, a securely hashed password (we can never see the password itself), your staff PIN as a one-way hash, and the card details you enter: café name, reward, colours, and any logo or banner you upload.</p>
+
+    <h2>Why we collect it</h2>
+    <ul>
+      <li>To run the loyalty programme: issue cards, add stamps, and show the reward.</li>
+      <li>To update your card and send loyalty notifications — a new stamp, or a &ldquo;we miss you&rdquo; message — through your wallet.</li>
+      <li>To show the café their own numbers: how many cards, stamps and rewards.</li>
+      <li>To keep the service working and secure, and to stop abuse.</li>
+    </ul>
+    <p>We do <strong>not</strong> sell your data, we do <strong>not</strong> use it for advertising, and we do <strong>not</strong> combine what one café knows about you with any other café.</p>
+
+    <h2>Who is responsible for your data</h2>
+    <p>The café whose card you hold decides how your loyalty data is used — under the PDPA they are the data user. Stampy runs the system on their behalf as their data processor. <strong>A café can see only its own cards, stamps and messages</strong>, never another café&rsquo;s and never anything about you beyond what is listed above.</p>
+
+    <h2>Who else receives it</h2>
+    <ul>
+      <li><strong>Apple</strong> — receives your device&rsquo;s push token so it can tell your phone the card changed. The alert itself carries no content.</li>
+      <li><strong>Google</strong> — hosts the card on Android, so it receives the card number, short code, stamp count, reward wording and the text of any message shown on the card.</li>
+      <li><strong>Railway</strong> — our hosting provider, which runs the servers and the database.</li>
+    </ul>
+    <p>These providers operate outside Malaysia, so running the service involves transferring data overseas. We only use providers that offer protection comparable to the PDPA, and we send them the minimum the card needs to work. Apple and Google handle what they receive under their own privacy policies.</p>
 
     <h2>Where it&rsquo;s stored</h2>
-    <p>Data is held in a managed PostgreSQL database on our hosting provider (Railway) and transmitted over encrypted (HTTPS) connections. Passwords are one-way hashed and never stored in readable form.</p>
+    <p>In a managed PostgreSQL database at Railway, transmitted over encrypted (HTTPS) connections. Passwords and staff PINs are one-way hashed and are never stored in a form anyone can read back.</p>
 
     <h2>How long we keep it</h2>
-    <p>We keep data for as long as the café account is active. Close your account or ask us to delete it, and we remove your café&rsquo;s data.</p>
+    <p>Your card and its stamps are kept while the card is in your wallet. <strong>Delete the card and it stops updating and receives nothing further</strong> — no more stamps, no more messages.</p>
+    <p>We do keep the record that the card existed and the stamps it earned, because that history is the café&rsquo;s own record of its business — how many people joined, how many came back, how many rewards it gave out. It stays attached to a random card number, never to a name. Cards that were never stamped and never reached a wallet are deleted automatically after 30 days.</p>
+    <p>Café account data is kept while the account is open.</p>
 
     <h2>Your rights (PDPA)</h2>
-    <p>You may ask to access, correct, or delete the personal data we hold, or withdraw consent. To make a request, ${contactLine(contactEmail)}.</p>
+    <p>You may ask to access the personal data we hold about you, correct it, ask us to delete it, obtain a copy of it, limit how it is used, or withdraw your consent. To make a request, ${contactLine(contactEmail)}. Because we hold no name or contact details, you will need to give us your card&rsquo;s short code so we can find the right record. If your request is about a particular café&rsquo;s programme, we will pass it to that café, who decides as the data user.</p>
 
     <h2>Changes</h2>
     <p>We may update this policy as the product grows. We&rsquo;ll change the date above when we do.</p>
@@ -812,6 +860,80 @@ export function privacyPage(contactEmail = ""): string {
     <div class="note">Stampy is in beta. This policy is a plain-language starting point, not legal advice — please have it reviewed by a professional before relying on it at scale.</div>
   </article>`;
   return page("Stampy — Privacy Policy", body, legalCss);
+}
+
+/**
+ * The Bahasa Malaysia notice. Required by PDPA s.7(3), which is why it is a
+ * page and not a nice-to-have. Kept section-for-section identical to the
+ * English above so the two can be diffed by eye.
+ */
+export function privacyPageBm(contactEmail = ""): string {
+  const contact = contactEmail
+    ? `e-mel kami di <a href="mailto:${contactEmail}">${contactEmail}</a>`
+    : `hubungi kami melalui akaun yang anda daftar di <a href="/dashboard">papan pemuka</a> anda`;
+  const body = `<article class="legal">
+    <a class="back" href="/">&larr; Kembali ke Stampy</a>
+    <h1>Dasar Privasi</h1>
+    <p class="upd">Dikemas kini ${UPDATED}</p>
+    ${langToggle("bm")}
+    <p>Stampy menyediakan kad setia digital yang disimpan di dalam Apple Wallet dan Google Wallet. Dasar ini menerangkan apa yang kami kumpul dan sebabnya, dalam bahasa yang mudah. Ia ditulis untuk memenuhi Akta Perlindungan Data Peribadi 2010 (PDPA) Malaysia.</p>
+
+    <h2>Ringkasnya, untuk pelanggan</h2>
+    <p>Kami tidak pernah meminta nama, nombor telefon atau alamat e-mel anda, dan tiada akaun yang perlu dibuka. Kad setia anda hanyalah sekeping kad di dalam dompet telefon anda. <strong>Jika anda mahu berhenti, padamkan kad itu daripada dompet anda.</strong> Itu sahaja caranya: tiada borang, tiada e-mel, tiada apa-apa untuk dibatalkan.</p>
+
+    <h2>Apa yang kami kumpul daripada pelanggan</h2>
+    <p>Kami <strong>tidak</strong> meminta, dan tidak pernah menyimpan, nama, alamat e-mel, nombor telefon, tarikh lahir atau maklumat pembayaran anda. Apa yang kami simpan, bermula saat anda menambah kad:</p>
+    <ul>
+      <li><strong>Nombor kad rawak dan kod kad ringkas</strong> — pengenalan yang tercetak dalam kod bar kad, supaya kakitangan boleh mengimbasnya.</li>
+      <li><strong>Setem anda</strong> — jumlah semasa, serta tarikh dan masa setiap setem, ganjaran dan pembetulan.</li>
+      <li><strong>Dompet yang anda guna</strong> — Apple atau Google.</li>
+      <li><strong>Maklumat teknikal yang dihantar oleh pelayar anda</strong> apabila anda membuka halaman sertai: jenis pelayar dan peranti yang dinyatakannya, serta pautan atau halaman yang membawa anda ke sini. Kami menggunakannya untuk membezakan pelanggan sebenar daripada pratonton pautan dan perangkak web, dan untuk melihat dari mana pendaftaran datang.</li>
+      <li><strong>Alamat penghantaran untuk kad anda</strong> — bagi Apple, token tolakan daripada peranti anda; bagi Google, rujukan kad itu dalam sistem Google. Inilah yang membolehkan kad mengemas kini dirinya apabila anda menerima setem.</li>
+      <li><strong>Mesej setia yang dihantar ke kad anda</strong> — kandungan setiap mesej dan sama ada ia sampai.</li>
+      <li><strong>Satu kuki di dalam pelayar anda</strong>, ditetapkan untuk kedai yang anda sertai, supaya lawatan kedua menambah setem pada kad sedia ada dan bukannya mengeluarkan kad baharu. Ia mengandungi rujukan rawak sahaja.</li>
+    </ul>
+    <p>Semua ini bukan identiti anda. Ia mengenal pasti <em>sekeping kad di dalam sebuah pelayar</em>: telefon baharu akan dibaca sebagai pelanggan baharu, dan kami menerima hakikat itu daripada bertanya siapa anda. Setiap kedai adalah berasingan — jika anda memegang kad di dua kedai, itu dua rekod yang tidak berhubung, dan kedai yang satu tidak dapat melihat yang lain.</p>
+
+    <h2>Apa yang kami kumpul daripada pemilik kafe</h2>
+    <p>Alamat e-mel anda, kata laluan yang dicincang secara selamat (kami tidak dapat melihat kata laluan sebenar), PIN kakitangan anda sebagai cincangan sehala, dan butiran kad yang anda masukkan: nama kafe, ganjaran, warna, serta apa-apa logo atau sepanduk yang anda muat naik.</p>
+
+    <h2>Mengapa kami mengumpulnya</h2>
+    <ul>
+      <li>Untuk menjalankan program setia: mengeluarkan kad, menambah setem, dan memaparkan ganjaran.</li>
+      <li>Untuk mengemas kini kad anda dan menghantar pemberitahuan setia — setem baharu, atau mesej &ldquo;kami rindu anda&rdquo; — melalui dompet anda.</li>
+      <li>Untuk menunjukkan kepada kafe angka mereka sendiri: berapa banyak kad, setem dan ganjaran.</li>
+      <li>Untuk memastikan perkhidmatan berfungsi dan selamat, serta menghalang penyalahgunaan.</li>
+    </ul>
+    <p>Kami <strong>tidak</strong> menjual data anda, <strong>tidak</strong> menggunakannya untuk pengiklanan, dan <strong>tidak</strong> menggabungkan apa yang diketahui oleh satu kafe tentang anda dengan mana-mana kafe lain.</p>
+
+    <h2>Siapa yang bertanggungjawab ke atas data anda</h2>
+    <p>Kafe yang kadnya anda pegang menentukan bagaimana data setia anda digunakan — di bawah PDPA merekalah pengguna data. Stampy mengendalikan sistem bagi pihak mereka sebagai pemproses data. <strong>Sesebuah kafe hanya dapat melihat kad, setem dan mesejnya sendiri</strong>, tidak sekali-kali milik kafe lain dan tidak apa-apa tentang anda selain yang disenaraikan di atas.</p>
+
+    <h2>Siapa lagi yang menerimanya</h2>
+    <ul>
+      <li><strong>Apple</strong> — menerima token tolakan peranti anda supaya ia dapat memberitahu telefon anda bahawa kad telah berubah. Amaran itu sendiri tidak membawa apa-apa kandungan.</li>
+      <li><strong>Google</strong> — mengehos kad pada Android, jadi ia menerima nombor kad, kod ringkas, jumlah setem, kandungan ganjaran dan teks apa-apa mesej yang dipaparkan pada kad.</li>
+      <li><strong>Railway</strong> — penyedia hosting kami, yang mengendalikan pelayan dan pangkalan data.</li>
+    </ul>
+    <p>Penyedia ini beroperasi di luar Malaysia, jadi menjalankan perkhidmatan ini melibatkan pemindahan data ke luar negara. Kami hanya menggunakan penyedia yang menawarkan perlindungan setanding dengan PDPA, dan kami menghantar kepada mereka hanya apa yang diperlukan oleh kad untuk berfungsi. Apple dan Google mengendalikan apa yang mereka terima di bawah dasar privasi mereka sendiri.</p>
+
+    <h2>Di mana ia disimpan</h2>
+    <p>Di dalam pangkalan data PostgreSQL terurus di Railway, dihantar melalui sambungan tersulit (HTTPS). Kata laluan dan PIN kakitangan dicincang sehala dan tidak pernah disimpan dalam bentuk yang boleh dibaca semula oleh sesiapa.</p>
+
+    <h2>Berapa lama kami menyimpannya</h2>
+    <p>Kad anda dan setemnya disimpan selagi kad itu berada di dalam dompet anda. <strong>Padamkan kad itu dan ia berhenti dikemas kini serta tidak menerima apa-apa lagi</strong> — tiada setem, tiada mesej.</p>
+    <p>Kami memang menyimpan rekod bahawa kad itu pernah wujud dan setem yang diperolehnya, kerana sejarah itu ialah rekod perniagaan kafe itu sendiri — berapa ramai yang menyertai, berapa ramai yang kembali, berapa banyak ganjaran yang diberikan. Ia kekal terikat pada nombor kad rawak, tidak sekali-kali pada nama. Kad yang tidak pernah disetem dan tidak pernah sampai ke dompet akan dipadam secara automatik selepas 30 hari.</p>
+    <p>Data akaun kafe disimpan selagi akaun itu dibuka.</p>
+
+    <h2>Hak anda (PDPA)</h2>
+    <p>Anda boleh meminta akses kepada data peribadi yang kami simpan tentang anda, membetulkannya, meminta kami memadamnya, mendapatkan salinannya, mengehadkan penggunaannya, atau menarik balik persetujuan anda. Untuk membuat permintaan, ${contact}. Oleh sebab kami tidak menyimpan nama atau butiran perhubungan, anda perlu memberikan kod ringkas kad anda supaya kami dapat mencari rekod yang betul. Jika permintaan anda berkaitan program sesebuah kafe, kami akan menyalurkannya kepada kafe itu, yang memutuskan sebagai pengguna data.</p>
+
+    <h2>Perubahan</h2>
+    <p>Kami mungkin mengemas kini dasar ini apabila produk berkembang. Kami akan menukar tarikh di atas apabila berbuat demikian.</p>
+
+    <div class="note">Stampy masih dalam beta. Dasar ini ialah titik permulaan dalam bahasa mudah, bukan nasihat guaman — sila minta seorang profesional menyemaknya sebelum bergantung padanya secara meluas.</div>
+  </article>`;
+  return page("Stampy — Dasar Privasi", body, legalCss);
 }
 
 export function termsPage(contactEmail = ""): string {
@@ -839,6 +961,29 @@ export function termsPage(contactEmail = ""): string {
 
     <h2>Your customers, your relationship</h2>
     <p>The customers who join your card are yours. Stampy processes their card data on your behalf to run the program; we don&rsquo;t market to them or take them elsewhere.</p>
+
+    <h2>Reward terms</h2>
+    <p>These are the terms shown on the back of every card, and they apply between you and your customer. You run the programme; we run the software.</p>
+    <ul>
+      <li>One stamp per visit. You decide what earns a stamp.</li>
+      <li>Stamps may expire after 12 months without a visit.</li>
+      <li>You may substitute a reward of similar value, or withdraw the programme, at any time.</li>
+      <li>The reward is yours to honour, not Stampy&rsquo;s. Stamps have no cash value and cannot be exchanged, sold or transferred between customers.</li>
+      <li>Stamps added by mistake can be reversed by your staff, and the correction is recorded.</li>
+    </ul>
+
+    <h2>Data protection</h2>
+    <p>Under Malaysia&rsquo;s Personal Data Protection Act, <strong>you are the data user</strong> for your customers&rsquo; loyalty data and <strong>Stampy is your data processor</strong>. This section is the written agreement the Act asks for between the two. We undertake to:</p>
+    <ul>
+      <li>Process customer data only to run your loyalty programme, on your instructions, and never for our own purposes.</li>
+      <li>Never sell it, use it for advertising, market to your customers, or combine one café&rsquo;s data with another&rsquo;s.</li>
+      <li>Keep it secure — encrypted connections, hashed passwords and PINs, and access limited to what running the service requires.</li>
+      <li>Use sub-processors only where the service needs them (Apple, Google and our hosting provider — named in the <a href="/privacy">Privacy Policy</a>), and send them the minimum required.</li>
+      <li>Help you answer a customer&rsquo;s access, correction or deletion request within a reasonable time.</li>
+      <li>Tell you without undue delay if we become aware of a breach affecting your customers&rsquo; data, with what we know, so you can meet your own notification duties.</li>
+      <li>Return or delete your customer data on request when you close your account, except where we must keep it by law.</li>
+    </ul>
+    <p>In return, you agree to display or link the <a href="/privacy">Privacy Policy</a> where you invite customers to join — the join page and posters we generate already do this — and not to enter personal data about a customer (a name, phone number or anything similar) into a card message, since those fields are not built to hold it.</p>
 
     <h2>Liability</h2>
     <p>To the extent permitted by law, Stampy isn&rsquo;t liable for indirect or consequential losses arising from use of a beta service. Nothing here limits rights that can&rsquo;t be limited under Malaysian law.</p>

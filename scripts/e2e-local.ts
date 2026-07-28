@@ -1092,11 +1092,41 @@ async function main() {
   // sign-ups. (Buttons only render once a wallet is configured, hence the guard.)
   const custLanding = (await get("/c/default")).body;
   expect(
-    !custLanding.includes('id="wallets"') ||
-      (custLanding.includes('href="/terms"') && custLanding.includes('href="/privacy"')),
+    custLanding.includes('href="/terms"') && custLanding.includes('href="/privacy"'),
     "the customer sign-up page links Terms and Privacy",
   );
   expect(!custLanding.includes('id="agree"'), "the customer sign-up page has no consent tick-box");
+  // The disclosure leads with the fact, not the links — it is a selling point.
+  expect(
+    custLanding.includes("No name, no phone number, no email"),
+    "the join page states plainly that we collect no name, phone or email",
+  );
+  // No click, no field, no step in front of the button: the line is text only.
+  expect(
+    !/<input[^>]*type=["']?checkbox/i.test(custLanding) && !custLanding.includes("<form"),
+    "the join page adds no checkbox, field or form before the wallet button",
+  );
+
+  // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia, and each
+  // version must be reachable from the other or only one of them is published.
+  const privBm = await get("/privacy?lang=bm");
+  expect(
+    privBm.status === 200 && privBm.body.includes("Dasar Privasi") && privBm.body.includes("PDPA"),
+    "GET /privacy?lang=bm renders the Bahasa Malaysia notice",
+  );
+  expect(priv.body.includes("/privacy?lang=bm"), "the English policy links the BM version");
+  expect(privBm.body.includes('href="/privacy"'), "the BM policy links back to English");
+  // The notice must describe what we ACTUALLY store. These four were the gap
+  // that made the old page false; if collection changes, this test should fail.
+  for (const claim of ["push token", "browser", "cookie", "delete the card"]) {
+    expect(
+      priv.body.toLowerCase().includes(claim),
+      `the privacy notice discloses "${claim}"`,
+    );
+  }
+  // Deleting the pass is the opt-out, and the reward terms back the card up.
+  expect(terms.body.includes("One stamp per visit"), "the terms carry the reward terms");
+  expect(terms.body.includes("data processor"), "the terms carry the processor clauses");
 
   // --- Automated win-back ---
   const { runAutoWinback, MAX_UNANSWERED_NUDGES, MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");

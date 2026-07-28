@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildPassJson, isRewardReady, stampDots } from "../src/passModel.js";
 import type { CardRow, PassRow } from "../src/db.js";
+
+// Set BASE_URL BEFORE importing the module under test (config reads env at
+// import). The policy links on the back of the card are absolute URLs built
+// from it — a relative path in a pass back field is not tappable.
+process.env.BASE_URL = "https://stampy.example.test";
+
+const { buildPassJson, isRewardReady, stampDots } = await import("../src/passModel.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
@@ -100,6 +106,30 @@ describe("buildPassJson", () => {
     expect(withChange.map((f: any) => f.key).sort()).toEqual(["message", "progress"]);
     // %@ is required for iOS to substitute the new value into the banner.
     for (const f of withChange) expect(f.changeMessage).toContain("%@");
+  });
+
+  it("prints the reward terms and the policy links on the back", () => {
+    const p = buildPassJson(row(), card()) as any;
+    const back = Object.fromEntries(p.storeCard.backFields.map((f: any) => [f.key, f]));
+
+    // Expiry is a reserved right, not an automated behaviour — nothing in the
+    // code expires a stamp, so the card must not claim that it does.
+    expect(back.terms.value).toContain("may expire");
+    expect(back.terms.value).toContain("One stamp per visit");
+    expect(back.terms.value).toContain("Kopi Corner"); // the shop honours it, not Stampy
+
+    expect(back.legal.value).toContain("https://stampy.example.test/terms");
+    expect(back.legal.value).toContain("https://stampy.example.test/privacy");
+    expect(back.legal.value).toContain("delete this card from your wallet"); // the opt-out
+  });
+
+  it("adds no lock-screen banner for the terms fields", () => {
+    const p = buildPassJson(row(), card()) as any;
+    const back = Object.fromEntries(p.storeCard.backFields.map((f: any) => [f.key, f]));
+    // Static text that never changes must never carry changeMessage: iOS would
+    // fire a banner for it, breaking one-notification-per-event.
+    expect(back.terms.changeMessage).toBeUndefined();
+    expect(back.legal.changeMessage).toBeUndefined();
   });
 
   it("switches to reward-ready copy when full", () => {

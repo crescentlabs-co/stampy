@@ -12,7 +12,7 @@
 import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
 import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
-import { isRewardReady, stampDots } from "./passModel.js";
+import { isRewardReady, rewardTerms, stampDots } from "./passModel.js";
 
 /** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
 export function classId(card: Pick<CardRow, "id">): string {
@@ -54,7 +54,35 @@ export function buildLoyaltyClass(
     hexBackgroundColor: rgbToHex(card.background_color),
     countryCode: "MY",
     reviewStatus: "UNDER_REVIEW",
+    // Terms live on the CLASS, not the object, for two reasons: they are the
+    // same for every customer of this café, and class data renders on every
+    // object already issued — so existing Android cards pick this up without
+    // touching a single object. Deliberately NOT in buildLoyaltyPatch: that is
+    // re-sent on every stamp, and static text has no business in it.
+    textModulesData: [
+      {
+        id: "terms",
+        header: "Reward terms",
+        body: rewardTerms(business),
+      },
+      {
+        id: "privacy",
+        header: "Your privacy",
+        body: "We never ask for your name, phone number or email. To stop, delete this card from your wallet.",
+      },
+    ],
   };
+  // A class PATCH carries no notifyPreference, so adding these never notifies
+  // anyone — unlike the object patch. Skipped entirely without a baseUrl:
+  // Google rejects a relative uri, and the app must still boot with no config.
+  if (config.baseUrl) {
+    cls.linksModuleData = {
+      uris: [
+        { uri: `${config.baseUrl}/terms`, description: "Terms of Service", id: "terms" },
+        { uri: `${config.baseUrl}/privacy`, description: "Privacy Policy", id: "privacy" },
+      ],
+    };
+  }
   if (bannerVersion) {
     cls.heroImage = {
       sourceUri: { uri: artUrl(card, "banner", bannerVersion) },

@@ -447,11 +447,20 @@ export async function migrate(): Promise<void> {
       merchant_id text NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
       created_at  timestamptz NOT NULL DEFAULT now()
     );
-    -- v1.3: a person, scoped to one merchant. Deliberately holds NO name, email
-    -- or phone — the privacy page promises exactly that, and the identity comes
-    -- from a signed cookie instead. That means it identifies a BROWSER, not a
-    -- human: a new phone reads as a new customer and there is no fixing that
-    -- without asking for something we have promised not to ask for.
+    -- v1.3: a person, scoped to one merchant. Holds NO name, email or phone:
+    -- identity comes from a signed cookie instead, so this identifies a BROWSER,
+    -- not a human — a new phone reads as a new customer, and that is accepted
+    -- rather than fixed by collecting PII.
+    --
+    -- The promise we make is that we never ASK the customer for those things
+    -- (the join page and the privacy notice both say exactly that) — not that a
+    -- column can never exist. So a customer list with optional names is a
+    -- one-line additive migration here whenever it is wanted:
+    --   ALTER TABLE customers ADD COLUMN IF NOT EXISTS name text;
+    -- Nothing SELECTs * from this table into a fixed-shape type, and
+    -- src/backup.ts tolerates columns the dump predates (they restore at their
+    -- default), so an old dump still restores into the newer schema. Adding one
+    -- is a privacy-notice update, not a rework — keep it that way.
     CREATE TABLE IF NOT EXISTS customers (
       id          text PRIMARY KEY,
       merchant_id text NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,

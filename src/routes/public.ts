@@ -56,6 +56,7 @@ import {
   marketingPage,
   notReadyPage,
   privacyPage,
+  privacyPageBm,
   termsPage,
 } from "../pages.js";
 
@@ -325,7 +326,15 @@ const merchantQr = (merchantId: string, res: import("express").Response) =>
   qrFor(`/j/${merchantId}`, res);
 
 publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage()));
-publicRouter.get("/privacy", (_req, res) => res.type("html").send(privacyPage(config.contactEmail)));
+// PDPA s.7(3) wants the notice in English AND Bahasa Malaysia. One route, one
+// query param, a plain <a> to switch — no JS, so the page stays script-free.
+publicRouter.get("/privacy", (req, res) =>
+  res
+    .type("html")
+    .send(
+      req.query.lang === "bm" ? privacyPageBm(config.contactEmail) : privacyPage(config.contactEmail),
+    ),
+);
 publicRouter.get("/terms", (_req, res) => res.type("html").send(termsPage(config.contactEmail)));
 /**
  * The merchant join link — the one that goes on a poster.

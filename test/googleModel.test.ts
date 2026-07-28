@@ -93,6 +93,42 @@ describe("buildLoyaltyClass", () => {
       "https://stampy.example.test/c/kopi2/art/banner.png?v=99",
     );
   });
+
+  it("carries the terms and privacy links, so existing cards inherit them", () => {
+    // On the CLASS, not the object: class data renders on every object already
+    // issued, which is the only way an Android card in a wallet today can gain
+    // a link without touching that customer's object.
+    const cls = buildLoyaltyClass(card()) as any;
+    const uris = Object.fromEntries(cls.linksModuleData.uris.map((u: any) => [u.id, u.uri]));
+    expect(uris.terms).toBe("https://stampy.example.test/terms");
+    expect(uris.privacy).toBe("https://stampy.example.test/privacy");
+  });
+
+  it("shows the SAME reward terms as the Apple pass", async () => {
+    const { rewardTerms } = await import("../src/passModel.js");
+    const cls = buildLoyaltyClass(card()) as any;
+    const terms = cls.textModulesData.find((t: any) => t.id === "terms");
+    // One wording, one source. An Android and an iPhone customer of the same
+    // shop must never be shown different terms.
+    expect(terms.body).toBe(rewardTerms("Kopi Corner"));
+    expect(terms.body).toContain("may expire");
+  });
+
+  it("omits the links when no baseUrl is configured (boots with zero secrets)", async () => {
+    // Google rejects a relative uri, and invariant 1 says the app must still
+    // start and build content with no env at all. The terms text has no URL in
+    // it, so it survives; the links drop out.
+    const { config } = await import("../src/config.js");
+    const saved = config.baseUrl;
+    config.baseUrl = "";
+    try {
+      const cls = buildLoyaltyClass(card()) as any;
+      expect(cls.linksModuleData).toBeUndefined();
+      expect(cls.textModulesData.find((t: any) => t.id === "terms")).toBeTruthy();
+    } finally {
+      config.baseUrl = saved;
+    }
+  });
 });
 
 describe("buildLoyaltyObject", () => {

@@ -16,6 +16,33 @@ export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target"
 }
 
 /**
+ * The reward terms printed on the back of the card, on BOTH platforms — Apple
+ * reads it from here, googleModel.ts imports the same function. One wording, so
+ * an Android customer and an iPhone customer are never shown different terms.
+ *
+ * Expiry is stated as a reserved right, not a promise: nothing in the code
+ * expires a stamp, and there is no per-card expiry setting. Say "may" or say
+ * nothing — a card that claims an automatic behaviour we don't implement is
+ * worse than one that stays quiet. If a real expiry mechanism ever lands, this
+ * string is where the number comes from.
+ */
+export function rewardTerms(business: string): string {
+  return [
+    "One stamp per visit.",
+    `${business} decides what earns a stamp and provides the reward — Stampy only runs the card.`,
+    "Stamps may expire after 12 months without a visit.",
+    `${business} may substitute a reward of similar value or end the programme at any time.`,
+    "Stamps have no cash value and cannot be exchanged, sold or transferred.",
+  ].join(" ");
+}
+
+/** Links to the policies, for the back of the card. PassKit linkifies bare URLs. */
+export function legalText(): string {
+  const base = config.baseUrl || "";
+  return `We never ask for your name, phone number or email. To stop, delete this card from your wallet.\n\nTerms: ${base}/terms\nPrivacy: ${base}/privacy`;
+}
+
+/**
  * Builds the complete pass.json content for a card, branded per café.
  *
  * Notification design (the hero feature): iOS shows a lock-screen banner when
@@ -98,6 +125,19 @@ export function buildPassJson(
           key: "howto",
           label: "How it works",
           value: `Show this card when you order. Collect ${row.stamps_target} stamps and your next ${row.reward.toLowerCase()} is on us. Your card updates by itself — no app needed.`,
+        },
+        // No changeMessage on either of these: they never change, and Apple
+        // shows a lock-screen banner for every back field that carries one.
+        // test/passModel.test.ts holds the line at exactly two.
+        {
+          key: "terms",
+          label: "Reward terms",
+          value: rewardTerms(business),
+        },
+        {
+          key: "legal",
+          label: "Terms & privacy",
+          value: legalText(),
         },
       ],
     },
