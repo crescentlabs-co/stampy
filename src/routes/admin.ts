@@ -4,9 +4,10 @@
  * (ADMIN_EMAIL may list several, comma-separated). When ADMIN_EMAIL is unset the
  * whole console is closed (403).
  *
- *   GET  /admin                          the console page
- *   GET  /admin/api/overview             every café + owner email(s) + metrics
- *   POST /admin/api/owner/:id/reset-password  set a NEW temp password (never reveals the old)
+ *   GET    /admin                          the console page
+ *   GET    /admin/api/overview             every café + owner email(s) + metrics
+ *   DELETE /admin/api/card/:id             remove a card that has no history at all
+ *   POST   /admin/api/owner/:id/reset-password  set a NEW temp password (never reveals the old)
  *
  * Security: passwords are scrypt-hashed one-way — there is nothing to "view".
  * Reset = replace the hash with a fresh temp password, returned once.
@@ -25,6 +26,7 @@ import {
   adminStaffAudit,
   businessNameForCard,
   createDesignTemplate,
+  deleteCard,
   deleteDesignTemplate,
   deleteStampStrips,
   ensureMerchantForOwner,
@@ -153,6 +155,22 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });
   res.json({ ok: true, cardId: card.id, ownerEmail: owner.email, tempPassword, staffPin });
+});
+
+/**
+ * Operator cleanup: remove a card that never became anything — a test card, or
+ * a second card added back when the dashboard still offered that button.
+ *
+ * Owners can NOT do this, by design: a card id is printed on posters and baked
+ * into every Android card ever issued from it, so removing one is not an edit
+ * that can be taken back. deleteCard() re-checks every condition itself inside
+ * a transaction, so the overview's numbers being a few seconds stale can never
+ * turn into a card disappearing out from under a customer.
+ */
+adminRouter.delete("/api/card/:id", requireAdmin, async (req, res) => {
+  const result = await deleteCard(req.params.id!);
+  if (result.ok) return void res.json({ ok: true });
+  res.status(result.reason === "no-such-card" ? 404 : 409).json({ error: result.reason });
 });
 
 // ------------------------------------------------------- design templates ----

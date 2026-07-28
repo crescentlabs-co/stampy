@@ -29,6 +29,7 @@ import {
   cardCustomers,
   cafeLogoVersion,
   cardMetrics,
+  cardsForMerchant,
   cardsForOwner,
   ensureMerchantForOwner,
   merchantForOwner,
@@ -291,7 +292,16 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   res.json({ email: req.owner!.email, cards: out });
 });
 
-/** Add another card. It shares the owner's existing staff PIN and stamper page. */
+/**
+ * Add a card — capped at ONE per merchant for V1.
+ *
+ * The cap is here rather than in the schema on purpose: merchants, owner_cards
+ * and merchants.default_card_id are all already shaped for several cards, and a
+ * CHECK constraint would only have to be migrated away again. What is missing
+ * for multi-card is the dashboard UI to choose which card a /j/ link issues —
+ * without it a second card silently turns every printed poster into a card
+ * picker, which is how this cap came to be needed.
+ */
 dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) => {
   const { name, reward, stampsTarget, stampsStart } = (req.body ?? {}) as {
     name?: string;
@@ -301,6 +311,9 @@ dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) 
   };
   if (!name?.trim()) return void res.status(400).json({ error: "missing-name" });
   const merchant = await ensureMerchantForOwner(req.owner!.id, name.trim());
+  if ((await cardsForMerchant(merchant.id)).length > 0) {
+    return void res.status(409).json({ error: "one-card-per-merchant" });
+  }
   const card = await createCard({
     merchantId: merchant.id,
     name: name.trim().slice(0, 60),

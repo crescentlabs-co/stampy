@@ -2129,18 +2129,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
             pick.appendChild(b);
           });
         }
-        const add = document.createElement("button");
-        add.textContent = "+ Add card";
-        add.onclick = async () => {
-          const name = prompt("Name for the new card (e.g. “Coffee card” or “Pastry card”):");
-          if (!name) return;
-          const { body: r } = await api("/cards", { method: "POST", body: JSON.stringify({ name }) });
-          if (!r.ok) return toast(r.error || "Failed");
-          // No PIN to hand over any more — the new card shares the one staff
-          // PIN and the one stamper page the owner already has.
-          location.reload();
-        };
-        pick.appendChild(add);
+        // No "+ Add card" button: V1 is one card per merchant, and the server
+        // refuses a second one. The chips above still render for the few
+        // merchants that added a card before that cap existed, so they can edit
+        // both until an operator removes the spare.
         host.innerHTML = "";
         host.appendChild(designPanel(S.cards[S.selCard]));
         host.appendChild(sharePanel(S.cards[S.selCard]));
@@ -2379,6 +2371,10 @@ export function adminPage(): string {
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
     .nfc { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
     .cbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
+    /* Removing a card is not an edit that can be undone, so it gets the same
+       two-tap treatment as giving away a reward. */
+    .dbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
+    .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
     .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
     .bantpl .bt { width: 84px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
                   position: relative; overflow: hidden; background-size: cover; background-position: center;
@@ -2415,6 +2411,27 @@ export function adminPage(): string {
     async function api(p, o={}) {
       const r = await fetch("/admin/api" + p, { ...o, headers: { "Content-Type": "application/json", ...(o.headers||{}) } });
       return { status: r.status, body: await r.json().catch(() => ({})) };
+    }
+
+    // Two-tap confirmation, same idiom as the stamper and the dashboard: a
+    // browser dialog can be suppressed, after which confirm() returns false and
+    // the action silently stops working. First tap relabels, second within 4s
+    // runs it.
+    let armedBtn = null, armedTimer = null;
+    function disarmBtn() {
+      if (armedBtn) { armedBtn.textContent = armedBtn.dataset.label; armedBtn.classList.remove("armed"); }
+      clearTimeout(armedTimer); armedBtn = null; armedTimer = null;
+    }
+    function armBtn(btn, prompt, go) {
+      btn.dataset.label = btn.textContent;
+      btn.onclick = () => {
+        if (armedBtn === btn) { disarmBtn(); go(); return; }
+        disarmBtn();
+        armedBtn = btn;
+        btn.textContent = prompt;
+        btn.classList.add("armed");
+        armedTimer = setTimeout(disarmBtn, 4000);
+      };
     }
 
     // ---- Client-side card renderers (same approach as the owner dashboard) ----
@@ -2650,7 +2667,8 @@ export function adminPage(): string {
           <td class="\${stale(c.last_owner_login, 30) ? "bad" : ""}">\${ago(c.last_owner_login)}</td>
           <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br>
             <button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button>
-            <a class="btn btn-ghost cbtn" href="/admin/card/\${c.id}/sheet" target="_blank">Counter sheet</a></td>
+            <a class="btn btn-ghost cbtn" href="/admin/card/\${c.id}/sheet" target="_blank">Counter sheet</a>
+            \${c.cards === 0 ? '<button class="btn btn-ghost dbtn" data-delcard="' + c.id + '">Remove card</button>' : ""}</td>
         </tr>\`).join("");
 
       // Where cards go once they're handed out. "Never in a wallet" is mostly
@@ -2833,6 +2851,24 @@ export function adminPage(): string {
           try { await navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; }
           catch { b.textContent = b.dataset.nfc; }
         };
+      });
+      // The button only appears on cards that never issued a pass, but the
+      // server checks again — and refuses for reasons the table can't see, like
+      // a poster scan that was logged without anyone adding the card.
+      const WHY = {
+        "has-passes": "Has customers — kept",
+        "has-history": "Has history — kept",
+        "last-card": "Their only card — kept",
+        "no-such-card": "Already gone",
+      };
+      $("#app").querySelectorAll("[data-delcard]").forEach((b) => {
+        armBtn(b, "Tap again to remove", async () => {
+          b.disabled = true;
+          const { body: r } = await api("/card/" + b.dataset.delcard, { method: "DELETE" });
+          if (r.ok) return void load();
+          b.disabled = false;
+          b.textContent = WHY[r.error] || "Failed";
+        });
       });
       $("#reset").onclick = async () => {
         const { body: r } = await api("/owner/" + $("#who").value + "/reset-password", { method: "POST" });

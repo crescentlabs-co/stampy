@@ -955,6 +955,82 @@ export async function createCard(row: {
   return res.rows[0]!;
 }
 
+/** Why a card could not be removed — each maps to a sentence the admin console shows. */
+export type CardDeletion =
+  | { ok: true }
+  | { ok: false; reason: "no-such-card" | "has-passes" | "has-history" | "last-card" };
+
+/**
+ * Remove a card that never became anything — operator cleanup for a test card
+ * or a mis-click, never something a café owner can do.
+ *
+ * A card id is permanent by design (posters, Google class ids, art URLs), so
+ * this refuses anything with a trace of real life:
+ *
+ *   - any pass ever minted, even one that never reached a wallet; and
+ *   - any event at all, including a bare join_view from someone who scanned the
+ *     poster and walked away. Events are append-only — deleting them to free
+ *     the card is exactly the trade this codebase never makes — so a card with
+ *     history simply stays.
+ *
+ * Also refuses the merchant's last card, which would leave a shop with a login
+ * and nothing to hand out.
+ *
+ * Both counts and the delete run in one transaction, and the SELECT ... FOR
+ * UPDATE holds the card row: Postgres takes FOR KEY SHARE on the parent when
+ * it validates a foreign key, so a stamp landing mid-check waits for us rather
+ * than slipping between the count and the DELETE.
+ *
+ * Art (logo, banner, stamp strips) and the owner_cards link cascade away.
+ */
+export async function deleteCard(id: string): Promise<CardDeletion> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const card = await client.query<{ merchant_id: string | null }>(
+      `SELECT merchant_id FROM cards WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+    if (!card.rows.length) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "no-such-card" };
+    }
+    const merchantId = card.rows[0]!.merchant_id;
+
+    const counts = await client.query<{ passes: string; events: string; siblings: string }>(
+      `SELECT (SELECT count(*) FROM passes WHERE card_id = $1)::text AS passes,
+              (SELECT count(*) FROM events WHERE card_id = $1)::text AS events,
+              (SELECT count(*) FROM cards
+                WHERE $2::text IS NOT NULL AND merchant_id = $2 AND id <> $1)::text AS siblings`,
+      [id, merchantId],
+    );
+    const { passes, events, siblings } = counts.rows[0]!;
+    // A card with no merchant predates the split and belongs to no shop, so
+    // "would this leave them with nothing" does not apply to it.
+    const blocker =
+      Number(passes) > 0
+        ? "has-passes"
+        : Number(events) > 0
+          ? "has-history"
+          : merchantId && Number(siblings) === 0
+            ? "last-card"
+            : null;
+    if (blocker) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: blocker };
+    }
+
+    await client.query(`DELETE FROM cards WHERE id = $1`, [id]);
+    await client.query("COMMIT");
+    return { ok: true };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /** Verifies a PIN typed at the counter against the owner's stored hash (timing-safe). */
 export function verifyStaffPin(owner: OwnerRow, given: string): boolean {
   return verifyPassword(given, owner.staff_pin_hash);

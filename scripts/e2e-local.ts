@@ -26,8 +26,27 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@card.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCard, logEvent, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor } =
+  const { migrate, createPass, generateShortCode, getCard, logEvent, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
+
+  /**
+   * Give an owner an extra card the way the only merchants that have one got
+   * it: minted before the one-card-per-merchant cap existed. The dashboard API
+   * refuses this now, but the behaviour underneath — one staff PIN and one
+   * session covering every card a merchant runs — still has to hold, so it is
+   * still exercised below.
+   */
+  const addLegacyCard = async (ownerEmail: string, name: string): Promise<string> => {
+    const owner = await getOwnerByEmail(ownerEmail);
+    if (!owner) throw new Error("no such owner: " + ownerEmail);
+    const merchant = await ownerMerchant(owner.id);
+    if (!merchant) throw new Error("owner has no merchant: " + ownerEmail);
+    const made = await createCard({
+      merchantId: merchant.id, name, reward: "Free coffee", stampsTarget: 10, stampsStart: 2,
+    });
+    await linkOwnerCard(owner.id, made.id);
+    return made.id;
+  };
   const { createHash } = await import("node:crypto");
   await migrate();
   await migrate(); // idempotency check
@@ -329,13 +348,23 @@ async function main() {
   expect(m.cards === 3, `metrics: 3 cards incl. the cooldown-test card (got ${m.cards})`);
   expect(m.stamps >= 2 && m.redemptions === 1, `metrics: stamps=${m.stamps} redemptions=${m.redemptions}`);
 
-  // New café via dashboard, isolated from default
-  const newCafe = await fetch(base + "/dashboard/api/cards", {
+  // V1 is one card per merchant: the dashboard's add-card endpoint refuses a
+  // second one outright. (The button is gone too, but the server is the limit.)
+  const secondViaApi = await fetch(base + "/dashboard/api/cards", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ name: "Second Café" }),
   });
-  const newCafeOut = JSON.parse(await newCafe.text());
-  expect(newCafeOut.ok && newCafeOut.id, "second café created");
+  expect(secondViaApi.status === 409, "a merchant cannot add a second card");
+  expect(
+    JSON.parse(await secondViaApi.text()).error === "one-card-per-merchant",
+    "...and is told why, not just refused",
+  );
+  const stillOne = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  expect(stillOne.cards.length === 1, "the refused card was not created anyway");
+
+  // The merchants that DO hold two cards got them before that cap. Everything
+  // below checks that state still works — one PIN, one session, both cards.
+  const newCafeOut = { id: await addLegacyCard("owner@test.my", "Second Café") };
   // A session is scoped to the OWNER: this owner's other card is fine on the
   // same sign-in (one counter, one PIN). Another owner's card is not — see the
   // cross-owner check further down.
@@ -686,6 +715,42 @@ async function main() {
   const tplGone = JSON.parse((await get("/admin/api/templates", { headers: { cookie: cookieNow } })).body);
   expect(!tplGone.templates.some((t: any) => t.id === tplOut.id), "a design can be deleted");
 
+  // --- Removing a card: operator-only, and only when there is nothing to lose ---
+  const delCard = async (id: string, cookieUsed: string) => {
+    const r = await fetch(base + "/admin/api/card/" + id, { method: "DELETE", headers: { cookie: cookieUsed } });
+    return { status: r.status, body: JSON.parse(await r.text()) };
+  };
+  expect((await delCard(dfyOut.cardId, cookieOutsider)).status === 403, "removing a card is admin-only");
+  expect((await delCard("no-such-card-id", cookieNow)).status === 404, "removing a card that isn't there is a 404");
+  // A shop nobody has touched yet: signup mints one card and logs nothing, so
+  // this is the only state in which the "last card" rule is what stops you.
+  await fetch(base + "/dashboard/api/signup", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "spare@card.my", password: "password123", cafeName: "Spare Shop" }),
+  });
+  const spareOnly = (await ownerMerchant((await getOwnerByEmail("spare@card.my"))!.id))!;
+  const spareCards = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+    .cards.filter((c: any) => (c.owners ?? "").includes("spare@card.my"));
+  expect(spareCards.length === 1, "a fresh signup has exactly one card");
+  const lastOne = await delCard(spareCards[0].id, cookieNow);
+  expect(lastOne.status === 409 && lastOne.body.error === "last-card", "a merchant's only card is never removed");
+  expect((await getCard(spareCards[0].id)) !== null, "...and it is still there afterwards");
+  expect(Boolean(spareOnly.id), "the spare shop's merchant exists");
+  // The default card has passes on it by now.
+  const inUse = await delCard("default", cookieNow);
+  expect(inUse.status === 409 && inUse.body.error === "has-passes", "a card that ever issued a pass is never removed");
+  // No passes, but someone scanned the poster once. Events are append-only, so
+  // a card with any trace at all stays — a scan is not deleted to free it.
+  const scanned = await addLegacyCard("spare@card.my", "Scanned");
+  await logEvent(scanned, "", "join_view");
+  const withHistory = await delCard(scanned, cookieNow);
+  expect(withHistory.status === 409 && withHistory.body.error === "has-history", "a scan nobody acted on still protects the card");
+  // A genuinely untouched spare: no passes, no events, not their only card.
+  const junk = await addLegacyCard("spare@card.my", "Junk");
+  const junkGone = await delCard(junk, cookieNow);
+  expect(junkGone.status === 200 && junkGone.body.ok, "an untouched spare card is removed");
+  expect((await getCard(junk)) === null, "...and is really gone");
+
   // --- Owner-level customers + nudge (span ALL of an owner's cards) ---
   const ownerCust = JSON.parse((await get("/dashboard/api/customers?cardId=all&lapsedDays=0", { headers: { cookie: cookieNow } })).body);
   expect(Array.isArray(ownerCust.customers) && ownerCust.customers.length >= 2, "owner customers span all their cards");
@@ -833,10 +898,7 @@ async function main() {
   // guessed belongs to the owner, whichever of their cards the attacker points
   // at. Hammered against a throwaway owner so it can't block a real sign-in
   // later in this run (which is exactly what a per-café key used to hide).
-  const outsiderCard2 = JSON.parse(await (await fetch(base + "/dashboard/api/cards", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieOutsider },
-    body: JSON.stringify({ name: "Outsider second card" }),
-  })).text());
+  const outsiderCard2 = { id: await addLegacyCard("outsider@card.my", "Outsider second card") };
   const outsiderCard1 = JSON.parse(
     (await get("/dashboard/api/overview", { headers: { cookie: cookieOutsider } })).body,
   ).cards[0].id;
@@ -1313,11 +1375,13 @@ async function main() {
   expect(!dashIa.includes('data-f="staffPin"'), "the PIN is no longer a field in the card designer");
 
   // --- One PIN covers every card the owner runs ---
-  const secondCard = JSON.parse((await (await fetch(base + "/dashboard/api/cards", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ name: "Pastry card" }),
-  })).text()));
-  expect(secondCard.ok && !secondCard.staffPin, "adding a card no longer mints a PIN of its own");
+  // Minted directly: the dashboard refuses a second card now, but the merchants
+  // that already hold one must still work off a single PIN and a single session.
+  const secondCard = { id: await addLegacyCard("owner@test.my", "Pastry card") };
+  expect(
+    (await getCard(secondCard.id))!.staff_pin_hash === "",
+    "a card carries no PIN of its own — the one PIN lives on the owner",
+  );
   const bothCards = JSON.parse(await (await fetch(base + "/staff/api/cards", { headers: staffHeaders })).text());
   expect(
     (bothCards.cards || []).some((c: any) => c.id === secondCard.id),
