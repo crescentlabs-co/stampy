@@ -441,6 +441,30 @@ async function main() {
   const logo = await get("/art/logo.png");
   expect(logo.status === 200, "hosted logo for Google class is served");
 
+  // --- The owner's own line on the sign-up page ---
+  const signupPage = async () => (await get("/c/default")).body;
+  const generatedLine = async () => {
+    const dc = (await getCard("default"))!;
+    return "Collect " + dc.stamps_target + " stamps";
+  };
+  expect(
+    (await signupPage()).includes(await generatedLine()),
+    "the sign-up page generates a line when the owner hasn't written one",
+  );
+  await updateCard("default", { signup_message: "Free kopi on your 10th visit <3" });
+  const custom = await signupPage();
+  expect(custom.includes("Free kopi on your 10th visit"), "the owner's own line replaces it");
+  expect(!custom.includes(await generatedLine()), "...and the generated one is gone, not doubled up");
+  // Owner-supplied text going straight into markup on a page every customer
+  // loads. If this ever renders raw, one café owner can script every other
+  // shop's customers.
+  await updateCard("default", { signup_message: "<script>alert(1)</script>" });
+  const nasty = await signupPage();
+  expect(!nasty.includes("<script>alert(1)</script>"), "the sign-up line is escaped, never rendered as markup");
+  expect(nasty.includes("&lt;script&gt;"), "...it shows as text instead");
+  await updateCard("default", { signup_message: "" }); // back to the generated line
+  expect((await signupPage()).includes(await generatedLine()), "clearing it falls back to the generated line");
+
   // --- Self-serve branding: colours (hex↔rgb boundary) + logo upload ---
   const ov3 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
   const dflt = ov3.cards.find((c: any) => c.id === "default");
@@ -777,21 +801,21 @@ async function main() {
     ownerCust.limits.perWeek >= 1 && ownerCust.limits.maxUnanswered >= 1,
     "the customers response states both nudge limits",
   );
-  // The cohorts and the gap counts are computed server-side, so the browser
+  // The groups and the gap counts are computed server-side, so the browser
   // can't invent a group the Nudge button wouldn't actually send to.
   expect(
-    Array.isArray(ownerCust.buckets) && ownerCust.buckets.some((b: any) => b.key === "active"),
-    "the customers response carries the weekly lapse cohorts",
+    Array.isArray(ownerCust.buckets) && ownerCust.buckets.some((b: any) => b.key === "ready"),
+    "the customers response carries the cooldown groups",
   );
   expect(
     ownerCust.buckets.every(
-      (b: any) => typeof b.customers === "number" && typeof b.nudgedThisWeek === "number" && typeof b.eligible === "number",
+      (b: any) => typeof b.customers === "number" && typeof b.eligible === "number",
     ),
-    "each cohort states its size, nudges this week, and how many are still under the limit",
+    "each group states its size and how many are still under the limit",
   );
   expect(
     ownerCust.buckets.reduce((a: number, b: any) => a + b.customers, 0) === ownerCust.customers.length,
-    "every customer lands in exactly one cohort",
+    "every customer lands in exactly one group",
   );
   expect(
     typeof ownerCust.counts.active === "number" &&
@@ -801,7 +825,7 @@ async function main() {
   );
   expect(
     ownerCust.customers.every((c: any) => typeof c.canNudge === "boolean" && typeof c.bucket === "string"),
-    "each customer row states its cohort and whether the limits allow a nudge",
+    "each customer row states its group and whether the limits allow a nudge",
   );
 
   const nudgeEmpty = await fetch(base + "/dashboard/api/nudge", {
@@ -817,12 +841,26 @@ async function main() {
   const oNudgeOut = JSON.parse(await oNudge.text());
   expect(oNudge.status === 200 && oNudgeOut.total === 1, "owner-level nudge messages a single customer");
 
+  // "All" means everyone the cooldown allows, which now excludes the customer
+  // messaged a moment ago — one message per person per 7 days, no exceptions
+  // for pressing a different button.
+  const beforeAll = JSON.parse(
+    (await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body,
+  );
+  const stillAllowed = beforeAll.customers.filter((c: any) => c.canNudge).length;
   const oNudgeAll = await fetch(base + "/dashboard/api/nudge", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ message: "Owner-level all", target: "all" }),
   });
   const oNudgeAllOut = JSON.parse(await oNudgeAll.text());
-  expect(oNudgeAll.status === 200 && oNudgeAllOut.total === ownerCust.customers.length, "owner-level nudge to all reaches every customer");
+  expect(
+    oNudgeAll.status === 200 && oNudgeAllOut.total === stillAllowed,
+    `owner-level nudge to all reaches everyone off cooldown (${oNudgeAllOut.total} of ${stillAllowed})`,
+  );
+  expect(
+    oNudgeAllOut.skipped.rateLimited >= 1,
+    "...and holds back the one messaged moments ago",
+  );
 
   // A serial that isn't the owner's is silently dropped (only owned serials survive)
   const oNudgeForeign = await fetch(base + "/dashboard/api/nudge", {
@@ -1058,27 +1096,24 @@ async function main() {
     [[applePass.serial, googlePass.serial]],
   )).rows[0]!.n;
   expect(Number(nudgeRows) === 1, `…and only one nudge event is written (got ${nudgeRows})`);
-  // The weekly limit now counts the person, so their other pass is capped too.
-  const secondTry = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
+  // The cooldown counts the PERSON, so pointing at their other pass must not
+  // buy a second message. Someone holding an Apple and a Google card of the
+  // same shop is one human with one inbox.
+  const otherPassTry = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ message: "Again", target: [googlePass.serial] }),
   })).text());
   expect(
+    otherPassTry.total === 0 && otherPassTry.skipped.rateLimited === 1,
+    "their OTHER pass does not get around the 7-day cooldown",
+  );
+  expect(
     Number((await getPool().query<{ n: string }>(
       `SELECT count(*) AS n FROM events WHERE type = 'nudge' AND serial = ANY($1)`,
       [[applePass.serial, googlePass.serial]],
-    )).rows[0]!.n) === 2,
-    "a second message this week is still allowed — and targeting their OTHER pass reaches the same person",
+    )).rows[0]!.n) === 1,
+    "…and still only one nudge event exists across both their passes",
   );
-  const thirdTry = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ message: "Third", target: [applePass.serial] }),
-  })).text());
-  expect(
-    thirdTry.total === 0 && thirdTry.skipped.rateLimited === 1,
-    "a third message in the same week is refused — the limit follows the person",
-  );
-  void secondTry;
 
   // --- Legal pages + consent ---
   const priv = await get("/privacy");
@@ -1128,48 +1163,116 @@ async function main() {
   expect(terms.body.includes("One stamp per visit"), "the terms carry the reward terms");
   expect(terms.body.includes("data processor"), "the terms carry the processor clauses");
 
-  // --- Automated win-back ---
-  const { runAutoWinback, MAX_UNANSWERED_NUDGES, MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
-  const lp = await mk(); // fresh pass on the default café, never stamped
-  // Lapse is measured from the last *visit* (last stamp event, else when the
-  // card was created) — NOT updated_at, which a nudge bumps. So age the card
-  // itself; backdating updated_at would no longer make it lapsing.
-  await getPool().query(
-    "UPDATE passes SET created_at = now() - interval '30 days', updated_at = now() - interval '30 days' WHERE serial = $1",
-    [lp.serial],
+  // --- Nudging: one rule, a 7-day cooldown per customer ---
+  // Automated win-back was removed in v1.5. Nothing messages a customer on a
+  // timer any more, so what has to hold is the cooldown — and it has to hold on
+  // the SERVER, because the browser is not where a limit can live.
+  const { MAX_UNANSWERED_NUDGES, MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
+  expect(MAX_NUDGES_PER_WEEK === 1, "the limit is one message per customer per 7 days");
+
+  const { cardMetrics, pruneAbandonedPasses, upsertRegistration, setMessage, canNudgeSerial } =
+    await import("../src/db.js").then(async (db) => ({
+      ...db,
+      canNudgeSerial: (await import("../src/winback.js")).canNudgeSerial,
+    }));
+
+  const cool = await mk();
+  await logEvent("default", cool.serial, "stamp"); // a real customer
+  expect((await canNudgeSerial(cool.serial)).ok, "a customer who has never been messaged can be");
+  await logEvent("default", cool.serial, "nudge");
+  const blocked = await canNudgeSerial(cool.serial);
+  expect(!blocked.ok && blocked.reason === "rate-limited", "a second message inside 7 days is refused");
+  // 6 days is still inside the cooldown; 8 days is out of it. The boundary is
+  // the whole rule, so it is checked from both sides.
+  const ageNudge = (days: number) =>
+    getPool().query(
+      "UPDATE events SET created_at = now() - ($2 || ' days')::interval WHERE serial = $1 AND type = 'nudge'",
+      [cool.serial, String(days)],
+    );
+  await ageNudge(6);
+  expect(!(await canNudgeSerial(cool.serial)).ok, "still on cooldown 6 days after a message");
+  await ageNudge(8);
+  expect((await canNudgeSerial(cool.serial)).ok, "off cooldown 8 days after a message");
+
+  // The groups are the rule, not a second opinion about it.
+  const custView = async () =>
+    JSON.parse((await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body);
+  const groups = (await custView()).buckets.map((b: any) => b.key);
+  expect(
+    JSON.stringify(groups) === JSON.stringify(["ready", "cooling", "removed"]),
+    "the Customers tab has exactly the three cooldown groups",
   );
-  const nudgeCount = async () =>
-    (await getPool().query<{ n: number }>("SELECT count(*)::int AS n FROM events WHERE serial = $1 AND type = 'nudge'", [lp.serial])).rows[0]!.n;
+  expect(
+    (await custView()).buckets.every((b: any) => typeof b.customers === "number"),
+    "every group reports a count, including the empty ones (they are never hidden)",
+  );
 
-  await runAutoWinback(); // default café has auto-winback OFF → nobody nudged
-  expect((await nudgeCount()) === 0, "auto win-back sends nothing while the café hasn't opted in");
+  // And the send obeys it too, not just the count beside it.
+  const nudgeTwice = async () => {
+    const r = await fetch(base + "/dashboard/api/nudge", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ message: "Come back!", target: [cool.serial] }),
+    });
+    return JSON.parse(await r.text());
+  };
+  const first = await nudgeTwice();
+  expect(first.total === 1, "an off-cooldown customer is nudged");
+  const second = await nudgeTwice();
+  expect(
+    second.total === 0 && second.skipped.rateLimited === 1,
+    "asking again immediately sends nothing and says why",
+  );
 
-  await updateCard("default", { auto_winback_enabled: true, auto_winback_days: 14, auto_winback_message: "Auto: we miss you" });
-  await runAutoWinback();
-  expect((await nudgeCount()) === 1, "auto win-back nudges a lapsing customer once opted in");
-  await runAutoWinback(); // immediate re-run
-  expect((await nudgeCount()) === 1, "auto win-back does NOT re-nudge within the window");
-  await updateCard("default", { auto_winback_enabled: false }); // leave it off for cleanliness
-
-  // --- Lapse is measured from the last visit, not updated_at (regression) ---
-  // Nudging used to bump passes.updated_at, which lapse was measured from, so
-  // win-back messages silently un-lapsed the very customers being chased.
-  const { lapsingSerials, cardMetrics, pruneAbandonedPasses, upsertRegistration, setMessage } =
-    await import("../src/db.js");
+  // --- "Last seen" is measured from the last visit, not updated_at (regression) ---
+  // Nudging bumps passes.updated_at. When lapse was measured from that, a
+  // message silently marked the very customer being chased as freshly active.
   const lap = await mk();
+  await logEvent("default", lap.serial, "stamp");
   await getPool().query(
     "UPDATE passes SET created_at = now() - interval '40 days' WHERE serial = $1",
     [lap.serial],
   );
-  expect((await lapsingSerials("default", 14)).includes(lap.serial), "a card unseen for 40 days is lapsing");
-  await setMessage(lap.serial, "We miss you!"); // bumps updated_at, must NOT reset the clock
-  expect(
-    (await lapsingSerials("default", 14)).includes(lap.serial),
-    "a nudge does NOT clear the lapsing flag (updated_at regression)",
+  await getPool().query(
+    "UPDATE events SET created_at = now() - interval '40 days' WHERE serial = $1 AND type = 'stamp'",
+    [lap.serial],
   );
-  // A stamp is a real visit, so it does clear it.
-  await logEvent("default", lap.serial, "stamp");
-  expect(!(await lapsingSerials("default", 14)).includes(lap.serial), "an actual stamp clears the lapsing flag");
+  const lastDaysOf = async (serial: string) =>
+    ((await custView()).customers.find((c: any) => c.serial === serial) || {}).lastDays;
+  expect((await lastDaysOf(lap.serial)) >= 39, "a card unseen for 40 days reports it");
+  await setMessage(lap.serial, "We miss you!"); // bumps updated_at
+  expect(
+    (await lastDaysOf(lap.serial)) >= 39,
+    "a nudge does NOT reset the last-seen clock (updated_at regression)",
+  );
+  await logEvent("default", lap.serial, "stamp"); // a real visit does
+  expect((await lastDaysOf(lap.serial)) === 0, "an actual stamp resets it");
+
+  // --- Return rate: only cards old enough to judge ---
+  // Handing out a stack of cards today must not crater the number tomorrow, so
+  // anything younger than the window is outside the metric entirely.
+  const fresh = await mk();
+  await upsertRegistration("device-fresh", fresh.serial, "tok-fresh"); // a customer, but new
+  const mFresh = await cardMetrics("default");
+  const matureCust = await mk();
+  await upsertRegistration("device-older", matureCust.serial, "tok-older");
+  await getPool().query(
+    "UPDATE passes SET created_at = now() - interval '20 days' WHERE serial = $1",
+    [matureCust.serial],
+  );
+  const mAdded = await cardMetrics("default");
+  expect(mAdded.matured === mFresh.matured + 1, "a 20-day-old customer joins the return-rate denominator");
+  expect(mAdded.returned === mFresh.returned, "...and has not returned until they are scanned");
+  await logEvent("default", matureCust.serial, "stamp");
+  const mScanned = await cardMetrics("default");
+  expect(mScanned.returned === mAdded.returned + 1, "a scan moves them into the numerator");
+  expect(
+    mScanned.returnRate !== null && mScanned.returnRate === mScanned.returned / mScanned.matured,
+    "the rate is returned over matured",
+  );
+  // A brand-new card has nobody old enough — that is "no answer yet", not 0%.
+  const emptyCard = await addLegacyCard("spare@card.my", "Return rate blank");
+  const mEmpty = await cardMetrics(emptyCard);
+  expect(mEmpty.matured === 0 && mEmpty.returnRate === null, "return rate is null, not 0, before anyone matures");
 
   // --- "Customers" counts real cards only, not every minted pass row ---
   const ghost = await mk(); // never stamped, never added to a wallet
@@ -1369,16 +1472,26 @@ async function main() {
   // --- Win-back effectiveness + the churn stop-rule ---
   const { nudgeOutcomes, unansweredNudges } = await import("../src/db.js");
   const ch = await mk();
+  // A real customer: the dashboard only ever targets people who were stamped or
+  // reached a wallet, so an un-stamped pass row could never be nudged at all.
+  await logEvent("default", ch.serial, "stamp");
   await getPool().query("UPDATE passes SET created_at = now() - interval '60 days' WHERE serial = $1", [ch.serial]);
-  await updateCard("default", { auto_winback_enabled: true, auto_winback_days: 14 });
+  await getPool().query(
+    "UPDATE events SET created_at = now() - interval '60 days' WHERE serial = $1 AND type = 'stamp'",
+    [ch.serial],
+  );
   for (let i = 0; i < 9; i++) {
-    // Back-dating the nudges re-opens both throttles — the café's own window and
-    // the shared 2-per-week limit — so the give-up rule is what stops us.
-    await runAutoWinback();
+    // Back-dating each nudge re-opens the 7-day cooldown, so the ONLY thing
+    // left that can stop the loop is the give-up rule. An owner tapping the
+    // button every Monday is exactly this.
+    await fetch(base + "/dashboard/api/nudge", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ message: "Come back!", target: [ch.serial] }),
+    });
     await getPool().query("UPDATE events SET created_at = now() - interval '30 days' WHERE serial = $1 AND type = 'nudge'", [ch.serial]);
   }
   const sent = await unansweredNudges(ch.serial);
-  expect(sent === MAX_UNANSWERED_NUDGES, `auto win-back gives up after ${MAX_UNANSWERED_NUDGES} unanswered messages (sent ${sent})`);
+  expect(sent === MAX_UNANSWERED_NUDGES, `we give up after ${MAX_UNANSWERED_NUDGES} unanswered messages (sent ${sent})`);
   const outBefore = await nudgeOutcomes("default");
   expect(outBefore.noReturn >= 1, "a nudged customer who hasn't been back counts as no-return");
   await logEvent("default", ch.serial, "stamp"); // they finally came in

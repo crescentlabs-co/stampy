@@ -54,10 +54,14 @@ never kill a printed poster).
    one NOTIFY_ON_UPDATE patch or one TEXT_AND_NOTIFY message per event;
    Google hard-caps 3 notifications/card/24h.
    **Nudge limits are enforced server-side, in one place:** `canNudge` in
-   src/winback.ts — max 2 per card per 7 days, and stop entirely after 6 with
-   no visit in between. Both the dashboard button and the hourly job go
-   through it. Never police this in the browser; it used to live in a
-   `confirm()` dialog and was therefore not a limit at all.
+   src/winback.ts — **one message per customer per 7 days**, and stop entirely
+   after 6 with no visit in between. Per PERSON, not per pass: their other
+   wallet card must not buy a second message. The Customers tab's groups are
+   that same rule (`BUCKETS`, routes/dashboard.ts), so what an owner sees and
+   what the button sends to cannot disagree. Never police this in the browser;
+   it used to live in a `confirm()` dialog and was therefore not a limit at all.
+   **Nothing messages a customer on a timer** — automated win-back was removed
+   in v1.5; a nudge is always an owner pressing a button.
 4. **Both platforms share one scanner:** the pass barcode content is the serial
    (UUID) on Apple AND Google; `short_code` (6 chars, no 0/O/1/I/L) is the
    typed fallback. Don't diverge them.
@@ -89,12 +93,15 @@ never kill a printed poster).
    button, second tap within 4s). A test asserts the staff page contains none.
 9. **Platform dispatch lives in `applyAndPush`** (src/cardActions.ts):
    `apple` → empty APNs push (device re-fetches); `google` → PATCH object /
-   addMessage. Staff (stamp/undo/redeem), dashboard (nudge/win-back), and the
-   automated win-back job (`src/winback.ts`, hourly from server.ts) all go
+   addMessage. Both staff (stamp/undo/redeem) and the dashboard (nudge) go
    through it — new card-mutating endpoints must too (it also logs the
    `events` row that powers dashboard metrics). Pass `{actor, forced}` so the
-   audit columns stay populated. Nudges are an owner action (dashboard or the
-   auto job), never staff.
+   audit columns stay populated. Nudges are an owner action, never staff.
+   **Staff actions pass `deferPush: true`**: the stamp is committed and logged,
+   then delivery runs in the background, chained per serial so two quick stamps
+   can't land out of order. A counter must never wait on Google, which can take
+   seconds to reach an Android phone. Nudges stay synchronous — `logMessage`
+   records whether the message arrived, and that row is the only history of it.
 10. **Brute-force limits live in `src/rateLimit.ts`** (in-memory, failure-only:
    `peek()` to gate, `hit()` only on a failed attempt, `clear()` on success —
    so real usage never trips it). Login 8/15min per-email, staff sign-in

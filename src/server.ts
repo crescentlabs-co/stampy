@@ -15,7 +15,6 @@ import {
   pruneAbandonedPasses,
   updateOwnerPassword,
 } from "./db.js";
-import { runAutoWinback } from "./winback.js";
 import { setupPage } from "./pages.js";
 import { adminRouter } from "./routes/admin.js";
 import { dashboardRouter } from "./routes/dashboard.js";
@@ -93,11 +92,9 @@ async function main(): Promise<void> {
     await migrate();
     console.log("Database ready.");
     await bootstrapOwner().catch((err) => console.error("[bootstrap] failed:", err));
-    // Automated win-back: sweep once on boot, then hourly. Sends are throttled
-    // by the per-card "already nudged this window" guard, so this can't spam.
-    void runAutoWinback();
-    const wb = setInterval(() => void runAutoWinback(), 60 * 60_000);
-    if (typeof wb.unref === "function") wb.unref();
+    // No win-back sweep here any more. Nudging is an owner action taken from
+    // the dashboard, limited to one message per customer per 7 days — nothing
+    // messages a customer on a timer. See src/winback.ts.
     // Housekeeping: drop cards that never reached a wallet and were never
     // stamped. They are already excluded from metrics; this just stops the
     // table filling with prefetch/bot/cancelled-sheet rows.

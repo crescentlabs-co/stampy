@@ -29,6 +29,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     auto_winback_days: 14,
     auto_winback_message: "We miss you!",
     stamp_style: "",
+    signup_message: "",
     ...overrides,
   };
 }

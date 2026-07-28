@@ -283,9 +283,8 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       bannerVersion,
       stampStyle: card.stamp_style,
       stampsVersion, // 0 = no rendered stamp grid (plain text dots)
-      autoWinbackEnabled: card.auto_winback_enabled,
-      autoWinbackDays: card.auto_winback_days,
-      autoWinbackMessage: card.auto_winback_message,
+      winbackMessage: card.auto_winback_message,
+      signupMessage: card.signup_message,
       metrics: await cardMetrics(card.id),
     });
   }
@@ -368,11 +367,18 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   if (typeof body.bg === "string") fields.background_color = hexToRgb(body.bg);
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
   if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
-  // Automated win-back settings.
-  if (typeof body.autoWinbackEnabled === "boolean") fields.auto_winback_enabled = body.autoWinbackEnabled;
-  if (body.autoWinbackDays !== undefined) fields.auto_winback_days = clampInt(body.autoWinbackDays, 1, 3650, 14);
-  if (typeof body.autoWinbackMessage === "string" && body.autoWinbackMessage.trim()) {
-    fields.auto_winback_message = body.autoWinbackMessage.trim().slice(0, 200);
+  // The default text a nudge is pre-filled with. The column is still called
+  // auto_winback_message from when a scheduler used it; nothing is automated
+  // any more (see src/winback.ts), but event and column names here are
+  // effectively permanent, so it keeps its name.
+  if (typeof body.winbackMessage === "string" && body.winbackMessage.trim()) {
+    fields.auto_winback_message = body.winbackMessage.trim().slice(0, 200);
+  }
+  // The owner's own line on their sign-up page. Blank clears it, which is a
+  // real choice — it falls back to the generated "Collect N stamps, get a X" —
+  // so this one is deliberately not guarded on being non-empty.
+  if (typeof body.signupMessage === "string") {
+    fields.signup_message = body.signupMessage.trim().slice(0, 120);
   }
   // The staff PIN is NOT a card field — it belongs to the owner and lives at
   // POST /api/staff-pin. Anything sent here is ignored on purpose.
@@ -517,37 +523,45 @@ async function targetedCards(ownerId: string, cardIds: unknown): Promise<CardRow
 }
 
 /**
- * The cohorts the Customers tab is built around. Weekly, because "when did they
- * last come in" is the only question a nudge answers, and a flat list of every
- * customer is not something an owner would ever work through card by card.
+ * The three groups the Customers tab is built around. There is one rule —
+ * a customer can be messaged once every 7 days — so the only division that
+ * matters is whether their cooldown has run out.
+ *
+ * This replaced five weekly lapse cohorts. Those grouped by *when someone last
+ * visited*, which was a second, invisible rule on top of the cooldown: an owner
+ * could not tell why a customer they wanted to reach was not in any nudgeable
+ * group. Now the group and the rule are the same thing.
  *
  * Defined here, server-side, so the group the owner *sees* and the group the
- * Nudge button *sends to* are computed by the same code. `removed` wins over any
- * day bucket: the card is gone from their wallet, so no message can reach them.
+ * Nudge button *sends to* are computed by the same code. `removed` wins: the
+ * card is gone from their wallet, so no message can reach them either way.
  */
 const BUCKETS = [
-  { key: "active", label: "Active", hint: "stamped in the last 7 days", nudgeable: false },
-  { key: "d7", label: "Not seen 7–13 days", hint: "slipping — worth a nudge", nudgeable: true },
-  { key: "d14", label: "Not seen 14–20 days", hint: "going quiet", nudgeable: true },
-  { key: "d21", label: "Not seen 21–27 days", hint: "last chance to win them back", nudgeable: true },
-  { key: "d28", label: "Not seen 28+ days", hint: "long gone, but still reachable", nudgeable: true },
+  {
+    key: "ready",
+    label: "Can be messaged",
+    hint: "not messaged in the last 7 days",
+    nudgeable: true,
+  },
+  {
+    key: "cooling",
+    label: "Messaged this week",
+    hint: "on a 7-day cooldown — they will move up on their own",
+    nudgeable: false,
+  },
   {
     key: "removed",
     label: "Deleted the card",
-    hint: "removed it from their wallet — Apple only, Android deletions are invisible",
+    hint: "removed it from their wallet — nothing can reach them",
     nudgeable: false,
   },
 ] as const;
 
 type BucketKey = (typeof BUCKETS)[number]["key"];
 
-function bucketOf(lastDays: number, removed: boolean): BucketKey {
+function bucketOf(nudges7d: number, removed: boolean): BucketKey {
   if (removed) return "removed";
-  if (lastDays < 7) return "active";
-  if (lastDays < 14) return "d7";
-  if (lastDays < 21) return "d14";
-  if (lastDays < 28) return "d21";
-  return "d28";
+  return nudges7d >= MAX_NUDGES_PER_WEEK ? "cooling" : "ready";
 }
 
 interface CustomerView {
@@ -598,7 +612,7 @@ async function customerViews(cards: CardRow[]): Promise<CustomerView[]> {
         unanswered: c.unanswered_nudges,
         nudges7d: c.nudges_7d,
         removed: c.removed,
-        bucket: bucketOf(lastDays, c.removed),
+        bucket: bucketOf(c.nudges_7d, c.removed),
         canNudge: allowed.ok,
         blocked: allowed.ok ? "" : allowed.reason,
       });
@@ -658,7 +672,9 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
       hint: b.hint,
       nudgeable: b.nudgeable,
       customers: members.length,
-      nudgedThisWeek: members.filter((c) => c.nudges7d > 0).length,
+      // Off the cooldown but still not sendable: they have ignored six messages
+      // with no visit in between. Reported so a gap between the group's count
+      // and the button's count is explained rather than looking like a bug.
       eligible: b.nudgeable ? members.filter((c) => c.canNudge).length : 0,
       stopped: members.filter((c) => c.blocked === "ignored").length,
     };

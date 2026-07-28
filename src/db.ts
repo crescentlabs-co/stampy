@@ -50,12 +50,19 @@ export interface CardRow {
   average_spend_cents: number;
   /** Currency symbol shown beside that figure (owner-editable, e.g. "RM", "$"). */
   currency: string;
-  /** Opt-in automated win-back: message customers idle for `auto_winback_days`. */
+  /**
+   * Dead since v1.5, when automated win-back was removed: nudging is an owner
+   * action with a 7-day per-customer cooldown, nothing scheduled. The columns
+   * stay because migrations here are additive only.
+   */
   auto_winback_enabled: boolean;
   auto_winback_days: number;
+  /** Still live: the default text the Customers tab pre-fills a nudge with. */
   auto_winback_message: string;
   /** Which stamp-grid icon preset is selected ('' = plain text dots, 'custom' = uploaded). */
   stamp_style: string;
+  /** The owner's own line on the sign-up page; '' falls back to the generated one. */
+  signup_message: string;
 }
 
 export interface OwnerRow {
@@ -536,6 +543,9 @@ export async function migrate(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_messages_customer_time ON messages(customer_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_messages_card_time ON messages(card_id, created_at);
+    -- v1.5: the one line the owner writes on their own sign-up page. Blank means
+    -- fall back to the generated "Collect N stamps, get a X".
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS signup_message text NOT NULL DEFAULT '';
   `);
 
   // The till id already sitting inside the actor string as "staff:<id>".
@@ -1096,6 +1106,7 @@ export async function updateCard(
     auto_winback_days: number;
     auto_winback_message: string;
     stamp_style: string;
+    signup_message: string;
     average_spend_cents: number;
     currency: string;
   }>,
@@ -1414,30 +1425,6 @@ export async function cardCounts(cardId: string): Promise<CardCounts> {
     issuedNeverAdded: Number(row?.never_added ?? 0),
     removed: Number(row?.removed ?? 0),
   };
-}
-
-/**
- * The lapsing set — one serial per PERSON, not per pass.
- *
- * Someone holding both an Apple and a Google card here is one human, and the
- * automatic win-back job messages whatever this returns; without the DISTINCT ON
- * they would get two notifications for the same silence. The most recently
- * active pass represents them, which is the one worth reaching them on.
- *
- * (A person holding two of the merchant's *cards* can still be reached twice,
- * because the job runs per card with per-card settings. V1 ships one card per
- * merchant, so that cannot arise yet.)
- */
-export async function lapsingSerials(cardId: string, days: number): Promise<string[]> {
-  const res = await getPool().query<{ serial: string }>(
-    `SELECT DISTINCT ON (COALESCE(p.customer_id, p.serial)) p.serial
-       FROM passes p
-      WHERE p.card_id = $1
-        AND ${LAST_VISIT_SQL} < now() - ($2 || ' days')::interval
-      ORDER BY COALESCE(p.customer_id, p.serial), ${LAST_VISIT_SQL} DESC`,
-    [cardId, String(Math.max(0, Math.trunc(days)))],
-  );
-  return res.rows.map((r) => r.serial);
 }
 
 // ----------------------------------------------------------------- admin ----
@@ -1934,14 +1921,6 @@ export async function lastNudgeAt(serial: string): Promise<Date | null> {
   return res.rows[0]?.at ?? null;
 }
 
-/** Every café that has opted into automated win-back. */
-export async function cardsWithAutoWinback(): Promise<CardRow[]> {
-  const res = await getPool().query<CardRow>(
-    `SELECT * FROM cards WHERE auto_winback_enabled = true`,
-  );
-  return res.rows;
-}
-
 /**
  * Append one row to the log. Returns its id so a caller can hang a related row
  * off it (see `logMessage`).
@@ -2111,6 +2090,14 @@ export async function nudgeOutcomes(cardId: string): Promise<NudgeOutcomes> {
   };
 }
 
+/**
+ * The maturity window for return rate: a card younger than this is not counted
+ * either way. Without it, handing out 100 cards on a Saturday would crater the
+ * number on Sunday and then quietly climb back over a fortnight — motion that
+ * says nothing about the shop.
+ */
+export const RETURN_WINDOW_DAYS = 7;
+
 export interface CafeMetrics {
   /** Real customers: cards that were stamped at least once, or confirmed added to a wallet. */
   active: number;
@@ -2120,9 +2107,26 @@ export interface CafeMetrics {
   redemptions: number;
   stamps30d: number;
   redemptions30d: number;
+  /**
+   * Customers old enough to judge, and how many of them ever came back for a
+   * scan. Null rate — never 0 — when nobody is old enough yet: a shop in its
+   * first week has no answer, and a confident 0% would read as one.
+   *
+   * Enrolment gives its welcome stamps by setting stamp_count and logs an
+   * `enroll`, never a `stamp` (routes/public.ts), so a stamp event here always
+   * means staff actually scanned somebody.
+   */
+  matured: number;
+  returned: number;
+  returnRate: number | null;
 }
 
 export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
+  // Same definition of "customer" as the headline beside it — ACTIVE_PASS_SQL,
+  // counted per PERSON. A different one here is exactly how the Home headline
+  // came to disagree with the list under it, twice.
+  const MATURE_PASS_SQL = `p.card_id = $1 AND ${ACTIVE_PASS_SQL}
+          AND p.created_at < now() - interval '${RETURN_WINDOW_DAYS} days'`;
   const res = await getPool().query<{
     active: string;
     cards: string;
@@ -2130,6 +2134,8 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
     redemptions: string;
     stamps30d: string;
     redemptions30d: string;
+    matured: string;
+    returned: string;
   }>(
     `SELECT
        (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
@@ -2140,11 +2146,19 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
        count(*) FILTER (WHERE type = 'redeem')::text AS redemptions,
        GREATEST(count(*) FILTER (WHERE type = 'stamp' AND created_at > now() - interval '30 days')
               - count(*) FILTER (WHERE type = 'undo'  AND created_at > now() - interval '30 days'), 0)::text AS "stamps30d",
-       count(*) FILTER (WHERE type = 'redeem' AND created_at > now() - interval '30 days')::text AS "redemptions30d"
+       count(*) FILTER (WHERE type = 'redeem' AND created_at > now() - interval '30 days')::text AS "redemptions30d",
+       (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
+          WHERE ${MATURE_PASS_SQL})::text AS matured,
+       (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
+          WHERE ${MATURE_PASS_SQL}
+            AND EXISTS (SELECT 1 FROM events e
+                         WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp'))::text AS returned
      FROM events WHERE card_id = $1`,
     [cardId],
   );
   const r = res.rows[0]!;
+  const matured = Number(r.matured);
+  const returned = Number(r.returned);
   return {
     active: Number(r.active),
     cards: Number(r.cards),
@@ -2152,6 +2166,9 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
     redemptions: Number(r.redemptions),
     stamps30d: Number(r.stamps30d),
     redemptions30d: Number(r.redemptions30d),
+    matured,
+    returned,
+    returnRate: matured ? returned / matured : null,
   };
 }
 

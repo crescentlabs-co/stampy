@@ -136,8 +136,15 @@ export function landingPage(
     `${card.name} — Loyalty Card`,
     `<div class="card" style="text-align:center">
       <div style="font-size:3rem; margin-bottom:8px">☕️</div>
-      <h1>${card.name}</h1>
-      <p class="sub">Collect ${card.stamps_target} stamps, get a ${card.reward.toLowerCase()}.<br>
+      <h1>${esc(card.name)}</h1>
+      <p class="sub">${
+        // The owner's own words when they've written some. esc() is not optional
+        // here: this is owner-supplied text going straight into the markup of a
+        // page every one of their customers loads.
+        card.signup_message
+          ? esc(card.signup_message)
+          : `Collect ${card.stamps_target} stamps, get a ${esc(card.reward.toLowerCase())}.`
+      }<br>
       Your card lives in your phone’s wallet — no app needed.</p>
       ${
         buttons
@@ -1503,8 +1510,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     /* --- home: totals + per-card breakdown --- */
     .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
     /* With a spend figure there are four tiles: 2×2 on a phone beats 3-then-1. */
-    .totals.four { grid-template-columns: repeat(2, 1fr); }
-    @media (min-width: 560px) { .totals.four { grid-template-columns: repeat(4, 1fr); } }
+    /* Two up on a phone, all of them side by side once there's room. Five wraps
+       to 3+2 on a narrow screen rather than squeezing to unreadable. */
+    .totals.four, .totals.five { grid-template-columns: repeat(2, 1fr); }
+    @media (min-width: 560px) {
+      .totals.four { grid-template-columns: repeat(4, 1fr); }
+      .totals.five { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (min-width: 760px) { .totals.five { grid-template-columns: repeat(5, 1fr); } }
     .totals .metric { padding: 16px 14px 13px; }
     .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
@@ -1756,15 +1769,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}">
         <p class="muted" style="margin-top:-2px">Used on Home to turn stamps into a money figure. Leave at 0 to hide it.</p>
 
-        <label style="margin-top:16px">Automatic win-back <span class="muted">(bring quiet customers back on their own)</span></label>
-        <label class="eye"><input type="checkbox" data-wb="on" \${c.autoWinbackEnabled ? "checked" : ""}> Automatically nudge customers who go quiet</label>
-        <div data-wbfields style="\${c.autoWinbackEnabled ? "" : "display:none"}">
-          <label>Nudge after this many days with no stamp</label>
-          <input data-wb="days" type="number" min="1" max="365" value="\${c.autoWinbackDays}">
-        </div>
-        <label style="margin-top:10px">Win-back message</label>
-        <input data-wb="msg" maxlength="200" value="\${(c.autoWinbackMessage || "").replace(/"/g, "&quot;")}">
-        <p class="muted" style="margin-top:6px">One message, used by both the automatic nudges and the manual ones in <strong>Customers</strong> (you can edit it there before sending). At most 2 messages per card per week, and we stop entirely after 6 with no visit in between.</p>
+        <label style="margin-top:16px">Sign-up page message</label>
+        <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
+        <p class="muted" style="margin-top:6px">The line customers read after scanning your QR, before they add the card. Leave blank to use the one above.</p>
+
+        <label style="margin-top:16px">Win-back message</label>
+        <input data-wb="msg" maxlength="200" value="\${(c.winbackMessage || "").replace(/"/g, "&quot;")}">
+        <p class="muted" style="margin-top:6px">What a nudge starts from — you can edit it before each send in <strong>Customers</strong>. Nothing goes out on its own: each customer can be messaged once every 7 days, and we stop entirely after 6 with no visit in between.</p>
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
         <p class="muted" style="margin-top:8px" data-rulesnote></p>\`;
@@ -2029,10 +2040,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         vtpl.appendChild(bt);
       }
 
-      // Auto win-back: reveal the detail fields only when the toggle is on.
-      const wbOn = q("[data-wb=on]");
-      wbOn.addEventListener("change", () => { q("[data-wbfields]").style.display = wbOn.checked ? "" : "none"; });
-
       // Two saves, disjoint field sets. Both re-render the stamp strips, because
       // a colour change (design) and a target change (rules) each alter them.
       async function save(fields, label) {
@@ -2055,9 +2062,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         stampsTarget: Number(f("stampsTarget").value),
         stampsStart: Number(f("stampsStart").value),
         averageSpend: Number(f("averageSpend").value) || 0,
-        autoWinbackEnabled: q("[data-wb=on]").checked,
-        autoWinbackDays: Number(q("[data-wb=days]").value),
-        autoWinbackMessage: q("[data-wb=msg]").value,
+        signupMessage: f("signupMessage").value,
+        winbackMessage: q("[data-wb=msg]").value,
       }, "Rules");
 
       // Say exactly what a rules change does, with the real number attached.
@@ -2082,8 +2088,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       const div = document.createElement("div");
       const sum = (k) => S.cards.reduce((a, c) => a + (c.metrics[k] || 0), 0);
       const breakdown = S.cards.length > 1
-        ? \`<label style="margin-top:16px">By card</label>
-           <table class="breakdown"><tr><th>Card</th><th>Customers</th><th>Stamps</th><th>Claimed</th></tr>
+        ? \`<label style="margin-top:16px">Breakdown by card</label>
+           <table class="breakdown"><tr><th>Card</th><th>Customers</th><th>Stamps</th><th>Rewards</th></tr>
            \${S.cards.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.active + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
            </table>\`
         : "";
@@ -2103,12 +2109,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         (oneCurrency ? (priced[0] || {}).currency || "" : "") +
         n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+      // Do the people who take a card ever come back? Only cards older than a
+      // week count, either way — hand out 100 on Saturday and this must not
+      // crater on Sunday and then drift back up over the following week.
+      // "—" until somebody is old enough to judge: a confident 0% would read
+      // as an answer when there isn't one yet.
+      const matured = sum("matured"), returned = sum("returned");
+      const returnRate = matured ? Math.round((returned / matured) * 100) + "%" : "—";
+
       // One set of numbers, all time. The All-time / 30-day toggle is gone: it
       // doubled every figure on the screen for a question nobody was asking yet.
       const host = div.querySelector("[data-totals]");
-      host.className = "totals" + (priced.length ? " four" : "");
+      host.className = "totals " + (priced.length ? "five" : "four");
       host.innerHTML = \`
         <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
+        <div class="metric"><b>\${returnRate}</b><span>came back\${matured ? "" : " (needs a week)"}</span></div>
         <div class="metric"><b>\${sum("stamps")}</b><span>stamps</span></div>
         <div class="metric"><b>\${sum("redemptions")}</b><span>rewards given</span></div>
         \${priced.length ? '<div class="metric"><b>' + money(influenced) + '</b><span>spend influenced</span></div>' : ""}\`;
@@ -2122,8 +2137,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const need = (body.buckets || [])
           .filter((b) => b.nudgeable)
           .reduce((a, b) => a + b.eligible, 0);
+        // "Never reached a wallet" is not shown here any more: an owner can do
+        // nothing about a cancelled Add sheet, and it read as a failure of
+        // theirs. It lives on the admin console, which is where it belongs.
         const gap = [];
-        if (counts.issuedNeverAdded) gap.push(counts.issuedNeverAdded + " never reached a wallet");
         if (counts.removed) gap.push(counts.removed + " deleted the card");
         const line = div.querySelector("[data-gap]");
         if (!counts.active && !gap.length) {
@@ -2188,14 +2205,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           return;
         }
         for (const b of buckets) {
-          if (!b.customers) continue;
+          // Every group renders, including at zero. Hiding the empty ones made
+          // groups appear and vanish between visits, so there was no way to
+          // tell "nobody is on cooldown" from "that group doesn't exist".
           const el = document.createElement("div");
           el.className = "bucket";
           const bits = [b.customers + (b.customers === 1 ? " customer" : " customers")];
-          if (b.nudgeable) {
-            bits.push(b.nudgedThisWeek + " nudged this week");
-            if (b.stopped) bits.push(b.stopped + " stopped messaging");
-          }
+          // Why the button can say less than the group count.
+          if (b.nudgeable && b.stopped) bits.push(b.stopped + " stopped messaging");
           el.innerHTML = \`
             <div class="ctop">
               <strong>\${b.label}</strong>
@@ -2214,7 +2231,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const el = document.createElement("div"); el.className = "crow";
         const seen = x.lastDays === 0 ? "in today" : x.lastDays + " days ago";
         const why = x.blocked === "ignored" ? "stopped messaging"
-          : x.blocked === "rate-limited" ? "already nudged twice this week"
+          : x.blocked === "rate-limited" ? "messaged in the last 7 days"
           : x.blocked === "removed" ? "deleted the card" : "";
         const meta = [x.cardName, "last " + seen].join(" · ");
         el.innerHTML = \`
@@ -2246,7 +2263,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         buckets = body.buckets || [];
         limits = body.limits || limits;
         q("[data-limits]").innerHTML = "Starts from the message in Card → Rules. Edit it here to change just this send. " +
-          "At most " + limits.perWeek + " messages per card per week, and we stop entirely after " +
+          "Each customer can be messaged once every 7 days, and we stop entirely after " +
           limits.maxUnanswered + " with no visit in between.";
         const sel = q("[data-card]");
         if (!sel.dataset.filled) {
@@ -2256,7 +2273,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         // One message template, defined in Card → Rules — the old duplicate
         // hard-coded default here meant two sources of truth for one message.
         const src = card === "all" ? S.cards[0] : S.cards.find((c) => c.id === card);
-        if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (src && src.autoWinbackMessage) || "";
+        if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (src && src.winbackMessage) || "";
         renderBuckets();
         renderResults();
       }

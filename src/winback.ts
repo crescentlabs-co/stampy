@@ -1,46 +1,41 @@
 /**
- * Automated win-back — the background half of the manual dashboard nudge.
+ * The nudge limits — the one place both the count on screen and the send itself
+ * decide whether a customer may be messaged.
  *
- * For every café that opted in, message customers who haven't stamped in
- * `auto_winback_days`, but skip anyone already nudged (auto OR manual) within
- * that same window so nobody gets spammed. Runs hourly from server.ts; the
- * "already nudged" guard makes frequent polling safe. Delivery goes through the
- * same `applyAndPush` as everything else, so Google's 3/card/24h cap is
- * respected and an unconfigured platform degrades gracefully (never throws).
+ * There is no scheduler. Automated win-back existed until v1.5 and was removed:
+ * a message going out on a timer, on the owner's behalf but without them
+ * present, is not something a café owner can supervise, and it made the rules
+ * ("their window" vs "the shared cap") impossible to state in one sentence.
+ * Nudging is now an owner action, taken from the dashboard, with one rule.
+ *
+ * That rule is a per-customer cooldown. Delivery still goes through the same
+ * `applyAndPush` as everything else, so Google's 3/card/24h cap is respected and
+ * an unconfigured platform degrades gracefully (never throws).
  */
-import { applyAndPush } from "./cardActions.js";
-import {
-  cardsWithAutoWinback,
-  lapsingSerials,
-  lastNudgeAt,
-  nudgeState,
-  setMessage,
-  type CardRow,
-  type NudgeState,
-} from "./db.js";
+import { nudgeState, type NudgeState } from "./db.js";
 
 /**
  * Give up after this many messages with no visit in between. Someone who ignored
- * six win-backs has churned: another reads as spam, and on Google each one burns
- * a notification from the three a card is allowed per day. The job goes quiet on
- * its own, and so does the dashboard — this is not advisory.
+ * six nudges has churned: another reads as spam, and on Google each one burns a
+ * notification from the three a card is allowed per day. The dashboard goes
+ * quiet on its own — this is not advisory.
  */
 export const MAX_UNANSWERED_NUDGES = 6;
 
 /**
- * And never more than this many in any 7-day window, however the nudge was
- * triggered. Well under Google's hard 3/card/24h cap, and it is the limit that
- * actually stops an owner tapping "Nudge all" twice on a Monday.
+ * One message per customer per 7 days, however it was triggered. This is THE
+ * rule: a customer messaged on Monday cannot be messaged again until the
+ * following Monday, whichever button was pressed and however many of the shop's
+ * cards they hold.
  */
-export const MAX_NUDGES_PER_WEEK = 2;
+export const MAX_NUDGES_PER_WEEK = 1;
 
 export type NudgeRefusal = "rate-limited" | "ignored" | "removed";
 
 /**
- * The single place both nudge paths — the owner's dashboard button and the hourly
- * job — decide whether a card may be messaged. Kept as a pure function over
- * `nudgeState` so the two can't drift apart, which is exactly what happened when
- * the cap lived only in the job and the dashboard asked a browser dialog instead.
+ * Kept as a pure function over `nudgeState` so the group the owner *sees* and
+ * the group the Nudge button *sends to* cannot drift apart — which is exactly
+ * what happened when the cap lived in a browser dialog instead.
  */
 export function canNudge(state: NudgeState): { ok: true } | { ok: false; reason: NudgeRefusal } {
   if (state.removed) return { ok: false, reason: "removed" };
@@ -56,57 +51,4 @@ export async function canNudgeSerial(
   const state = await nudgeState(serial);
   if (!state) return { ok: false, reason: "removed" };
   return canNudge(state);
-}
-
-async function runForCafe(card: CardRow): Promise<{ sent: number; skipped: number; givenUp: number }> {
-  const days = Math.max(1, card.auto_winback_days);
-  const windowMs = days * 86_400_000;
-  const serials = await lapsingSerials(card.id, days);
-  let sent = 0;
-  let skipped = 0;
-  let givenUp = 0;
-  for (const serial of serials) {
-    // The café's own window is usually wider than the shared 2-per-week limit
-    // (a 30-day win-back must not fire fortnightly), so it is checked as well.
-    const last = await lastNudgeAt(serial);
-    if (last && Date.now() - new Date(last).getTime() < windowMs) {
-      skipped++;
-      continue; // already reached out this window
-    }
-    const state = await nudgeState(serial);
-    if (!state) continue;
-    const allowed = canNudge(state);
-    if (!allowed.ok) {
-      if (allowed.reason === "ignored") givenUp++;
-      else skipped++;
-      continue; // churned, rate-limited, or the card is gone from their wallet
-    }
-    const r = await applyAndPush(card, serial, "nudge", () => setMessage(serial, card.auto_winback_message), {
-      nudgeText: card.auto_winback_message,
-      actor: "auto",
-    });
-    if (r) sent++;
-  }
-  return { sent, skipped, givenUp };
-}
-
-/** One pass over all opted-in cafés. Isolates per-café errors; never throws. */
-export async function runAutoWinback(): Promise<void> {
-  let cards: CardRow[];
-  try {
-    cards = await cardsWithAutoWinback();
-  } catch (err) {
-    console.error("[winback] could not load cafés:", err);
-    return;
-  }
-  for (const card of cards) {
-    try {
-      const { sent, skipped, givenUp } = await runForCafe(card);
-      if (sent > 0 || givenUp > 0) {
-        console.log(`[winback] ${card.id}: sent ${sent}, skipped ${skipped}, gave up on ${givenUp}`);
-      }
-    } catch (err) {
-      console.error(`[winback] café ${card.id} failed:`, err);
-    }
-  }
 }
