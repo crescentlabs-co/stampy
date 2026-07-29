@@ -1701,6 +1701,56 @@ export interface AdminStaffRow {
   last_seen: Date;
 }
 
+export interface AdminFunnelRow {
+  id: string;
+  name: string;
+  /** Poster or link opened. Crawlers and link previews excluded. */
+  scanned: number;
+  /** Chose a wallet on that page. */
+  clicked: number;
+  /** A card was minted for them. */
+  made: number;
+  /** Confirmed sitting in a wallet. See the caveat on this function. */
+  landed: number;
+}
+
+/**
+ * The sign-up funnel: scanned → tapped Add → card made → landed in a wallet.
+ *
+ * Derived entirely from `events`, and that is the point. The old version
+ * counted `passes` rows, which meant `pruneAbandonedPasses` quietly erased the
+ * evidence of a leak 30 days after it happened — the measurement was coupled to
+ * rows we want to stay free to drop. `events.serial` has no foreign key to
+ * `passes` (only `registrations` does), so a pruned card leaves its join_view,
+ * wallet_click and enroll rows exactly where they were and none of these
+ * numbers move.
+ *
+ * What it answers: lots of scans and few taps is a landing-page problem; lots of
+ * taps and few cards means the Add flow is broken; cards made but not landing is
+ * customers backing out of the wallet's own Add sheet.
+ *
+ * **Caveat the UI must repeat:** `landed` comes from `pass_added`, which Apple
+ * has always reported and Google only reports since the issuer callback was
+ * configured. Cards issued before that never report, so this column reads low
+ * for older Android sign-ups. `metadata.platform_source` separates the two if a
+ * later query needs to.
+ */
+export async function adminFunnel(): Promise<AdminFunnelRow[]> {
+  const res = await getPool().query<AdminFunnelRow>(
+    `SELECT c.id, c.name,
+            count(*) FILTER (
+              WHERE e.type = 'join_view' AND COALESCE(e.metadata->>'bot', 'false') <> 'true'
+            )::int AS scanned,
+            count(*) FILTER (WHERE e.type = 'wallet_click')::int AS clicked,
+            count(*) FILTER (WHERE e.type = 'enroll')::int AS made,
+            count(*) FILTER (WHERE e.type = 'pass_added')::int AS landed
+       FROM cards c LEFT JOIN events e ON e.card_id = c.id
+      GROUP BY c.id, c.name
+      ORDER BY c.created_at`,
+  );
+  return res.rows;
+}
+
 /**
  * Per-device counter activity. The outlier to look for is a device whose redeem
  * count is high relative to its stamps — free rewards handed to friends.

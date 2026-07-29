@@ -1433,6 +1433,42 @@ async function main() {
     "housekeeping never prunes a card that reached a wallet and was then deleted",
   );
 
+  // --- The sign-up funnel is counted from events, so pruning cannot move it ---
+  // This is the whole reason the funnel stopped counting pass rows: the 30-day
+  // cleanup used to erase the evidence of a leak 30 days after it happened.
+  const { adminFunnel } = await import("../src/db.js");
+  const funnelOf = async (cardId: string) =>
+    (await adminFunnel()).find((f) => f.id === cardId)!;
+  const abandoned = await mk(); // never stamped, never in a wallet
+  await logEvent("default", abandoned.serial, "join_view", { metadata: { bot: false } });
+  await logEvent("default", abandoned.serial, "wallet_click", { metadata: { wallet: "apple" } });
+  await logEvent("default", abandoned.serial, "enroll");
+  const beforePrune = await funnelOf("default");
+  await getPool().query(
+    "UPDATE passes SET created_at = now() - interval '90 days' WHERE serial = $1",
+    [abandoned.serial],
+  );
+  expect((await pruneAbandonedPasses(30)) >= 1, "the abandoned card is pruned");
+  expect(
+    (await getPool().query("SELECT 1 FROM passes WHERE serial = $1", [abandoned.serial])).rowCount === 0,
+    "...its pass row really is gone",
+  );
+  const afterPrune = await funnelOf("default");
+  expect(
+    afterPrune.scanned === beforePrune.scanned &&
+      afterPrune.clicked === beforePrune.clicked &&
+      afterPrune.made === beforePrune.made &&
+      afterPrune.landed === beforePrune.landed,
+    `the funnel is unchanged by pruning (${beforePrune.scanned}/${beforePrune.clicked}/${beforePrune.made}/${beforePrune.landed})`,
+  );
+
+  // A crawler hitting the poster link is not a person who scanned it.
+  const botBefore = (await funnelOf("default")).scanned;
+  await logEvent("default", "", "join_view", { metadata: { bot: true } });
+  expect((await funnelOf("default")).scanned === botBefore, "a bot's view is excluded from Scanned");
+  await logEvent("default", "", "join_view", { metadata: { bot: false } });
+  expect((await funnelOf("default")).scanned === botBefore + 1, "...but a real one counts");
+
   // --- Staff can look up a card that is NOT in the recent-20 list ---
   const older = await mk();
   await getPool().query("UPDATE passes SET created_at = now() - interval '200 days' WHERE serial = $1", [older.serial]);

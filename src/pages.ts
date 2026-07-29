@@ -2832,9 +2832,9 @@ export function adminPage(): string {
       const num = (x, dp) => (x === null || x === undefined) ? "—" : Number(x).toFixed(dp || 0);
       const stale = (d, days) => !d || (Date.now() - new Date(d).getTime()) > days * 86400000;
 
-      const rows = body.cards.map((c) => \`
+      const cardRow = (c) => \`
         <tr>
-          <td><strong>\${c.name}</strong>\${c.archived_at ? ' <span class="arch">archived</span>' : ""}<br><span class="flags">\${c.id}</span></td>
+          <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
           <td>\${c.owners || "—"}</td>
           <td>\${c.active}<br><span class="flags">\${c.active_7d} this week</span></td>
           <td>\${c.stamps}<br><span class="flags">\${c.stamps_7d} / 7d · \${c.stamps_30d} / 30d</span></td>
@@ -2847,21 +2847,44 @@ export function adminPage(): string {
             \${c.archived_at
               ? '<button class="btn btn-ghost dbtn" data-unarchive="' + c.id + '">Restore</button>'
               : '<button class="btn btn-ghost dbtn" data-archive="' + c.id + '">Archive</button>'}</td>
-        </tr>\`).join("");
+        </tr>\`;
+      // Retired programmes drop out of the main table into a fold underneath, so
+      // the list stays the shops actually being run. Archiving re-runs load(),
+      // so a card moves down the moment it is archived.
+      const live = body.cards.filter((c) => !c.archived_at);
+      const archived = body.cards.filter((c) => c.archived_at);
+      const rows = live.map(cardRow).join("");
+      const archivedBlock = archived.length
+        ? \`<details class="fold" style="margin-top:12px">
+             <summary>Archived (\${archived.length})</summary>
+             <p class="muted" style="margin:0 0 10px">Off their owner's dashboard and off their join link. Cards already in customers' wallets still stamp. Restore puts one back.</p>
+             <div class="tw"><table>
+               <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>
+               \${archived.map(cardRow).join("")}
+             </table></div>
+           </details>\`
+        : "";
 
-      // Where cards go once they're handed out. "Never in a wallet" is mostly
-      // abandoned Add sheets; "deleted" is the only hard churn signal we get,
-      // and only Apple gives it.
-      const funnelRows = body.cards.map((c) => \`
+      // The sign-up funnel, every figure counted from the event log rather than
+      // from pass rows — so the 30-day cleanup of never-used cards cannot move
+      // any of these numbers. Each step's drop says something different about
+      // where a merchant's flow is leaking.
+      const byId = new Map(body.cards.map((c) => [c.id, c]));
+      const drop = (from, to) => (from > 0 ? Math.round((1 - to / from) * 100) : null);
+      const lossy = (from, to) => from >= 10 && drop(from, to) >= 50;
+      const funnelRows = (body.funnel || []).map((f) => {
+        const c = byId.get(f.id) || {};
+        return \`
         <tr>
-          <td><strong>\${c.name}</strong></td>
-          <td>\${c.cards}</td>
-          <td>\${c.added}</td>
-          <td>\${c.never_added}</td>
-          <td class="\${c.removed ? "bad" : ""}">\${c.removed}</td>
-          <td>\${c.active}</td>
-          <td class="flags">\${c.has_logo ? "logo " : ""}\${c.has_banner ? "banner" : ""}\${!c.has_logo && !c.has_banner ? "—" : ""} · \${new Date(c.created_at).toLocaleDateString()}</td>
-        </tr>\`).join("");
+          <td><strong>\${f.name}</strong>\${c.archived_at ? ' <span class="arch">archived</span>' : ""}</td>
+          <td>\${f.scanned}</td>
+          <td class="\${lossy(f.scanned, f.clicked) ? "bad" : ""}">\${f.clicked}</td>
+          <td class="\${lossy(f.clicked, f.made) ? "bad" : ""}">\${f.made}</td>
+          <td class="\${lossy(f.made, f.landed) ? "bad" : ""}">\${f.landed}</td>
+          <td class="\${c.removed ? "bad" : ""}">\${c.removed ?? 0}</td>
+          <td>\${c.active ?? 0}</td>
+        </tr>\`;
+      }).join("");
 
       const retRows = (body.retention || []).map((r) => \`
         <tr>
@@ -2913,13 +2936,15 @@ export function adminPage(): string {
           <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>
           \${rows}
         </table></div>
+        \${archivedBlock}
         <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>
 
-        <h2>Where the cards went</h2>
-        <p class="muted">One row per loyalty programme. <strong>Handed out</strong> counts the wallet cards customers were issued — not programmes, of which each row is one. <strong>Never in a wallet</strong> is mostly people who tapped the link and backed out of the Add sheet.</p>
-        <p class="muted"><strong>In a wallet</strong> and <strong>deleted</strong> come from Apple's PassKit service and, since the Google issuer callback was configured, from Google too. Rows from before that was set up are Apple-only, so an old Android card counts only once it's stamped — compare platforms across that date with care.</p>
+        <h2>Sign-up funnel</h2>
+        <p class="muted">One row per loyalty programme — each row IS one programme, and every number in it counts <em>customers</em>, never programmes. Read left to right: a big drop between two columns is where that merchant is losing sign-ups. Red marks a step losing half or more, once there are at least 10 to judge by.</p>
+        <p class="muted"><strong>Scanned</strong> opened the poster link (crawlers excluded) · <strong>Tapped Add</strong> chose a wallet · <strong>Card made</strong> got one issued · <strong>Landed</strong> is confirmed sitting in their wallet.</p>
+        <p class="muted">Counted from the event log, so the automatic cleanup of never-used cards never moves these numbers. Three things to read carefully: scans and taps were only recorded from v1.4, so sign-ups older than that show <strong>0</strong> in the first two columns rather than a real drop-off; <strong>Landed</strong> counts each add, so someone who deletes and re-adds counts twice and can push it above <strong>Card made</strong>; and <strong>Landed</strong> and <strong>Deleted</strong> both rely on the wallet telling us — Apple always has, Google only since the issuer callback was set up, so older Android sign-ups under-report on those two.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>Handed out</th><th>In a wallet</th><th>Never in a wallet</th><th>Deleted</th><th>Customers</th><th>Art / created</th></tr>
+          <tr><th>Programme</th><th>Scanned</th><th>Tapped Add</th><th>Card made</th><th>Landed</th><th>Deleted</th><th>Customers</th></tr>
           \${funnelRows}
         </table></div>
 

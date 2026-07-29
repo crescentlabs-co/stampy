@@ -23,6 +23,7 @@ import {
   allOwners,
   createCard,
   createOwner,
+  adminFunnel,
   adminRetention,
   adminStaffAudit,
   businessNameForCard,
@@ -80,13 +81,14 @@ adminRouter.get("/card/:id/sheet", requireAdmin, async (req, res) => {
 });
 
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [cards, owners, retention, staff] = await Promise.all([
+  const [cards, owners, retention, staff, funnel] = await Promise.all([
     allCardsWithStats(),
     allOwners(),
     adminRetention(),
     adminStaffAudit(),
+    adminFunnel(),
   ]);
-  res.json({ cards, owners, retention, staff });
+  res.json({ cards, owners, retention, staff, funnel });
 });
 
 /**
