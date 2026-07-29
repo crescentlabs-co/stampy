@@ -2546,6 +2546,10 @@ export function adminPage(): string {
     /* Removing a card is not an edit that can be undone, so it gets the same
        two-tap treatment as giving away a reward. */
     .dbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
+    /* A retired programme. Still listed here — this is the only place it shows
+       at all — so it needs to read as retired at a glance. */
+    .arch { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+            background: var(--ghost-bg); color: var(--muted); padding: 2px 6px; border-radius: 5px; }
     .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
     .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
     .bantpl .bt { width: 84px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
@@ -2830,7 +2834,7 @@ export function adminPage(): string {
 
       const rows = body.cards.map((c) => \`
         <tr>
-          <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
+          <td><strong>\${c.name}</strong>\${c.archived_at ? ' <span class="arch">archived</span>' : ""}<br><span class="flags">\${c.id}</span></td>
           <td>\${c.owners || "—"}</td>
           <td>\${c.active}<br><span class="flags">\${c.active_7d} this week</span></td>
           <td>\${c.stamps}<br><span class="flags">\${c.stamps_7d} / 7d · \${c.stamps_30d} / 30d</span></td>
@@ -2840,7 +2844,9 @@ export function adminPage(): string {
           <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br>
             <button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button>
             <a class="btn btn-ghost cbtn" href="/admin/card/\${c.id}/sheet" target="_blank">Counter sheet</a>
-            \${c.cards === 0 ? '<button class="btn btn-ghost dbtn" data-delcard="' + c.id + '">Remove card</button>' : ""}</td>
+            \${c.archived_at
+              ? '<button class="btn btn-ghost dbtn" data-unarchive="' + c.id + '">Restore</button>'
+              : '<button class="btn btn-ghost dbtn" data-archive="' + c.id + '">Archive</button>'}</td>
         </tr>\`).join("");
 
       // Where cards go once they're handed out. "Never in a wallet" is mostly
@@ -2910,9 +2916,10 @@ export function adminPage(): string {
         <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>
 
         <h2>Where the cards went</h2>
-        <p class="muted"><strong>In a wallet</strong> and <strong>deleted</strong> are Apple-only: iOS tells us when a pass is added and when it's removed, Google reports neither and never will, so an Android card only counts once it's stamped. <strong>Never in a wallet</strong> is mostly people who tapped the link and backed out of the Add sheet.</p>
+        <p class="muted">One row per loyalty programme. <strong>Handed out</strong> counts the wallet cards customers were issued — not programmes, of which each row is one. <strong>Never in a wallet</strong> is mostly people who tapped the link and backed out of the Add sheet.</p>
+        <p class="muted"><strong>In a wallet</strong> and <strong>deleted</strong> come from Apple's PassKit service and, since the Google issuer callback was configured, from Google too. Rows from before that was set up are Apple-only, so an old Android card counts only once it's stamped — compare platforms across that date with care.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>Issued</th><th>In a wallet</th><th>Never in a wallet</th><th>Deleted</th><th>Customers</th><th>Art / created</th></tr>
+          <tr><th>Programme</th><th>Handed out</th><th>In a wallet</th><th>Never in a wallet</th><th>Deleted</th><th>Customers</th><th>Art / created</th></tr>
           \${funnelRows}
         </table></div>
 
@@ -3024,23 +3031,31 @@ export function adminPage(): string {
           catch { b.textContent = b.dataset.nfc; }
         };
       });
-      // The button only appears on cards that never issued a pass, but the
-      // server checks again — and refuses for reasons the table can't see, like
-      // a poster scan that was logged without anyone adding the card.
+      // Archiving is always safe — nothing is destroyed and it is reversible —
+      // so the only refusal left is taking away a shop's last live card.
       const WHY = {
-        "has-passes": "Has customers — kept",
-        "has-history": "Has history — kept",
         "last-card": "Their only card — kept",
-        "no-such-card": "Already gone",
+        "no-such-card": "Not found",
+        already: "Already archived",
       };
-      $("#app").querySelectorAll("[data-delcard]").forEach((b) => {
-        armBtn(b, "Tap again to remove", async () => {
+      $("#app").querySelectorAll("[data-archive]").forEach((b) => {
+        armBtn(b, "Tap again to archive", async () => {
           b.disabled = true;
-          const { body: r } = await api("/card/" + b.dataset.delcard, { method: "DELETE" });
+          const { body: r } = await api("/card/" + b.dataset.archive + "/archive", { method: "POST" });
           if (r.ok) return void load();
           b.disabled = false;
           b.textContent = WHY[r.error] || "Failed";
         });
+      });
+      // Restoring needs no confirmation: it puts back something still there.
+      $("#app").querySelectorAll("[data-unarchive]").forEach((b) => {
+        b.onclick = async () => {
+          b.disabled = true;
+          const { body: r } = await api("/card/" + b.dataset.unarchive + "/unarchive", { method: "POST" });
+          if (r.ok) return void load();
+          b.disabled = false;
+          b.textContent = "Failed";
+        };
       });
       $("#reset").onclick = async () => {
         const { body: r } = await api("/owner/" + $("#who").value + "/reset-password", { method: "POST" });

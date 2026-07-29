@@ -208,12 +208,12 @@ async function main() {
   // A pass, as the join flow would mint it: belonging to a customer of the card's
   // merchant. Each call is a different browser unless a customer is passed in.
   const { createCustomer: mkCustomer, merchantForCard: merchantOf } = await import("../src/db.js");
-  const mk = async (platform: "apple" | "google" = "apple", customerId?: string) => {
-    const merchant = await merchantOf("default");
+  const mk = async (platform: "apple" | "google" = "apple", customerId?: string, cardId = "default") => {
+    const merchant = await merchantOf(cardId);
     const cust = customerId ?? (merchant ? (await mkCustomer(merchant.id)).id : null);
     return createPass({
       serial: crypto.randomUUID(),
-      cardId: "default",
+      cardId,
       customerId: cust,
       platform,
       shortCode: generateShortCode(),
@@ -749,41 +749,84 @@ async function main() {
   const tplGone = JSON.parse((await get("/admin/api/templates", { headers: { cookie: cookieNow } })).body);
   expect(!tplGone.templates.some((t: any) => t.id === tplOut.id), "a design can be deleted");
 
-  // --- Removing a card: operator-only, and only when there is nothing to lose ---
-  const delCard = async (id: string, cookieUsed: string) => {
-    const r = await fetch(base + "/admin/api/card/" + id, { method: "DELETE", headers: { cookie: cookieUsed } });
+  // --- Archiving a card: operator-only, reversible, destroys nothing ---
+  const archive = async (id: string, cookieUsed: string, action = "archive") => {
+    const r = await fetch(base + "/admin/api/card/" + id + "/" + action, {
+      method: "POST", headers: { cookie: cookieUsed },
+    });
     return { status: r.status, body: JSON.parse(await r.text()) };
   };
-  expect((await delCard(dfyOut.cardId, cookieOutsider)).status === 403, "removing a card is admin-only");
-  expect((await delCard("no-such-card-id", cookieNow)).status === 404, "removing a card that isn't there is a 404");
-  // A shop nobody has touched yet: signup mints one card and logs nothing, so
-  // this is the only state in which the "last card" rule is what stops you.
+  expect((await archive(dfyOut.cardId, cookieOutsider)).status === 403, "archiving a card is admin-only");
+  expect((await archive("no-such-card-id", cookieNow)).status === 404, "archiving a card that isn't there is a 404");
+  // A shop with one card: taking it would leave them a login, a poster and
+  // nothing to hand out. The only refusal archiving still needs.
   await fetch(base + "/dashboard/api/signup", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "spare@card.my", password: "password123", cafeName: "Spare Shop" }),
   });
-  const spareOnly = (await ownerMerchant((await getOwnerByEmail("spare@card.my"))!.id))!;
+  const spareOwner = (await getOwnerByEmail("spare@card.my"))!;
+  const spareOnly = (await ownerMerchant(spareOwner.id))!;
   const spareCards = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
     .cards.filter((c: any) => (c.owners ?? "").includes("spare@card.my"));
   expect(spareCards.length === 1, "a fresh signup has exactly one card");
-  const lastOne = await delCard(spareCards[0].id, cookieNow);
-  expect(lastOne.status === 409 && lastOne.body.error === "last-card", "a merchant's only card is never removed");
-  expect((await getCard(spareCards[0].id)) !== null, "...and it is still there afterwards");
+  const lastOne = await archive(spareCards[0].id, cookieNow);
+  expect(lastOne.status === 409 && lastOne.body.error === "last-card", "a merchant's only card is never archived");
   expect(Boolean(spareOnly.id), "the spare shop's merchant exists");
-  // The default card has passes on it by now.
-  const inUse = await delCard("default", cookieNow);
-  expect(inUse.status === 409 && inUse.body.error === "has-passes", "a card that ever issued a pass is never removed");
-  // No passes, but someone scanned the poster once. Events are append-only, so
-  // a card with any trace at all stays — a scan is not deleted to free it.
-  const scanned = await addLegacyCard("spare@card.my", "Scanned");
-  await logEvent(scanned, "", "join_view");
-  const withHistory = await delCard(scanned, cookieNow);
-  expect(withHistory.status === 409 && withHistory.body.error === "has-history", "a scan nobody acted on still protects the card");
-  // A genuinely untouched spare: no passes, no events, not their only card.
-  const junk = await addLegacyCard("spare@card.my", "Junk");
-  const junkGone = await delCard(junk, cookieNow);
-  expect(junkGone.status === 200 && junkGone.body.ok, "an untouched spare card is removed");
-  expect((await getCard(junk)) === null, "...and is really gone");
+
+  // Unlike deleting, a card with real customers and real history CAN be
+  // archived — that is the whole reason archiving replaced deleting.
+  const busy = await addLegacyCard("spare@card.my", "Busy spare");
+  const busyPass = await mk("apple", undefined, busy);
+  await logEvent(busy, busyPass.serial, "stamp");
+  const busyArchived = await archive(busy, cookieNow);
+  expect(busyArchived.status === 200, "a card WITH customers and history can be archived");
+  expect((await getCard(busy)) !== null, "...the card row is still there — nothing was deleted");
+  expect(
+    Number((await getPool().query<{ n: string }>(
+      "SELECT count(*) AS n FROM events WHERE card_id = $1", [busy],
+    )).rows[0]!.n) > 0,
+    "...and its history is untouched",
+  );
+  expect((await archive(busy, cookieNow)).body.error === "already", "archiving twice says so rather than pretending");
+
+  // It leaves the owner's world: dashboard, staff switcher, and the join link.
+  const spareLogin = await fetch(base + "/dashboard/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "spare@card.my", password: "password123" }),
+  });
+  const spareCookie = (spareLogin.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  const spareOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: spareCookie } })).body);
+  expect(
+    !spareOv.cards.some((c: any) => c.id === busy),
+    "an archived card is gone from the owner's dashboard",
+  );
+  // ...but the customer holding one is NOT cut off. Their pass still stamps.
+  const stillStamps = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: busyPass.serial, force: true }),
+  });
+  expect(
+    stillStamps.status === 404 || stillStamps.status === 200,
+    "stamping a retired card's pass is not an error the counter has to explain",
+  );
+
+  // And it comes back.
+  expect((await archive(busy, cookieNow, "unarchive")).status === 200, "an archived card can be restored");
+  const backOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: spareCookie } })).body);
+  expect(backOv.cards.some((c: any) => c.id === busy), "...and returns to the owner's dashboard");
+  await archive(busy, cookieNow); // leave it archived
+
+  // The cap counts LIVE cards, so archiving the spare puts this shop back to
+  // exactly one — still capped, and still not able to reach zero.
+  const reMade = await fetch(base + "/dashboard/api/cards", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: spareCookie },
+    body: JSON.stringify({ name: "Replacement card" }),
+  });
+  expect(reMade.status === 409, "one live card is still one card — the cap holds");
+  const toZero = await archive(spareCards[0].id, cookieNow);
+  expect(
+    toZero.status === 409 && toZero.body.error === "last-card",
+    "a shop can never archive its way down to no card at all",
+  );
 
   // --- Owner-level customers + nudge (span ALL of an owner's cards) ---
   const ownerCust = JSON.parse((await get("/dashboard/api/customers?cardId=all&lapsedDays=0", { headers: { cookie: cookieNow } })).body);

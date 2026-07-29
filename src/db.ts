@@ -63,6 +63,8 @@ export interface CardRow {
   stamp_style: string;
   /** The owner's own line on the sign-up page; '' falls back to the generated one. */
   signup_message: string;
+  /** Retired: hidden from the owner and off the join link. Issued passes still work. */
+  archived_at: Date | null;
 }
 
 export interface OwnerRow {
@@ -546,6 +548,12 @@ export async function migrate(): Promise<void> {
     -- v1.5: the one line the owner writes on their own sign-up page. Blank means
     -- fall back to the generated "Collect N stamps, get a X".
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS signup_message text NOT NULL DEFAULT '';
+    -- v1.5: retiring a card without destroying it. A card id is printed on
+    -- posters and baked into every Android card issued from it, and its events
+    -- are append-only, so deleting one is not available to us. Archiving takes
+    -- it out of the owner's dashboard and off the join link while every pass
+    -- already in a wallet keeps working.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived_at timestamptz;
   `);
 
   // The till id already sitting inside the actor string as "staff:<id>".
@@ -856,9 +864,14 @@ export async function updateMerchant(
   return res.rows[0] ?? null;
 }
 
+/**
+ * A merchant's live cards. Archived ones are excluded, which is what makes the
+ * /j/ join link skip a retired card and what lets a shop that archived its
+ * spare create a fresh one under the one-card-per-merchant cap.
+ */
 export async function cardsForMerchant(merchantId: string): Promise<CardRow[]> {
   const res = await getPool().query<CardRow>(
-    `SELECT * FROM cards WHERE merchant_id = $1 ORDER BY created_at`,
+    `SELECT * FROM cards WHERE merchant_id = $1 AND archived_at IS NULL ORDER BY created_at`,
     [merchantId],
   );
   return res.rows;
@@ -974,72 +987,64 @@ export async function createCard(row: {
   return res.rows[0]!;
 }
 
-/** Why a card could not be removed — each maps to a sentence the admin console shows. */
-export type CardDeletion =
+/** Why a card could not be archived — each maps to a sentence the admin console shows. */
+export type CardArchival =
   | { ok: true }
-  | { ok: false; reason: "no-such-card" | "has-passes" | "has-history" | "last-card" };
+  | { ok: false; reason: "no-such-card" | "last-card" | "already" };
 
 /**
- * Remove a card that never became anything — operator cleanup for a test card
+ * Retire a card without destroying anything — operator cleanup for a test card
  * or a mis-click, never something a café owner can do.
  *
- * A card id is permanent by design (posters, Google class ids, art URLs), so
- * this refuses anything with a trace of real life:
+ * Deleting is not on the table, and that is not caution: a card id is printed
+ * on posters, baked into the Google class id of every Android card issued from
+ * it, and sits inside those cards' art URLs, while its `events` rows are
+ * append-only. A DELETE would either be blocked by the log or would have to
+ * take the log with it. Archiving sidesteps both — the row stays, the history
+ * stays, and every pass already in a wallet keeps being stamped.
  *
- *   - any pass ever minted, even one that never reached a wallet; and
- *   - any event at all, including a bare join_view from someone who scanned the
- *     poster and walked away. Events are append-only — deleting them to free
- *     the card is exactly the trade this codebase never makes — so a card with
- *     history simply stays.
+ * What changes: the card leaves the owner's dashboard, their staff card
+ * switcher, and the merchant's /j/ join link. Passes already issued from it
+ * keep stamping — `applyAndPush` resolves a pass's OWN card by id, so a
+ * customer is never turned away at the counter for holding a retired card.
  *
- * Also refuses the merchant's last card, which would leave a shop with a login
- * and nothing to hand out.
- *
- * Both counts and the delete run in one transaction, and the SELECT ... FOR
- * UPDATE holds the card row: Postgres takes FOR KEY SHARE on the parent when
- * it validates a foreign key, so a stamp landing mid-check waits for us rather
- * than slipping between the count and the DELETE.
- *
- * Art (logo, banner, stamp strips) and the owner_cards link cascade away.
+ * Refuses the merchant's last un-archived card, which would leave a shop with
+ * a login, a printed poster and nothing to hand out. Since creation is capped
+ * at one live card per merchant, that also means a shop cannot swap its card
+ * for a new one — editing the card it has is the path, and rules changes only
+ * ever apply to customers who join afterwards.
  */
-export async function deleteCard(id: string): Promise<CardDeletion> {
+export async function archiveCard(id: string): Promise<CardArchival> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const card = await client.query<{ merchant_id: string | null }>(
-      `SELECT merchant_id FROM cards WHERE id = $1 FOR UPDATE`,
+    const card = await client.query<{ merchant_id: string | null; archived_at: Date | null }>(
+      `SELECT merchant_id, archived_at FROM cards WHERE id = $1 FOR UPDATE`,
       [id],
     );
     if (!card.rows.length) {
       await client.query("ROLLBACK");
       return { ok: false, reason: "no-such-card" };
     }
-    const merchantId = card.rows[0]!.merchant_id;
-
-    const counts = await client.query<{ passes: string; events: string; siblings: string }>(
-      `SELECT (SELECT count(*) FROM passes WHERE card_id = $1)::text AS passes,
-              (SELECT count(*) FROM events WHERE card_id = $1)::text AS events,
-              (SELECT count(*) FROM cards
-                WHERE $2::text IS NOT NULL AND merchant_id = $2 AND id <> $1)::text AS siblings`,
-      [id, merchantId],
-    );
-    const { passes, events, siblings } = counts.rows[0]!;
+    const { merchant_id: merchantId, archived_at: already } = card.rows[0]!;
+    if (already) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "already" };
+    }
     // A card with no merchant predates the split and belongs to no shop, so
     // "would this leave them with nothing" does not apply to it.
-    const blocker =
-      Number(passes) > 0
-        ? "has-passes"
-        : Number(events) > 0
-          ? "has-history"
-          : merchantId && Number(siblings) === 0
-            ? "last-card"
-            : null;
-    if (blocker) {
-      await client.query("ROLLBACK");
-      return { ok: false, reason: blocker };
+    if (merchantId) {
+      const siblings = await client.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM cards
+          WHERE merchant_id = $1 AND id <> $2 AND archived_at IS NULL`,
+        [merchantId, id],
+      );
+      if (Number(siblings.rows[0]!.n) === 0) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "last-card" };
+      }
     }
-
-    await client.query(`DELETE FROM cards WHERE id = $1`, [id]);
+    await client.query(`UPDATE cards SET archived_at = now() WHERE id = $1`, [id]);
     await client.query("COMMIT");
     return { ok: true };
   } catch (err) {
@@ -1048,6 +1053,15 @@ export async function deleteCard(id: string): Promise<CardDeletion> {
   } finally {
     client.release();
   }
+}
+
+/** Put an archived card back. Always safe — nothing was lost to begin with. */
+export async function unarchiveCard(id: string): Promise<CardArchival> {
+  const res = await getPool().query(
+    `UPDATE cards SET archived_at = NULL WHERE id = $1 AND archived_at IS NOT NULL`,
+    [id],
+  );
+  return res.rowCount ? { ok: true } : { ok: false, reason: "no-such-card" };
 }
 
 /** Verifies a PIN typed at the counter against the owner's stored hash (timing-safe). */
@@ -1455,20 +1469,28 @@ export interface AdminCardRow {
   last_owner_login: Date | null;
   stamps_7d: number;
   stamps_30d: number;
-  /** Cards confirmed in a wallet, deleted from one, and never seen in one (Apple-only signals). */
+  /**
+   * Wallet cards confirmed added, deleted, and never seen in one. Apple reports
+   * both via its PassKit web service; Google reports them too, but only since
+   * the issuer callback was configured — so rows predating that are Apple-only.
+   */
   added: number;
   removed: number;
   never_added: number;
   /** Customers with a stamp in the last 7 / 30 days. */
   active_7d: number;
   active_30d: number;
+  /** Set once retired: off the join link and out of the owner's dashboard. */
+  archived_at: Date | null;
 }
 
 /** Every café on the platform with its owner email(s), metrics, and art flags.
+ *  Archived cards are INCLUDED and flagged: the operator console is the one
+ *  place a retired card is still visible, and the only place to bring it back.
  *  Never selects a password or a PIN — only hashes exist and neither is surfaced. */
 export async function allCardsWithStats(): Promise<AdminCardRow[]> {
   const res = await getPool().query<AdminCardRow>(
-    `SELECT c.id, c.name, c.created_at, c.stamps_target,
+    `SELECT c.id, c.name, c.created_at, c.stamps_target, c.archived_at,
             (SELECT string_agg(o.email, ', ' ORDER BY o.email)
                FROM owner_cards oc JOIN owners o ON o.id = oc.owner_id
               WHERE oc.card_id = c.id) AS owners,
@@ -1779,10 +1801,17 @@ export async function linkOwnerCard(ownerId: string, cardId: string): Promise<vo
   );
 }
 
+/**
+ * The cards an owner actually runs. Archived ones are excluded everywhere this
+ * is used — the dashboard, the staff card switcher, the customer list — which
+ * is the whole point of archiving. Their passes still stamp: `applyAndPush`
+ * resolves the pass's OWN card by id, so a customer holding a retired card is
+ * never turned away at the counter.
+ */
 export async function cardsForOwner(ownerId: string): Promise<CardRow[]> {
   const res = await getPool().query<CardRow>(
     `SELECT c.* FROM cards c JOIN owner_cards oc ON oc.card_id = c.id
-      WHERE oc.owner_id = $1 ORDER BY c.created_at`,
+      WHERE oc.owner_id = $1 AND c.archived_at IS NULL ORDER BY c.created_at`,
     [ownerId],
   );
   return res.rows;

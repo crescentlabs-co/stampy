@@ -6,7 +6,8 @@
  *
  *   GET    /admin                          the console page
  *   GET    /admin/api/overview             every café + owner email(s) + metrics
- *   DELETE /admin/api/card/:id             remove a card that has no history at all
+ *   POST   /admin/api/card/:id/archive     retire a card (reversible; nothing deleted)
+ *   POST   /admin/api/card/:id/unarchive   put it back
  *   POST   /admin/api/owner/:id/reset-password  set a NEW temp password (never reveals the old)
  *
  * Security: passwords are scrypt-hashed one-way — there is nothing to "view".
@@ -25,9 +26,10 @@ import {
   adminRetention,
   adminStaffAudit,
   businessNameForCard,
+  archiveCard,
   createDesignTemplate,
-  deleteCard,
   deleteDesignTemplate,
+  unarchiveCard,
   deleteStampStrips,
   ensureMerchantForOwner,
   generateStaffPin,
@@ -158,19 +160,30 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
 });
 
 /**
- * Operator cleanup: remove a card that never became anything — a test card, or
- * a second card added back when the dashboard still offered that button.
+ * Operator cleanup: retire a card — a test card, or a second one added back
+ * when the dashboard still offered that button.
  *
- * Owners can NOT do this, by design: a card id is printed on posters and baked
- * into every Android card ever issued from it, so removing one is not an edit
- * that can be taken back. deleteCard() re-checks every condition itself inside
- * a transaction, so the overview's numbers being a few seconds stale can never
- * turn into a card disappearing out from under a customer.
+ * Archiving, not deleting. A card id is printed on posters and baked into every
+ * Android card ever issued from it, and its events are append-only, so there is
+ * no version of "delete" that is safe. Archiving takes the card out of the
+ * owner's dashboard and off their join link while every pass already in a
+ * wallet carries on being stamped — and it is reversible, which delete never
+ * was. Owners can NOT do this; it is a decision that touches printed material.
+ *
+ * archiveCard() re-checks its conditions inside a transaction, so the overview
+ * being a few seconds stale can't archive a shop's only remaining card.
  */
-adminRouter.delete("/api/card/:id", requireAdmin, async (req, res) => {
-  const result = await deleteCard(req.params.id!);
+adminRouter.post("/api/card/:id/archive", requireAdmin, async (req, res) => {
+  const result = await archiveCard(req.params.id!);
   if (result.ok) return void res.json({ ok: true });
   res.status(result.reason === "no-such-card" ? 404 : 409).json({ error: result.reason });
+});
+
+/** Put one back. Nothing was destroyed, so this needs no guards of its own. */
+adminRouter.post("/api/card/:id/unarchive", requireAdmin, async (req, res) => {
+  const result = await unarchiveCard(req.params.id!);
+  if (result.ok) return void res.json({ ok: true });
+  res.status(404).json({ error: result.reason });
 });
 
 // ------------------------------------------------------- design templates ----
