@@ -1610,11 +1610,13 @@ async function main() {
   const defCard = ovSpend.cards.find((c: any) => c.id === "default");
   expect(defCard.averageSpend === 4.5 && defCard.currency === "RM", "average spend round-trips through cents without float drift");
 
-  // --- Dashboard IA: four tabs, each one job ---
+  // --- Dashboard IA: three tabs, each one job ---
   const dashIa = (await get("/dashboard")).body;
-  for (const tab of ["home", "customers", "card", "account"]) {
+  for (const tab of ["customers", "card", "account"]) {
     expect(dashIa.includes('data-tab="' + tab + '"'), `dashboard has the ${tab} tab`);
   }
+  expect(!dashIa.includes('data-tab="home"'), "Home is folded into Customers, not its own tab");
+  expect(!dashIa.includes('data-wb="msg"'), "the win-back message left Card — it lives where you send it");
   expect(!dashIa.includes('data-tab="share"'), "the old Share tab is gone");
   // Access only existed because each café row carried its own PIN.
   expect(!dashIa.includes('data-tab="access"'), "the Access tab is gone (one PIN in Settings, links under the card)");

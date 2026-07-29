@@ -1773,9 +1773,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
         <p class="muted" style="margin-top:6px">The line customers read after scanning your QR, before they add the card. Leave blank to use the one above.</p>
 
-        <label style="margin-top:16px">Win-back message</label>
-        <input data-wb="msg" maxlength="200" value="\${(c.winbackMessage || "").replace(/"/g, "&quot;")}">
-        <p class="muted" style="margin-top:6px">What a nudge starts from — you can edit it before each send in <strong>Customers</strong>. Nothing goes out on its own, and there is one rule: each customer can be messaged once every 7 days.</p>
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
         <p class="muted" style="margin-top:8px" data-rulesnote></p>\`;
@@ -2063,7 +2060,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         stampsStart: Number(f("stampsStart").value),
         averageSpend: Number(f("averageSpend").value) || 0,
         signupMessage: f("signupMessage").value,
-        winbackMessage: q("[data-wb=msg]").value,
       }, "Rules");
 
       // Say exactly what a rules change does, with the real number attached.
@@ -2165,8 +2161,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
+        <h2 class="sec">Bring people back</h2>
         <div class="account">
-          <label>Win-back message</label>
+          <label>Message</label>
           <input data-msg maxlength="200">
           <p class="muted" style="margin-top:6px" data-limits></p>
         </div>
@@ -2259,15 +2256,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         all = body.customers || [];
         buckets = body.buckets || [];
         limits = body.limits || limits;
-        q("[data-limits]").innerHTML = "Starts from the message in Card → Rules. Edit it here to change just this send. " +
-          "One rule: each customer can be messaged once every 7 days.";
+        q("[data-limits]").innerHTML = "Edit this before you send — it goes out exactly as written. " +
+          "Nothing is ever sent on its own, and there is one rule: each customer can be messaged once every 7 days.";
         const sel = q("[data-card]");
         if (!sel.dataset.filled) {
           sel.insertAdjacentHTML("beforeend", (body.cards || []).map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join(""));
           sel.dataset.filled = "1";
         }
-        // One message template, defined in Card → Rules — the old duplicate
-        // hard-coded default here meant two sources of truth for one message.
+        // Pre-fill with the shop's stored starting message, so the box is never
+        // empty. It is edited here and nowhere else now — the duplicate field in
+        // Card → Rules was two places to set one message, on a page the owner
+        // wasn't on when they sent it.
         const src = card === "all" ? S.cards[0] : S.cards.find((c) => c.id === card);
         if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (src && src.winbackMessage) || "";
         renderBuckets();
@@ -2407,20 +2406,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       if (seg.scrollWidth > seg.clientWidth) on.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
     // ---- app shell: owner-scoped tabs ----
-    const S = { cards: [], email: "", tab: "home", selCard: 0 };
+    const S = { cards: [], email: "", tab: "customers", selCard: 0 };
 
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
-      S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "home";
-      // Four tabs, each one job: how it's going · who they are · what the card
-      // is · everything you set once. Access is gone — it only existed because
-      // each card had its own PIN, and the links now sit under the card itself.
+      S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "customers";
+      // Three tabs, each one job: who your customers are and how it's going ·
+      // what the card is · everything you set once. Home and Customers used to
+      // be separate, which left a headline row on one page and the people it
+      // described on another; with one card per merchant the first was too thin
+      // to be a page of its own.
       $("#app").innerHTML = \`
         <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">\${S.email}</p></div>
         <div class="seg" id="tabs" role="tablist">
-          <button data-tab="home" class="on">Home</button>
-          <button data-tab="customers">Customers</button>
+          <button data-tab="customers" class="on">Customers</button>
           <button data-tab="card">Card</button>
           <button data-tab="account">Settings</button>
           <span class="thumb"></span>
@@ -2442,11 +2442,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     }
     function renderPanel() {
       const panel = $("#panel"); panel.innerHTML = "";
-      const view = S.tab === "card" ? cardsPanel()
-        : S.tab === "account" ? accountPanel()
-        : S.tab === "customers" ? customersPanel()
-        : homePanel();
-      panel.appendChild(view);
+      if (S.tab === "card") panel.appendChild(cardsPanel());
+      else if (S.tab === "account") panel.appendChild(accountPanel());
+      else {
+        // The numbers, then the people they are about — one page, in that order.
+        panel.appendChild(homePanel());
+        panel.appendChild(customersPanel());
+      }
     }
 
     // Re-seat every segmented thumb when the layout shifts (window resize) or the

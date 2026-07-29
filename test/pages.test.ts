@@ -137,10 +137,18 @@ describe("dashboard information architecture", () => {
   const html = dashboardPage(true, "");
 
   it("has one tab per job", () => {
-    for (const tab of ["home", "customers", "card", "account"]) {
+    for (const tab of ["customers", "card", "account"]) {
       expect(html).toContain(`data-tab="${tab}"`);
     }
     expect(html).not.toContain('data-tab="share"');
+  });
+
+  // Home was folded into Customers: with one card per merchant its headline row
+  // was too thin to be a page, and it left the numbers on one tab and the people
+  // they described on another.
+  it("has no separate Home tab", () => {
+    expect(html).not.toContain('data-tab="home"');
+    expect(html).toContain(">Customers<");
   });
 
   // The Access tab existed only because the PIN hung off each café row, giving
