@@ -1775,7 +1775,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
 
         <label style="margin-top:16px">Win-back message</label>
         <input data-wb="msg" maxlength="200" value="\${(c.winbackMessage || "").replace(/"/g, "&quot;")}">
-        <p class="muted" style="margin-top:6px">What a nudge starts from — you can edit it before each send in <strong>Customers</strong>. Nothing goes out on its own: each customer can be messaged once every 7 days, and we stop entirely after 6 with no visit in between.</p>
+        <p class="muted" style="margin-top:6px">What a nudge starts from — you can edit it before each send in <strong>Customers</strong>. Nothing goes out on its own, and there is one rule: each customer can be messaged once every 7 days.</p>
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
         <p class="muted" style="margin-top:8px" data-rulesnote></p>\`;
@@ -2180,7 +2180,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div data-results style="margin-top:10px"></div>
         </details>\`;
       const q = (s) => div.querySelector(s);
-      let all = [], buckets = [], limits = { perWeek: 2, maxUnanswered: 6 };
+      let all = [], buckets = [], limits = { perWeek: 1 };
 
       /** Send. The server decides who is actually eligible and reports back. */
       async function nudge(payload, what, expected) {
@@ -2190,7 +2190,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const { body } = await api("/nudge", { method: "POST", body: JSON.stringify(Object.assign({ message }, payload)) });
         if (!body.ok) return toast(body.error || "Failed");
         const s = body.skipped || {};
-        const held = (s.rateLimited || 0) + (s.ignored || 0) + (s.removed || 0);
+        const held = (s.rateLimited || 0) + (s.removed || 0);
         toast("Nudged " + body.sent + " of " + body.total + (held ? " · " + held + " held back by the limits" : ""));
         load();
       }
@@ -2211,8 +2211,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           const el = document.createElement("div");
           el.className = "bucket";
           const bits = [b.customers + (b.customers === 1 ? " customer" : " customers")];
-          // Why the button can say less than the group count.
-          if (b.nudgeable && b.stopped) bits.push(b.stopped + " stopped messaging");
           el.innerHTML = \`
             <div class="ctop">
               <strong>\${b.label}</strong>
@@ -2230,8 +2228,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       function row(x) {
         const el = document.createElement("div"); el.className = "crow";
         const seen = x.lastDays === 0 ? "in today" : x.lastDays + " days ago";
-        const why = x.blocked === "ignored" ? "stopped messaging"
-          : x.blocked === "rate-limited" ? "messaged in the last 7 days"
+        const why = x.blocked === "rate-limited" ? "messaged in the last 7 days"
           : x.blocked === "removed" ? "deleted the card" : "";
         const meta = [x.cardName, "last " + seen].join(" · ");
         el.innerHTML = \`
@@ -2263,8 +2260,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         buckets = body.buckets || [];
         limits = body.limits || limits;
         q("[data-limits]").innerHTML = "Starts from the message in Card → Rules. Edit it here to change just this send. " +
-          "Each customer can be messaged once every 7 days, and we stop entirely after " +
-          limits.maxUnanswered + " with no visit in between.";
+          "One rule: each customer can be messaged once every 7 days.";
         const sel = q("[data-card]");
         if (!sel.dataset.filled) {
           sel.insertAdjacentHTML("beforeend", (body.cards || []).map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join(""));
@@ -2848,22 +2844,32 @@ export function adminPage(): string {
               ? '<button class="btn btn-ghost dbtn" data-unarchive="' + c.id + '">Restore</button>'
               : '<button class="btn btn-ghost dbtn" data-archive="' + c.id + '">Archive</button>'}</td>
         </tr>\`;
-      // Retired programmes drop out of the main table into a fold underneath, so
-      // the list stays the shops actually being run. Archiving re-runs load(),
-      // so a card moves down the moment it is archived.
-      const live = body.cards.filter((c) => !c.archived_at);
-      const archived = body.cards.filter((c) => c.archived_at);
-      const rows = live.map(cardRow).join("");
-      const archivedBlock = archived.length
-        ? \`<details class="fold" style="margin-top:12px">
-             <summary>Archived (\${archived.length})</summary>
-             <p class="muted" style="margin:0 0 10px">Off their owner's dashboard and off their join link. Cards already in customers' wallets still stamp. Restore puts one back.</p>
-             <div class="tw"><table>
-               <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>
-               \${archived.map(cardRow).join("")}
-             </table></div>
-           </details>\`
-        : "";
+      // Retired programmes drop out of every table into a fold underneath it, so
+      // each section is the shops actually being run — but their numbers are one
+      // click away rather than gone. Archiving re-runs load(), so a card moves
+      // down the moment it is archived.
+      const archivedIds = new Set(body.cards.filter((c) => c.archived_at).map((c) => c.id));
+      /** → { live, fold }: rows for the section's table, and its Archived fold. */
+      function splitArchived(items, idOf, header, rowFn, note) {
+        const live = items.filter((x) => !archivedIds.has(idOf(x)));
+        const gone = items.filter((x) => archivedIds.has(idOf(x)));
+        const fold = gone.length
+          ? \`<details class="fold" style="margin-top:12px">
+               <summary>Archived (\${gone.length})</summary>
+               \${note ? '<p class="muted" style="margin:0 0 10px">' + note + "</p>" : ""}
+               <div class="tw"><table>\${header}\${gone.map(rowFn).join("")}</table></div>
+             </details>\`
+          : "";
+        return { live: live.map(rowFn).join(""), fold };
+      }
+
+      const CARD_HEAD = \`<tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>\`;
+      const main = splitArchived(
+        body.cards, (c) => c.id, CARD_HEAD, cardRow,
+        "Off their owner's dashboard and off their join link. Cards already in customers' wallets still stamp, and everything they do is still recorded. Restore puts one back.",
+      );
+      const rows = main.live;
+      const archivedBlock = main.fold;
 
       // The sign-up funnel, every figure counted from the event log rather than
       // from pass rows — so the 30-day cleanup of never-used cards cannot move
@@ -2872,7 +2878,7 @@ export function adminPage(): string {
       const byId = new Map(body.cards.map((c) => [c.id, c]));
       const drop = (from, to) => (from > 0 ? Math.round((1 - to / from) * 100) : null);
       const lossy = (from, to) => from >= 10 && drop(from, to) >= 50;
-      const funnelRows = (body.funnel || []).map((f) => {
+      const funnelRow = (f) => {
         const c = byId.get(f.id) || {};
         return \`
         <tr>
@@ -2884,9 +2890,11 @@ export function adminPage(): string {
           <td class="\${c.removed ? "bad" : ""}">\${c.removed ?? 0}</td>
           <td>\${c.active ?? 0}</td>
         </tr>\`;
-      }).join("");
+      };
+      const FUNNEL_HEAD = \`<tr><th>Programme</th><th>Scanned</th><th>Tapped Add</th><th>Card made</th><th>Landed</th><th>Deleted</th><th>Customers</th></tr>\`;
+      const funnel = splitArchived(body.funnel || [], (f) => f.id, FUNNEL_HEAD, funnelRow);
 
-      const retRows = (body.retention || []).map((r) => \`
+      const retRow = (r) => \`
         <tr>
           <td><strong>\${r.name}</strong></td>
           <td>\${pct(r.second_visit_rate)}</td>
@@ -2897,9 +2905,11 @@ export function adminPage(): string {
           <td>\${num(r.median_days_to_reward, 0)}</td>
           <td class="\${r.unclaimed_rewards ? "bad" : ""}">\${r.unclaimed_rewards}</td>
           <td>\${pct(r.alive_30)} · \${pct(r.alive_60)} · \${pct(r.alive_90)}</td>
-        </tr>\`).join("");
+        </tr>\`;
+      const RET_HEAD = \`<tr><th>Programme</th><th>2nd visit</th><th>3rd visit</th><th>Days between</th><th>To 1st stamp</th><th>Finish a card</th><th>Days to reward</th><th>Owed</th><th>Still active 30/60/90</th></tr>\`;
+      const ret = splitArchived(body.retention || [], (r) => r.id, RET_HEAD, retRow);
 
-      const staffRows = (body.staff || []).map((s) => {
+      const staffRow = (s) => {
         // The fraud signal: a phone giving out rewards disproportionately to the
         // stamps it adds. Small numbers are noise, so only flag real volume.
         const share = s.stamps ? s.redeems / s.stamps : 0;
@@ -2913,11 +2923,13 @@ export function adminPage(): string {
           <td>\${s.forced}</td>
           <td class="flags">\${ago(s.last_seen)}</td>
         </tr>\`;
-      }).join("");
+      };
+      const STAFF_HEAD = \`<tr><th>Programme</th><th>Phone</th><th>Stamps</th><th>Rewards given</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>\`;
+      const staff = splitArchived(body.staff || [], (x) => x.card_id, STAFF_HEAD, staffRow);
       // Did chasing quiet customers actually work, and is anyone leaning on the
       // override at the counter? Both are only answerable now that events record
       // who did what.
-      const wbRows = body.cards.map((c) => {
+      const wbRow = (c) => {
         const rate = c.nudged ? Math.round((c.nudge_returned / c.nudged) * 100) + "%" : "—";
         return \`<tr>
           <td><strong>\${c.name}</strong></td>
@@ -2926,7 +2938,9 @@ export function adminPage(): string {
           <td>\${Math.max(0, c.nudged - c.nudge_returned)}</td>
           <td>\${rate}</td>
         </tr>\`;
-      }).join("");
+      };
+      const WB_HEAD = \`<tr><th>Programme</th><th>Nudged</th><th>Came back</th><th>Didn't</th><th>Return rate</th></tr>\`;
+      const wb = splitArchived(body.cards, (c) => c.id, WB_HEAD, wbRow);
       const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
       $("#app").innerHTML = \`
         <h1>Platform admin</h1>
@@ -2942,32 +2956,37 @@ export function adminPage(): string {
         <h2>Sign-up funnel</h2>
         <p class="muted">One row per loyalty programme — each row IS one programme, and every number in it counts <em>customers</em>, never programmes. Read left to right: a big drop between two columns is where that merchant is losing sign-ups. Red marks a step losing half or more, once there are at least 10 to judge by.</p>
         <p class="muted"><strong>Scanned</strong> opened the poster link (crawlers excluded) · <strong>Tapped Add</strong> chose a wallet · <strong>Card made</strong> got one issued · <strong>Landed</strong> is confirmed sitting in their wallet.</p>
-        <p class="muted">Counted from the event log, so the automatic cleanup of never-used cards never moves these numbers. Three things to read carefully: scans and taps were only recorded from v1.4, so sign-ups older than that show <strong>0</strong> in the first two columns rather than a real drop-off; <strong>Landed</strong> counts each add, so someone who deletes and re-adds counts twice and can push it above <strong>Card made</strong>; and <strong>Landed</strong> and <strong>Deleted</strong> both rely on the wallet telling us — Apple always has, Google only since the issuer callback was set up, so older Android sign-ups under-report on those two.</p>
+        <p class="muted">A tap is recorded before the card is minted and even when minting fails, so <strong>Tapped Add</strong> can never be lower than <strong>Card made</strong> on recent data. If it is higher, Adds are failing — expired Apple certificates or unconfigured Google — and that is worth acting on.</p>
+        <p class="muted">Counted from the event log, so the automatic cleanup of never-used cards never moves these numbers. Three things to read carefully: scans and taps have only been recorded since <strong>28 July 2026</strong>, so anything from before that shows <strong>0</strong> in the first two columns — that is missing history, not a real drop-off; <strong>Landed</strong> counts each add, so someone who deletes and re-adds counts twice and can push it above <strong>Card made</strong>; and <strong>Landed</strong> and <strong>Deleted</strong> rely on the wallet telling us — Apple always has, Google only since the issuer callback was set up, so older Android sign-ups under-report on those two.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>Scanned</th><th>Tapped Add</th><th>Card made</th><th>Landed</th><th>Deleted</th><th>Customers</th></tr>
-          \${funnelRows}
+          \${FUNNEL_HEAD}
+          \${funnel.live}
         </table></div>
+        \${funnel.fold}
 
         <h2>Do they come back?</h2>
         <p class="muted">The only questions that decide whether a merchant renews. <strong>2nd visit</strong> is the big one: of everyone who ever got a stamp, how many came back at all. <strong>To 1st stamp</strong> is time-to-value. <strong>Owed</strong> = cards sitting at their target with the reward not yet claimed. <strong>Still active</strong> counts only cards old enough to judge, so a new merchant isn't scored as a failure.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>2nd visit</th><th>3rd visit</th><th>Days between</th><th>To 1st stamp</th><th>Finish a card</th><th>Days to reward</th><th>Owed</th><th>Still active 30/60/90</th></tr>
-          \${retRows}
+          \${RET_HEAD}
+          \${ret.live}
         </table></div>
+        \${ret.fold}
 
         <h2>Win-back</h2>
-        <p class="muted"><strong>Came back</strong> = a stamp after the last message, so the nudge worked. We send at most 2 messages per card per week and stop entirely after 6 with no visit in between.</p>
+        <p class="muted"><strong>Came back</strong> = a stamp after the last message, so the nudge worked. One rule governs sending: each customer can be messaged once every 7 days, counted per person rather than per card. Nothing goes out on a timer.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>Nudged</th><th>Came back</th><th>No return</th><th>Return rate</th></tr>
-          \${wbRows}
+          \${WB_HEAD}
+          \${wb.live}
         </table></div>
+        \${wb.fold}
 
         <h2>Counter audit</h2>
         <p class="muted">Per staff <em>phone</em>, not per person — a device that signs out and back in gets a new id, and changing the PIN resets them all. So this is "phone A vs phone B". <strong>Redeems</strong> is flagged when a phone hands out rewards on more than 30% of the stamps it adds; that's the shape free-coffee-for-friends takes. <strong>Forced</strong> = confirmed past the "just stamped" warning.</p>
         <div class="tw"><table>
-          <tr><th>Programme</th><th>Phone</th><th>Stamps</th><th>Redeems</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>
-          \${staffRows || '<tr><td colspan="7" class="flags">No counter activity yet.</td></tr>'}
+          \${STAFF_HEAD}
+          \${staff.live || '<tr><td colspan="7" class="flags">No counter activity yet.</td></tr>'}
         </table></div>
+        \${staff.fold}
 
         <h2>Card designs</h2>
         <p class="muted">Mock a card up for a prospect before they have an account, then push it onto their card once they sign up — after that all they touch is the wording and the colours. Drop in their logo and you have something to show them in a minute.</p>

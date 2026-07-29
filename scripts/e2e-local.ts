@@ -841,8 +841,8 @@ async function main() {
     "each customer row carries joined-days and unanswered-nudge counts (the grouping inputs)",
   );
   expect(
-    ownerCust.limits.perWeek >= 1 && ownerCust.limits.maxUnanswered >= 1,
-    "the customers response states both nudge limits",
+    ownerCust.limits.perWeek === 1 && ownerCust.limits.maxUnanswered === undefined,
+    "the customers response states the one nudge limit, and no longer a second",
   );
   // The groups and the gap counts are computed server-side, so the browser
   // can't invent a group the Nudge button wouldn't actually send to.
@@ -1210,7 +1210,7 @@ async function main() {
   // Automated win-back was removed in v1.5. Nothing messages a customer on a
   // timer any more, so what has to hold is the cooldown — and it has to hold on
   // the SERVER, because the browser is not where a limit can live.
-  const { MAX_UNANSWERED_NUDGES, MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
+  const { MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
   expect(MAX_NUDGES_PER_WEEK === 1, "the limit is one message per customer per 7 days");
 
   const { cardMetrics, pruneAbandonedPasses, upsertRegistration, setMessage, canNudgeSerial } =
@@ -1548,7 +1548,7 @@ async function main() {
   await post("/undo", { serial: nz.serial });
   expect((await cardMetrics("default")).stamps === netBefore, "a stamp that is undone doesn't inflate the stamp count");
 
-  // --- Win-back effectiveness + the churn stop-rule ---
+  // --- Win-back effectiveness, and the cooldown as the ONLY rule ---
   const { nudgeOutcomes, unansweredNudges } = await import("../src/db.js");
   const ch = await mk();
   // A real customer: the dashboard only ever targets people who were stamped or
@@ -1559,10 +1559,11 @@ async function main() {
     "UPDATE events SET created_at = now() - interval '60 days' WHERE serial = $1 AND type = 'stamp'",
     [ch.serial],
   );
+  // The give-up-after-6 rule was removed: a run of silence is not proof someone
+  // has churned, and the weekly cooldown is restraint enough. So with the
+  // cooldown repeatedly re-opened, an owner tapping the button every Monday
+  // keeps reaching a customer who never comes back — past 6, indefinitely.
   for (let i = 0; i < 9; i++) {
-    // Back-dating each nudge re-opens the 7-day cooldown, so the ONLY thing
-    // left that can stop the loop is the give-up rule. An owner tapping the
-    // button every Monday is exactly this.
     await fetch(base + "/dashboard/api/nudge", {
       method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
       body: JSON.stringify({ message: "Come back!", target: [ch.serial] }),
@@ -1570,7 +1571,20 @@ async function main() {
     await getPool().query("UPDATE events SET created_at = now() - interval '30 days' WHERE serial = $1 AND type = 'nudge'", [ch.serial]);
   }
   const sent = await unansweredNudges(ch.serial);
-  expect(sent === MAX_UNANSWERED_NUDGES, `we give up after ${MAX_UNANSWERED_NUDGES} unanswered messages (sent ${sent})`);
+  expect(sent === 9, `nothing stops a send but the week — 9 attempts, 9 sent (got ${sent})`);
+  // The loop back-dated its last send too, so this one lands: past six unanswered
+  // is no longer a wall.
+  const nudgeCh = async () =>
+    JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ message: "Again", target: [ch.serial] }),
+    })).text());
+  expect((await nudgeCh()).total === 1, "a tenth message still goes out — no give-up rule");
+  // But the week genuinely is a limit: that send is not back-dated, so the next
+  // one is refused, and for the only reason left.
+  const capped = await nudgeCh();
+  expect(capped.total === 0 && capped.skipped.rateLimited === 1, "...and the 7-day cooldown refuses the one after it");
+  expect(capped.skipped.ignored === undefined, "there is no longer an 'ignored' refusal to report");
   const outBefore = await nudgeOutcomes("default");
   expect(outBefore.noReturn >= 1, "a nudged customer who hasn't been back counts as no-return");
   await logEvent("default", ch.serial, "stamp"); // they finally came in

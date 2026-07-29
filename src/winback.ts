@@ -15,22 +15,22 @@
 import { nudgeState, type NudgeState } from "./db.js";
 
 /**
- * Give up after this many messages with no visit in between. Someone who ignored
- * six nudges has churned: another reads as spam, and on Google each one burns a
- * notification from the three a card is allowed per day. The dashboard goes
- * quiet on its own — this is not advisory.
- */
-export const MAX_UNANSWERED_NUDGES = 6;
-
-/**
  * One message per customer per 7 days, however it was triggered. This is THE
- * rule: a customer messaged on Monday cannot be messaged again until the
- * following Monday, whichever button was pressed and however many of the shop's
- * cards they hold.
+ * rule, and now the only one: a customer messaged on Monday cannot be messaged
+ * again until the following Monday, whichever button was pressed and however
+ * many of the shop's cards they hold.
+ *
+ * There used to be a second rule — give up after six messages with no visit in
+ * between. It was removed because it read a run of silence as proof somebody
+ * had churned, which it is not: people ignore messages and come back anyway,
+ * and a weekly cooldown is already restraint enough. Two rules also meant an
+ * owner could see a customer they wanted to reach and not be able to tell which
+ * one was stopping them. The unanswered count is still shown on the customer —
+ * it is a useful thing to know, it just no longer decides anything.
  */
 export const MAX_NUDGES_PER_WEEK = 1;
 
-export type NudgeRefusal = "rate-limited" | "ignored" | "removed";
+export type NudgeRefusal = "rate-limited" | "removed";
 
 /**
  * Kept as a pure function over `nudgeState` so the group the owner *sees* and
@@ -39,7 +39,6 @@ export type NudgeRefusal = "rate-limited" | "ignored" | "removed";
  */
 export function canNudge(state: NudgeState): { ok: true } | { ok: false; reason: NudgeRefusal } {
   if (state.removed) return { ok: false, reason: "removed" };
-  if (state.unanswered >= MAX_UNANSWERED_NUDGES) return { ok: false, reason: "ignored" };
   if (state.nudges7d >= MAX_NUDGES_PER_WEEK) return { ok: false, reason: "rate-limited" };
   return { ok: true };
 }

@@ -69,7 +69,7 @@ import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateLogoPng } from "../imageValidate.js";
 import { dashboardPage, resetPage } from "../pages.js";
-import { canNudge, MAX_NUDGES_PER_WEEK, MAX_UNANSWERED_NUDGES } from "../winback.js";
+import { canNudge, MAX_NUDGES_PER_WEEK } from "../winback.js";
 
 export const dashboardRouter = Router();
 
@@ -672,11 +672,10 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
       hint: b.hint,
       nudgeable: b.nudgeable,
       customers: members.length,
-      // Off the cooldown but still not sendable: they have ignored six messages
-      // with no visit in between. Reported so a gap between the group's count
-      // and the button's count is explained rather than looking like a bug.
+      // With the cooldown as the only rule, everyone in the nudgeable group is
+      // sendable — except a card that has left its wallet, which no message can
+      // reach either way.
       eligible: b.nudgeable ? members.filter((c) => c.canNudge).length : 0,
-      stopped: members.filter((c) => c.blocked === "ignored").length,
     };
   });
 
@@ -697,7 +696,7 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
     customers,
     buckets,
     counts: { active, issuedNeverAdded, removed },
-    limits: { perWeek: MAX_NUDGES_PER_WEEK, maxUnanswered: MAX_UNANSWERED_NUDGES },
+    limits: { perWeek: MAX_NUDGES_PER_WEEK },
     cards: owned.map((c) => ({ id: c.id, name: c.name })),
   });
 });
@@ -741,11 +740,10 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
     targets = everyone.filter((c) => c.bucket === body.target);
   }
 
-  const skipped = { rateLimited: 0, ignored: 0, removed: 0 };
+  const skipped = { rateLimited: 0, removed: 0 };
   const eligible = targets.filter((c) => {
     if (c.canNudge) return true;
     if (c.blocked === "rate-limited") skipped.rateLimited++;
-    else if (c.blocked === "ignored") skipped.ignored++;
     else skipped.removed++;
     return false;
   });
