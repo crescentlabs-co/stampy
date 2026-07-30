@@ -57,6 +57,7 @@ import {
   setStampStrips,
   stampStripsVersion,
   updateCard,
+  updateMerchant,
   updateOwnerPassword,
   type CardRow,
   type OwnerRow,
@@ -258,6 +259,9 @@ dashboardRouter.post("/api/reset", async (req, res) => {
 
 dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res) => {
   const cards = await cardsForOwner(req.owner!.id);
+  // The shop name lives on the merchant, not the card — it's what the pass shows
+  // as logoText, so the designer edits it alongside the card's own fields.
+  const merchant = await merchantForOwner(req.owner!.id);
   const out = [];
   for (const card of cards) {
     const [logoVersion, bannerVersion, stampsVersion] = await Promise.all([
@@ -279,12 +283,14 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       bg: rgbToHex(card.background_color),
       fg: rgbToHex(card.foreground_color),
       label: rgbToHex(card.label_color),
+      accent: rgbToHex(card.accent_color),
       logoVersion, // 0 = no upload; used to cache-bust the preview image
       bannerVersion,
       stampStyle: card.stamp_style,
       stampsVersion, // 0 = no rendered stamp grid (plain text dots)
       winbackMessage: card.auto_winback_message,
       signupMessage: card.signup_message,
+      shopName: merchant?.name ?? card.name,
       metrics: await cardMetrics(card.id),
     });
   }
@@ -317,8 +323,8 @@ dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) 
     merchantId: merchant.id,
     name: name.trim().slice(0, 60),
     reward: (reward ?? "Free coffee").trim().slice(0, 60),
-    stampsTarget: clampInt(stampsTarget, 1, 30, 10),
-    stampsStart: clampInt(stampsStart, 0, 29, 2),
+    stampsTarget: clampInt(stampsTarget, 1, 20, 10),
+    stampsStart: clampInt(stampsStart, 0, 19, 2),
   });
   await linkOwnerCard(req.owner!.id, card.id);
   res.json({ ok: true, id: card.id });
@@ -351,7 +357,9 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   const fields: Parameters<typeof updateCard>[1] = {};
   if (typeof body.name === "string" && body.name.trim()) fields.name = body.name.trim().slice(0, 60);
   if (typeof body.reward === "string" && body.reward.trim()) fields.reward = body.reward.trim().slice(0, 60);
-  if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 30, 10);
+  // Capped at 20: the strip image is always a two-row grid, so a higher target
+  // would render stamps too small to read on a 375pt-wide strip.
+  if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 20, 10);
   if (body.stampsStart !== undefined) fields.stamps_start = clampInt(body.stampsStart, 0, 29, 2);
   // Average spend crosses the API in major units ("4.50") and is stored in cents.
   if (body.averageSpend !== undefined) {
@@ -367,6 +375,7 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   if (typeof body.bg === "string") fields.background_color = hexToRgb(body.bg);
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
   if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
+  if (typeof body.accent === "string") fields.accent_color = hexToRgb(body.accent);
   // The default text a nudge is pre-filled with. The column is still called
   // auto_winback_message from when a scheduler used it; nothing is automated
   // any more (see src/winback.ts), but event and column names here are
@@ -384,6 +393,13 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   // POST /api/staff-pin. Anything sent here is ignored on purpose.
   const card = await updateCard(cardId, fields, `owner:${req.owner!.id}`);
   if (!card) return void res.status(404).json({ error: "no-such-card" });
+  // The shop name belongs to the merchant, not the card — it is what the pass
+  // prints as logoText. Renaming keeps every previous slug resolving, so a
+  // printed poster can never be killed by a rename (see updateMerchant).
+  if (typeof body.shopName === "string" && body.shopName.trim()) {
+    const merchant = await merchantForOwner(req.owner!.id);
+    if (merchant) await updateMerchant(merchant.id, { name: body.shopName.trim().slice(0, 60) });
+  }
   // Mirror branding/name changes into the Google-hosted card class (no-op
   // result until Google credentials are configured).
   void ensureClass(card).then((r) => {

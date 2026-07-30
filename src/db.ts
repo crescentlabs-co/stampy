@@ -39,6 +39,8 @@ export interface CardRow {
   background_color: string;
   foreground_color: string;
   label_color: string;
+  /** Fill colour of an earned stamp in the rendered grid. Seeded from label_color. */
+  accent_color: string;
   /** Legacy plaintext column — blanked by the migration once hashed. Never read. */
   staff_pin: string;
   /** scrypt hash of the staff PIN (same format as a password hash). */
@@ -555,6 +557,23 @@ export async function migrate(): Promise<void> {
     -- already in a wallet keeps working.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived_at timestamptz;
   `);
+
+  // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
+  // separately from the block above because a plain ADD COLUMN would stamp every
+  // existing card with the literal default; the ones already out there should
+  // inherit the colour their owner actually picked. Only ever runs once, since
+  // after this the column exists.
+  const hadAccent = await getPool().query(
+    `SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'cards' AND column_name = 'accent_color'`,
+  );
+  if (!hadAccent.rowCount) {
+    await getPool().query(
+      `ALTER TABLE cards ADD COLUMN accent_color text NOT NULL DEFAULT 'rgb(214, 178, 120)'`,
+    );
+    const seeded = await getPool().query(`UPDATE cards SET accent_color = label_color`);
+    console.log(`[migrate] accent_color seeded from label_color on ${seeded.rowCount} card(s)`);
+  }
 
   // The till id already sitting inside the actor string as "staff:<id>".
   // Independent of merchants and customers, so it can run here.
@@ -1116,6 +1135,7 @@ export async function updateCard(
     background_color: string;
     foreground_color: string;
     label_color: string;
+    accent_color: string;
     auto_winback_enabled: boolean;
     auto_winback_days: number;
     auto_winback_message: string;

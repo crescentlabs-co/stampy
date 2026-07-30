@@ -130,6 +130,9 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
     ...(typeof b.bg === "string" ? { background_color: hexToRgb(b.bg) } : {}),
     ...(typeof b.fg === "string" ? { foreground_color: hexToRgb(b.fg) } : {}),
     ...(typeof b.label === "string" ? { label_color: hexToRgb(b.label) } : {}),
+    // The stamp fill follows the label colour here: these done-for-you designs
+    // predate the accent being its own field, and that is what they rendered with.
+    ...(typeof b.label === "string" ? { accent_color: hexToRgb(b.label) } : {}),
     stamp_style: (b.stampStyle ?? "").slice(0, 40),
   });
 
@@ -256,6 +259,7 @@ adminRouter.post("/api/card/:id/apply-template", requireAdmin, async (req, res) 
     background_color: tpl.bg,
     foreground_color: tpl.fg,
     label_color: tpl.label_color,
+    accent_color: tpl.label_color, // templates render their stamps in the label colour
     stamp_style: tpl.stamp_style,
   });
   if (!card) return void res.status(404).json({ error: "no-such-card" });

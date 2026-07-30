@@ -6,7 +6,8 @@ import type { CardRow, PassRow } from "../src/db.js";
 // from it — a relative path in a pass back field is not tappable.
 process.env.BASE_URL = "https://stampy.example.test";
 
-const { buildPassJson, isRewardReady, stampDots } = await import("../src/passModel.js");
+const { buildPassJson, getHeaderFieldValue, isRewardReady, progressText, stampDots, stampGrid } =
+  await import("../src/passModel.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
@@ -19,6 +20,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     background_color: "rgb(59, 32, 22)",
     foreground_color: "rgb(255, 250, 240)",
     label_color: "rgb(214, 178, 120)",
+    accent_color: "rgb(214, 178, 120)",
     staff_pin: "",
     staff_pin_hash: "",
     staff_session_epoch: 1,
@@ -70,6 +72,60 @@ describe("isRewardReady", () => {
   });
 });
 
+describe("getHeaderFieldValue", () => {
+  it("counts up until halfway, then counts down", () => {
+    expect(getHeaderFieldValue(0, 10)).toBe("0 earned");
+    expect(getHeaderFieldValue(4, 10)).toBe("4 earned");
+    // The crossover: at 5/10 the remaining count is no larger than the earned
+    // count, so "5 left" takes over.
+    expect(getHeaderFieldValue(5, 10)).toBe("5 left");
+    expect(getHeaderFieldValue(9, 10)).toBe("1 left");
+  });
+
+  it("crosses over correctly on an odd target", () => {
+    expect(getHeaderFieldValue(3, 7)).toBe("3 earned"); // 4 remaining > 3 earned
+    expect(getHeaderFieldValue(4, 7)).toBe("3 left"); // 3 remaining <= 4 earned
+  });
+
+  it("announces the reward at target, and clamps past it", () => {
+    expect(getHeaderFieldValue(10, 10)).toBe("Reward ready");
+    expect(getHeaderFieldValue(12, 10)).toBe("Reward ready");
+    expect(getHeaderFieldValue(-3, 10)).toBe("0 earned");
+  });
+
+  // This is what makes the lock-screen banner fire on every stamp: iOS only
+  // shows one when the field's value actually changed. Two counts sharing a
+  // string would silently swallow a notification.
+  it("gives every count from 0..target a distinct string", () => {
+    for (const total of [1, 2, 5, 6, 7, 8, 10, 15, 20]) {
+      const seen = new Set<string>();
+      for (let n = 0; n <= total; n++) seen.add(getHeaderFieldValue(n, total));
+      expect(seen.size, `target ${total} produced a duplicate header value`).toBe(total + 1);
+    }
+  });
+});
+
+describe("stampGrid", () => {
+  it("is always two rows, splitting the total across them", () => {
+    expect(stampGrid(6)).toEqual({ rows: 2, cols: 3 });
+    expect(stampGrid(8)).toEqual({ rows: 2, cols: 4 });
+    expect(stampGrid(10)).toEqual({ rows: 2, cols: 5 });
+  });
+  it("rounds an odd total up, leaving the last row one short", () => {
+    expect(stampGrid(7)).toEqual({ rows: 2, cols: 4 });
+    expect(stampGrid(9)).toEqual({ rows: 2, cols: 5 });
+  });
+  it("never returns zero columns", () => {
+    expect(stampGrid(1)).toEqual({ rows: 2, cols: 1 });
+  });
+});
+
+describe("progressText", () => {
+  it("is the plain tally", () => {
+    expect(progressText(3, 10)).toBe("3/10");
+  });
+});
+
 describe("buildPassJson", () => {
   it("includes the PassKit essentials", () => {
     const p = buildPassJson(row(), card()) as any;
@@ -77,7 +133,27 @@ describe("buildPassJson", () => {
     expect(p.serialNumber).toBe(row().serial);
     expect(p.authenticationToken.length).toBeGreaterThanOrEqual(16);
     expect(p.barcodes[0].message).toBe(row().serial);
-    expect(p.storeCard.headerFields[0].value).toBe("3/10");
+    expect(p.storeCard.headerFields[0].value).toBe("3 earned");
+  });
+
+  // The stamp grid lives in the strip IMAGE, so nothing may be laid over it and
+  // the header must read as a bare status line with no label beside it.
+  it("keeps the strip clear: no primary or auxiliary content, unlabelled header", () => {
+    const p = buildPassJson(row(), card()) as any;
+    expect(p.storeCard.primaryFields).toEqual([]);
+    expect(p.storeCard.auxiliaryFields).toEqual([]);
+    expect(p.storeCard.headerFields).toHaveLength(1);
+    expect(p.storeCard.headerFields[0].label).toBeUndefined();
+  });
+
+  it("carries the reward and the tally as the two secondary fields", () => {
+    const p = buildPassJson(row(), card()) as any;
+    expect(p.storeCard.secondaryFields).toHaveLength(2);
+    const [reward, tally] = p.storeCard.secondaryFields;
+    expect(reward.label).toBe("Reward");
+    expect(reward.value).toBe("Free coffee");
+    expect(tally.label).toBe("Progress");
+    expect(tally.value).toBe("3/10");
   });
 
   it("brands the pass from the café row", () => {
@@ -136,8 +212,25 @@ describe("buildPassJson", () => {
 
   it("switches to reward-ready copy when full", () => {
     const p = buildPassJson(row({ stamp_count: 10 }), card()) as any;
-    expect(p.storeCard.secondaryFields[0].label).toContain("REWARD READY");
-    expect(p.storeCard.headerFields[0].changeMessage).toContain("Card full");
+    expect(p.storeCard.headerFields[0].value).toBe("Reward ready");
+    expect(p.storeCard.headerFields[0].changeMessage).toContain("waiting");
+    expect(p.storeCard.secondaryFields[0].value).toContain("show this to staff");
+  });
+
+  // iOS substitutes %@ with the field's NEW value, so the banner has to read
+  // correctly for every shape getHeaderFieldValue can return.
+  it("reads correctly once %@ is substituted, at every stage", () => {
+    for (const [count, expected] of [
+      [3, "3 earned — free coffee at 10"],
+      [7, "3 left — free coffee at 10"],
+    ] as const) {
+      const p = buildPassJson(row({ stamp_count: count }), card()) as any;
+      const h = p.storeCard.headerFields[0];
+      expect(h.changeMessage.replace("%@", h.value)).toBe(expected);
+    }
+    const full = buildPassJson(row({ stamp_count: 10 }), card()) as any;
+    const fh = full.storeCard.headerFields[0];
+    expect(fh.changeMessage.replace("%@", fh.value)).toBe("Reward ready — your free coffee is waiting 🎉");
   });
 
   // The shop's name and the card's name are two different things the moment a

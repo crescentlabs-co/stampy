@@ -1430,11 +1430,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .pv-lbl { font-size: .62rem; letter-spacing: .08em; font-weight: 600; }
     .pv-progress { font-size: 1.05rem; font-weight: 700; }
     .pv-dots { font-size: 1.25rem; letter-spacing: 3px; margin: 2px 0 10px; }
-    .pv-reward { font-size: .95rem; font-weight: 600; }
+    /* The two secondary fields, side by side as Wallet lays them out. */
+    .pv-row2 { display: flex; gap: 14px; margin-top: 10px; }
+    .pv-row2 > div { flex: 1; min-width: 0; }
+    .pv-row2 > div + div { text-align: right; }
+    .pv-reward { font-size: .95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pv-qr { background: #fff; color: #1d1d1f; width: 74px; height: 74px; border-radius: 8px;
              margin: 14px auto 2px; display: flex; align-items: center; justify-content: center;
              font-weight: 700; font-size: .8rem; letter-spacing: 1px; }
     .pv-note { text-align: center; font-size: .72rem; margin-top: 6px; opacity: .75; }
+    /* Inline rejection notice (e.g. a stamp upload with no transparency) —
+       stays on screen, unlike a toast, because it asks the owner to go and fix
+       the file and come back. */
+    .err { color: #a33; background: #fdeaea; border: 1px solid #f2c9c9; border-radius: 10px;
+           padding: 10px 12px; font-size: .84rem; margin-top: 8px; }
     /* --- designer controls --- */
     .colors { display: flex; gap: 8px; margin-top: 4px; }
     .colors > label { flex: 1; margin: 0; }
@@ -1495,6 +1504,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           box-shadow: 0 10px 30px -8px rgba(43,29,21,.35), 0 2px 6px rgba(43,29,21,.15); }
     .pv-banner { height: 64px; margin: -16px -16px 12px; background-size: cover; background-position: center; display: none; }
     .pv-banner.on { display: block; }
+    /* A decorative banner may be cropped; the stamp grid may NOT — it is the
+       information the customer reads, so show the whole strip at its real shape. */
+    .pv-banner.strip { height: auto; aspect-ratio: 1125 / 369; background-size: 100% 100%; }
     /* --- share tab --- */
     .sharelist { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 16px; }
     .sharelist a { display: flex; justify-content: space-between; align-items: center; gap: 8px;
@@ -1710,12 +1722,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div class="pv-top">
             <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="">
             <span class="pv-name" data-pv-name></span>
-            <div class="pv-hdr"><div class="pv-lbl">STAMPS</div><div class="pv-progress" data-pv-progress></div></div>
+            <div class="pv-hdr"><div class="pv-progress" data-pv-progress></div></div>
           </div>
-          <div class="pv-lbl" style="margin-top:10px">YOUR STAMPS</div>
           <div class="pv-dots" data-pv-dots></div>
-          <div class="pv-lbl">REWARD</div>
-          <div class="pv-reward" data-pv-reward></div>
+          <div class="pv-row2">
+            <div><div class="pv-lbl">REWARD</div><div class="pv-reward" data-pv-reward></div></div>
+            <div><div class="pv-lbl">PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
+          </div>
           <div class="pv-qr">QR</div>
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
@@ -1733,7 +1746,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <label>Card colour<input data-f="bg" type="color" value="\${c.bg}"></label>
           <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
           <label>Labels<input data-f="label" type="color" value="\${c.label}"></label>
+          <label>Stamps<input data-f="accent" type="color" value="\${c.accent}"></label>
         </div>
+        <p class="muted" style="margin-top:6px">"Stamps" is the colour an earned stamp fills in with.</p>
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
@@ -1749,11 +1764,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <label style="margin-top:12px">Stamp style <span class="muted">(big stamps that fill in — replaces the small dots)</span></label>
         <div class="bantpl" data-stamptpl></div>
         <div class="logorow" style="margin-top:8px">
-          <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/*"></label>
+          <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
           <button class="btn btn-ghost" data-a="rmstamp" style="\${c.stampsVersion ? "" : "display:none"}">Use plain dots</button>
         </div>
+        <p class="muted" style="margin-top:6px">One shape on a see-through background (PNG or SVG) — not a photo. Its own colours are ignored: it gets filled with your stamp colour.</p>
+        <p class="err" data-stamperr style="display:none"></p>
 
-        <label style="margin-top:12px">Card name</label><input data-f="name" value="\${c.name}">
+        <label style="margin-top:12px">Shop name <span class="muted">(printed on the card itself)</span></label><input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
+        <label style="margin-top:12px">Card name <span class="muted">(only you see this)</span></label><input data-f="name" value="\${c.name}">
         <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
         <p class="muted" style="margin-top:8px">Templates, banners and stamp styles save the moment you tap them. Colours and the name save with this button. Everything here updates on your customers' existing cards too.</p>
         </details>
@@ -1761,8 +1779,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <h2 class="sec">Rules</h2>
         <label>Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2">
-          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="30" value="\${c.stampsTarget}"></div>
-          <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="29" value="\${c.stampsStart}"></div>
+          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
+          <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
         </div>
         <p class="muted" style="margin-top:-2px">Welcome stamps are also where a card restarts after a reward — that part applies to your existing customers straight away.</p>
         <label style="margin-top:14px">Average spend per visit (RM)</label>
@@ -1790,34 +1808,68 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
 
       // Draws the stamp grid for filled/target onto a wide strip → dataURL.
       // Filled cells show the icon; empty cells show a faint "hole" of it.
+      // Mirrors stampGrid() in src/passModel.ts — always two rows, so the strip
+      // keeps one shape at any target. No build step here, so it cannot import;
+      // if you change the rule, change it in both places.
+      function stampGridCols(target) { return Math.max(1, Math.ceil(target / 2)); }
+
+      // Paints the uploaded stamp shape in one flat colour: draw it, then
+      // "source-in" a fill over it, which keeps the alpha channel and throws away
+      // whatever colours the file itself had. That is why an upload must be
+      // transparent — a photo would come out as a solid rectangle.
+      function shapeStamp(img, size, color) {
+        const s = document.createElement("canvas"); s.width = size; s.height = size;
+        const sx = s.getContext("2d");
+        const k = Math.min(size / img.naturalWidth, size / img.naturalHeight); // contain, never crop
+        const w = img.naturalWidth * k, h = img.naturalHeight * k;
+        sx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        sx.globalCompositeOperation = "source-in";
+        sx.fillStyle = color; sx.fillRect(0, 0, size, size);
+        return s;
+      }
+
+      /**
+       * One strip image for one stamp count. 1125x369 is the @3x storeCard strip
+       * (375x123pt); the grid is centred with a 60px clear margin all round, and
+       * an odd target leaves the last row one short, centred.
+       * Earned stamps take the accent colour; unearned are the same shape at 25%.
+       */
       function drawStampStrip(filled, target, icon) {
-        const W = 1032, H = 336;
+        const W = 1125, H = 369, M = 60;
         const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
         const x = cv.getContext("2d");
         x.fillStyle = f("bg").value; x.fillRect(0, 0, W, H); // strip sits on the card colour
-        const cols = Math.min(target, 5), rows = Math.ceil(target / 5);
-        const padX = 40, padY = 30;
-        const cw = (W - padX * 2) / cols, ch = (H - padY * 2) / rows;
+        const accent = f("accent").value;
+        const cols = stampGridCols(target), rows = target > 1 ? 2 : 1;
+        const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
         const r = Math.min(cw, ch) * 0.34;
+        const perRow = Math.ceil(target / rows);
+        const customReady = customStampUrl && stampImg.complete && stampImg.naturalWidth > 0;
+        const shaped = icon === "custom" && customReady
+          ? { on: shapeStamp(stampImg, Math.ceil(r * 2), accent), size: Math.ceil(r * 2) }
+          : null;
         for (let i = 0; i < target; i++) {
-          const col = i % cols, rowN = Math.floor(i / cols);
-          const cx = padX + cw * col + cw / 2, cy = padY + ch * rowN + ch / 2;
+          const rowN = Math.floor(i / perRow), col = i % perRow;
+          // A short final row is centred rather than left-aligned.
+          const inRow = Math.min(perRow, target - rowN * perRow);
+          const rowW = cw * inRow, rowX = (W - rowW) / 2;
+          const cx = rowX + cw * col + cw / 2, cy = M + ch * rowN + ch / 2;
           const on = i < filled;
-          const customReady = customStampUrl && stampImg.complete && stampImg.naturalWidth > 0;
-          if (icon === "custom" && customReady) {
-            const s = r * 2;
-            x.globalAlpha = on ? 1 : .22;
-            x.drawImage(stampImg, cx - s / 2, cy - s / 2, s, s);
+          if (shaped) {
+            x.globalAlpha = on ? 1 : .25;
+            x.drawImage(shaped.on, cx - shaped.size / 2, cy - shaped.size / 2);
             x.globalAlpha = 1;
           } else if (icon === "dot" || icon === "custom") {
             // "dot" style, or a custom stamp whose source isn't in memory (e.g.
-            // after a reload) — draw a clean filled/outlined circle either way.
+            // after a reload) — a clean circle in the same two states.
             x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2);
-            if (on) { x.fillStyle = f("label").value; x.fill(); }
-            else { x.strokeStyle = f("label").value; x.globalAlpha = .4; x.lineWidth = 4; x.stroke(); x.globalAlpha = 1; }
+            x.fillStyle = accent;
+            x.globalAlpha = on ? 1 : .25;
+            x.fill();
+            x.globalAlpha = 1;
           } else {
             x.font = (r * 1.9) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle";
-            x.globalAlpha = on ? 1 : .2;
+            x.globalAlpha = on ? 1 : .25;
             x.fillText(icon, cx, cy);
             x.globalAlpha = 1;
           }
@@ -1832,14 +1884,24 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         b.classList.add("on");
       }
 
+      // Mirrors getHeaderFieldValue() in src/passModel.ts, which is the canonical
+      // version — the pass and this preview must never disagree about the header.
+      function headerValue(earned, total) {
+        const e = Math.max(0, Math.min(earned, total));
+        if (e >= total) return "Reward ready";
+        const left = total - e;
+        return left <= e ? left + " left" : e + " earned";
+      }
+
       function renderPreview() {
-        const target = Math.max(1, Math.min(30, Number(f("stampsTarget").value) || 10));
+        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
         const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
         const pv = q("[data-pv]");
         pv.style.background = f("bg").value;
         pv.style.color = f("fg").value;
-        q("[data-pv-name]").textContent = f("name").value || "Your card";
-        q("[data-pv-progress]").textContent = start + "/" + target;
+        q("[data-pv-name]").textContent = f("shopName").value || f("name").value || "Your card";
+        q("[data-pv-progress]").textContent = headerValue(start, target);
+        q("[data-pv-tally]").textContent = start + "/" + target;
         q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
         for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
         // When a rich stamp style is active, show the rendered grid in the strip
@@ -1848,14 +1910,24 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         if (stampStyle) {
           dots.style.display = "none";
           banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
-          banner.classList.add("on");
+          banner.classList.add("on"); banner.classList.add("strip");
         } else {
           dots.style.display = "";
+          banner.classList.remove("strip");
           dots.textContent = "●".repeat(start) + "○".repeat(target - start);
         }
       }
       for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
       renderPreview();
+
+      // Self-heal: the stamp grid now lives only in the strip image, so a card
+      // with no rendered strips would show a customer no stamps at all. Cards
+      // made before that was true have none, so render the default set once, the
+      // first time their owner opens this panel. Silent — nothing was asked for.
+      if (!c.stampsVersion) {
+        applyStamps(stampStyle || "dot", true).then(() => { c.stampsVersion = 1; })
+          .catch(() => {}); // a failure just means we try again next visit
+      }
 
       // preset swatches
       const pc = q("[data-presets]");
@@ -1864,7 +1936,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         sw.className = "preset"; sw.title = p.name;
         sw.style.background = p.bg; sw.style.color = p.label;
         sw.textContent = p.name[0];
-        sw.onclick = () => { f("bg").value = p.bg; f("fg").value = p.fg; f("label").value = p.label; renderPreview(); };
+        // The accent follows the label colour, which is what filled a stamp
+        // before it became its own field — themes stay coherent out of the box.
+        sw.onclick = () => { f("bg").value = p.bg; f("fg").value = p.fg; f("label").value = p.label; f("accent").value = p.label; renderPreview(); };
         pc.appendChild(sw);
       }
 
@@ -1975,15 +2049,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       ];
 
       // Renders the full 0..target set and stores it (immediate, like banners).
-      async function applyStamps(style) {
+      // The quiet flag is for the piggy-back call from save(), which toasts its own.
+      async function applyStamps(style, quiet) {
         stampStyle = style;
-        const target = Math.max(1, Math.min(30, Number(f("stampsTarget").value) || 10));
+        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
         const strips = [];
         for (let n = 0; n <= target; n++) strips.push({ filled: n, png: drawStampStrip(n, target, style).split(",")[1] });
         const { body } = await api("/card/" + c.id + "/stamps", { method: "POST", body: JSON.stringify({ style, strips }) });
         if (!body.ok) return toast(body.error || "Couldn't save stamps");
-        q("[data-a=rmstamp]").style.display = "";
-        renderPreview(); toast("Stamp style saved ✓");
+        q("[data-a=rmstamp]").style.display = style === "custom" ? "" : "none";
+        renderPreview();
+        if (!quiet) toast("Stamp style saved ✓");
       }
 
       const stpl = q("[data-stamptpl]");
@@ -1995,13 +2071,36 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         stpl.appendChild(bt);
       }
       // Upload your own stamp icon → normalise to a small square PNG → apply.
+      // Rejected unless it has transparency: the shape is taken from the alpha
+      // channel, so a fully opaque image would stamp a solid square.
       wireUpload("[data-stampimg]", null, 160, 160, (dataUrl) => {
-        customStampUrl = dataUrl; stampImg.src = dataUrl;
-        stampImg.onload = () => applyStamps("custom");
+        const err = q("[data-stamperr]");
+        const probe = new Image();
+        probe.onload = () => {
+          const cv = document.createElement("canvas");
+          cv.width = probe.naturalWidth; cv.height = probe.naturalHeight;
+          const px = cv.getContext("2d");
+          px.drawImage(probe, 0, 0);
+          const data = px.getImageData(0, 0, cv.width, cv.height).data;
+          let clear = 0;
+          for (let i = 3; i < data.length; i += 4) if (data[i] < 24) clear++;
+          if (clear < data.length / 4 * 0.02) {
+            err.textContent = "That image has no see-through background, so it would stamp a solid block. Save it as a PNG or SVG with transparency, or pick a built-in stamp above.";
+            err.style.display = "";
+            return;
+          }
+          err.style.display = "none";
+          customStampUrl = dataUrl; stampImg.src = dataUrl;
+          stampImg.onload = () => applyStamps("custom");
+        };
+        probe.src = dataUrl;
       });
+      // Back to plain dots — which is still a rendered strip, not the absence of
+      // one: the grid image is the only place stamps are drawn now.
       q("[data-a=rmstamp]").onclick = async () => {
-        const { body } = await api("/card/" + c.id + "/stamps", { method: "DELETE" });
-        if (body.ok) { stampStyle = ""; q("[data-a=rmstamp]").style.display = "none"; renderPreview(); toast("Back to plain dots"); }
+        customStampUrl = "";
+        await applyStamps("dot", true);
+        toast("Back to plain dots");
       };
 
       // ---- Vertical templates: one tap sets a coordinated whole-card design ----
@@ -2016,11 +2115,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
 
       // Applies the whole bundle: colours + reward (main save), banner, stamps.
       async function applyVertical(v) {
-        f("bg").value = v.bg; f("fg").value = v.fg; f("label").value = v.label;
+        f("bg").value = v.bg; f("fg").value = v.fg; f("label").value = v.label; f("accent").value = v.label;
         f("reward").value = v.reward;
         renderPreview();
         const { body } = await api("/card/" + c.id, { method: "POST", body: JSON.stringify({
-          reward: v.reward, bg: v.bg, fg: v.fg, label: v.label,
+          reward: v.reward, bg: v.bg, fg: v.fg, label: v.label, accent: v.label,
         })});
         if (!body.ok) return toast(body.error || "Couldn't apply template");
         await saveBanner(drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 1032, 336));
@@ -2039,16 +2138,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
 
       // Two saves, disjoint field sets. Both re-render the stamp strips, because
       // a colour change (design) and a target change (rules) each alter them.
+      // That re-render IS the pre-generation step: one PNG per stamp count, so a
+      // customer's stamp only ever swaps which stored image the pass points at.
       async function save(fields, label) {
         const { body } = await api("/card/" + c.id, { method: "POST", body: JSON.stringify(fields) });
         if (!body.ok) return toast(body.error || "Save failed");
         Object.assign(c, fields);
-        if (stampStyle) await applyStamps(stampStyle);
+        // Always regenerate, even on plain dots: the strip image is now the only
+        // place stamps are drawn, so a card with no strips would show nothing.
+        await applyStamps(stampStyle || "dot", true);
         toast(label + " saved ✓");
       }
 
       q("[data-a=savedesign]").onclick = async () => {
-        await save({ name: f("name").value, bg: f("bg").value, fg: f("fg").value, label: f("label").value }, "Design");
+        await save({
+          name: f("name").value, shopName: f("shopName").value,
+          bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
+        }, "Design");
         // Keep the card-picker chip labels in sync without resetting the form.
         const pk = document.querySelector("[data-pick]");
         if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cards[Number(b.dataset.ci)].name; });
@@ -2636,26 +2742,29 @@ export function adminPage(): string {
       }
       return cv.toDataURL("image/png");
     }
-    function drawStampStrip(filled, target, icon, bg, label) {
-      const W = 1032, H = 336;
+    // Same geometry as the owner designer's copy (see designPanel): @3x storeCard
+    // strip, two rows, 60px clear margin, short last row centred. The accent
+    // colour fills an earned stamp; unearned is the same shape at 25%.
+    function drawStampStrip(filled, target, icon, bg, accent) {
+      const W = 1125, H = 369, M = 60;
       const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
       const x = cv.getContext("2d");
       x.fillStyle = bg; x.fillRect(0, 0, W, H);
-      const cols = Math.min(target, 5), rows = Math.ceil(target / 5);
-      const padX = 40, padY = 30;
-      const cw = (W - padX * 2) / cols, ch = (H - padY * 2) / rows;
+      const rows = target > 1 ? 2 : 1, cols = Math.max(1, Math.ceil(target / 2));
+      const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
       const r = Math.min(cw, ch) * 0.34;
+      const perRow = Math.ceil(target / rows);
       for (let i = 0; i < target; i++) {
-        const col = i % cols, rowN = Math.floor(i / cols);
-        const cx = padX + cw * col + cw / 2, cy = padY + ch * rowN + ch / 2;
+        const rowN = Math.floor(i / perRow), col = i % perRow;
+        const inRow = Math.min(perRow, target - rowN * perRow);
+        const cx = (W - cw * inRow) / 2 + cw * col + cw / 2, cy = M + ch * rowN + ch / 2;
         const on = i < filled;
         if (icon === "dot") {
           x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2);
-          if (on) { x.fillStyle = label; x.fill(); }
-          else { x.strokeStyle = label; x.globalAlpha = .4; x.lineWidth = 4; x.stroke(); x.globalAlpha = 1; }
+          x.fillStyle = accent; x.globalAlpha = on ? 1 : .25; x.fill(); x.globalAlpha = 1;
         } else {
           x.font = (r * 1.9) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle";
-          x.globalAlpha = on ? 1 : .2; x.fillText(icon, cx, cy); x.globalAlpha = 1;
+          x.globalAlpha = on ? 1 : .25; x.fillText(icon, cx, cy); x.globalAlpha = 1;
         }
       }
       return cv.toDataURL("image/png");

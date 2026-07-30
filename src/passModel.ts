@@ -15,6 +15,39 @@ export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target"
   return row.stamp_count >= row.stamps_target;
 }
 
+/** "7/10" — the plain tally. One wording, so nothing drifts between surfaces. */
+export function progressText(earned: number, total: number): string {
+  return `${earned}/${total}`;
+}
+
+/**
+ * The one-line status shown as the card's header, with no label beside it.
+ *
+ * It counts UP while that is the encouraging number and flips to counting DOWN
+ * once the customer is at least halfway — "3 left" pulls harder than "7 earned"
+ * when the reward is close.
+ *
+ * Every count from 0 to total yields a DIFFERENT string, which is what makes the
+ * lock-screen banner fire on every stamp: iOS only shows one when the field's
+ * value actually changed. A test enforces that distinctness — if you edit this,
+ * keep it true or stamps go silent.
+ */
+export function getHeaderFieldValue(earned: number, total: number): string {
+  const filled = Math.max(0, Math.min(earned, total));
+  if (filled >= total) return "Reward ready";
+  const remaining = total - filled;
+  return remaining <= filled ? `${remaining} left` : `${filled} earned`;
+}
+
+/**
+ * The stamp grid is derived from the total, never merchant-configurable: always
+ * two rows, so the strip image has a consistent shape at any target. An odd
+ * total leaves the last row one short, and the renderer centres it.
+ */
+export function stampGrid(total: number): { rows: number; cols: number } {
+  return { rows: 2, cols: Math.max(1, Math.ceil(total / 2)) };
+}
+
 /**
  * The reward terms printed on the back of the card, on BOTH platforms — Apple
  * reads it from here, googleModel.ts imports the same function. One wording, so
@@ -47,9 +80,18 @@ export function legalText(): string {
  *
  * Notification design (the hero feature): iOS shows a lock-screen banner when
  * a field that carries `changeMessage` changes. Exactly two fields carry one:
- *  - the stamp-progress header  → fires on every stamp ("You now have 4/10 …")
+ *  - the `progress` header      → fires on every stamp ("3 left — free coffee at 10")
  *  - the hidden `message` field → fires when we set a win-back message
  * Everything else changes silently, so customers get one clean banner per event.
+ *
+ * `%@` is substituted by iOS with the field's NEW value, so the header's
+ * changeMessage has to read correctly for every shape getHeaderFieldValue can
+ * return ("4 earned", "3 left", "Reward ready") — hence the bare "%@ — …" form
+ * rather than a sentence built around a specific one.
+ *
+ * The stamp grid itself lives in the strip IMAGE (pre-rendered per count into
+ * card_stamp_strips), not in a field — nothing is overlaid on top of it, which is
+ * why there is no primary field and why the old unicode-dots field is gone.
  */
 export function buildPassJson(
   row: PassRow,
@@ -58,7 +100,6 @@ export function buildPassJson(
   business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
-  const progress = `${row.stamp_count}/${row.stamps_target}`;
 
   return {
     formatVersion: 1,
@@ -86,29 +127,33 @@ export function buildPassJson(
     storeCard: {
       headerFields: [
         {
+          // No `label`: the value stands alone beside the logo. Keeping the key
+          // as "progress" keeps Apple diffing it against the same field on cards
+          // already issued, and keeps the documented changeMessage pair intact.
           key: "progress",
-          label: "STAMPS",
-          value: progress,
+          value: getHeaderFieldValue(row.stamp_count, row.stamps_target),
           changeMessage: ready
-            ? `Card full! %@ — your ${row.reward.toLowerCase()} is ready 🎉`
-            : `You now have %@ stamps — ${row.reward.toLowerCase()} at ${row.stamps_target}!`,
+            ? `%@ — your ${row.reward.toLowerCase()} is waiting 🎉`
+            : `%@ — ${row.reward.toLowerCase()} at ${row.stamps_target}`,
         },
       ],
+      // Empty, but the keys stay: the strip image carries the stamp grid and
+      // nothing may sit on top of it. passkit-generator emits these as [] either
+      // way, and test/passModel.test.ts spreads all five arrays.
       primaryFields: [],
       secondaryFields: [
         {
-          key: "stamps",
-          label: ready ? "REWARD READY 🎉" : "YOUR STAMPS",
-          value: stampDots(row.stamp_count, row.stamps_target),
-        },
-      ],
-      auxiliaryFields: [
-        {
           key: "reward",
-          label: "REWARD",
+          label: "Reward",
           value: ready ? `${row.reward} — show this to staff!` : row.reward,
         },
+        {
+          key: "tally",
+          label: "Progress",
+          value: progressText(row.stamp_count, row.stamps_target),
+        },
       ],
+      auxiliaryFields: [],
       backFields: [
         {
           key: "message",

@@ -61,8 +61,12 @@ export function buildPkpass(
   // takes priority over the banner (both can't share the one slot).
   const strip = stampStripPng ?? bannerPng;
   if (strip) {
+    // Rendered at @3x (1125×369 for a 375×123pt storeCard strip) and handed to
+    // every slot — Wallet downscales for @2x/@1x devices, and one buffer beats
+    // three near-identical ones through the signer.
     art["strip.png"] = strip;
     art["strip@2x.png"] = strip;
+    art["strip@3x.png"] = strip;
   }
 
   const pass = new PKPass(
