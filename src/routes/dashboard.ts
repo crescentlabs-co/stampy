@@ -68,7 +68,7 @@ import { config, setupStatus } from "../config.js";
 import { hexToRgb, rgbToHex } from "../color.js";
 import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
-import { validateLogoPng } from "../imageValidate.js";
+import { validateArtPng, validateLogoPng } from "../imageValidate.js";
 import { dashboardPage, resetPage } from "../pages.js";
 import { canNudge, MAX_NUDGES_PER_WEEK } from "../winback.js";
 
@@ -463,7 +463,8 @@ dashboardRouter.post("/api/card/:id/banner", requireOwner, async (req: OwnerRequ
   const { png } = (req.body ?? {}) as { png?: string };
   if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
   const bytes = Buffer.from(png, "base64");
-  const reject = validateLogoPng(bytes);
+  // Art cap, not the logo cap: a banner is a photo and dwarfs a logo.
+  const reject = validateArtPng(bytes);
   if (reject) return void res.status(400).json({ error: reject });
   await setCardBanner(cardId, bytes);
   await syncGoogle(cardId);
@@ -504,7 +505,7 @@ dashboardRouter.post("/api/card/:id/stamps", requireOwner, async (req: OwnerRequ
       return void res.status(400).json({ error: "bad-strip" });
     }
     const bytes = Buffer.from(s.png, "base64");
-    const reject = validateLogoPng(bytes); // same magic-byte + size guard
+    const reject = validateArtPng(bytes); // strips carry the banner photo too
     if (reject) return void res.status(400).json({ error: reject });
     decoded.push({ filled: Math.trunc(s.filled), png: bytes });
   }

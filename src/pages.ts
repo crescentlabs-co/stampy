@@ -1502,11 +1502,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     /* --- premium card preview --- */
     .pv { border-radius: 18px; padding: 16px; margin: 10px 0 4px; overflow: hidden;
           box-shadow: 0 10px 30px -8px rgba(43,29,21,.35), 0 2px 6px rgba(43,29,21,.15); }
-    .pv-banner { height: 64px; margin: -16px -16px 12px; background-size: cover; background-position: center; display: none; }
+    /* Sits BELOW the top bar, exactly as Wallet stacks the strip under the
+       logo/logoText/header band. Bleeds to the card's side edges only. */
+    .pv-banner { height: 64px; margin: 12px -16px; background-size: cover; background-position: center; display: none; }
     .pv-banner.on { display: block; }
     /* A decorative banner may be cropped; the stamp grid may NOT — it is the
        information the customer reads, so show the whole strip at its real shape. */
-    .pv-banner.strip { height: auto; aspect-ratio: 1125 / 369; background-size: 100% 100%; }
+    .pv-banner.strip { height: auto; aspect-ratio: 750 / 246; background-size: 100% 100%; }
     /* --- share tab --- */
     .sharelist { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 16px; }
     .sharelist a { display: flex; justify-content: space-between; align-items: center; gap: 8px;
@@ -1718,12 +1720,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       div.innerHTML = \`
         <label class="sec first" style="display:block">Card preview <span class="muted">(live — updates as you type)</span></label>
         <div class="pv" data-pv>
-          <div class="pv-banner" data-pv-banner></div>
           <div class="pv-top">
-            <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="">
+            <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="" style="\${c.logoVersion ? "" : "display:none"}">
             <span class="pv-name" data-pv-name></span>
             <div class="pv-hdr"><div class="pv-progress" data-pv-progress></div></div>
           </div>
+          <div class="pv-banner" data-pv-banner></div>
           <div class="pv-dots" data-pv-dots></div>
           <div class="pv-row2">
             <div><div class="pv-lbl">REWARD</div><div class="pv-reward" data-pv-reward></div></div>
@@ -1754,14 +1756,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
 
-        <label style="margin-top:10px">Banner <span class="muted">(a wide image behind the top of the card)</span></label>
+        <label style="margin-top:10px">Banner <span class="muted">(a photo behind your stamps)</span></label>
         <div class="bantpl" data-bantpl></div>
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload your own<input data-banner type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmbanner" style="\${c.bannerVersion ? "" : "display:none"}">Remove banner</button>
         </div>
 
-        <label style="margin-top:12px">Stamp style <span class="muted">(big stamps that fill in — replaces the small dots)</span></label>
+        <label style="margin-top:12px">Stamp style <span class="muted">(big stamps that fill in, drawn on top of your banner)</span></label>
         <div class="bantpl" data-stamptpl></div>
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
@@ -1806,6 +1808,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       let customStampUrl = null;             // dataURL of an uploaded stamp icon
       const stampImg = new Image();          // holds that uploaded icon for drawing
 
+      // The banner is the BACKDROP the stamps are drawn onto, so it has to be
+      // decoded before any strip is rendered — the pass has one strip slot, and
+      // whatever we bake in here is all the customer ever sees.
+      const bannerImg = new Image();
+      let bannerReady = false;
+      function loadBanner(src) {
+        return new Promise((resolve) => {
+          if (!src) { bannerReady = false; return resolve(); }
+          bannerImg.onload = () => { bannerReady = true; resolve(); };
+          bannerImg.onerror = () => { bannerReady = false; resolve(); };
+          bannerImg.src = src;
+        });
+      }
+      // Drawn from the hosted copy, which is same-origin, so the canvas stays
+      // untainted and toDataURL keeps working.
+      const bannerReadyPromise = loadBanner(
+        c.bannerVersion ? base + "/art/banner.png" + bust(c.bannerVersion) : "",
+      );
+
       // Draws the stamp grid for filled/target onto a wide strip → dataURL.
       // Filled cells show the icon; empty cells show a faint "hole" of it.
       // Mirrors stampGrid() in src/passModel.ts — always two rows, so the strip
@@ -1829,16 +1850,31 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       }
 
       /**
-       * One strip image for one stamp count. 1125x369 is the @3x storeCard strip
-       * (375x123pt); the grid is centred with a 60px clear margin all round, and
+       * One strip image for one stamp count. 750x246 is the @2x storeCard strip
+       * (375x123pt); the grid is centred with a 40px clear margin all round, and
        * an odd target leaves the last row one short, centred.
+       *
+       * @2x rather than @3x on purpose: once a banner photo is composited in,
+       * an @3x strip weighs ~414KB and a full set of 21 comes to 8MB, which
+       * overruns both the upload cap and the request body. @2x halves the
+       * dimensions for ~190KB each, and the strip is imagery with no fine text,
+       * so an @3x phone upscaling it is not noticeable.
        * Earned stamps take the accent colour; unearned are the same shape at 25%.
        */
       function drawStampStrip(filled, target, icon) {
-        const W = 1125, H = 369, M = 60;
+        const W = 750, H = 246, M = 40;
         const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
         const x = cv.getContext("2d");
-        x.fillStyle = f("bg").value; x.fillRect(0, 0, W, H); // strip sits on the card colour
+        // Card colour first so there is never a transparent gap, then the banner
+        // photo cover-fitted on top of it, then the stamps over that. This is
+        // what makes an uploaded banner actually reach the pass: Apple has ONE
+        // strip slot, so the grid and the photo have to arrive as one image.
+        x.fillStyle = f("bg").value; x.fillRect(0, 0, W, H);
+        if (bannerReady && bannerImg.naturalWidth > 0) {
+          const k = Math.max(W / bannerImg.naturalWidth, H / bannerImg.naturalHeight); // cover
+          const bw = bannerImg.naturalWidth * k, bh = bannerImg.naturalHeight * k;
+          x.drawImage(bannerImg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+        }
         const accent = f("accent").value;
         const cols = stampGridCols(target), rows = target > 1 ? 2 : 1;
         const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
@@ -1906,14 +1942,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
         // When a rich stamp style is active, show the rendered grid in the strip
         // (it shares the slot with the banner — stamps win, matching the card).
+        // Set both states explicitly every time. This used to only ever ADD the
+        // class, so which image you saw depended on whether the banner or the
+        // strip painted last — the preview could show a banner the pass didn't have.
         const dots = q("[data-pv-dots]"), banner = q("[data-pv-banner]");
         if (stampStyle) {
           dots.style.display = "none";
           banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
-          banner.classList.add("on"); banner.classList.add("strip");
+          banner.classList.add("on", "strip");
         } else {
           dots.style.display = "";
           banner.classList.remove("strip");
+          banner.classList.toggle("on", Boolean(c.bannerVersion));
           dots.textContent = "●".repeat(start) + "○".repeat(target - start);
         }
       }
@@ -1942,8 +1982,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         pc.appendChild(sw);
       }
 
-      // image upload helper: normalise to PNG (square logo, or wide banner) → POST
-      function wireUpload(inputSel, kind, w, h, onDone) {
+      // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
+      // fit "contain" letterboxes the whole image in; "cover" (the default) fills
+      // the frame and crops the overflow. A logo MUST contain — cropping a
+      // wordmark to fill a frame chops the first and last letters off.
+      function wireUpload(inputSel, kind, w, h, onDone, fit) {
         q(inputSel).onchange = () => {
           const file = q(inputSel).files[0]; if (!file) return;
           const img = new Image();
@@ -1952,7 +1995,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
             const canvas = document.createElement("canvas");
             canvas.width = w; canvas.height = h;
             const ctx = canvas.getContext("2d");
-            const s = Math.max(w / img.width, h / img.height); // cover
+            const s = fit === "contain"
+              ? Math.min(w / img.width, h / img.height)
+              : Math.max(w / img.width, h / img.height);
             ctx.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
             const dataUrl = canvas.toDataURL("image/png");
             if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
@@ -1966,12 +2011,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           img.src = URL.createObjectURL(file);
         };
       }
-      wireUpload("[data-logo]", "logo", 320, 320, (url) => {
-        q("[data-pv-logo]").src = url; q("[data-a=rmlogo]").style.display = "";
-      });
+      // 480×150 is Apple's 160×50pt logo band at @3x. Contained, not cropped, so
+      // a wide wordmark arrives whole with transparent padding around it.
+      wireUpload("[data-logo]", "logo", 480, 150, (url) => {
+        const im = q("[data-pv-logo]");
+        im.src = url; im.style.display = ""; c.logoVersion = 1;
+        q("[data-a=rmlogo]").style.display = "";
+      }, "contain");
+      // Removing the logo hides it here too, because the pass drops the image
+      // entirely with no upload and shows the shop name alone — the preview has
+      // to agree, or the owner is designing against something they won't get.
       q("[data-a=rmlogo]").onclick = async () => {
         const { body } = await api("/card/" + c.id + "/logo", { method: "DELETE" });
-        if (body.ok) { q("[data-pv-logo]").src = base + "/art/logo.png?v=" + Date.now(); q("[data-a=rmlogo]").style.display = "none"; toast("Logo removed"); }
+        if (!body.ok) return toast(body.error || "Couldn't remove logo");
+        c.logoVersion = 0;
+        q("[data-pv-logo]").style.display = "none";
+        q("[data-a=rmlogo]").style.display = "none";
+        toast("Logo removed");
       };
 
       // Banner: pre-made templates (drawn on a canvas from the card's colours,
@@ -1979,13 +2035,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       async function saveBanner(dataUrl) {
         const { body } = await api("/card/" + c.id + "/banner", { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
         if (!body.ok) return toast(body.error || "Banner failed");
-        const b = q("[data-pv-banner]"); b.style.backgroundImage = "url(" + dataUrl + ")"; b.classList.add("on");
+        // Re-bake the strips: the banner is the backdrop INSIDE each strip PNG,
+        // so a new banner that isn't re-rendered would never reach the pass.
+        await loadBanner(dataUrl);
+        await applyStamps(stampStyle || "dot", true);
         q("[data-a=rmbanner]").style.display = ""; toast("Banner saved ✓");
       }
-      wireUpload("[data-banner]", null, 1032, 336, saveBanner); // null kind → onDone handles the POST
+      wireUpload("[data-banner]", null, 750, 246, saveBanner); // null kind → onDone handles the POST
       q("[data-a=rmbanner]").onclick = async () => {
         const { body } = await api("/card/" + c.id + "/banner", { method: "DELETE" });
-        if (body.ok) { const b = q("[data-pv-banner]"); b.classList.remove("on"); b.style.backgroundImage = ""; q("[data-a=rmbanner]").style.display = "none"; toast("Banner removed"); }
+        if (!body.ok) return toast(body.error || "Couldn't remove banner");
+        await loadBanner("");
+        await applyStamps(stampStyle || "dot", true);
+        q("[data-a=rmbanner]").style.display = "none"; toast("Banner removed");
       };
 
       function shade(hex, p) { // p in -1..1 → darken/lighten
@@ -2035,7 +2097,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         bt.innerHTML = "<span>" + t.name + "</span>";
         bt.onclick = () => {
           const a = t.from ? f("bg").value : t.c1, b = t.from ? shade(f("bg").value, 0.4) : t.c2;
-          saveBanner(drawBanner(t.style, a, b, 1032, 336));
+          saveBanner(drawBanner(t.style, a, b, 750, 246));
         };
         btpl.appendChild(bt);
       }
@@ -2052,6 +2114,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // The quiet flag is for the piggy-back call from save(), which toasts its own.
       async function applyStamps(style, quiet) {
         stampStyle = style;
+        // The banner is baked into every strip, so it must be decoded first or
+        // the whole set renders on a bare colour.
+        await bannerReadyPromise;
         const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
         const strips = [];
         for (let n = 0; n <= target; n++) strips.push({ filled: n, png: drawStampStrip(n, target, style).split(",")[1] });
@@ -2122,8 +2187,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           reward: v.reward, bg: v.bg, fg: v.fg, label: v.label, accent: v.label,
         })});
         if (!body.ok) return toast(body.error || "Couldn't apply template");
-        await saveBanner(drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 1032, 336));
-        await applyStamps(v.icon);
+        // saveBanner re-bakes the strips with the new backdrop, so this second
+        // call only needs to switch the icon — and it runs after, so the icon wins.
+        await saveBanner(drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 750, 246));
+        await applyStamps(v.icon, true);
         toast(v.name + " template applied ✓");
       }
 
@@ -2745,11 +2812,29 @@ export function adminPage(): string {
     // Same geometry as the owner designer's copy (see designPanel): @3x storeCard
     // strip, two rows, 60px clear margin, short last row centred. The accent
     // colour fills an earned stamp; unearned is the same shape at 25%.
-    function drawStampStrip(filled, target, icon, bg, accent) {
-      const W = 1125, H = 369, M = 60;
+    // Decodes a dataURL/URL so it can be composited. Resolves to null on failure
+    // rather than rejecting — a missing backdrop must never block a card build.
+    function loadImg(src) {
+      return new Promise((resolve) => {
+        if (!src) return resolve(null);
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => resolve(null);
+        im.src = src;
+      });
+    }
+    function drawStampStrip(filled, target, icon, bg, accent, backdrop) {
+      const W = 750, H = 246, M = 40;
       const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
       const x = cv.getContext("2d");
       x.fillStyle = bg; x.fillRect(0, 0, W, H);
+      // Same as the owner designer: the banner is baked in behind the stamps,
+      // because the pass has a single strip slot for both.
+      if (backdrop && backdrop.naturalWidth > 0) {
+        const k = Math.max(W / backdrop.naturalWidth, H / backdrop.naturalHeight); // cover
+        const bw = backdrop.naturalWidth * k, bh = backdrop.naturalHeight * k;
+        x.drawImage(backdrop, (W - bw) / 2, (H - bh) / 2, bw, bh);
+      }
       const rows = target > 1 ? 2 : 1, cols = Math.max(1, Math.ceil(target / 2));
       const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
       const r = Math.min(cw, ch) * 0.34;
@@ -2860,7 +2945,7 @@ export function adminPage(): string {
           bg, fg: $("#tpl-fg").value, label: $("#tpl-label").value,
           stampStyle: tplIcon,
           logo: tplLogoB64,
-          banner: drawBanner("gradient", bg, shade(bg, 0.4), 1032, 336).split(",")[1],
+          banner: drawBanner("gradient", bg, shade(bg, 0.4), 750, 246).split(",")[1],
         })});
         $("#tpl-out").textContent = r.ok ? "" : (r.error || "Failed");
         if (r.ok) { $("#tpl-name").value = ""; drawTplMock(); listTemplates(cards); }
@@ -2899,6 +2984,9 @@ export function adminPage(): string {
           const target = card.stamps_target || 10;
           const icon = tpl.stamp_style || "dot";
           const strips = [];
+          // No backdrop here: the template's banner lives server-side as bytea
+          // and isn't in this payload, so these strips render on the flat colour.
+          // The owner's next design save re-bakes them with the banner behind.
           for (let n = 0; n <= target; n++) {
             strips.push({ filled: n, png: drawStampStrip(n, target, icon, tpl.bg, tpl.label_color).split(",")[1] });
           }
@@ -3162,8 +3250,10 @@ export function adminPage(): string {
         if (!ownerEmail.includes("@")) return void ($("#dfy-out").textContent = "Enter a valid owner email.");
         $("#dfy-create").disabled = true; $("#dfy-out").textContent = "Creating…";
         const strips = [];
-        for (let n = 0; n <= 10; n++) strips.push({ filled: n, png: drawStampStrip(n, 10, picked.icon, picked.bg, picked.label).split(",")[1] });
-        const banner = drawBanner(picked.banner, picked.bg, shade(picked.bg, 0.4), 1032, 336).split(",")[1];
+        const bannerUrl = drawBanner(picked.banner, picked.bg, shade(picked.bg, 0.4), 750, 246);
+        const backdrop = await loadImg(bannerUrl);
+        for (let n = 0; n <= 10; n++) strips.push({ filled: n, png: drawStampStrip(n, 10, picked.icon, picked.bg, picked.label, backdrop).split(",")[1] });
+        const banner = bannerUrl.split(",")[1];
         const { body: r } = await api("/card", { method: "POST", body: JSON.stringify({
           cafeName, ownerEmail, reward: picked.reward,
           bg: picked.bg, fg: picked.fg, label: picked.label, stampStyle: picked.icon,

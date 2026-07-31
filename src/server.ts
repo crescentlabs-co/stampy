@@ -31,7 +31,11 @@ app.set("trust proxy", true);
 // 2mb covers a full set of rendered stamp-grid strips (one PNG per count, up to
 // ~31) in one transactional POST; logo/banner uploads are far smaller. All
 // mutation routes are auth-gated + rate-limited, so the larger cap is low-risk.
-app.use(express.json({ limit: "2mb" }));
+// Large enough for a full set of rendered stamp strips in one POST: up to 21
+// counts, each a 750×246 PNG with the merchant's banner photo composited behind
+// the stamps (~190KB), base64-encoded. The old 2mb ceiling predates the banner
+// being baked into the strip and would reject the save outright.
+app.use(express.json({ limit: "8mb" }));
 
 // Static assets (self-hosted fonts + their stylesheet). Long-cached; these are
 // public, content-hashed-by-name files — no secrets.

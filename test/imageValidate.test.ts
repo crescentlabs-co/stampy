@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isPng, MAX_LOGO_BYTES, validateLogoPng } from "../src/imageValidate.js";
+import {
+  isPng,
+  MAX_ART_BYTES,
+  MAX_LOGO_BYTES,
+  validateArtPng,
+  validateLogoPng,
+} from "../src/imageValidate.js";
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const tinyPng = Buffer.concat([PNG_MAGIC, Buffer.from("IHDR-and-friends")]);
@@ -23,5 +29,27 @@ describe("validateLogoPng", () => {
     expect(validateLogoPng(Buffer.alloc(0))).toBe("empty");
     expect(validateLogoPng(Buffer.concat([tinyPng, Buffer.alloc(MAX_LOGO_BYTES)]))).toBe("too-large");
     expect(validateLogoPng(Buffer.from("plain text file"))).toBe("not-png");
+  });
+});
+
+describe("validateArtPng", () => {
+  it("applies the same format checks as a logo", () => {
+    expect(validateArtPng(tinyPng)).toBeNull();
+    expect(validateArtPng(Buffer.alloc(0))).toBe("empty");
+    expect(validateArtPng(Buffer.from("plain text file"))).toBe("not-png");
+  });
+
+  // The bug this cap exists for: a banner or a photo-backed stamp strip is far
+  // heavier than a logo, and validating it against the logo cap silently
+  // rejected every banner the dashboard tried to save.
+  it("accepts art that the logo cap would have refused", () => {
+    const banner = Buffer.concat([tinyPng, Buffer.alloc(MAX_LOGO_BYTES)]);
+    expect(validateLogoPng(banner)).toBe("too-large");
+    expect(validateArtPng(banner)).toBeNull();
+  });
+
+  it("still has an upper bound", () => {
+    expect(validateArtPng(Buffer.concat([tinyPng, Buffer.alloc(MAX_ART_BYTES)]))).toBe("too-large");
+    expect(MAX_ART_BYTES).toBeGreaterThan(MAX_LOGO_BYTES);
   });
 });

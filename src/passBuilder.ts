@@ -15,29 +15,66 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const artDir = path.join(here, "..", "assets", "pass");
 const certsDir = path.join(here, "..", "certs");
 
-let cachedArt: Record<string, Buffer> | null = null;
+let cachedIcons: Record<string, Buffer> | null = null;
 
-function loadArt(): Record<string, Buffer> {
-  if (!cachedArt) {
-    cachedArt = {};
-    for (const f of ["icon.png", "icon@2x.png", "icon@3x.png", "logo.png", "logo@2x.png"]) {
-      cachedArt[f] = readFileSync(path.join(artDir, f));
+/**
+ * The bundled square mark, used for the icon slots on every pass. Brand-neutral
+ * on purpose — see scripts/generate-art.ts.
+ */
+function loadIcons(): Record<string, Buffer> {
+  if (!cachedIcons) {
+    cachedIcons = {};
+    for (const f of ["icon.png", "icon@2x.png", "icon@3x.png"]) {
+      cachedIcons[f] = readFileSync(path.join(artDir, f));
     }
   }
-  return cachedArt;
+  return cachedIcons;
 }
 
 export class NotConfiguredError extends Error {}
 
 /**
- * Builds and signs the .pkpass for a card. Throws NotConfiguredError until
- * certs exist. When the café has an uploaded logo (`logoPng`), it replaces the
- * bundled default artwork in every slot — Wallet scales each to fit, so one
- * canvas-normalised square PNG covers icon and logo alike.
+ * Decides which buffer lands in which Apple art slot. Pure and exported so the
+ * mapping is testable — buildPkpass itself can't be, since it needs certs.
  *
- * The single `strip` image slot is shared: a rich rendered stamp grid
- * (`stampStripPng`, one per stamp count) wins over a plain banner (`bannerPng`)
- * because the stamp renderer already composites the banner in as its backdrop.
+ * Three rules, each learned the hard way:
+ *
+ *  - `icon.*` is ALWAYS the bundled square mark. It is required by PassKit and
+ *    is what a lock-screen notification shows, so it must stay square. An
+ *    uploaded logo used to be copied over it, which turned a wide wordmark into
+ *    an unreadable squashed notification icon.
+ *  - `logo.*` is written ONLY when the merchant uploaded one. With no upload the
+ *    slot is left empty and Wallet renders `logoText` (the shop name) alone —
+ *    better than shipping a placeholder with somebody else's brand on it.
+ *  - `strip.*` takes the rendered stamp grid, falling back to a bare banner for
+ *    a card that has a banner but no strips yet. The grid already has the banner
+ *    composited into it (see drawStampStrip in src/pages.ts), so nothing is lost
+ *    when the grid wins.
+ */
+export function passArt(
+  logoPng?: Buffer | null,
+  stripPng?: Buffer | null,
+): Record<string, Buffer> {
+  const art: Record<string, Buffer> = { ...loadIcons() };
+  if (logoPng) {
+    art["logo.png"] = logoPng;
+    art["logo@2x.png"] = logoPng;
+    art["logo@3x.png"] = logoPng;
+  }
+  if (stripPng) {
+    // Rendered at @2x (750×246 for a 375×123pt storeCard strip) and handed to
+    // every slot — one buffer beats three near-identical ones through the
+    // signer, and Wallet scales it per device.
+    art["strip.png"] = stripPng;
+    art["strip@2x.png"] = stripPng;
+    art["strip@3x.png"] = stripPng;
+  }
+  return art;
+}
+
+/**
+ * Builds and signs the .pkpass for a card. Throws NotConfiguredError until
+ * certs exist. Slot assignment lives in `passArt` above.
  */
 export function buildPkpass(
   row: PassRow,
@@ -53,21 +90,7 @@ export function buildPkpass(
     );
   }
 
-  const art = { ...loadArt() };
-  if (logoPng) {
-    for (const slot of Object.keys(art)) art[slot] = logoPng;
-  }
-  // The storeCard "strip" image behind the top fields: the rendered stamp grid
-  // takes priority over the banner (both can't share the one slot).
-  const strip = stampStripPng ?? bannerPng;
-  if (strip) {
-    // Rendered at @3x (1125×369 for a 375×123pt storeCard strip) and handed to
-    // every slot — Wallet downscales for @2x/@1x devices, and one buffer beats
-    // three near-identical ones through the signer.
-    art["strip.png"] = strip;
-    art["strip@2x.png"] = strip;
-    art["strip@3x.png"] = strip;
-  }
+  const art = passArt(logoPng, stampStripPng ?? bannerPng);
 
   const pass = new PKPass(
     {

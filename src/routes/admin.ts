@@ -49,7 +49,7 @@ import {
   type OwnerRow,
 } from "../db.js";
 import { ensureClass } from "../googleWallet.js";
-import { validateLogoPng } from "../imageValidate.js";
+import { validateArtPng, validateLogoPng } from "../imageValidate.js";
 import { adminPage, counterSheetPage } from "../pages.js";
 
 export const adminRouter = Router();
@@ -138,7 +138,7 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
 
   if (typeof b.banner === "string" && b.banner) {
     const bytes = Buffer.from(b.banner, "base64");
-    if (!validateLogoPng(bytes)) await setCardBanner(card.id, bytes);
+    if (!validateArtPng(bytes)) await setCardBanner(card.id, bytes);
   }
   if (Array.isArray(b.strips) && b.strips.length) {
     const decoded: { filled: number; png: Buffer }[] = [];
@@ -146,7 +146,7 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
     for (const s of b.strips) {
       if (typeof s?.png !== "string" || typeof s?.filled !== "number") { ok = false; break; }
       const bytes = Buffer.from(s.png, "base64");
-      if (validateLogoPng(bytes)) { ok = false; break; }
+      if (validateArtPng(bytes)) { ok = false; break; }
       decoded.push({ filled: Math.trunc(s.filled), png: bytes });
     }
     if (ok) await setStampStrips(card.id, decoded);
@@ -275,7 +275,7 @@ adminRouter.post("/api/card/:id/apply-template", requireAdmin, async (req, res) 
     for (const s of b.strips) {
       if (typeof s?.png !== "string" || typeof s?.filled !== "number") { ok = false; break; }
       const bytes = Buffer.from(s.png, "base64");
-      if (validateLogoPng(bytes)) { ok = false; break; }
+      if (validateArtPng(bytes)) { ok = false; break; }
       decoded.push({ filled: Math.trunc(s.filled), png: bytes });
     }
     if (ok) await setStampStrips(card.id, decoded);
