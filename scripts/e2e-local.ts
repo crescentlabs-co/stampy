@@ -26,7 +26,7 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@card.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, reissuePass, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, reissuePass, createOwner, ensureMerchantForOwner, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -716,6 +716,97 @@ async function main() {
     "admin sees counter activity per staff phone",
   );
   expect(JSON.stringify(adminOk).indexOf("password") === -1, "admin overview never includes any password field");
+
+  // --- The console is keyed by MERCHANT, and the rollup adds up ---
+  // The regression this re-keying invites: a merchant total that quietly
+  // disagrees with the cards underneath it. Checked against the card-keyed
+  // numbers that were already there and already tested.
+  expect(Array.isArray(adminOk.merchants) && adminOk.merchants.length > 0, "admin overview lists merchants");
+  const firstOwner = (await getOwnerByEmail("owner@test.my"))!;
+  const ownMerchant = (await ownerMerchant(firstOwner.id))!;
+  const mRow = adminOk.merchants.find((x: any) => x.id === ownMerchant.id);
+  expect(!!mRow, "the first owner's merchant is in the health list");
+  const theirCards = adminOk.cards.filter((c: any) => mRow.card_ids.includes(c.id));
+  expect(theirCards.length === mRow.card_ids.length && theirCards.length >= 2,
+    `the merchant's cards are all present (${theirCards.length})`);
+  expect(
+    mRow.stamps === theirCards.reduce((a: number, c: any) => a + c.stamps, 0),
+    "merchant stamps equal the sum of their cards' stamps",
+  );
+  expect(
+    mRow.redemptions === theirCards.reduce((a: number, c: any) => a + c.redemptions, 0),
+    "merchant redemptions equal the sum of their cards'",
+  );
+  // Value is a countable number times one assumption, and the assumption is the
+  // merchant's own basket. Never welcome stamps: those are written to
+  // passes.stamp_count and emit no event, so they cannot reach this figure.
+  expect(
+    Math.abs(mRow.value.spendThroughCard - mRow.stamps * (mRow.basket_cents / 100)) < 0.01,
+    "spend through the card is counter visits × the self-reported basket",
+  );
+  expect(
+    Math.abs(mRow.value.spendPerReward - mRow.stamps_target * (mRow.basket_cents / 100)) < 0.01,
+    "spend per reward is their own target × their own basket",
+  );
+
+  // --- Triage: fires on the merchant that is broken, and NOT on the one that isn't ---
+  // A rule that flags everybody trains you to ignore the list, so the second
+  // half of this is the half that matters.
+  const quietOwner = await createOwner(crypto.randomUUID(), "quiet@shop.my", "x");
+  const quietMerchant = await ensureMerchantForOwner(quietOwner.id, "Never Started Cafe");
+  const quietCard = await createCard({
+    merchantId: quietMerchant.id, name: "Never Started Cafe", reward: "Free tea",
+    stampsTarget: 10, stampsStart: 2,
+  });
+  await linkOwnerCard(quietOwner.id, quietCard.id);
+  // Backdate the signup past the grace period; a merchant created yesterday has
+  // not failed at anything yet.
+  await getPool().query(
+    `UPDATE merchants SET created_at = now() - interval '9 days' WHERE id = $1`, [quietMerchant.id],
+  );
+  const triaged = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
+  const quietRow = triaged.merchants.find((x: any) => x.id === quietMerchant.id);
+  const quietFlags = quietRow.flags.map((f: any) => f.key);
+  expect(quietFlags.includes("never-activated"), "a merchant that never stamped is flagged");
+  expect(
+    quietRow.flags.find((f: any) => f.key === "never-activated").label === "Never set up",
+    "...and 'never opened their poster' is called out separately from 'poster up, nobody stamping'",
+  );
+  const busyRow = triaged.merchants.find((x: any) => x.id === ownMerchant.id);
+  expect(!busyRow.flags.some((f: any) => f.key === "never-activated"),
+    "a merchant that IS stamping is never flagged as never-activated");
+
+  // poster_view is what separates the two, so prove the route writes it.
+  expect((await get("/c/" + quietCard.id + "/poster")).status === 200, "the poster renders for a new merchant");
+  const posterSeen = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+    .merchants.find((x: any) => x.id === quietMerchant.id);
+  expect(posterSeen.poster_views > 0, "opening the poster is recorded");
+  expect(
+    posterSeen.flags.find((f: any) => f.key === "never-activated").label === "No stamps yet",
+    "...and once the poster has been opened the diagnosis changes to 'poster up, nobody stamping'",
+  );
+
+  // --- Archiving a merchant takes it out of the work list entirely ---
+  const arch = await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/archive", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  expect(arch.status === 200, "a merchant can be archived");
+  const afterArch = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+    .merchants.find((x: any) => x.id === quietMerchant.id);
+  expect(afterArch.archived_at !== null, "the merchant is marked archived, not deleted");
+  expect(afterArch.flags.length === 0, "an archived merchant raises nothing — it is closed, not broken");
+  await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/unarchive", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  const contact = await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/contact", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ phone: "+60 12-345 6789", note: "Prefers WhatsApp" }),
+  });
+  expect(contact.status === 200, "operator contact details save");
+  const withContact = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+    .merchants.find((x: any) => x.id === quietMerchant.id);
+  expect(withContact.contact_phone === "+60 12-345 6789" && withContact.contact_note === "Prefers WhatsApp",
+    "...and come back on the merchant");
 
   const owner2 = adminOk.owners.find((o: any) => o.email === "second@card.my");
   const reset = await fetch(base + "/admin/api/owner/" + owner2.id + "/reset-password", {

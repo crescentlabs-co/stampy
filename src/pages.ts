@@ -5,7 +5,7 @@
 import { contrastText, rgbToHex } from "./color.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
-import { DEFAULT_CARD_ID } from "./db.js";
+import { DEFAULT_CARD_ID, TRIAL_DAYS } from "./db.js";
 
 const baseCss = /* css */ `
   /* Font face is declared INLINE (not a separate cacheable stylesheet) so a
@@ -3413,6 +3413,49 @@ export function adminPage(): string {
   const css = /* css */ `
     body { max-width: none; }
     .awrap { width: 100%; max-width: 960px; }
+    /* --- Zone 0: is the platform alive --- */
+    .pstrip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0 22px; }
+    @media (min-width: 720px) { .pstrip { grid-template-columns: repeat(4, 1fr); } }
+    .ptile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+    .ptile b { display: block; font-family: var(--display); font-size: 1.8rem; line-height: 1;
+               letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .ptile span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
+                  letter-spacing: .05em; color: var(--muted); }
+    .ptile.alarm b { color: #9a3412; }
+    /* --- Zone 1: what needs you today --- */
+    .triage { display: flex; flex-direction: column; gap: 8px; margin-bottom: 26px; }
+    .tcard { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 12px;
+             padding: 12px 14px; background: var(--surface); }
+    .tcard.critical { border-left-color: #9a3412; }
+    .tcard.warn { border-left-color: #b45309; }
+    .tcard.info { border-left-color: var(--accent); }
+    .tcard .tw1 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .tcard .tname { font-weight: 700; }
+    .tcard .tdetail { color: var(--muted); font-size: .86rem; margin-top: 3px; }
+    .tcard .taction { font-size: .86rem; margin-top: 5px; }
+    .tclear { border: 1px dashed var(--line); border-radius: 12px; padding: 18px; text-align: center;
+              color: var(--muted); }
+    /* Severity chips, reused in the table's Flags column. */
+    .chipf { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px;
+             border-radius: 999px; margin: 1px 3px 1px 0; white-space: nowrap; }
+    .chipf.critical { background: #fdeaea; color: #9a3412; }
+    .chipf.warn { background: #fef3c7; color: #92400e; }
+    .chipf.info { background: var(--ghost-bg); color: var(--muted); }
+    /* --- Zone 2/3: the merchant table and its drill-down --- */
+    .mrow { cursor: pointer; }
+    .mrow:hover td { background: var(--ghost-bg); }
+    .mname { font-weight: 700; }
+    .mdetail td { background: var(--ghost-bg); }
+    .dgrid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+    @media (min-width: 760px) { .dgrid { grid-template-columns: 1fr 1fr; } }
+    .dpanel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .dpanel h4 { margin: 0 0 8px; font-size: .74rem; text-transform: uppercase; letter-spacing: .06em;
+                 color: var(--muted); }
+    .dpanel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: .88rem; }
+    .dpanel dt { color: var(--muted); }
+    .dpanel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+    .dnote { color: var(--muted); font-size: .76rem; margin: 8px 0 0; line-height: 1.5; }
+    .darch { color: var(--muted); font-style: italic; }
     table { border-collapse: collapse; width: 100%; font-size: .9rem; margin-top: 12px; }
     th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -3740,6 +3783,179 @@ export function adminPage(): string {
       const pct = (x) => (x === null || x === undefined) ? "—" : Math.round(x * 100) + "%";
       const num = (x, dp) => (x === null || x === undefined) ? "—" : Number(x).toFixed(dp || 0);
       const stale = (d, days) => !d || (Date.now() - new Date(d).getTime()) > days * 86400000;
+      const esc = (s) => String(s == null ? "" : s)
+        .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+
+      // ---------------------------------------------------- merchant view ----
+      // Merchants, not programmes. Every panel below this still groups by card,
+      // and that is fine — they are filtered down by a merchant's card_ids
+      // rather than rewritten, because those queries are correct and tested.
+      const merchants = body.merchants || [];
+      const live = merchants.filter((m) => !m.archived_at);
+      const money = (m, n) => m.currency + Math.round(n).toLocaleString();
+
+      // Worst first. A console sorted alphabetically makes you read every row to
+      // find the one that needs you, which is the job this page exists to do.
+      const ranked = [...merchants].sort((a, b) => {
+        const sev = (x) => x.flags.length ? ({ critical: 0, warn: 1, info: 2 })[x.flags[0].severity] : 9;
+        return sev(a) - sev(b) || b.flags.length - a.flags.length
+          || new Date(b.created_at) - new Date(a.created_at);
+      });
+      const needing = ranked.filter((m) => m.flags.length && !m.archived_at);
+
+      const chips = (m) => m.flags
+        .map((f) => '<span class="chipf ' + f.severity + '">' + esc(f.label) + "</span>").join("");
+
+      const merchantRow = (m) => {
+        const left = m.trialLeft;
+        const v = m.value;
+        return \`
+        <tr class="mrow" data-m="\${m.id}">
+          <td>
+            <span class="mname">\${esc(m.name)}</span>\${m.archived_at ? ' <span class="arch">archived</span>' : ""}
+            <br><span class="flags">\${esc(m.owners || "no owner")}</span>
+          </td>
+          <td class="\${left < 0 ? "bad" : ""}">\${left < 0 ? "ended " + Math.abs(left) + "d ago" : "day " + m.trial_day + "/${TRIAL_DAYS}"}</td>
+          <td class="\${m.first_stamp_at ? "" : "bad"}">
+            \${m.first_stamp_at ? ago(m.first_stamp_at) : "not yet"}
+            \${m.first_stamp_at ? "" : '<br><span class="flags">' + m.trial_day + "d waiting</span>"}
+          </td>
+          <td class="\${stale(m.last_stamp_at, 7) ? "bad" : ""}">\${ago(m.last_stamp_at)}</td>
+          <td>\${m.customers}<br><span class="flags">\${m.active_7d} this week</span></td>
+          <td>\${m.stamps_7d} / \${m.stamps_30d}
+            <br><span class="flags">\${m.stamps_prev_7d ? (m.stamps_7d >= m.stamps_prev_7d ? "▲" : "▼") + " vs " + m.stamps_prev_7d : "—"}</span></td>
+          <td>\${v.hasBasket ? money(m, v.spendThroughCard) : "—"}
+            <br><span class="flags">\${m.redemptions} reward\${m.redemptions === 1 ? "" : "s"}</span></td>
+          <td class="\${stale(m.last_owner_login, 30) ? "bad" : ""}">\${ago(m.last_owner_login)}</td>
+          <td>\${chips(m) || '<span class="flags">—</span>'}</td>
+        </tr>
+        <tr class="mdetail" data-d="\${m.id}" style="display:none"><td colspan="9"></td></tr>\`;
+      };
+
+      const MERCHANT_HEAD = \`<tr>
+        <th>Merchant</th><th>Trial</th><th>Activated</th><th>Last stamp</th>
+        <th>Customers</th><th>Stamps 7d/30d</th><th>Value</th><th>Owner seen</th><th>Flags</th>
+      </tr>\`;
+
+      // ---- Zone 3: one merchant, everything about them -----------------------
+      // The per-card panels are filtered by card_ids rather than re-queried, so
+      // a merchant running two cards sums correctly and there is exactly one
+      // definition of retention/funnel/staff on the platform.
+      const mine = (rows, m) => rows.filter((r) => m.card_ids.includes(r.id || r.card_id));
+      const days = (from, to) => (from && to)
+        ? Math.max(0, Math.round((new Date(to) - new Date(from)) / 86400000)) + "d" : "—";
+
+      function detailHtml(m) {
+        const v = m.value;
+        const f = mine(body.funnel, m).reduce((a, r) => ({
+          scanned: a.scanned + r.scanned, clicked: a.clicked + r.clicked,
+          made: a.made + r.made, landed: a.landed + r.landed,
+        }), { scanned: 0, clicked: 0, made: 0, landed: 0 });
+        const ret = mine(body.retention, m)[0] || {};
+        const staffRows = body.staff.filter((s) => m.card_ids.includes(s.card_id));
+        return \`
+        <div class="dgrid">
+          <div class="dpanel">
+            <h4>Activation &amp; value</h4>
+            <dl>
+              <dt>Signed up</dt><dd>\${ago(m.created_at)}</dd>
+              <dt>To first stamp</dt><dd>\${days(m.created_at, m.first_stamp_at)}</dd>
+              <dt>To first reward</dt><dd>\${days(m.created_at, m.first_redeem_at)}</dd>
+              <dt>Poster opened</dt><dd class="\${m.poster_views ? "" : "bad"}">\${m.poster_views ? m.poster_views + "×" : "never"}</dd>
+              <dt>Counter visits</dt><dd>\${m.stamps}</dd>
+              <dt>Spend through card</dt><dd>\${v.hasBasket ? money(m, v.spendThroughCard) : "no basket set"}</dd>
+              <dt>Spend per reward</dt><dd>\${v.hasBasket ? money(m, v.spendPerReward) : "—"}</dd>
+              <dt>Rewards given</dt><dd>\${v.rewardsGiven}</dd>
+              <dt>Rewards owed</dt><dd class="\${m.unclaimed_rewards >= 3 ? "bad" : ""}">\${m.unclaimed_rewards}</dd>
+            </dl>
+            <p class="dnote">Counter visits are staff stamps from the event log — free welcome
+              stamps and the reset after a reward never appear there. Spend is that count times the
+              merchant's own self-reported basket, so it is a countable number times one assumption.
+              It is <strong>not</strong> incremental: some of these people would have come anyway.</p>
+          </div>
+
+          <div class="dpanel">
+            <h4>Sign-up funnel</h4>
+            <dl>
+              <dt>Scanned</dt><dd>\${f.scanned}</dd>
+              <dt>Tapped Add</dt><dd>\${f.clicked}</dd>
+              <dt>Card made</dt><dd>\${f.made}</dd>
+              <dt>Landed in wallet</dt><dd>\${f.landed}</dd>
+              <dt>Deleted / dropped</dt><dd>\${m.removed} / \${m.dropped}</dd>
+            </dl>
+            <p class="dnote"><strong>Landed</strong> and <strong>Deleted</strong> depend on the
+              wallet telling us: Apple always has, Google only since the issuer callback was set up.
+              Older Android sign-ups under-report both, so read a low Landed with that in mind.</p>
+          </div>
+
+          <div class="dpanel">
+            <h4>Do customers come back</h4>
+            <dl>
+              <dt>2nd visit</dt><dd>\${pct(ret.second_visit_rate)}</dd>
+              <dt>3rd visit</dt><dd>\${pct(ret.third_visit_rate)}</dd>
+              <dt>Finish a card</dt><dd>\${pct(ret.completion_rate)}</dd>
+              <dt>Median gap</dt><dd>\${num(ret.median_gap_days, 1)} d</dd>
+              <dt>Days to 1st stamp</dt><dd>\${num(ret.median_days_to_first_stamp, 1)}</dd>
+              <dt>Still active 30/60/90</dt><dd>\${pct(ret.alive_30)} · \${pct(ret.alive_60)} · \${pct(ret.alive_90)}</dd>
+            </dl>
+          </div>
+
+          <div class="dpanel">
+            <h4>Counter &amp; engagement</h4>
+            <dl>
+              <dt>Staff phones</dt><dd class="\${m.staff_devices === 1 ? "bad" : ""}">\${m.staff_devices}</dd>
+              <dt>Owner logins (30d)</dt><dd>\${m.logins_30d}</dd>
+              <dt>Card edits</dt><dd>\${m.card_edits}</dd>
+              <dt>Nudges sent</dt><dd>\${m.nudges}</dd>
+              <dt>Logo uploaded</dt><dd>\${m.has_art ? "yes" : "no"}</dd>
+              <dt>Failed PINs (24h)</dt><dd class="\${m.pin_failed_24h ? "bad" : ""}">\${m.pin_failed_24h}</dd>
+              <dt>Codes not found (7d)</dt><dd class="\${m.lookup_failed_7d >= 5 ? "bad" : ""}">\${m.lookup_failed_7d}</dd>
+              <dt>Messages failed</dt><dd class="\${m.messages_failed ? "bad" : ""}">\${m.messages_failed}</dd>
+            </dl>
+            <p class="dnote">Logins, edits and nudges are the closest thing to a
+              willingness-to-pay signal before any money changes hands: they are the merchant
+              choosing to touch the product unprompted.</p>
+          </div>
+        </div>
+
+        \${staffRows.length ? \`<div class="dpanel" style="margin-top:14px">
+          <h4>Staff phones</h4>
+          <div class="tw"><table>
+            <tr><th>Phone</th><th>Stamps</th><th>Redeems</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>
+            \${staffRows.map((s) => \`<tr>
+              <td class="flags">\${esc(s.actor)}</td><td>\${s.stamps}</td>
+              <td class="\${s.stamps >= 10 && s.redeems / s.stamps > 0.3 ? "bad" : ""}">\${s.redeems}</td>
+              <td>\${s.undos}</td><td>\${s.forced}</td><td>\${ago(s.last_seen)}</td>
+            </tr>\`).join("")}
+          </table></div>
+          <p class="dnote">A phone, not a person — signing out and back in mints a new id.</p>
+        </div>\` : ""}
+
+        <div class="dpanel" style="margin-top:14px">
+          <h4>Admin</h4>
+          <div class="flags" style="margin-bottom:8px">
+            Sign-up link: <span class="nfc">\${origin}/j/\${m.id}</span>
+          </div>
+          <div class="rst" style="margin-top:0">
+            <button class="btn btn-ghost cbtn" data-nfc="\${origin}/j/\${m.id}">Copy link</button>
+            \${m.card_ids.map((id) => '<a class="btn btn-ghost cbtn" target="_blank" href="/c/' + id + '/poster">Poster</a>').join("")}
+            \${m.card_ids.map((id) => '<a class="btn btn-ghost cbtn" target="_blank" href="/admin/card/' + id + '/sheet">Counter sheet</a>').join("")}
+            \${m.archived_at
+              ? '<button class="btn btn-ghost dbtn" data-munarchive="' + m.id + '">Restore merchant</button>'
+              : '<button class="btn btn-ghost dbtn" data-marchive="' + m.id + '">Archive merchant</button>'}
+          </div>
+          <label style="margin-top:12px">Phone</label>
+          <input data-phone="\${m.id}" value="\${esc(m.contact_phone)}" placeholder="Who to ring">
+          <label style="margin-top:8px">Notes</label>
+          <input data-note="\${m.id}" value="\${esc(m.contact_note)}" placeholder="Anything worth remembering">
+          <button class="btn btn-ghost cbtn" data-savecontact="\${m.id}" style="margin-top:8px">Save contact</button>
+        </div>
+
+        <div class="dpanel" style="margin-top:14px">
+          <h4>What they have changed</h4>
+          <div data-edits="\${m.id}" class="flags">Loading…</div>
+        </div>\`;
+      }
 
       const cardRow = (c) => \`
         <tr>
@@ -3855,10 +4071,51 @@ export function adminPage(): string {
       const WB_HEAD = \`<tr><th>Programme</th><th>Nudged</th><th>Came back</th><th>Didn't</th><th>Return rate</th></tr>\`;
       const wb = splitArchived(body.cards, (c) => c.id, WB_HEAD, wbRow);
       const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
+      // Zone 0: only figures that can go DOWN. Totals that only ever rise
+      // (customers ever, rewards ever) cannot tell you anything is wrong, so
+      // they are not here — they are in the table, per merchant, where they
+      // mean something.
+      const stampsAll7d = merchants.reduce((a, m) => a + m.stamps_7d, 0);
+      const stampingThisWeek = live.filter((m) => m.stamps_7d > 0).length;
+      const inWallets = merchants.reduce((a, m) => a + Math.max(0, m.landed - m.removed), 0);
+
       $("#app").innerHTML = \`
-        <h1>Platform admin</h1>
-        <p class="sub">\${body.cards.length} loyalty programmes · \${body.owners.length} owners. Read-only, plus password resets.</p>
-        <p class="muted" style="margin:-4px 0 10px"><strong>Customers</strong> = cards stamped at least once or confirmed in a wallet. Stamps exclude free welcome stamps. Red means quiet: no stamp for a week, or no dashboard login for a month.</p>
+        <h1>Merchant health</h1>
+        <p class="sub">\${live.length} live merchant\${live.length === 1 ? "" : "s"} · \${body.owners.length} owner accounts</p>
+
+        <div class="pstrip">
+          <div class="ptile"><b>\${stampingThisWeek}/\${live.length}</b><span>stamping this week</span></div>
+          <div class="ptile"><b>\${stampsAll7d}</b><span>stamps · 7 days</span></div>
+          <div class="ptile"><b>\${inWallets}</b><span>cards in wallets</span></div>
+          <div class="ptile \${needing.length ? "alarm" : ""}"><b>\${needing.length}</b><span>need attention</span></div>
+        </div>
+
+        <h2>Needs you today</h2>
+        <div class="triage">
+          \${needing.length ? needing.map((m) => m.flags.map((f) => \`
+            <div class="tcard \${f.severity}">
+              <div class="tw1"><span class="tname">\${esc(m.name)}</span>
+                <span class="chipf \${f.severity}">\${esc(f.label)}</span></div>
+              <div class="tdetail">\${esc(f.detail)}</div>
+              <div class="taction">\${esc(f.action)}</div>
+            </div>\`).join("")).join("")
+            : '<div class="tclear">Nothing needs you today. Every live merchant is stamping, nothing is broken, and no trial is about to run out.</div>'}
+        </div>
+
+        <h2>Merchants</h2>
+        <p class="muted">Worst first, not alphabetical. Click a row for everything about that
+          merchant. <strong>Value</strong> is counter visits × their self-reported basket — a
+          countable number times one assumption, and not claimed as incremental.</p>
+        <div class="tw"><table>
+          \${MERCHANT_HEAD}
+          \${ranked.map(merchantRow).join("")}
+        </table></div>
+
+        <h2>Platform-wide tables</h2>
+        <p class="muted">The same numbers grouped by programme rather than by merchant. Useful for
+          comparing merchants against each other; the per-merchant view above is what you act on.</p>
+        <details class="fold" style="margin-top:10px"><summary>All programmes</summary>
+
         <div class="tw"><table>
           <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>
           \${rows}
@@ -3900,6 +4157,7 @@ export function adminPage(): string {
           \${staff.live || '<tr><td colspan="7" class="flags">No counter activity yet.</td></tr>'}
         </table></div>
         \${staff.fold}
+        </details>
 
         <h2>Card designs</h2>
         <p class="muted">Mock a card up for a prospect before they have an account, then push it onto their card once they sign up — after that all they touch is the wording and the colours. Drop in their logo and you have something to show them in a minute.</p>
@@ -3948,6 +4206,66 @@ export function adminPage(): string {
         <div id="tempout"></div>\`;
 
       wireTemplates(body.cards);
+
+      // ---- merchant row: expand, and the actions inside it -------------------
+      // The detail is built on first open and left in the DOM, so re-opening a
+      // row is instant and the contact fields keep whatever was typed into them.
+      const byMerchant = new Map(merchants.map((m) => [m.id, m]));
+      document.querySelectorAll("[data-m]").forEach((tr) => {
+        tr.onclick = async (e) => {
+          // Anything clickable inside the detail must not toggle the row shut.
+          if (e.target.closest("button, a, input, label")) return;
+          const id = tr.dataset.m;
+          const row = document.querySelector('[data-d="' + id + '"]');
+          const cell = row.firstElementChild;
+          const opening = row.style.display === "none";
+          row.style.display = opening ? "" : "none";
+          if (opening && !cell.innerHTML) {
+            cell.innerHTML = detailHtml(byMerchant.get(id));
+            wireDetail(id);
+            // The edit history is the only thing here that needs its own trip.
+            const { body: ed } = await api("/merchant/" + id + "/edits");
+            const host = cell.querySelector('[data-edits="' + id + '"]');
+            if (!host) return;
+            host.innerHTML = (ed.edits || []).length
+              ? ed.edits.map((x) => {
+                  const what = Object.entries(x.changed || {})
+                    .map(([k, ch]) => k + ": " + esc(String(ch.from)) + " → " + esc(String(ch.to)))
+                    .join(" · ");
+                  return "<div>" + ago(x.created_at) + " — " + (what || "design") + "</div>";
+                }).join("")
+              : "Nothing changed since setup. A merchant who never touches their own card is one who has not made it theirs.";
+          }
+        };
+      });
+
+      /** Buttons inside a merchant's drill-down, wired when it is first built. */
+      function wireDetail(id) {
+        const scope = document.querySelector('[data-d="' + id + '"]');
+        scope.querySelectorAll("[data-nfc]").forEach((b) => {
+          b.onclick = () => { navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; };
+        });
+        const save = scope.querySelector("[data-savecontact]");
+        if (save) save.onclick = async () => {
+          await api("/merchant/" + id + "/contact", { method: "POST", body: JSON.stringify({
+            phone: scope.querySelector("[data-phone]").value,
+            note: scope.querySelector("[data-note]").value,
+          })});
+          save.textContent = "Saved ✓";
+        };
+        // Two taps, same as archiving a card: it takes a business out of the
+        // working list, and a mis-click on the wrong row is easy to make.
+        const arch = scope.querySelector("[data-marchive]");
+        if (arch) armBtn(arch, "Tap again to archive", async () => {
+          await api("/merchant/" + id + "/archive", { method: "POST" });
+          load();
+        });
+        const un = scope.querySelector("[data-munarchive]");
+        if (un) un.onclick = async () => {
+          await api("/merchant/" + id + "/unarchive", { method: "POST" });
+          load();
+        };
+      }
 
       // Business-type swatches (click to select the design bundle).
       const vpick = $("[data-vpick]");

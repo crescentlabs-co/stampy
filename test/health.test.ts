@@ -18,7 +18,7 @@ function healthy(over: Partial<MerchantHealthRow> = {}): MerchantHealthRow {
     id: "m1", name: "Kopi Corner", owners: "a@shop.my",
     contact_phone: "", contact_note: "",
     created_at: daysAgo(10), archived_at: null, trial_day: 10,
-    cards: 1, basket_cents: 450, currency: "RM", stamps_target: 10,
+    cards: 1, card_ids: ["c1"], basket_cents: 450, currency: "RM", stamps_target: 10,
     first_stamp_at: daysAgo(9), first_redeem_at: daysAgo(2), poster_views: 3,
     last_stamp_at: daysAgo(0), last_owner_login: daysAgo(1), logins_30d: 6,
     stamps: 120, stamps_7d: 40, stamps_30d: 120, stamps_prev_7d: 38,

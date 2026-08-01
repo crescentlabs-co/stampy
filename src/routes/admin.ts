@@ -37,6 +37,10 @@ import {
   getCard,
   getDesignTemplate,
   listDesignTemplates,
+  merchantEdits,
+  merchantHealth,
+  setMerchantArchived,
+  setMerchantContact,
   setStaffPin,
   getOwner,
   getOwnerByEmail,
@@ -49,6 +53,7 @@ import {
   type OwnerRow,
 } from "../db.js";
 import { ensureClass } from "../googleWallet.js";
+import { triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng, validateLogoPng } from "../imageValidate.js";
 import { adminPage, counterSheetPage } from "../pages.js";
 
@@ -80,15 +85,60 @@ adminRouter.get("/card/:id/sheet", requireAdmin, async (req, res) => {
   res.type("html").send(counterSheetPage(card, await businessNameForCard(card)));
 });
 
+/**
+ * Everything the console renders, in one round trip.
+ *
+ * `merchants` is the primary view now; the per-card panels (retention, funnel,
+ * staff audit) come back whole and the browser filters them by a merchant's
+ * `card_ids`. That is deliberate: those three queries are correct and well
+ * tested, and rewriting them merchant-first would have been three chances to
+ * introduce a subtle counting bug for no gain at this data size.
+ *
+ * `flags` is computed server-side so the rules live in one place (src/health.ts)
+ * and are unit-tested without a browser or a database.
+ */
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [cards, owners, retention, staff, funnel] = await Promise.all([
+  const [merchants, cards, owners, retention, staff, funnel] = await Promise.all([
+    merchantHealth(),
     allCardsWithStats(),
     allOwners(),
     adminRetention(),
     adminStaffAudit(),
     adminFunnel(),
   ]);
-  res.json({ cards, owners, retention, staff, funnel });
+  const withFlags = merchants.map((m) => ({
+    ...m,
+    flags: triage(m),
+    value: value(m),
+    trialLeft: trialDaysLeft(m),
+  }));
+  res.json({ merchants: withFlags, cards, owners, retention, staff, funnel });
+});
+
+/** What this merchant has changed about their card — the WTP signal. */
+adminRouter.get("/api/merchant/:id/edits", requireAdmin, async (req, res) => {
+  res.json({ edits: await merchantEdits(req.params.id!) });
+});
+
+/** Retire a business. Nothing is deleted; passes in wallets keep working. */
+adminRouter.post("/api/merchant/:id/archive", requireAdmin, async (req, res) => {
+  await setMerchantArchived(req.params.id!, true);
+  res.json({ ok: true });
+});
+
+adminRouter.post("/api/merchant/:id/unarchive", requireAdmin, async (req, res) => {
+  await setMerchantArchived(req.params.id!, false);
+  res.json({ ok: true });
+});
+
+/** Operator-kept contact details — owners.email is a login, not a person. */
+adminRouter.post("/api/merchant/:id/contact", requireAdmin, async (req, res) => {
+  const b = (req.body ?? {}) as { phone?: string; note?: string };
+  await setMerchantContact(req.params.id!, {
+    phone: typeof b.phone === "string" ? b.phone : undefined,
+    note: typeof b.note === "string" ? b.note : undefined,
+  });
+  res.json({ ok: true });
 });
 
 /**

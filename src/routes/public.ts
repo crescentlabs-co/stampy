@@ -426,6 +426,15 @@ publicRouter.get("/c/:cardId/poster", async (req, res) => {
     cafeLogoVersion(card.id).catch(() => 0),
   ]);
   const joinRef = merchant ? await currentSlug(merchant.id) : card.id;
+  // The step above join_view, and the only evidence that anything was ever put
+  // on a counter. A merchant who has never opened this has no poster up, so no
+  // scan can happen — which separates "not working" from "never started", two
+  // states that are indistinguishable in every other number we hold.
+  await logEvent(card.id, "", "poster_view", {
+    actor: "owner",
+    merchantId: merchant?.id ?? null,
+    metadata: { ua: (req.get("user-agent") ?? "").slice(0, 200) },
+  }).catch((err) => console.error("[poster_view] not logged:", err));
   res.type("html").send(posterPage(card, business, joinRef, logoVersion));
 });
 

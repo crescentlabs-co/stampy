@@ -1717,6 +1717,10 @@ export interface MerchantHealthRow {
   trial_day: number;
   /** Cards they run. One, for every merchant created since the V1 cap. */
   cards: number;
+  /** Their card ids, so the console can filter the existing per-card panels
+   *  (retention, funnel, staff audit) down to this merchant without those
+   *  queries needing to be rewritten merchant-first. */
+  card_ids: string[];
   /** The card's self-reported basket, in cents, and its symbol. */
   basket_cents: number;
   currency: string;
@@ -1791,6 +1795,8 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
                FROM owners o WHERE o.id = m.owner_id) AS owners,
             floor(extract(epoch FROM (now() - m.created_at)) / 86400.0)::int AS trial_day,
             (SELECT count(*)::int FROM cards WHERE merchant_id = m.id) AS cards,
+            COALESCE((SELECT array_agg(id ORDER BY created_at) FROM cards WHERE merchant_id = m.id),
+                     ARRAY[]::text[]) AS card_ids,
             -- The card's basket, not the merchant's: only the card column is
             -- written by the dashboard; merchants.average_spend_cents is a v1.3
             -- backfill artefact that nothing keeps current.
@@ -1858,6 +1864,59 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
       ORDER BY m.created_at DESC`,
   );
   return res.rows;
+}
+
+export interface MerchantEditRow {
+  created_at: Date;
+  actor: string;
+  /** `{ field: { from, to } }` — only what actually changed. */
+  changed: Record<string, { from: unknown; to: unknown }> | null;
+}
+
+/**
+ * What this merchant has changed about their card, newest first.
+ *
+ * The best willingness-to-pay signal in the log, and it was being written and
+ * read by nothing. An owner who edits their reward or lowers their target
+ * mid-trial is reacting to something — usually poor completion — and that is a
+ * conversation you would otherwise never know to have. Unprompted configuration
+ * is also the clearest evidence a merchant considers the thing theirs.
+ */
+export async function merchantEdits(merchantId: string, limit = 20): Promise<MerchantEditRow[]> {
+  const res = await getPool().query<MerchantEditRow>(
+    `SELECT e.created_at, e.actor, e.metadata->'changed' AS changed
+       FROM events e
+      WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = $1)
+        AND e.type = 'card_edited'
+      ORDER BY e.created_at DESC
+      LIMIT $2`,
+    [merchantId, limit],
+  );
+  return res.rows;
+}
+
+/** Merchant-level archive: retires the business, not one programme. Nothing is
+ *  deleted and every pass already in a wallet keeps working, exactly as with a
+ *  card — this only takes them out of the operator's working list. */
+export async function setMerchantArchived(id: string, archived: boolean): Promise<void> {
+  await getPool().query(`UPDATE merchants SET archived_at = $2 WHERE id = $1`, [
+    id,
+    archived ? new Date() : null,
+  ]);
+}
+
+/** Operator-kept contact details. `owners.email` is a login, not someone to ring. */
+export async function setMerchantContact(
+  id: string,
+  contact: { phone?: string; note?: string },
+): Promise<void> {
+  await getPool().query(
+    `UPDATE merchants
+        SET contact_phone = COALESCE($2, contact_phone),
+            contact_note  = COALESCE($3, contact_note)
+      WHERE id = $1`,
+    [id, contact.phone?.slice(0, 40) ?? null, contact.note?.slice(0, 500) ?? null],
+  );
 }
 
 // ------------------------------------------------------- design templates ----
