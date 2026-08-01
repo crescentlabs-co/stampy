@@ -125,7 +125,7 @@ dashboardRouter.post("/api/signup", async (req, res) => {
   const isFirstOwner = (await countOwners()) === 0;
   const owner = await createOwner(randomUUID(), email, hashPassword(password));
   // One staff PIN per owner, random from the start — never the shared,
-  // guessable "1234". They see it in Settings and can replace it there.
+  // guessable "1234". They see it under Shop and can replace it there.
   await setStaffPin(owner.id, generateStaffPin());
   // The business, distinct from the card it runs. Its id is what the /j/ poster
   // QR encodes, so it is minted here and never changes. The first owner on a
@@ -306,7 +306,14 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       metrics: await cardMetrics(card.id),
     });
   }
-  res.json({ email: req.owner!.email, cards: out });
+  // Whether a PIN exists, never the PIN. It is stored as a scrypt hash and
+  // cannot be read back — this only lets Shop say "Reset" instead of "Set", so
+  // an owner replacing a PIN isn't shown a first-time-setup control.
+  res.json({
+    email: req.owner!.email,
+    cards: out,
+    hasStaffPin: (req.owner!.staff_pin_hash ?? "") !== "",
+  });
 });
 
 /**

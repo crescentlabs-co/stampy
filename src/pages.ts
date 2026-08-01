@@ -191,6 +191,123 @@ export const PALETTE_JS = /* js */ `
   }
 `;
 
+/**
+ * The confirmation popup and the ⓘ hint, shared by the dashboard and the staff
+ * stamper. Exported as source, like PALETTE_JS, so both pages run one copy and
+ * test/pages.test.ts compiles the code that actually ships.
+ *
+ * **This is not `confirm()`, and it must never become it.** A browser offers
+ * "prevent this page from creating additional dialogs" after a few in a row; a
+ * counter hits that in one shift, and from then on every dialog silently answers
+ * "cancel" with nothing on screen. That is invariant 8, and it is why destructive
+ * buttons on the stamper arm instead of asking. A popup we build ourselves has
+ * no such switch, so it can carry the things an owner has to read before they
+ * commit — which is the whole point: those sentences used to sit as grey subtext
+ * under the button, where nobody read them either.
+ *
+ * `info()` is the other half. Anything that merely explains a field collapses
+ * into a tappable ⓘ. Tappable, not hover: this is used on a phone, where there
+ * is no hover and a tooltip is simply invisible.
+ */
+export const MODAL_JS = /* js */ `
+  function mdlEsc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch];
+    });
+  }
+
+  /**
+   * Ask, and resolve true only if they confirm. bodyHtml is markup we build —
+   * anything the user typed goes through mdlEsc on the way in.
+   */
+  function modal(title, bodyHtml, okLabel) {
+    return new Promise(function (resolve) {
+      var last = document.activeElement;
+      var wrap = document.createElement("div");
+      wrap.className = "mdl";
+      wrap.innerHTML =
+        '<div class="mdlbox" role="dialog" aria-modal="true" aria-labelledby="mdlt">' +
+          '<h3 id="mdlt"></h3><div class="mdlbody"></div>' +
+          '<div class="mdlrow">' +
+            '<button type="button" class="btn btn-ghost" data-no>Cancel</button>' +
+            '<button type="button" class="btn btn-dark" data-yes></button>' +
+          "</div>" +
+        "</div>";
+      wrap.querySelector("#mdlt").textContent = title;
+      wrap.querySelector(".mdlbody").innerHTML = bodyHtml;
+      var yes = wrap.querySelector("[data-yes]"), no = wrap.querySelector("[data-no]");
+      yes.textContent = okLabel || "Confirm";
+      function close(answer) {
+        document.removeEventListener("keydown", onKey, true);
+        wrap.remove();
+        if (last && last.focus) last.focus();
+        resolve(answer);
+      }
+      function onKey(e) {
+        if (e.key === "Escape") { e.preventDefault(); close(false); return; }
+        // Two buttons, so the trap is just: keep Tab between them.
+        if (e.key === "Tab") {
+          e.preventDefault();
+          (document.activeElement === yes ? no : yes).focus();
+        }
+      }
+      yes.onclick = function () { close(true); };
+      no.onclick = function () { close(false); };
+      // Tapping the dim area behind it is a cancel, never a confirm.
+      wrap.onclick = function (e) { if (e.target === wrap) close(false); };
+      document.addEventListener("keydown", onKey, true);
+      document.body.appendChild(wrap);
+      yes.focus();
+    });
+  }
+
+  /** A tappable ⓘ and the one line it reveals. Returns markup, not an element. */
+  function info(text) {
+    return '<button type="button" class="ihint" data-info="' + mdlEsc(text) + '" aria-label="What is this?">i</button>';
+  }
+
+  /**
+   * Wire every ⓘ inside a root. Delegated from the root rather than bound per
+   * button, so markup rendered later still works without re-wiring.
+   */
+  function wireInfo(root) {
+    root.addEventListener("click", function (e) {
+      var btn = e.target.closest ? e.target.closest("[data-info]") : null;
+      if (!btn || !root.contains(btn)) return;
+      e.preventDefault();
+      var open = btn.nextElementSibling && btn.nextElementSibling.classList.contains("ibody");
+      if (open) { btn.nextElementSibling.remove(); btn.classList.remove("on"); return; }
+      var p = document.createElement("p");
+      p.className = "ibody";
+      p.textContent = btn.dataset.info;
+      btn.classList.add("on");
+      btn.insertAdjacentElement("afterend", p);
+    });
+  }
+`;
+
+/** Styles for MODAL_JS. Both pages that use the popup must include this. */
+export const MODAL_CSS = /* css */ `
+  .mdl { position: fixed; inset: 0; z-index: 50; background: rgba(24,20,16,.55);
+         display: flex; align-items: center; justify-content: center; padding: 20px;
+         animation: mdlin .14s ease-out; }
+  .mdlbox { background: var(--surface); border-radius: 18px; padding: 22px 20px 18px;
+            width: 100%; max-width: 380px; box-shadow: 0 18px 50px -12px rgba(24,20,16,.5); }
+  .mdlbox h3 { margin: 0 0 8px; font-size: 1.12rem; }
+  .mdlbody { color: var(--muted); font-size: .9rem; line-height: 1.55; }
+  .mdlbody strong { color: var(--ink); }
+  .mdlrow { display: flex; gap: 8px; margin-top: 18px; }
+  .mdlrow .btn { width: auto; flex: 1; margin: 0; padding: 12px 14px; font-size: .92rem; }
+  @keyframes mdlin { from { opacity: 0 } to { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) { .mdl { animation: none; } }
+  /* The ⓘ that replaced a paragraph of grey subtext under every field. */
+  .ihint { width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%;
+           border: 1px solid var(--field-border); background: var(--surface); color: var(--muted);
+           font-weight: 700; font-size: .68rem; line-height: 1; cursor: pointer; vertical-align: middle; }
+  .ihint:hover, .ihint.on { border-color: var(--accent); color: var(--accent-dark); }
+  .ibody { color: var(--muted); font-size: .82rem; line-height: 1.5; margin: 4px 0 0; }
+`;
+
 function page(title: string, body: string, extraCss = "", script = ""): string {
   return `<!doctype html>
 <html lang="en">
@@ -1166,6 +1283,7 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
     .find summary::-webkit-details-marker { display: none; }
     .find summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
     .find[open] summary::before { transform: rotate(90deg); }
+    ${MODAL_CSS}
   `;
   // Shared by both states. Everything below it is emitted for one state only:
   // an unsigned-in phone is never sent the stamper code, so the page is a gate
@@ -1219,6 +1337,7 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
   `;
 
   const stamperJs = /* js */ `
+    ${MODAL_JS}
     // ---- two-tap confirm, deliberately NOT a browser dialog ----
     // Browsers offer "prevent this page from creating additional dialogs" after
     // a few in a row. A busy counter hits that in one shift, and once a staff
@@ -1244,22 +1363,25 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
     }
 
     let busy = false; // debounce: one tap/scan = one stamp
-    // A card refused for being stamped seconds ago is remembered briefly, so the
-    // staff's next tap on it means "yes, genuinely a second order". Same two-tap
-    // idiom as the buttons, and it works for the scanner too.
-    const forceArmed = new Map();
     async function act(path, body, doneMsg) {
       if (busy) return; busy = true;
       try {
-        const key = body.serial || body.code || "";
-        if (forceArmed.get(key) > Date.now()) { forceArmed.delete(key); body = { ...body, force: true }; }
         let out = await api(path, { method: "POST", body: JSON.stringify(body) });
-        // Anti-spam: same card stamped moments ago. Staff can override for a
-        // genuine repeat order by repeating the action.
+        // Anti-spam: the same card was stamped moments ago. A genuine second
+        // order is one tap on the popup — it used to mean scanning the card
+        // again, which on the scanner path meant reopening the camera and
+        // lining the phone back up for something staff had already decided.
+        // This is our own popup, never the browser's — a browser dialog can be
+        // switched off mid-shift and then silently answers "cancel".
         if (out.error === "too-soon") {
-          forceArmed.set(key, Date.now() + 8000);
-          toast("Stamped " + out.secondsLeft + "s ago — scan or tap again to add another");
-          return out;
+          const again = await modal(
+            "Stamp it again?",
+            "<p>This card was stamped <strong>" + out.secondsLeft + "s</strong> ago. " +
+              "Only do this if they really are buying a second one.</p>",
+            "Add another",
+          );
+          if (!again) return out;
+          out = await api(path, { method: "POST", body: JSON.stringify({ ...body, force: true }) });
         }
         if (out.error) toast("Error: " + out.error);
         else {
@@ -1657,15 +1779,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .sharelist { margin-bottom: 6px; }
     /* --- home: totals + per-card breakdown --- */
     .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
-    /* With a spend figure there are four tiles: 2×2 on a phone beats 3-then-1. */
-    /* Two up on a phone, all of them side by side once there's room. Five wraps
-       to 3+2 on a narrow screen rather than squeezing to unreadable. */
-    .totals.four, .totals.five { grid-template-columns: repeat(2, 1fr); }
-    @media (min-width: 560px) {
-      .totals.four { grid-template-columns: repeat(4, 1fr); }
-      .totals.five { grid-template-columns: repeat(3, 1fr); }
-    }
-    @media (min-width: 760px) { .totals.five { grid-template-columns: repeat(5, 1fr); } }
+    /* Three tiles fit across a phone. A fourth (spend) wraps to 2×2 rather than
+       3-then-1, and goes back to one row once there's room. */
+    .totals.four { grid-template-columns: repeat(2, 1fr); }
+    @media (min-width: 560px) { .totals.four { grid-template-columns: repeat(4, 1fr); } }
     .totals .metric { padding: 16px 14px 13px; }
     .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
@@ -1733,9 +1850,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     /* --- show-password toggle --- */
     .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
+    ${MODAL_CSS}
+    /* --- Notifications: the message and the button that sends it, on one line --- */
+    .msgrow { display: flex; gap: 8px; margin-top: 4px; }
+    .msgrow input { flex: 1; }
+    .msgrow .btn { width: auto; padding: 12px 16px; font-size: .9rem; white-space: nowrap; }
+    /* --- Shop: Share, split by who the link is for --- */
+    .subsec { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+              font-weight: 700; margin: 14px 0 2px; }
   `;
   const js = /* js */ `
     ${PALETTE_JS}
+    ${MODAL_JS}
     const $ = (s, el=document) => el.querySelector(s);
     // Decided by the server from whether an email service is configured.
     const RESET_BY_EMAIL = ${canEmail ? "true" : "false"};
@@ -1751,10 +1877,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       setTimeout(() => t.classList.remove("show"), 2600);
     }
 
-    // Reveal/hide any password field via a "Show" checkbox (data-eye = its selector).
+    // Reveal/hide password fields via a "Show" checkbox (data-eye = their
+    // selector). querySelectorAll, not querySelector: one checkbox drives every
+    // field it names, so changing a password is one box for both instead of two
+    // that do the same job on adjacent lines.
     function wireEyes(root) {
       root.querySelectorAll("[data-eye]").forEach((cb) => {
-        cb.onchange = () => { const i = root.querySelector(cb.dataset.eye); if (i) i.type = cb.checked ? "text" : "password"; };
+        cb.onchange = () => {
+          root.querySelectorAll(cb.dataset.eye).forEach((i) => { i.type = cb.checked ? "text" : "password"; });
+        };
       });
     }
 
@@ -1839,7 +1970,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       const bust = (v) => v ? "?v=" + v : "";
       const logoSrc = base + "/art/logo.png" + bust(c.logoVersion);
       div.innerHTML = \`
-        <label class="sec first" style="display:block">Card preview <span class="muted">(live — updates as you type)</span></label>
+        <label class="sec first" style="display:block">Preview</label>
         <div class="pv" data-pv>
           <div class="pv-top">
             <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="" style="\${c.logoVersion ? "" : "display:none"}">
@@ -1856,19 +1987,35 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
 
+        <h2 class="sec">Shop name</h2>
+        <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
+        <p class="muted" style="margin-top:6px">This is what customers see on the card.\${info("It is the only thing that changes on cards already in a wallet when you rename. Everything else about an issued card stays as it was.")}</p>
+
+        <h2 class="sec">Rules</h2>
+        <label>Reward</label><input data-f="reward" value="\${c.reward}">
+        <div class="row2">
+          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
+          <div><label>Stamps to start with\${info("A new card starts here, and a card restarts here after a reward — so a returning customer is never worse off than someone walking in for the first time.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
+        </div>
+        <label style="margin-top:14px">Average spend per visit (RM)\${info("Turns stamps into a money figure at the top of Customers. Leave at 0 to hide it.")}</label>
+        <input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}">
+
+        <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. Leave blank and we write one from your reward.")}</label>
+        <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
+
+        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
+
         <details class="fold">
         <summary>Design — your logo, colours, band, stamps</summary>
 
-        <label class="sec first" style="margin-top:6px">Start from your logo</label>
-        <p class="muted" style="margin-top:-2px">Upload it and we read the colours out of it. Nothing changes until you tap <strong>Use these colours</strong>, and every colour stays editable below.</p>
+        <label class="sec first" style="margin-top:6px">Start from your logo\${info("Upload it and we read the colours out of it. Nothing changes until you tap Use these colours, and every colour stays editable below.")}</label>
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
         <div class="swatches" data-swatches style="display:none"></div>
 
-        <label class="sec" style="margin-top:16px">Colours</label>
-        <p class="muted" style="margin-top:-2px">Tap a row, then tap a colour to use it there — no need to match a shade by hand. Or open the square for the full picker.</p>
+        <label class="sec" style="margin-top:16px">Colours\${info("Tap a row, then tap a colour to use it there — no need to match a shade by hand. Or open the square for the full picker. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
         <div class="roles" data-roles></div>
         <div class="colors">
           <label>Card<input data-f="bg" type="color" value="\${c.bg}"></label>
@@ -1877,12 +2024,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <label>Stamps<input data-f="accent" type="color" value="\${c.accent}"></label>
           <label>Band<input data-f="bandColor" type="color" value="\${c.bandColor}"></label>
         </div>
-        <p class="muted" style="margin-top:6px">The <strong>band</strong> is the strip across the middle that the stamps sit on. "Stamps" is what an earned stamp fills in with.</p>
 
         <label style="margin-top:12px">Band texture</label>
         <div class="bantpl" data-bandtex></div>
 
-        <label style="margin-top:12px">Stamp icon <span class="muted">(the big stamps that fill in)</span></label>
+        <label style="margin-top:12px">Stamp icon</label>
         <div class="emojirow">
           <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
           <button class="btn btn-ghost" data-a="useemoji">Use this</button>
@@ -1891,34 +2037,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
           <button class="btn btn-ghost" data-a="rmstamp" style="\${c.stampsVersion ? "" : "display:none"}">Use plain dots</button>
+          \${info("One shape on a see-through background (PNG or SVG), not a photo. Its own colours are ignored — it gets filled with your stamp colour.")}
         </div>
-        <p class="muted" style="margin-top:6px">One shape on a see-through background (PNG or SVG) — not a photo. Its own colours are ignored: it gets filled with your stamp colour.</p>
         <p class="err" data-stamperr style="display:none"></p>
 
-        <label style="margin-top:12px">Shop name <span class="muted">(printed on the card itself)</span></label><input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
-        <label style="margin-top:12px">Card name <span class="muted">(only you see this)</span></label><input data-f="name" value="\${c.name}">
         <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
-        <p class="muted" style="margin-top:8px">Templates, banners and stamp styles save the moment you tap them. Colours and the name save with this button. Everything here updates on your customers' existing cards too.</p>
-        </details>
-
-        <h2 class="sec">Rules</h2>
-        <label>Reward</label><input data-f="reward" value="\${c.reward}">
-        <div class="row2">
-          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
-          <div><label>Free welcome stamps</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
-        </div>
-        <p class="muted" style="margin-top:-2px">Welcome stamps are also where a card restarts after a reward — that part applies to your existing customers straight away.</p>
-        <label style="margin-top:14px">Average spend per visit (RM)</label>
-        <input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}">
-        <p class="muted" style="margin-top:-2px">Used on Home to turn stamps into a money figure. Leave at 0 to hide it.</p>
-
-        <label style="margin-top:16px">Sign-up page message</label>
-        <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
-        <p class="muted" style="margin-top:6px">The line customers read after scanning your QR, before they add the card. Leave blank to use the one above.</p>
-
-
-        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
-        <p class="muted" style="margin-top:8px" data-rulesnote></p>\`;
+        </details>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -2068,7 +2192,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const pv = q("[data-pv]");
         pv.style.background = f("bg").value;
         pv.style.color = f("fg").value;
-        q("[data-pv-name]").textContent = f("shopName").value || f("name").value || "Your card";
+        q("[data-pv-name]").textContent = f("shopName").value || "Your card";
         q("[data-pv-progress]").textContent = headerValue(start, target);
         q("[data-pv-tally]").textContent = start + "/" + target;
         q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
@@ -2452,9 +2576,33 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         toast(label + " saved ✓");
       }
 
+      // How many people this actually reaches. Read once when the panel opens, so
+      // both confirmations can name a real number rather than talk in the
+      // abstract about "your customers".
+      let liveCustomers = 0;
+      (async () => {
+        const { body } = await api("/customers?cardId=" + encodeURIComponent(c.id));
+        liveCustomers = (body.counts || {}).active || 0;
+      })();
+      const them = () => liveCustomers === 1 ? "customer" : "customers";
+
+      // The sentences that used to sit as grey subtext under these two buttons
+      // are now in front of the button. Same words, read this time.
       q("[data-a=savedesign]").onclick = async () => {
+        const ok = await modal(
+          "Update the card everywhere?",
+          liveCustomers
+            ? "<p>The new look reaches all <strong>" + liveCustomers + "</strong> " + them() +
+              " who already hold your card, not just new ones. Their stamps and reward are untouched.</p>"
+            : "<p>This is how your card will look to everyone who takes one.</p>",
+          "Save design",
+        );
+        if (!ok) return;
         await save({
-          name: f("name").value, shopName: f("shopName").value,
+          // The card's own name follows the shop's. It used to be a second field
+          // nobody could tell apart from the first, and the only place it shows
+          // is the programme name on an Android card — which is the shop.
+          name: f("shopName").value, shopName: f("shopName").value,
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
         }, "Design");
@@ -2467,28 +2615,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cards[Number(b.dataset.ci)].name; });
       };
 
-      q("[data-a=saverules]").onclick = () => save({
-        reward: f("reward").value,
-        stampsTarget: Number(f("stampsTarget").value),
-        stampsStart: Number(f("stampsStart").value),
-        averageSpend: Number(f("averageSpend").value) || 0,
-        signupMessage: f("signupMessage").value,
-      }, "Rules");
-
-      // Say exactly what a rules change does, with the real number attached.
-      // Each pass snapshots its reward and target when it's issued, so lowering
-      // "stamps to reward" from 10 to 5 leaves every existing card on 10 — that
-      // surprises people, so it shouldn't be buried in a doc.
-      (async () => {
-        const note = q("[data-rulesnote]");
-        const { body } = await api("/customers?cardId=" + encodeURIComponent(c.id));
-        const n = (body.counts || {}).active || 0;
-        note.innerHTML = n
-          ? "Applies to cards issued from now on. Your <strong>" + n + "</strong> existing " +
-            (n === 1 ? "customer keeps their" : "customers keep their") +
-            " current reward and stamp count — colours, logo and card name update on everyone's card."
-          : "Applies to every card from now on. Once you have customers, a change here only affects newly issued cards; their reward and stamp count stay as they were.";
-      })();
+      q("[data-a=saverules]").onclick = async () => {
+        const ok = await modal(
+          "Change the rules?",
+          liveCustomers
+            ? "<p>New cards use these rules straight away. Your <strong>" + liveCustomers + "</strong> existing " +
+              them() + " keep the reward and stamp count they were promised, and move onto the new rules " +
+              "the next time they earn a reward.</p>"
+            : "<p>These rules apply to every card from here on.</p>",
+          "Save rules",
+        );
+        if (!ok) return;
+        save({
+          reward: f("reward").value,
+          stampsTarget: Number(f("stampsTarget").value),
+          stampsStart: Number(f("stampsStart").value),
+          averageSpend: Number(f("averageSpend").value) || 0,
+          signupMessage: f("signupMessage").value,
+        }, "Rules");
+      };
       return div;
     }
 
@@ -2518,21 +2663,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         (oneCurrency ? (priced[0] || {}).currency || "" : "") +
         n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-      // Do the people who take a card ever come back? Only cards older than a
-      // week count, either way — hand out 100 on Saturday and this must not
-      // crater on Sunday and then drift back up over the following week.
-      // "—" until somebody is old enough to judge: a confident 0% would read
-      // as an answer when there isn't one yet.
-      const matured = sum("matured"), returned = sum("returned");
-      const returnRate = matured ? Math.round((returned / matured) * 100) + "%" : "—";
-
-      // One set of numbers, all time. The All-time / 30-day toggle is gone: it
-      // doubled every figure on the screen for a question nobody was asking yet.
+      // Three numbers, all time. The "came back" rate was here and is not any
+      // more: it needed a footnote about the week it takes to mean anything, and
+      // a tile that has to be explained is a tile nobody reads. The retention
+      // question is answered properly on the admin console. cardMetrics still
+      // computes matured/returned — nothing else moves if it comes back.
       const host = div.querySelector("[data-totals]");
-      host.className = "totals " + (priced.length ? "five" : "four");
+      host.className = "totals " + (priced.length ? "four" : "three");
       host.innerHTML = \`
         <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
-        <div class="metric"><b>\${returnRate}</b><span>came back\${matured ? "" : " (needs a week)"}</span></div>
         <div class="metric"><b>\${sum("stamps")}</b><span>stamps</span></div>
         <div class="metric"><b>\${sum("redemptions")}</b><span>rewards given</span></div>
         \${priced.length ? '<div class="metric"><b>' + money(influenced) + '</b><span>spend influenced</span></div>' : ""}\`;
@@ -2543,95 +2682,75 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       (async () => {
         const { body } = await api("/customers");
         const counts = body.counts || { active: 0, issuedNeverAdded: 0, removed: 0 };
-        const need = (body.buckets || [])
-          .filter((b) => b.nudgeable)
-          .reduce((a, b) => a + b.eligible, 0);
-        // "Never reached a wallet" is not shown here any more: an owner can do
-        // nothing about a cancelled Add sheet, and it read as a failure of
-        // theirs. It lives on the admin console, which is where it belongs.
-        const gap = [];
-        if (counts.removed) gap.push(counts.removed + " deleted the card");
+        // "Never reached a wallet" is not shown here: an owner can do nothing
+        // about a cancelled Add sheet, and it read as a failure of theirs. It
+        // lives on the admin console. "Could use a nudge" is gone too — it now
+        // sits under the message box, on the button that acts on it.
         const line = div.querySelector("[data-gap]");
-        if (!counts.active && !gap.length) {
+        if (!counts.active && !counts.removed) {
           line.innerHTML = "No customers yet — they appear once someone adds your card and gets their first stamp.";
         } else {
-          line.innerHTML = (need ? "<strong>" + need + "</strong> could use a nudge" + (gap.length ? " · " : "") : "") +
-            (gap.length ? "Also issued: " + gap.join(" · ") : "");
+          line.innerHTML = counts.removed ? "Also issued: " + counts.removed + " deleted the card" : "";
         }
         if (!priced.length) {
           line.insertAdjacentHTML("afterend",
-            '<p class="muted" style="margin:2px 0 4px">Set an <strong>average spend per visit</strong> in Card → Rules to also see the money your stamps influenced.</p>');
+            '<p class="muted" style="margin:2px 0 4px">Set an average spend in Card → Rules to see the money your stamps influenced.</p>');
         }
       })();
       return div;
     }
 
-    // ---- Customers: weekly lapse cohorts, then a search box ----
-    // Nobody works a loyalty list card by card, so the list is no longer the
-    // page: the cohorts are. Buckets, counts and eligibility are all computed
-    // server-side (routes/dashboard.ts BUCKETS), so what you see and what the
-    // Nudge button sends to can never drift apart.
+    // ---- Notifications: one message, one button, one line saying who gets it ----
+    // This was three cohort rows, a card dropdown and two paragraphs explaining
+    // the limit. All of it said what one sentence under the button says, and the
+    // limit was never enforced here anyway — canNudge (src/winback.ts) decides,
+    // server-side, and reports back what actually went out. The groups came from
+    // that same rule, so the subtitle can't disagree with the button either.
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <h2 class="sec">Bring people back</h2>
-        <div class="account">
-          <label>Message</label>
+        <h2 class="sec">Notifications</h2>
+        <label>Message</label>
+        <div class="msgrow">
           <input data-msg maxlength="200">
-          <p class="muted" style="margin-top:6px" data-limits></p>
+          <button class="btn btn-dark" data-send>Push notification</button>
         </div>
-        <div class="custctl" style="margin-top:18px">
-          <div><label>Card</label><select data-card><option value="all">All cards</option></select></div>
-        </div>
-        <div data-buckets style="margin-top:14px"><p class="muted">Loading…</p></div>
+        <p class="muted" style="margin-top:6px" data-who></p>
         <details class="grp" style="margin-top:22px" data-find>
-          <summary><span class="gt">Find a card</span><span class="gh">look up one customer by their code</span></summary>
+          <summary><span class="gt">Find a customer</span></summary>
           <input data-search placeholder="🔍 Card code" autocomplete="off" style="text-transform:uppercase;margin-top:10px">
           <div data-results style="margin-top:10px"></div>
         </details>\`;
       const q = (s) => div.querySelector(s);
-      let all = [], buckets = [], limits = { perWeek: 1 };
+      let all = [], ready = 0, cooling = 0;
 
       /** Send. The server decides who is actually eligible and reports back. */
-      async function nudge(payload, what, expected) {
+      async function nudge(payload, expected) {
         const message = q("[data-msg]").value.trim();
         if (!message) return toast("Type a message first");
-        if (!expected) return toast("Nobody to nudge there");
+        if (!expected) return toast("Nobody to message right now");
         const { body } = await api("/nudge", { method: "POST", body: JSON.stringify(Object.assign({ message }, payload)) });
         if (!body.ok) return toast(body.error || "Failed");
         const s = body.skipped || {};
         const held = (s.rateLimited || 0) + (s.removed || 0);
-        toast("Nudged " + body.sent + " of " + body.total + (held ? " · " + held + " held back by the limits" : ""));
+        toast("Sent to " + body.sent + " of " + body.total + (held ? " · " + held + " held back by the limit" : ""));
         load();
       }
 
-      // One row per cohort. The counts are live sums over whoever is in the
-      // bucket right now — a card that ages from one week into the next takes
-      // its own nudge history with it, so nothing here is an average.
-      function renderBuckets() {
-        const host = q("[data-buckets]"); host.innerHTML = "";
-        if (!all.length && !buckets.some((b) => b.customers)) {
-          host.innerHTML = '<p class="muted">No customers yet — they appear once someone adds your card and gets their first stamp.</p>';
-          return;
-        }
-        for (const b of buckets) {
-          // Every group renders, including at zero. Hiding the empty ones made
-          // groups appear and vanish between visits, so there was no way to
-          // tell "nobody is on cooldown" from "that group doesn't exist".
-          const el = document.createElement("div");
-          el.className = "bucket";
-          const bits = [b.customers + (b.customers === 1 ? " customer" : " customers")];
-          el.innerHTML = \`
-            <div class="ctop">
-              <strong>\${b.label}</strong>
-              <span class="cprog">\${b.customers}</span>
-              \${b.nudgeable ? '<button class="btn btn-ghost cn" data-n' + (b.eligible ? "" : " disabled") + '>Nudge ' + b.eligible + '</button>' : ""}
-            </div>
-            <div class="cmeta">\${bits.join(" · ")} · \${b.hint}</div>\`;
-          const btn = el.querySelector("[data-n]");
-          if (btn && b.eligible) btn.onclick = () => nudge({ target: b.key }, b.label, b.eligible);
-          host.appendChild(el);
-        }
+      // The one thing an owner has to read before sending sits here, not as grey
+      // subtext under the box: it goes out exactly as typed, to real phones, and
+      // it cannot be taken back.
+      async function confirmSend(count, payload) {
+        const msg = q("[data-msg]").value.trim();
+        if (!msg) return toast("Type a message first");
+        const ok = await modal(
+          "Send to " + count + (count === 1 ? " customer?" : " customers?"),
+          "<p>It goes out exactly as written, to their phone, and cannot be taken back.</p>" +
+            '<p style="margin-top:8px"><strong>' + mdlEsc(msg) + "</strong></p>" +
+            '<p style="margin-top:8px">Anyone messaged in the last 7 days is skipped automatically.</p>',
+          "Send it",
+        );
+        if (ok) nudge(payload, count);
       }
 
       // Code and progress on one line, the story underneath.
@@ -2640,16 +2759,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const seen = x.lastDays === 0 ? "in today" : x.lastDays + " days ago";
         const why = x.blocked === "rate-limited" ? "messaged in the last 7 days"
           : x.blocked === "removed" ? "deleted the card" : "";
-        const meta = [x.cardName, "last " + seen].join(" · ");
         el.innerHTML = \`
           <div class="ctop">
             <strong>\${x.code}</strong>
             <span class="cprog">\${x.stamps}/\${x.target}</span>
-            \${x.canNudge ? '<button class="btn btn-ghost cn" data-n>Nudge</button>' : ""}
+            \${x.canNudge ? '<button class="btn btn-ghost cn" data-n>Message</button>' : ""}
           </div>
-          <div class="cmeta">\${meta}\${x.unanswered ? ' · <span class="warn">' + x.unanswered + ' unanswered</span>' : ""}\${why ? ' · <span class="warn">' + why + "</span>" : ""}</div>\`;
+          <div class="cmeta">last \${seen}\${why ? ' · <span class="warn">' + why + "</span>" : ""}</div>\`;
         const btn = el.querySelector("[data-n]");
-        if (btn) btn.onclick = () => nudge({ target: [x.serial] }, "customer", 1);
+        if (btn) btn.onclick = () => confirmSend(1, { target: [x.serial] });
         return el;
       }
 
@@ -2664,29 +2782,29 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       }
 
       async function load() {
-        const card = q("[data-card]").value;
-        const { body } = await api("/customers?cardId=" + encodeURIComponent(card));
+        // Always every card. The dropdown is gone with the one-card-per-merchant
+        // cap; the two legacy merchants running two cards message both at once,
+        // which is what a person at their shop expects anyway.
+        const { body } = await api("/customers?cardId=all");
         all = body.customers || [];
-        buckets = body.buckets || [];
-        limits = body.limits || limits;
-        q("[data-limits]").innerHTML = "Edit this before you send — it goes out exactly as written. " +
-          "Nothing is ever sent on its own, and there is one rule: each customer can be messaged once every 7 days.";
-        const sel = q("[data-card]");
-        if (!sel.dataset.filled) {
-          sel.insertAdjacentHTML("beforeend", (body.cards || []).map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join(""));
-          sel.dataset.filled = "1";
-        }
+        const buckets = body.buckets || [];
+        const find = (k) => (buckets.find((b) => b.key === k) || {});
+        ready = find("ready").eligible || 0;
+        cooling = find("cooling").customers || 0;
+        const bits = [];
+        bits.push(ready ? "Will be sent to <strong>" + ready + "</strong>" + (ready === 1 ? " customer" : " customers") : "Nobody to message right now");
+        if (cooling) bits.push(cooling + " already messaged this week");
+        q("[data-who]").innerHTML = bits.join(" · ");
+        q("[data-send]").disabled = !ready;
         // Pre-fill with the shop's stored starting message, so the box is never
         // empty. It is edited here and nowhere else now — the duplicate field in
         // Card → Rules was two places to set one message, on a page the owner
         // wasn't on when they sent it.
-        const src = card === "all" ? S.cards[0] : S.cards.find((c) => c.id === card);
-        if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (src && src.winbackMessage) || "";
-        renderBuckets();
+        if (!q("[data-msg]").dataset.touched) q("[data-msg]").value = (S.cards[0] || {}).winbackMessage || "";
         renderResults();
       }
       q("[data-msg]").oninput = (e) => { e.target.dataset.touched = "1"; };
-      q("[data-card]").onchange = load;
+      q("[data-send]").onclick = () => confirmSend(ready, { target: "ready" });
       q("[data-search]").oninput = renderResults;
       load();
       return div;
@@ -2715,47 +2833,39 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         // both until an operator removes the spare.
         host.innerHTML = "";
         host.appendChild(designPanel(S.cards[S.selCard]));
-        host.appendChild(sharePanel(S.cards[S.selCard]));
       }
       draw();
       return div;
     }
 
-    // ---- The two links for the selected card, at the very bottom ----
-    // You need these once, when you set the card up — so they sit under
-    // everything you actually come back to edit. They never change when the card
-    // does, which is the whole point of putting them beside it.
-    function sharePanel(c) {
-      const div = document.createElement("div");
-      div.innerHTML = \`
-        <h2 class="sec">Share this card</h2>
-        <p class="muted">Print the QR for your counter. Both links stay the same however you edit the card.</p>
-        <div class="sharelist" style="margin-top:10px">
-          <a href="/c/\${c.id}" target="_blank"><span>\${c.name} <span class="sub2">the sign-up link</span></span><span class="arr">open →</span></a>
-          <a href="/c/\${c.id}/qr" target="_blank"><span>\${c.name} QR <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
-        </div>\`;
-      return div;
-    }
-
-    // ---- Settings: the staff page, then your own login ----
-    // The old Access tab existed only because the PIN hung off each café row, so
-    // every card had its own PIN and its own stamper link. There is one counter,
-    // so there is one PIN — and the links belong beside the card they open.
+    // ---- Shop: every link you hand out, then the counter, then your login ----
+    // The links used to sit under the card designer, which put "print this for
+    // the counter" on the page you visit to change a colour. They are all
+    // set-up-once things, so they live together, split by who they are for.
     function accountPanel() {
       const div = document.createElement("div");
+      const c = S.cards[0] || {};
       div.innerHTML = \`
-        <h2 class="sec first">Staff page</h2>
-        <p class="muted">One PIN for your whole counter — it works on every card you run. Stored scrambled, so it can't be looked up, not even by us. If nobody remembers it, generate a new one.</p>
-        <!-- The card id MUST be in this link. Without it a bare /staff has to
-             guess which counter it is, and on a deployment with several
+        <h2 class="sec first">Share</h2>
+        <!-- The card id MUST be in the staff link. Without it a bare /staff has
+             to guess which counter it is, and on a deployment with several
              merchants the guess used to be "whoever owns the café named
              default" — a stranger. -->
-        <div class="sharelist" style="margin-top:10px">
-          <a href="/staff?c=\${(S.cards[0] || {}).id || ""}" target="_blank"><span>Staff stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
+        <div class="subsec">For staff</div>
+        <div class="sharelist">
+          <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Staff stamper <span class="sub2">they sign in with the PIN below</span></span><span class="arr">open →</span></a>
         </div>
-        <label style="margin-top:14px">Staff PIN</label>
+        <div class="subsec">For customers</div>
+        <div class="sharelist">
+          <a href="/c/\${c.id || ""}" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
+          <a href="/c/\${c.id || ""}/qr" target="_blank"><span>QR poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
+        </div>
+
+        <h2 class="sec">Staff stamper</h2>
+        <p class="muted">Staff use this tool to punch cards.\${info("One PIN covers your whole counter. It is stored scrambled, so nobody can look it up — not even us. Setting a new one signs every staff phone out.")}</p>
+        <label style="margin-top:14px" data-pinlabel>Staff PIN</label>
         <div class="copyrow" style="margin-top:6px">
-          <input data-pin placeholder="Set your own PIN (4–12 digits)" inputmode="numeric" autocomplete="off">
+          <input data-pin placeholder="4–12 digits" inputmode="numeric" autocomplete="off">
           <button class="btn btn-ghost" data-setpin>Set</button>
         </div>
         <button class="btn btn-ghost" style="margin-top:8px;width:auto;padding:10px 14px" data-newpin>Generate a new PIN</button>
@@ -2766,12 +2876,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <p style="font-weight:600;margin-bottom:6px">\${S.email}</p>
         <label style="margin-top:10px">Change password</label>
         <input data-cur type="password" placeholder="Current password" autocomplete="current-password">
-        <label class="eye"><input type="checkbox" data-eye="[data-cur]"> Show current password</label>
         <input data-new type="password" placeholder="New password (min 8)" autocomplete="new-password" style="margin-top:8px">
-        <label class="eye"><input type="checkbox" data-eye="[data-new]"> Show new password</label>
+        <label class="eye"><input type="checkbox" data-eye="[data-cur],[data-new]"> Show passwords</label>
         <button class="btn btn-dark" style="margin-top:10px" data-pwsave>Update password</button>
         <button class="btn btn-ghost" style="margin-top:20px" data-out>Log out</button>\`;
       wireEyes(div);
+      // No wireInfo here: renderPanel delegates from the panel this sits inside,
+      // and a second listener on an ancestor would fire on the same click and
+      // close what the first just opened.
+
+      // "Set" or "Reset" — an owner who already has a PIN is replacing one, and
+      // the button saying "Set" made that look like a first-time action they had
+      // somehow missed. The PIN itself is never sent back here: only its scrypt
+      // hash is stored, so all the server can say is whether one exists.
+      if (S.hasStaffPin) {
+        div.querySelector("[data-pinlabel]").textContent = "Reset staff PIN";
+        div.querySelector("[data-setpin]").textContent = "Reset";
+        div.querySelector("[data-pin]").placeholder = "New PIN (4–12 digits)";
+        div.querySelector("[data-newpin]").textContent = "Generate a new PIN instead";
+      }
 
       const pinOut = div.querySelector("[data-pinout]");
       // Shown once, right after it's set — there is no way back to it later.
@@ -2819,12 +2942,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       if (seg.scrollWidth > seg.clientWidth) on.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
     // ---- app shell: owner-scoped tabs ----
-    const S = { cards: [], email: "", tab: "customers", selCard: 0 };
+    const S = { cards: [], email: "", tab: "customers", selCard: 0, hasStaffPin: false };
 
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
       S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "customers";
+      S.hasStaffPin = !!body.hasStaffPin;
       // Three tabs, each one job: who your customers are and how it's going ·
       // what the card is · everything you set once. Home and Customers used to
       // be separate, which left a headline row on one page and the people it
@@ -2835,7 +2959,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <div class="seg" id="tabs" role="tablist">
           <button data-tab="customers" class="on">Customers</button>
           <button data-tab="card">Card</button>
-          <button data-tab="account">Settings</button>
+          <button data-tab="shop">Shop</button>
           <span class="thumb"></span>
         </div>
         <div id="panel"></div>\`;
@@ -2856,12 +2980,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     function renderPanel() {
       const panel = $("#panel"); panel.innerHTML = "";
       if (S.tab === "card") panel.appendChild(cardsPanel());
-      else if (S.tab === "account") panel.appendChild(accountPanel());
+      else if (S.tab === "shop") panel.appendChild(accountPanel());
       else {
         // The numbers, then the people they are about — one page, in that order.
         panel.appendChild(homePanel());
         panel.appendChild(customersPanel());
       }
+      wireInfo(panel);
     }
 
     // Re-seat every segmented thumb when the layout shifts (window resize) or the

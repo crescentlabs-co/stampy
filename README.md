@@ -19,7 +19,7 @@ customer's phone in seconds, with a lock-screen notification.
 |---|---|---|
 | Customer card | Apple Wallet / Google Wallet | Branded pass, stamp dots, QR barcode + typed card code. Added by scanning the counter QR — the landing page shows both wallet buttons. |
 | Staff stamper | `/staff` (web page, PIN-gated) | 📷 scan the customer's card → +1 stamp; typed-code fallback; redeem & reset; lock-screen nudge. |
-| Owner dashboard | `/dashboard` (email + password) | Four tabs: Home (customers, stamps, rewards), Customers (weekly lapse cohorts + nudging), Card (design, rules, links), Settings (staff PIN, your login). |
+| Owner dashboard | `/dashboard` (email + password) | Three tabs: Customers (the numbers, then the message you send), Card (shop name, rules, design), Shop (every link you hand out, the staff PIN, your login). |
 | Brain | This Node server + Postgres on Railway | Multi-merchant; issues signed passes, hosts Apple's pass web service, pushes updates via APNs. |
 
 **The model:** a **merchant** is the business (one per login). It runs one or more
@@ -76,7 +76,7 @@ card in the recent list.
 | `APNS_KEY_B64` / `APNS_KEY_ID` | APNs auth key `.p8` + its Key ID |
 | `GOOGLE_ISSUER_ID` | From the Google Wallet Business Console (Android cards) |
 | `GOOGLE_SERVICE_ACCOUNT_B64` | Produced by `pnpm prepare-google <key.json>` |
-| `STAFF_PIN` | Seeds the default café's PIN on first boot; the first owner to sign up inherits it, and changes it in Settings afterwards |
+| `STAFF_PIN` | Seeds the default café's PIN on first boot; the first owner to sign up inherits it, and changes it under Shop afterwards |
 | `SESSION_SECRET` | Any long random string — keeps dashboard logins valid across deploys |
 | `CAFE_NAME` / `CAFE_REWARD` / `STAMPS_TARGET` / `STAMPS_START` | Seed the default café on first boot (Kopi Corner / Free coffee / 10 / 2); edit in the dashboard afterwards |
 

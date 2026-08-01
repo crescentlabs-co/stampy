@@ -1662,10 +1662,11 @@ async function main() {
 
   // --- Dashboard IA: three tabs, each one job ---
   const dashIa = (await get("/dashboard")).body;
-  for (const tab of ["customers", "card", "account"]) {
+  for (const tab of ["customers", "card", "shop"]) {
     expect(dashIa.includes('data-tab="' + tab + '"'), `dashboard has the ${tab} tab`);
   }
   expect(!dashIa.includes('data-tab="home"'), "Home is folded into Customers, not its own tab");
+  expect(!dashIa.includes('data-tab="account"'), "Settings is now Shop — it holds the links and the counter, not just a login");
   expect(!dashIa.includes('data-wb="msg"'), "the win-back message left Card — it lives where you send it");
   expect(!dashIa.includes('data-tab="share"'), "the old Share tab is gone");
   // Access only existed because each café row carried its own PIN.
@@ -1793,6 +1794,12 @@ async function main() {
   });
   const rotOut = JSON.parse(await rot.text());
   expect(rot.status === 200 && /^\d{6}$/.test(rotOut.staffPin), "an empty PIN request mints a fresh 6-digit one");
+  // Shop says "Reset" rather than "Set" once a PIN exists. Whether one exists is
+  // all the server may say — the PIN is stored as a scrypt hash and cannot be
+  // read back, so overview must carry the boolean and never the value.
+  const pinOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  expect(pinOv.hasStaffPin === true, "overview reports that a staff PIN is set");
+  expect(!JSON.stringify(pinOv).includes(rotOut.staffPin), "...and never the PIN itself");
   const ownerRot = (await getOwnerByEmail("owner@test.my"))!;
   expect(verifyStaffPin(ownerRot, rotOut.staffPin), "the rotated PIN verifies");
   expect(!verifyStaffPin(ownerRot, "9876"), "the old PIN stops working");

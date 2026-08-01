@@ -11,6 +11,7 @@ import {
   dashboardPage,
   landingPage,
   marketingPage,
+  MODAL_JS,
   PALETTE_JS,
   resetPage,
   staffPage,
@@ -96,6 +97,19 @@ describe("staff page is a gate, not a hidden panel", () => {
     expect(signedIn).toContain("Confirm — undo?");
   });
 
+  // A repeat stamp used to mean scanning the card AGAIN, which on the camera
+  // path meant reopening it and lining the phone up for something staff had
+  // already decided. It is a popup now — ours, built in the page, so it is not
+  // the browser dialog the test above forbids and cannot be suppressed.
+  it("asks about a repeat stamp in a popup rather than a second scan", () => {
+    const signedIn = staffPage(true);
+    expect(signedIn).toContain("Stamp it again?");
+    expect(signedIn).toContain("Add another");
+    expect(signedIn).toContain("force: true");
+    expect(signedIn).not.toContain("forceArmed");
+    expect(signedIn).not.toContain("scan or tap again");
+  });
+
   // A card at its target is what the customer is standing there waiting for, so
   // it gets its own always-visible section rather than a place in a list of 20.
   it("surfaces reward-ready cards above the searchable list", () => {
@@ -145,10 +159,14 @@ describe("dashboard information architecture", () => {
   const html = dashboardPage(true, "");
 
   it("has one tab per job", () => {
-    for (const tab of ["customers", "card", "account"]) {
+    for (const tab of ["customers", "card", "shop"]) {
       expect(html).toContain(`data-tab="${tab}"`);
     }
     expect(html).not.toContain('data-tab="share"');
+    // Renamed from "account": the tab holds the shop's links and its counter,
+    // not just a login, and the key follows the label so the code reads the way
+    // the screen does.
+    expect(html).not.toContain('data-tab="account"');
   });
 
   // Home was folded into Customers: with one card per merchant its headline row
@@ -161,11 +179,56 @@ describe("dashboard information architecture", () => {
 
   // The Access tab existed only because the PIN hung off each café row, giving
   // an owner with two cards two PINs and two stamper links for one counter.
-  it("has no Access tab — one PIN in Settings, links under the card", () => {
+  it("has no Access tab — one PIN in Shop, with every link you hand out", () => {
     expect(html).not.toContain('data-tab="access"');
-    expect(html).toContain(">Settings<");
+    expect(html).toContain(">Shop<");
     expect(html).toContain("/staff-pin");
-    expect(html).toContain("Share this card");
+  });
+
+  // The links were under the card designer, which put "print this for the
+  // counter" on the page you open to change a colour. They are set-up-once
+  // things, so they sit together in Shop, split by who they are for.
+  it("keeps every shareable link in Shop, grouped by audience", () => {
+    expect(html).toContain(">Share<");
+    expect(html).toContain(">For staff<");
+    expect(html).toContain(">For customers<");
+    expect(html).not.toContain("Share this card");
+    // The card id must stay on the staff link: a bare /staff once resolved to
+    // whoever owned the café literally named "default" — a stranger's counter.
+    expect(html).toContain('href="/staff?c=');
+  });
+
+  // Subtext nobody reads became a popup on the action it describes, and an ⓘ
+  // beside the field it explains. Tappable, not hover — this is used on a phone.
+  it("moves what matters into the action and the rest behind an info button", () => {
+    expect(html).toContain("Update the card everywhere?");
+    expect(html).toContain("Change the rules?");
+    expect(html).toContain("function info(text)");
+    expect(html).toContain("wireInfo(panel)");
+  });
+
+  // Two fields, one checkbox: they were two adjacent boxes doing the same job.
+  it("reveals both password fields from one toggle", () => {
+    expect(html).toContain('data-eye="[data-cur],[data-new]"');
+    expect(html).not.toContain("Show current password");
+  });
+
+  // A card name and a shop name were indistinguishable, and the card's only
+  // visible use is the programme name on an Android card — which is the shop.
+  it("has one name for the shop and no separate card name", () => {
+    expect(html).not.toContain('data-f="name"');
+    expect(html).toContain('data-f="shopName"');
+  });
+
+  // Three cohort rows and a card dropdown said what one line under the button
+  // says. The limit was never enforced here anyway — canNudge decides.
+  it("sends notifications from one box with one button", () => {
+    expect(html).toContain(">Notifications<");
+    expect(html).toContain("Push notification");
+    expect(html).toContain("already messaged this week");
+    expect(html).not.toContain("data-buckets");
+    expect(html).not.toContain("Bring people back");
+    expect(html).toContain("Find a customer");
   });
 
   it("keeps the staff PIN out of the card designer", () => {
@@ -227,6 +290,38 @@ describe("dashboard information architecture", () => {
   it("never asks for a PIN per card", () => {
     expect(html).not.toContain("rotate-pin");
     expect(html).not.toContain("Staff PIN: \" + r.staffPin");
+  });
+});
+
+/**
+ * The ⓘ markup is built by string concatenation and dropped into innerHTML, so
+ * an unescaped quote in a hint would break out of the attribute and swallow the
+ * rest of the field. Evaluated from the shipped source, like the palette below.
+ */
+describe("info hints", () => {
+  const M = new Function(MODAL_JS + "; return { info, mdlEsc };")() as {
+    info: (t: string) => string;
+    mdlEsc: (s: unknown) => string;
+  };
+
+  it("escapes a hint that contains quotes or markup", () => {
+    const out = M.info('a "quoted" <b>bold</b> hint');
+    expect(out).toContain("&quot;quoted&quot;");
+    expect(out).toContain("&lt;b&gt;");
+    // The only tag in the result is the button itself.
+    expect(out.match(/</g)).toHaveLength(2); // <button …> and </button>
+  });
+
+  it("renders a button, not a hover-only tooltip", () => {
+    const out = M.info("plain");
+    expect(out).toContain('type="button"');
+    expect(out).toContain('data-info="plain"');
+    expect(out).not.toContain("title=");
+  });
+
+  it("survives a null or missing hint rather than printing undefined", () => {
+    expect(M.mdlEsc(null)).toBe("");
+    expect(M.mdlEsc(undefined)).toBe("");
   });
 });
 
