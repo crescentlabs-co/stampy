@@ -1608,6 +1608,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .swrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .swrow .sw { width: 30px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
     .swrow .btn { width: auto; padding: 8px 12px; font-size: .85rem; margin-left: auto; }
+    /* --- swap any colour into any role --- */
+    .roles { margin: 6px 0 10px; }
+    .rolerow { display: flex; gap: 6px; flex-wrap: wrap; }
+    .rolebtn { display: flex; align-items: center; gap: 6px; width: auto; padding: 6px 10px; font-size: .82rem;
+               border: 1px solid var(--field-border); border-radius: 999px; background: var(--surface);
+               color: var(--ink); cursor: pointer; }
+    .rolebtn .dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+    .rolebtn.on { border-color: var(--accent); background: var(--ghost-bg); font-weight: 600; }
+    .chiprow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .chip { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+            padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+    .chip:hover { border-color: var(--accent); }
+    .chip.on { border-color: var(--accent); }
     .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
     .emojirow input { flex: 1; font-size: 1.15rem; }
     .emojirow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
@@ -1852,13 +1865,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
-        <div class="logorow" style="margin-top:8px">
-          <label class="btn btn-ghost" style="margin:0">Colours from another image<input data-brandpic type="file" accept="image/*"></label>
-        </div>
-        <p class="muted" style="margin-top:6px">A shopfront, your packaging, a menu — anything with your colours in it. It is read on this device and never uploaded or shown on the card.</p>
         <div class="swatches" data-swatches style="display:none"></div>
 
         <label class="sec" style="margin-top:16px">Colours</label>
+        <p class="muted" style="margin-top:-2px">Tap a row, then tap a colour to use it there — no need to match a shade by hand. Or open the square for the full picker.</p>
+        <div class="roles" data-roles></div>
         <div class="colors">
           <label>Card<input data-f="bg" type="color" value="\${c.bg}"></label>
           <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
@@ -1866,7 +1877,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <label>Stamps<input data-f="accent" type="color" value="\${c.accent}"></label>
           <label>Band<input data-f="bandColor" type="color" value="\${c.bandColor}"></label>
         </div>
-        <p class="muted" style="margin-top:6px">The <strong>band</strong> is the strip across the middle that the stamps sit on — give it its own colour so it stands apart from the card. "Stamps" is what an earned stamp fills in with.</p>
+        <p class="muted" style="margin-top:6px">The <strong>band</strong> is the strip across the middle that the stamps sit on. "Stamps" is what an earned stamp fills in with.</p>
 
         <label style="margin-top:12px">Band texture</label>
         <div class="bantpl" data-bandtex></div>
@@ -1916,6 +1927,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // Big stamps that fill in (like a real punch card), rendered in the browser
       // and stored server-side. Apple uses them as the strip image, Google as the
       // hero image. Emoji glyphs bake in this device's emoji look.
+      // Declared up here, not beside the texture picker: drawStampStrip reads
+      // them and renderPreview calls it during setup, so declaring these further
+      // down would leave them in the dead zone and throw.
+      let bandTexture = c.bandTexture || "gradient";
+      /** The band at any size, from whatever the colour picker currently says. */
+      function bandPng(style, w, h) {
+        const a = f("bandColor").value;
+        return drawBanner(style, a, shade(a, 0.35), w, h);
+      }
       let stampStyle = c.stampStyle || "";  // '' = plain dots, 'custom' = uploaded
       let customStampUrl = null;             // dataURL of an uploaded stamp icon
       const stampImg = new Image();          // holds that uploaded icon for drawing
@@ -1977,16 +1997,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const W = 750, H = 246, M = 40;
         const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
         const x = cv.getContext("2d");
-        // Card colour first so there is never a transparent gap, then the banner
-        // photo cover-fitted on top of it, then the stamps over that. This is
-        // what makes an uploaded banner actually reach the pass: Apple has ONE
-        // strip slot, so the grid and the photo have to arrive as one image.
-        x.fillStyle = f("bg").value; x.fillRect(0, 0, W, H);
-        if (bannerReady && bannerImg.naturalWidth > 0) {
-          const k = Math.max(W / bannerImg.naturalWidth, H / bannerImg.naturalHeight); // cover
-          const bw = bannerImg.naturalWidth * k, bh = bannerImg.naturalHeight * k;
-          x.drawImage(bannerImg, (W - bw) / 2, (H - bh) / 2, bw, bh);
-        }
+        // The band, drawn from what the pickers say RIGHT NOW — then the stamps
+        // on top. Apple has one strip slot, so the band and the grid have to
+        // arrive as a single image.
+        //
+        // This used to composite the stored banner PNG instead, which meant the
+        // band colour did nothing until it had been saved, re-uploaded and
+        // re-downloaded: you dragged the picker and the card never moved. Now
+        // the picker is the source and the stored PNG is only the copy the
+        // wallets fetch.
+        const bandHex = f("bandColor").value;
+        paintBand(x, bandTexture, bandHex, shade(bandHex, 0.35), W, H);
         const accent = f("accent").value;
         const cols = stampGridCols(target), rows = target > 1 ? 2 : 1;
         const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
@@ -2092,12 +2113,26 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           img.onload = async () => {
             URL.revokeObjectURL(img.src);
             const canvas = document.createElement("canvas");
-            canvas.width = w; canvas.height = h;
-            const ctx = canvas.getContext("2d");
-            const s = fit === "contain"
-              ? Math.min(w / img.width, h / img.height)
-              : Math.max(w / img.width, h / img.height);
-            ctx.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
+            const ctx = canvas.getContext.bind(canvas);
+            if (fit === "keep") {
+              // Keep the image's OWN shape and only cap the size. The logo needs
+              // this: padding a square mark into a wide frame made the wallets
+              // scale that whole frame down into their logo slot, leaving the
+              // mark itself a fraction of the space it should have had. No
+              // different upload could fix it, which is what made it feel like
+              // there was a spec nobody had been told.
+              const s = Math.min(w / img.width, h / img.height, 1);
+              const dw = Math.max(1, Math.round(img.width * s));
+              const dh = Math.max(1, Math.round(img.height * s));
+              canvas.width = dw; canvas.height = dh;
+              ctx("2d").drawImage(img, 0, 0, dw, dh);
+            } else {
+              canvas.width = w; canvas.height = h;
+              const s = fit === "contain"
+                ? Math.min(w / img.width, h / img.height)
+                : Math.max(w / img.width, h / img.height);
+              ctx("2d").drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
+            }
             const dataUrl = canvas.toDataURL("image/png");
             if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
             const { body } = await api("/card/" + c.id + "/" + kind, {
@@ -2110,14 +2145,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           img.src = URL.createObjectURL(file);
         };
       }
-      // 480×150 is Apple's 160×50pt logo band at @3x. Contained, not cropped, so
-      // a wide wordmark arrives whole with transparent padding around it.
+      // Capped at Apple's 160×50pt logo band at @3x, but NOT padded to it: the
+      // image keeps its own shape, so a square mark stays square and fills the
+      // wallet's logo slot, and a wide wordmark stays wide. Whichever they have
+      // is the right shape to upload.
       wireUpload("[data-logo]", "logo", 480, 150, (url) => {
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").style.display = "";
-        readPalette(url); // the logo is the first thing to take colours from
-      }, "contain");
+        readPalette(url); // the logo is where the colours come from
+      }, "keep");
       // Removing the logo hides it here too, because the pass drops the image
       // entirely with no upload and shows the shop name alone — the preview has
       // to agree, or the owner is designing against something they won't get.
@@ -2130,11 +2167,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         toast("Logo removed");
       };
 
-      // ---- Colours out of an image ----
-      // Read on this device and thrown away: the brand photo is a colour source,
-      // never something we store or show, which is why it can be any picture at
-      // all. Nothing is applied until the owner taps the button — an upload that
-      // silently repainted their card would be worse than no feature.
+      // ---- Colours out of the logo ----
+      // Read on this device: the palette is pulled from the logo the owner is
+      // already uploading, so there is no second image to explain. Nothing is
+      // applied until they tap the button — an upload that silently repainted
+      // their card would be worse than no feature at all.
       let found = null;
       function readPalette(dataUrl) {
         const im = new Image();
@@ -2151,28 +2188,28 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           catch (e) { return; } // tainted canvas — nothing to offer
           found = paletteFrom(data);
           showSwatches();
+          drawRoles();
         };
         im.src = dataUrl;
       }
       function showSwatches() {
         const host = q("[data-swatches]");
+        host.style.display = "";
         if (!found) {
-          host.style.display = "";
-          host.innerHTML = '<p class="muted" style="margin:0">No clear colours in that image — try one with more of your brand in it, or set the colours below yourself.</p>';
+          host.innerHTML = '<p class="muted" style="margin:0">No clear colours in that logo — set the colours below yourself.</p>';
           return;
         }
-        host.style.display = "";
         const chip = (hex, name) => '<span class="sw" title="' + name + '" style="background:' + hex + '"></span>';
         host.innerHTML =
           '<div class="swrow">' + chip(found.bg, "Card") + chip(found.band, "Band") +
           chip(found.accent, "Stamps") + chip(found.label, "Labels") + chip(found.fg, "Text") +
           '<button class="btn btn-ghost" data-a="usepal">Use these colours</button></div>' +
-          '<p class="muted" style="margin:6px 0 0">Text is chosen for readability rather than taken from the image, so it can always be read on the card.</p>';
+          '<p class="muted" style="margin:6px 0 0">Text is chosen for readability rather than taken from the logo, so it can always be read on the card.</p>';
         host.querySelector("[data-a=usepal]").onclick = async () => {
           f("bg").value = found.bg; f("fg").value = found.fg;
           f("label").value = found.label; f("accent").value = found.accent;
           f("bandColor").value = found.band;
-          renderPreview(); drawTextureRow();
+          renderPreview(); drawTextureRow(); drawRoles();
           await save({
             bg: found.bg, fg: found.fg, label: found.label,
             accent: found.accent, bandColor: found.band,
@@ -2180,9 +2217,62 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           await saveBanner(bandPng(bandTexture, 750, 246));
         };
       }
-      // Any image, read locally. No kind → wireUpload hands back the data URL
-      // and nothing is posted.
-      wireUpload("[data-brandpic]", null, 512, 512, readPalette, "contain");
+
+      // ---- Swap any colour into any role ----
+      // Matching a shade by hand in a colour picker is the fiddliest thing on
+      // this page, and it is never what the owner wants: they want the black
+      // that is already in their logo, on the card instead of behind the stamps.
+      // So every colour in play is offered for every role. The neutrals are here
+      // because "make the card black" is the most common ask of all and no logo
+      // reliably contains a usable one.
+      const NEUTRALS = ["#111111", "#2b2b2b", "#6e6e68", "#f4f1ea", "#ffffff"];
+      const ROLES = [
+        { k: "bg", name: "Card" }, { k: "bandColor", name: "Band" },
+        { k: "accent", name: "Stamps" }, { k: "label", name: "Labels" },
+        { k: "fg", name: "Text" },
+      ];
+      let activeRole = "bg";
+      const rolesHost = q("[data-roles]");
+      function paletteChips() {
+        const seen = {}, out = [];
+        const add = (hex) => {
+          const h = String(hex || "").toLowerCase();
+          if (!/^#[0-9a-f]{6}$/.test(h) || seen[h]) return;
+          seen[h] = 1; out.push(h);
+        };
+        if (found) [found.bg, found.band, found.accent, found.label].forEach(add);
+        ROLES.forEach((r) => add(f(r.k).value));
+        NEUTRALS.forEach(add);
+        return out;
+      }
+      function drawRoles() {
+        rolesHost.innerHTML = "";
+        const tabs = document.createElement("div"); tabs.className = "rolerow";
+        for (const r of ROLES) {
+          const b = document.createElement("button");
+          b.className = "rolebtn" + (r.k === activeRole ? " on" : "");
+          b.innerHTML = '<span class="dot" style="background:' + f(r.k).value + '"></span>' + r.name;
+          b.onclick = () => { activeRole = r.k; drawRoles(); };
+          tabs.appendChild(b);
+        }
+        rolesHost.appendChild(tabs);
+        const chips = document.createElement("div"); chips.className = "chiprow";
+        for (const hex of paletteChips()) {
+          const ch = document.createElement("button");
+          ch.className = "chip" + (hex === f(activeRole).value.toLowerCase() ? " on" : "");
+          ch.style.background = hex; ch.title = hex;
+          ch.onclick = () => {
+            f(activeRole).value = hex;
+            // Text is the one thing never chosen by eye — swapping the card
+            // colour would otherwise quietly leave unreadable text behind it.
+            if (activeRole === "bg") f("fg").value = pickTextColor(hex);
+            renderPreview(); drawTextureRow(); drawRoles();
+          };
+          chips.appendChild(ch);
+        }
+        rolesHost.appendChild(chips);
+      }
+      drawRoles();
 
       // The band is stored exactly where the uploaded banner photo used to be, so
       // nothing downstream changes: Apple composites it behind the stamps, Google
@@ -2203,9 +2293,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
         return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
       }
+      /** The band as a data URL, for the texture swatches and the stored PNG. */
       function drawBanner(style, c1, c2, w, h) {
         const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-        const x = cv.getContext("2d");
+        paintBand(cv.getContext("2d"), style, c1, c2, w, h);
+        return cv.toDataURL("image/png");
+      }
+      /**
+       * The same band painted straight onto a context. drawStampStrip needs it
+       * synchronously — going via an Image and a data URL would not have decoded
+       * by the time the stamps are drawn on top, so the band would simply be
+       * missing from the strip.
+       */
+      function paintBand(x, style, c1, c2, w, h) {
         if (style === "flat") {
           x.fillStyle = c1; x.fillRect(0, 0, w, h);
         } else if (style === "diagonal") {
@@ -2224,7 +2324,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, c1); g.addColorStop(1, c2);
           x.fillStyle = g; x.fillRect(0, 0, w, h);
         }
-        return cv.toDataURL("image/png");
       }
       // ---- The band: the strip the stamps sit on, in its own colour ----
       // It is still stored as the banner PNG, so Google's hero image and Apple's
@@ -2237,12 +2336,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         { name: "Diagonal", style: "diagonal" },
         { name: "Waves", style: "waves" },
       ];
-      let bandTexture = c.bandTexture || "gradient";
-      /** The band at any size, from whatever the colour picker currently says. */
-      function bandPng(style, w, h) {
-        const a = f("bandColor").value;
-        return drawBanner(style, a, shade(a, 0.35), w, h);
-      }
       const btpl = q("[data-bandtex]");
       function drawTextureRow() {
         btpl.innerHTML = "";

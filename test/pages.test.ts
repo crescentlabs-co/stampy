@@ -177,8 +177,37 @@ describe("dashboard information architecture", () => {
   it("has no themes or vertical templates left to guess with", () => {
     expect(html).not.toContain("data-presets");
     expect(html).not.toContain("data-vtpl");
-    expect(html).toContain("data-brandpic");
     expect(html).toContain("Use these colours");
+  });
+
+  // Colours come from the logo they are uploading anyway — a second "brand
+  // photo" upload was one more thing to explain for the same result.
+  it("takes its palette from the logo, with no second image to upload", () => {
+    expect(html).not.toContain("data-brandpic");
+    expect(html).toContain("readPalette(url)");
+  });
+
+  // Matching a shade by hand in a colour picker is the fiddliest thing on the
+  // page, and never what the owner wants: they want a colour already in play,
+  // just somewhere else.
+  it("lets any colour be swapped into any role", () => {
+    expect(html).toContain("data-roles");
+    expect(html).toContain("activeRole");
+    expect(html).toContain("NEUTRALS");
+  });
+
+  // The band is drawn from the picker, not from the stored PNG — otherwise
+  // dragging the colour changes nothing until it has been round-tripped.
+  it("paints the band from the live picker value", () => {
+    expect(html).toContain("paintBand(x, bandTexture");
+    expect(html).not.toContain("bannerReady && bannerImg.naturalWidth");
+  });
+
+  // Padding a square logo into a wide frame made the wallets shrink the frame,
+  // and the mark with it.
+  it("keeps an uploaded logo's own shape", () => {
+    expect(html).toContain('fit === "keep"');
+    expect(html).toContain('}, "keep");');
   });
 
   it("builds the band from a colour and a texture, not an uploaded photo", () => {
