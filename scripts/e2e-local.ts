@@ -26,7 +26,7 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@card.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, reissuePass, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -483,6 +483,39 @@ async function main() {
   expect((await get(posterQrUrl)).status === 200, "the link inside the poster actually resolves");
   expect((await get("/c/no-such-card/poster")).status === 404, "a poster for a card that isn't there 404s");
   await updateCard("default", { signup_message: "" });
+
+  // --- The sign-up page is the shop's, not the card row's ---
+  // cards.name has no field in the dashboard any more, so it goes stale
+  // silently. A shop that renamed was still introducing itself to its own
+  // customers as whatever the card was called the day it was created.
+  await updateCard("default", { name: "Superhuman Loyalty Card" });
+  const branded = await get("/c/default");
+  expect(!branded.body.includes("Superhuman Loyalty Card"),
+    "the sign-up page never shows the internal card name");
+  expect(branded.body.includes("Kopi Corner"), "...it shows the shop's name");
+  expect(branded.body.includes("lhero"), "the sign-up page is branded, not a generic white page");
+
+  // --- Deleting the card and adding it again gives you TODAY's card ---
+  // Reusing the pass row is deliberate (the wallets key on the serial, so a new
+  // row would strand the customer's stamps on a card they no longer hold), but
+  // it was handed back with the ruleset it was issued under. Delete, re-scan,
+  // and you got the identical old reward and target back — which reads as the
+  // sign-up being broken, and is what an owner testing a change actually hits.
+  const reissueCard = await addLegacyCard("owner@test.my", "Reissue test");
+  await updateCard(reissueCard, { reward: "Free pastry", stamps_target: 10 });
+  const reissued = await mk("apple", undefined, reissueCard);
+  await getPool().query(`UPDATE passes SET stamp_count = 9 WHERE serial = $1`, [reissued.serial]);
+  await updateCard(reissueCard, { reward: "Free coffee", stamps_target: 6 });
+  await reissuePass(reissued.serial);
+  const back = (await getPool().query<{ reward: string; stamps_target: number; stamp_count: number; serial: string }>(
+    `SELECT reward, stamps_target, stamp_count, serial FROM passes WHERE serial = $1`, [reissued.serial],
+  )).rows[0]!;
+  expect(back.reward === "Free coffee", "re-adding serves today's reward, not the one it was issued with");
+  expect(back.stamps_target === 6, "...and today's target");
+  expect(back.stamp_count === 6, "...with their stamps kept, clamped so nobody sits above their own goal");
+  expect(back.serial === reissued.serial, "the serial NEVER changes — it is inside the card on their phone");
+  // Nothing to do is not an error: an unchanged card must survive a re-add.
+  expect(await reissuePass(reissued.serial) === null, "a card already on today's rules is left alone");
 
   // --- Self-serve branding: colours (hex↔rgb boundary) + logo upload ---
   const ov3 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);

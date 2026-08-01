@@ -106,7 +106,12 @@ export function buildPassJson(
     passTypeIdentifier: config.passTypeId,
     teamIdentifier: config.teamId,
     organizationName: business,
-    description: `${card.name} loyalty card`,
+    // The SHOP's name, never the card's. Apple shows this on the Add sheet and
+    // again in the pass's info panel, and `cards.name` is an internal label the
+    // owner has no field for any more — a shop that renamed was still being
+    // introduced to its own customers by whatever the card was called on the day
+    // it was created.
+    description: `${business} loyalty card`,
     serialNumber: row.serial,
     webServiceURL: `${config.baseUrl}/wallet`,
     authenticationToken: row.auth_token,

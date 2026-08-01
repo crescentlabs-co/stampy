@@ -44,7 +44,10 @@ export function buildLoyaltyClass(
   const cls: Record<string, unknown> = {
     id: classId(card),
     issuerName: business,
-    programName: card.name,
+    // The shop's name, not the card's — same reason as Apple's description
+    // (src/passModel.ts). `cards.name` is an internal label with no field in the
+    // dashboard, so it can be years stale by the time a customer reads it.
+    programName: `${business} loyalty card`,
     programLogo: {
       sourceUri: { uri: logoUrl(card, logoVersion) },
       contentDescription: {
@@ -86,7 +89,7 @@ export function buildLoyaltyClass(
   if (bannerVersion) {
     cls.heroImage = {
       sourceUri: { uri: artUrl(card, "banner", bannerVersion) },
-      contentDescription: { defaultValue: { language: "en", value: `${card.name} banner` } },
+      contentDescription: { defaultValue: { language: "en", value: `${business} banner` } },
     };
   }
   // Google has no console UI for this — the callback URL is only ever set by
@@ -154,7 +157,7 @@ export function buildLoyaltyPatch(
       ? {
           sourceUri: { uri: artUrl(card, "banner", bannerVersion) },
           contentDescription: {
-            defaultValue: { language: "en", value: `${card.name} banner` },
+            defaultValue: { language: "en", value: `${business} banner` },
           },
         }
       : null,

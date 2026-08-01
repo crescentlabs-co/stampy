@@ -235,13 +235,16 @@ describe("buildPassJson", () => {
     expect(fh.changeMessage.replace("%@", fh.value)).toBe("Reward ready — your free coffee is waiting 🎉");
   });
 
-  // The shop's name and the card's name are two different things the moment a
-  // merchant runs more than one card. The pass is issued BY the shop.
-  it("puts the business on the issuer fields and the card on the programme", () => {
+  // `cards.name` is an internal label with no field in the dashboard, so it can
+  // be years stale. Apple shows `description` on the Add sheet and again in the
+  // pass's info panel, where a shop that had renamed was still introducing
+  // itself to its own customers as whatever the card was called on day one.
+  it("names the pass after the shop, never after the card row", () => {
     const p = buildPassJson(row(), card({ name: "Pastry card" }), "Kopi Corner") as any;
     expect(p.organizationName).toBe("Kopi Corner");
     expect(p.logoText).toBe("Kopi Corner");
-    expect(p.description).toContain("Pastry card");
+    expect(p.description).toBe("Kopi Corner loyalty card");
+    expect(p.description).not.toContain("Pastry card");
   });
 
   it("falls back to the card's name when there is no business yet", () => {

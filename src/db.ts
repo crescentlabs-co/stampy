@@ -2134,6 +2134,38 @@ export async function redeemPass(serial: string): Promise<PassRow | null> {
   return res.rows[0] ?? null;
 }
 
+/**
+ * Bring a pass that is being RE-ISSUED onto today's reward and target.
+ *
+ * A pass snapshots its ruleset when it is created, and that is right while it
+ * sits in a wallet: a promise already made shouldn't change under the customer.
+ * But re-enrolling is the customer explicitly asking for the card again — they
+ * deleted it and scanned the poster, or tapped Add a second time — and handing
+ * them a card advertising a reward the shop stopped offering is worse than
+ * moving them on. Delete-and-re-add otherwise returned the identical old card,
+ * which reads as the site being broken.
+ *
+ * Their stamps are kept, clamped to the new target: a lower target must not
+ * leave someone sitting above their own goal.
+ */
+export async function reissuePass(serial: string): Promise<PassRow | null> {
+  const res = await getPool().query<PassRow>(
+    `UPDATE passes p
+        SET stamps_target = c.stamps_target,
+            reward        = c.reward,
+            stamp_count   = LEAST(p.stamp_count, c.stamps_target),
+            updated_at    = now()
+       FROM cards c
+      WHERE p.serial = $1 AND c.id = p.card_id
+        AND (p.stamps_target <> c.stamps_target OR p.reward <> c.reward
+             OR p.stamp_count > c.stamps_target)
+      RETURNING p.*`,
+    [serial],
+  );
+  // No row means nothing needed changing — the caller keeps what it had.
+  return res.rows[0] ?? null;
+}
+
 /** Sets the free-form message (win-back nudge) and bumps updated_at. */
 export async function setMessage(serial: string, message: string): Promise<PassRow | null> {
   const res = await getPool().query<PassRow>(

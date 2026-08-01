@@ -44,6 +44,7 @@ import {
   currentSlug,
   merchantForCard,
   passForCustomer,
+  reissuePass,
   resolveCustomer,
   type CardRow,
   type CustomerRecord,
@@ -126,7 +127,16 @@ async function landing(
     metadata: { ua, bot, ref: (req.get("referer") ?? "").slice(0, 200) },
   }).catch((err) => console.error("[join_view] not logged:", err));
 
-  res.type("html").send(landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId));
+  // The shop's own name and mark. Both are read fresh on every request, so an
+  // owner who uploads a logo sees it on this page (and on the poster) straight
+  // away — there is nothing to regenerate.
+  const [business, logoVersion] = await Promise.all([
+    businessNameForCard(card),
+    cafeLogoVersion(card.id).catch(() => 0),
+  ]);
+  res.type("html").send(
+    landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId, business, logoVersion),
+  );
 }
 
 async function newPass(card: CardRow, platform: Platform, customerId: string | null, source: string) {
@@ -192,7 +202,9 @@ async function reuseOrCreatePass(
     const known = readEnrollCookie(req, card.id);
     if (known) {
       const existing = await getPass(known);
-      if (existing && existing.card_id === card.id && existing.platform === platform) return existing;
+      if (existing && existing.card_id === card.id && existing.platform === platform) {
+        return (await reissuePass(existing.serial)) ?? existing;
+      }
     }
     const row = await newPass(card, platform, null, source);
     setEnrollCookie(res, card.id, row.serial);
@@ -201,7 +213,12 @@ async function reuseOrCreatePass(
 
   const customer = await identifyCustomer(req, res, merchant, card);
   const existing = await passForCustomer(customer.id, card.id, platform);
-  if (existing) return existing;
+  // Reusing the row is deliberate — the wallets key a pass on its serial, so a
+  // new one would leave the customer holding two cards and their stamps on the
+  // wrong one. But it must come back on TODAY's reward and target: deleting the
+  // card and scanning again handed back the identical old card, which reads as
+  // the sign-up being broken. Stamps are kept either way.
+  if (existing) return (await reissuePass(existing.serial)) ?? existing;
   return newPass(card, platform, customer.id, source);
 }
 

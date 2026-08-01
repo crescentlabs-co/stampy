@@ -434,13 +434,46 @@ export function signupLine(card: Pick<CardRow, "signup_message" | "stamps_target
     : `Collect ${card.stamps_target} stamps, get a ${esc(card.reward.toLowerCase())}.`;
 }
 
+/**
+ * The page a customer lands on after scanning the poster.
+ *
+ * Branded from the card itself — the shop's logo where a generic ☕️ used to be,
+ * and the shop's own colours behind the Add buttons. It is the same shop the
+ * poster showed them ten seconds ago, and a plain white page with a coffee
+ * emoji reads as somebody else's site.
+ *
+ * It is named after the SHOP, never `cards.name`: that column is an internal
+ * label with no field in the dashboard, so a shop that renamed was still
+ * introducing itself to its own customers as whatever the card was called on
+ * the day it was made.
+ */
 export function landingPage(
   card: CardRow,
   appleReady: boolean,
   googleReady: boolean,
   cardId: string,
+  /** The shop's name. Defaults to the card's, which is right until a merchant runs two. */
+  business = card.name,
+  /** 0 = no uploaded logo, so the page falls back to the generic mark. */
+  logoVersion = 0,
 ): string {
   const base = cardId === DEFAULT_CARD_ID ? "" : `/c/${cardId}`;
+  const bg = rgbToHex(card.background_color);
+  const accent = rgbToHex(card.accent_color);
+  const onBg = contrastText(bg);
+  // A tinted header rather than a whole page in the brand colour: the Add
+  // buttons and the legal line still have to be readable, and Apple's own sheet
+  // is white — a full-bleed dark page makes the handover feel like a jump.
+  const brandCss = /* css */ `
+    .lhero { background: ${bg}; color: ${onBg}; margin: -20px -20px 18px; padding: 26px 20px 22px;
+             border-radius: 0 0 22px 22px; text-align: center; }
+    .lhero h1 { color: ${onBg}; margin: 0; font-size: 1.6rem; }
+    .lhero img { width: 76px; height: 76px; object-fit: contain; margin-bottom: 10px; }
+    .lhero .emoji { font-size: 3rem; line-height: 1; margin-bottom: 6px; }
+    .lhero .sub { color: ${onBg}; opacity: .85; margin: 8px 0 0; }
+    .card { overflow: hidden; }
+    .wbtn.btn-dark { background: ${accent}; border-color: ${accent}; color: ${contrastText(accent)}; }
+  `;
   const buttons = [
     appleReady
       ? `<a class="btn btn-dark wbtn" data-w="apple" href="${base}/enroll">&#63743; Add to Apple Wallet</a>`
@@ -467,12 +500,18 @@ export function landingPage(
     })();
   `;
   return page(
-    `${card.name} — Loyalty Card`,
+    `${business} — Loyalty Card`,
     `<div class="card" style="text-align:center">
-      <div style="font-size:3rem; margin-bottom:8px">☕️</div>
-      <h1>${esc(card.name)}</h1>
-      <p class="sub">${signupLine(card)}<br>
-      Your card lives in your phone’s wallet — no app needed.</p>
+      <div class="lhero">
+        ${
+          logoVersion
+            ? `<img src="${base}/art/logo.png?v=${logoVersion}" alt="">`
+            : `<div class="emoji">☕️</div>`
+        }
+        <h1>${esc(business)}</h1>
+        <p class="sub">${signupLine(card)}</p>
+      </div>
+      <p class="sub">Your card lives in your phone’s wallet — no app needed.</p>
       ${
         buttons
           ? `<div id="wallets">${buttons}</div>
@@ -482,7 +521,7 @@ export function landingPage(
              ${legalLine}`
       }
     </div>`,
-    "",
+    brandCss,
     buttons ? script : "",
   );
 }
@@ -1959,10 +1998,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
     ${MODAL_CSS}
-    /* --- Notifications: the message and the button that sends it, on one line --- */
-    .msgrow { display: flex; gap: 8px; margin-top: 4px; }
-    .msgrow input { flex: 1; }
-    .msgrow .btn { width: auto; padding: 12px 16px; font-size: .9rem; white-space: nowrap; }
   `;
   const js = /* js */ `
     ${PALETTE_JS}
@@ -2076,6 +2111,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
 
+        <!-- The logo sits ABOVE the fold, directly under the preview it changes.
+             Buried inside Design it was the first thing an owner should do and
+             the last thing they could find. It also feeds the palette, so it
+             belongs before every colour decision, not among them. -->
+        <div class="logorow" style="margin-top:12px">
+          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+          \${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it.")}
+        </div>
+        <div class="swatches" data-swatches style="display:none"></div>
+
         <!-- No section headers above the fold. Each .sec costs ~50px of rule and
              margin, and two of them plus a full-width spend row were most of
              what stood between the preview and the design controls. What a
@@ -2097,16 +2143,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
 
         <details class="fold">
-        <summary>Design — your logo, colours, band, stamps</summary>
+        <summary>Design — colours, band, stamps</summary>
 
-        <label class="sec first" style="margin-top:6px">Start from your logo\${info("Upload it and we read the colours out of it. Nothing changes until you tap Use these colours, and every colour stays editable below.")}</label>
-        <div class="logorow" style="margin-top:8px">
-          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
-          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
-        </div>
-        <div class="swatches" data-swatches style="display:none"></div>
-
-        <label class="sec" style="margin-top:16px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
+        <label class="sec first" style="margin-top:6px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
         <div class="crlist" data-roles></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
@@ -2926,10 +2965,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       div.innerHTML = \`
         <h2 class="sec">Notifications\${info("Each customer can be messaged once every 7 days. Anyone inside that window is skipped automatically.")}</h2>
         <label>Message</label>
-        <div class="msgrow">
-          <input data-msg maxlength="200">
-          <button class="btn btn-dark" data-send>Push notification</button>
-        </div>
+        <!-- Button UNDER the field, not beside it. Side by side, "Push
+             notification" ate most of a phone's width and left the message —
+             the thing being written — in a sliver. -->
+        <input data-msg maxlength="200">
+        <button class="btn btn-dark" style="margin-top:10px" data-send>Push notification</button>
         <p class="muted" style="margin-top:6px" data-who></p>
         <details class="grp" style="margin-top:22px" data-find>
           <summary><span class="gt">Find a customer</span></summary>

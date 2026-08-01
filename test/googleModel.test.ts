@@ -199,10 +199,13 @@ describe("save-to-wallet JWT", () => {
     expect(decoded.origins).toEqual(["https://stampy.example.test"]);
   });
 
-  it("shows the business as the issuer and the card as the programme", () => {
+  // Same rule as Apple's description: the customer only ever reads the SHOP's
+  // name. cards.name has no field in the dashboard and goes stale silently.
+  it("names the programme after the shop, never after the card row", () => {
     const cls = buildLoyaltyClass(card({ name: "Pastry card" }), 0, 0, "Kopi Corner") as any;
     expect(cls.issuerName).toBe("Kopi Corner");
-    expect(cls.programName).toBe("Pastry card");
+    expect(cls.programName).toBe("Kopi Corner loyalty card");
+    expect(JSON.stringify(cls)).not.toContain("Pastry card");
   });
 });
 
