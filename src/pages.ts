@@ -2111,41 +2111,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
 
-        <!-- The logo sits ABOVE the fold, directly under the preview it changes.
-             Buried inside Design it was the first thing an owner should do and
-             the last thing they could find. It also feeds the palette, so it
-             belongs before every colour decision, not among them. -->
-        <div class="logorow" style="margin-top:12px">
+        <!-- Design sits directly under the preview it changes, folded away. It is
+             one block: the logo belongs with the colours it feeds, not pulled out
+             on its own above them. -->
+        <details class="fold" style="margin-top:12px">
+        <summary>Design</summary>
+
+        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it.")}</label>
+        <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
-          \${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it.")}
         </div>
         <div class="swatches" data-swatches style="display:none"></div>
 
-        <!-- No section headers above the fold. Each .sec costs ~50px of rule and
-             margin, and two of them plus a full-width spend row were most of
-             what stood between the preview and the design controls. What a
-             change DOES now lives in the Save popup, which is the moment it
-             matters, rather than as grey text nobody reads on the way past. -->
-        <label style="margin-top:14px">Shop name\${info("The name customers see on the card.")}</label>
-        <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
-
-        <label style="margin-top:14px">Reward</label><input data-f="reward" value="\${c.reward}">
-        <div class="row2 row3">
-          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
-          <div><label>Welcome stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
-          <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers. Optional — leave at 0 to hide it.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
-        </div>
-
-        <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
-        <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
-
-        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
-
-        <details class="fold">
-        <summary>Design — colours, band, stamps</summary>
-
-        <label class="sec first" style="margin-top:6px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
+        <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
         <div class="crlist" data-roles></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
@@ -2161,10 +2140,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <input data-f="bandColor" type="color" value="\${c.bandColor}">
         </div>
 
-        <label style="margin-top:12px">Band texture\${info("The pattern behind the stamps. They are all kept deliberately soft — the stamps are drawn on top, and a busy band makes them hard to read.")}</label>
+        <label style="margin-top:14px">Band\${info("The pattern behind the stamps. They are all kept deliberately soft — the stamps are drawn on top, and a busy band makes them hard to read.")}</label>
         <div class="bantpl" data-bandtex></div>
 
-        <label style="margin-top:12px">Stamp icon\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
+        <label style="margin-top:14px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
         <div class="emojirow">
           <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
           <button class="btn btn-ghost" data-a="useemoji">Use this</button>
@@ -2180,7 +2159,27 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <p class="err" data-stamperr style="display:none"></p>
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
-        </details>\`;
+        </details>
+
+        <!-- No section headers here. Each .sec costs ~50px of rule and margin,
+             and two of them plus a full-width spend row were most of what stood
+             between the preview and the controls. What a change DOES now lives
+             in the Save popup, which is the moment it matters, rather than as
+             grey text nobody reads on the way past. -->
+        <label style="margin-top:16px">Shop name\${info("The name customers see on the card.")}</label>
+        <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
+
+        <label style="margin-top:14px">Reward</label><input data-f="reward" value="\${c.reward}">
+        <div class="row2 row3">
+          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
+          <div><label>Welcome stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
+          <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers. Optional — leave at 0 to hide it.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
+        </div>
+
+        <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
+        <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
+
+        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);

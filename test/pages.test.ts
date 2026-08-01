@@ -335,6 +335,29 @@ describe("dashboard information architecture", () => {
     expect(html).toContain('data-f="shopName"');
   });
 
+  // Design is one folded block sitting directly under the preview it changes.
+  // The logo belongs inside it, with the colours it feeds — pulling it out on
+  // its own put half a section above the fold and half below.
+  it("keeps Design as one block under the preview, above the rules", () => {
+    expect(html).toContain("<summary>Design</summary>");
+    const at = (s: string) => html.indexOf(s);
+    expect(at("<summary>Design</summary>")).toBeLessThan(at("data-logo"));
+    expect(at("data-logo")).toBeLessThan(at("data-roles"));
+    expect(at('data-a="savedesign"')).toBeLessThan(at('data-f="shopName"'));
+  });
+
+  // Colours was a .sec — a bordered 1.1rem heading — while Band and Stamps were
+  // plain labels, so one of three peers looked like their parent.
+  it("gives every design section the same weight and a one-word name", () => {
+    const design = html.slice(html.indexOf("<summary>Design</summary>"), html.indexOf('data-a="savedesign"'));
+    expect(design).not.toContain('class="sec');
+    for (const name of ["Logo", "Colours", "Band", "Stamps"]) {
+      expect(design).toContain(`>${name}`);
+    }
+    expect(html).not.toContain("Band texture");
+    expect(html).not.toContain("Stamp icon");
+  });
+
   // Three cohort rows and a card dropdown said what one line under the button
   // says. The limit was never enforced here anyway — canNudge decides.
   it("sends notifications from one box with one button", () => {
