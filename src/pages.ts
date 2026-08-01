@@ -266,23 +266,86 @@ export const MODAL_JS = /* js */ `
     return '<button type="button" class="ihint" data-info="' + mdlEsc(text) + '" aria-label="What is this?">i</button>';
   }
 
+  // One bubble for the whole page, and ONE piece of state for it. All of this
+  // sits outside wireInfo on purpose: wireInfo runs again on every tab switch,
+  // and a per-call closure would leave the previous panel's listeners holding a
+  // stale "which icon is open", so an outside click would leave the current
+  // icon lit and swallow the next tap on it.
+  var infoTip = null, infoFor = null;
+  function infoBubble() {
+    if (!infoTip) {
+      infoTip = document.createElement("div");
+      infoTip.className = "itip";
+      document.body.appendChild(infoTip);
+    }
+    return infoTip;
+  }
+  function hideInfo() {
+    if (infoTip) infoTip.classList.remove("on");
+    if (infoFor) infoFor.classList.remove("on");
+    infoFor = null;
+  }
+  /**
+   * Place it from the icon's own rect and clamp it to the viewport, rather than
+   * anchoring it in CSS: these icons sit at very different places across a
+   * panel, and a bubble pinned relative to its button runs off the edge of a
+   * 375px phone.
+   */
+  function showInfo(btn) {
+    var el = infoBubble();
+    el.textContent = btn.dataset.info;
+    // Positioned BEFORE it is made visible. It is hidden with visibility, not
+    // display, so it still has layout to measure — and placing it first is what
+    // stops a frame of the bubble appearing at the top-left corner.
+    var r = btn.getBoundingClientRect();
+    var pad = 10;
+    var left = r.left + r.width / 2 - el.offsetWidth / 2;
+    if (left + el.offsetWidth > window.innerWidth - pad) left = window.innerWidth - pad - el.offsetWidth;
+    el.style.left = Math.round(Math.max(pad, left)) + "px";
+    // Above the icon when there is no room below it.
+    var below = r.bottom + 8;
+    el.style.top = below + el.offsetHeight > window.innerHeight - pad
+      ? Math.round(r.top - el.offsetHeight - 8) + "px"
+      : Math.round(below) + "px";
+    el.classList.add("on");
+    btn.classList.add("on");
+    infoFor = btn;
+  }
   /**
    * Wire every ⓘ inside a root. Delegated from the root rather than bound per
    * button, so markup rendered later still works without re-wiring.
    */
   function wireInfo(root) {
+    function target(e) {
+      var el = e.target;
+      if (!el || !el.closest) return null;
+      var btn = el.closest("[data-info]");
+      return btn && root.contains(btn) ? btn : null;
+    }
+    // Hover for a mouse, tap for a phone — where there is no hover at all, so a
+    // hover-only hint would simply never appear. Focus covers the keyboard.
+    root.addEventListener("mouseover", function (e) { var b = target(e); if (b && b !== infoFor) showInfo(b); });
+    root.addEventListener("mouseout", function (e) { if (target(e)) hideInfo(); });
+    root.addEventListener("focusin", function (e) { var b = target(e); if (b) showInfo(b); });
+    root.addEventListener("focusout", function (e) { if (target(e)) hideInfo(); });
     root.addEventListener("click", function (e) {
-      var btn = e.target.closest ? e.target.closest("[data-info]") : null;
-      if (!btn || !root.contains(btn)) return;
+      var btn = target(e);
+      if (!btn) return;
       e.preventDefault();
-      var open = btn.nextElementSibling && btn.nextElementSibling.classList.contains("ibody");
-      if (open) { btn.nextElementSibling.remove(); btn.classList.remove("on"); return; }
-      var p = document.createElement("p");
-      p.className = "ibody";
-      p.textContent = btn.dataset.info;
-      btn.classList.add("on");
-      btn.insertAdjacentElement("afterend", p);
+      if (infoFor === btn) hideInfo(); else showInfo(btn);
     });
+    // A tap anywhere else, a scroll, or Escape dismisses it — otherwise the
+    // bubble sits over the page after the icon has scrolled away. Attached once,
+    // for the same reason the state above is shared.
+    if (!document.body.dataset.infoWired) {
+      document.body.dataset.infoWired = "1";
+      document.addEventListener("click", function (e) {
+        var el = e.target;
+        if (!el || !el.closest || !el.closest("[data-info]")) hideInfo();
+      }, true);
+      window.addEventListener("scroll", hideInfo, true);
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape") hideInfo(); });
+    }
   }
 `;
 
@@ -305,7 +368,16 @@ export const MODAL_CSS = /* css */ `
            border: 1px solid var(--field-border); background: var(--surface); color: var(--muted);
            font-weight: 700; font-size: .68rem; line-height: 1; cursor: pointer; vertical-align: middle; }
   .ihint:hover, .ihint.on { border-color: var(--accent); color: var(--accent-dark); }
-  .ibody { color: var(--muted); font-size: .82rem; line-height: 1.5; margin: 4px 0 0; }
+  /* The hint itself: a bubble over the page, not a line that pushes the form
+     down. One per page, moved and refilled — see wireInfo. */
+  .itip { position: fixed; z-index: 60; max-width: min(280px, calc(100vw - 20px));
+          background: var(--ink, #201d19); color: #fff; border-radius: 10px;
+          padding: 9px 12px; font-size: .8rem; line-height: 1.45;
+          box-shadow: 0 8px 24px -6px rgba(24,20,16,.45);
+          opacity: 0; visibility: hidden; transition: opacity .12s;
+          pointer-events: none; left: 0; top: 0; }
+  .itip.on { opacity: 1; visibility: visible; }
+  @media (prefers-reduced-motion: reduce) { .itip { transition: none; } }
 `;
 
 function page(title: string, body: string, extraCss = "", script = ""): string {
@@ -1683,10 +1755,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .err { color: #a33; background: #fdeaea; border: 1px solid #f2c9c9; border-radius: 10px;
            padding: 10px 12px; font-size: .84rem; margin-top: 8px; }
     /* --- designer controls --- */
-    .colors { display: flex; gap: 8px; margin-top: 4px; }
-    .colors > label { flex: 1; margin: 0; }
-    .colors input[type=color] { width: 100%; height: 38px; padding: 2px; border: 1px solid var(--field-border);
-                                border-radius: 10px; background: #fff; cursor: pointer; }
+    /* Where the five native pickers sit while no row is open. They are moved out
+       into the open row, not proxied — see drawRoles. */
+    .colorpark { display: none; }
+    .chipcustom input[type=color] { width: 30px; height: 30px; padding: 2px; margin: 0;
+                                    border: 1px solid var(--field-border); border-radius: 8px;
+                                    background: var(--surface); cursor: pointer; }
     .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
     .logorow input[type=file] { display: none; }
     .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
@@ -1730,15 +1804,24 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .swrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .swrow .sw { width: 30px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
     .swrow .btn { width: auto; padding: 8px 12px; font-size: .85rem; margin-left: auto; }
-    /* --- swap any colour into any role --- */
-    .roles { margin: 6px 0 10px; }
-    .rolerow { display: flex; gap: 6px; flex-wrap: wrap; }
-    .rolebtn { display: flex; align-items: center; gap: 6px; width: auto; padding: 6px 10px; font-size: .82rem;
-               border: 1px solid var(--field-border); border-radius: 999px; background: var(--surface);
-               color: var(--ink); cursor: pointer; }
-    .rolebtn .dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
-    .rolebtn.on { border-color: var(--accent); background: var(--ghost-bg); font-weight: 600; }
-    .chiprow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    /* --- colours: one named row per part of the card, opening to its palette --- */
+    /* This replaced a chip row AND a row of five colour squares that set the
+       same five fields. Two controls for one job read as two different jobs. */
+    .crlist { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 6px 0 10px;
+              background: var(--surface); }
+    .crow2 + .crow2 { border-top: 1px solid var(--line); }
+    .crhead { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px;
+              border: none; background: none; font: inherit; color: var(--ink); cursor: pointer; text-align: left; }
+    .crname { flex: 1; font-weight: 600; font-size: .92rem; }
+    .crsw { width: 26px; height: 26px; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+    .crcaret { color: var(--muted); font-size: .8rem; transition: transform .18s; }
+    .crow2.open .crcaret { transform: rotate(90deg); }
+    .crow2.open .crname { color: var(--accent-dark); }
+    .crow2.open { background: var(--ghost-bg); }
+    .crow2 .chiprow { padding: 0 14px 14px; margin-top: 0; }
+    .chipcustom { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; color: var(--muted);
+                  margin-left: 4px; }
+    .chiprow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
     .chip { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
             padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
     .chip:hover { border-color: var(--accent); }
@@ -1845,8 +1928,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .fold summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
     .fold[open] summary::before { transform: rotate(90deg); }
     .fold[open] { padding-bottom: 18px; }
-    /* A button waiting for its second tap (see armBtn). */
-    .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
     /* --- show-password toggle --- */
     .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
@@ -1855,9 +1936,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .msgrow { display: flex; gap: 8px; margin-top: 4px; }
     .msgrow input { flex: 1; }
     .msgrow .btn { width: auto; padding: 12px 16px; font-size: .9rem; white-space: nowrap; }
-    /* --- Shop: Share, split by who the link is for --- */
-    .subsec { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
-              font-weight: 700; margin: 14px 0 2px; }
   `;
   const js = /* js */ `
     ${PALETTE_JS}
@@ -1889,26 +1967,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       });
     }
 
-    // Two-tap confirmation, same idiom as the stamper. Browsers let a user
-    // suppress further dialogs, and a suppressed dialog reports "cancel" — so an
-    // action gated on one silently stops working. First tap relabels the button,
-    // second within 4s runs it.
-    let armedBtn = null, armedTimer = null;
-    function disarmBtn() {
-      if (armedBtn) { armedBtn.textContent = armedBtn.dataset.label; armedBtn.classList.remove("armed"); }
-      clearTimeout(armedTimer); armedBtn = null; armedTimer = null;
-    }
-    function armBtn(btn, prompt, go) {
-      btn.dataset.label = btn.textContent;
-      btn.onclick = () => {
-        if (armedBtn === btn) { disarmBtn(); go(); return; }
-        disarmBtn();
-        armedBtn = btn;
-        btn.textContent = prompt;
-        btn.classList.add("armed");
-        armedTimer = setTimeout(disarmBtn, 4000);
-      };
-    }
+    // The two-tap arm() helper used to live here for "Generate a new PIN". That
+    // button is gone — an owner types their own PIN now — and it was the only
+    // thing on this page that used it, so the helper went with it. The stamper
+    // and the admin console each keep their own copy; both are still used.
 
     function authForm(mode) {
       $("#app").innerHTML = \`
@@ -2015,28 +2077,36 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         </div>
         <div class="swatches" data-swatches style="display:none"></div>
 
-        <label class="sec" style="margin-top:16px">Colours\${info("Tap a row, then tap a colour to use it there — no need to match a shade by hand. Or open the square for the full picker. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
-        <div class="roles" data-roles></div>
-        <div class="colors">
-          <label>Card<input data-f="bg" type="color" value="\${c.bg}"></label>
-          <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
-          <label>Labels<input data-f="label" type="color" value="\${c.label}"></label>
-          <label>Stamps<input data-f="accent" type="color" value="\${c.accent}"></label>
-          <label>Band<input data-f="bandColor" type="color" value="\${c.bandColor}"></label>
+        <label class="sec" style="margin-top:16px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
+        <div class="crlist" data-roles></div>
+        <!-- The five native pickers are the source of truth every other function
+             reads through f("bg"), f("bandColor") and so on, so they must exist
+             from the start. They are PARKED here and MOVED into whichever row is
+             open, rather than hidden and clicked from a proxy: calling .click()
+             on a display:none colour input does not reliably open the OS picker,
+             so the owner has to be tapping the real thing. -->
+        <div class="colorpark" data-park>
+          <input data-f="bg" type="color" value="\${c.bg}">
+          <input data-f="fg" type="color" value="\${c.fg}">
+          <input data-f="label" type="color" value="\${c.label}">
+          <input data-f="accent" type="color" value="\${c.accent}">
+          <input data-f="bandColor" type="color" value="\${c.bandColor}">
         </div>
 
-        <label style="margin-top:12px">Band texture</label>
+        <label style="margin-top:12px">Band texture\${info("The pattern behind the stamps. They are all kept deliberately soft — the stamps are drawn on top, and a busy band makes them hard to read.")}</label>
         <div class="bantpl" data-bandtex></div>
 
-        <label style="margin-top:12px">Stamp icon</label>
+        <label style="margin-top:12px">Stamp icon\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
         <div class="emojirow">
           <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
           <button class="btn btn-ghost" data-a="useemoji">Use this</button>
         </div>
-        <div class="bantpl" data-stamptpl></div>
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
-          <button class="btn btn-ghost" data-a="rmstamp" style="\${c.stampsVersion ? "" : "display:none"}">Use plain dots</button>
+          <!-- Always visible, not only for an uploaded stamp. With the preset
+               tiles gone this is the only way back to plain dots, and a control
+               that appears once you no longer need it is no control at all. -->
+          <button class="btn btn-ghost" data-a="rmstamp">Plain dots</button>
           \${info("One shape on a see-through background (PNG or SVG), not a photo. Its own colours are ignored — it gets filled with your stamp colour.")}
         </div>
         <p class="err" data-stamperr style="display:none"></p>
@@ -2355,7 +2425,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         { k: "accent", name: "Stamps" }, { k: "label", name: "Labels" },
         { k: "fg", name: "Text" },
       ];
-      let activeRole = "bg";
+      // Nothing open to begin with: the list reads as five named parts of the
+      // card, which is the question an owner actually has ("what colour is the
+      // band?"), rather than a palette they have to decode.
+      let activeRole = null;
       const rolesHost = q("[data-roles]");
       function paletteChips() {
         const seen = {}, out = [];
@@ -2369,32 +2442,83 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         NEUTRALS.forEach(add);
         return out;
       }
+      /**
+       * Put a colour on a role and redraw everything that shows it — WITHOUT
+       * rebuilding the list. The open row holds the live <input type="color">,
+       * and dragging in the OS picker fires input continuously; re-rendering
+       * mid-drag would move that input out from under the picker.
+       */
+      function applyRole(role, hex) {
+        f(role).value = hex;
+        // Text is the one thing never chosen by eye — swapping the card colour
+        // would otherwise quietly leave unreadable text behind it.
+        if (role === "bg") f("fg").value = pickTextColor(hex);
+        renderPreview(); drawTextureRow(); refreshSwatches();
+      }
+      /** Header swatches and the selected chip, updated in place. */
+      function refreshSwatches() {
+        rolesHost.querySelectorAll("[data-role]").forEach((row) => {
+          const k = row.dataset.role;
+          row.querySelector(".crsw").style.background = f(k).value;
+          row.querySelectorAll(".chip").forEach((ch) => {
+            ch.classList.toggle("on", ch.dataset.hex === f(k).value.toLowerCase());
+          });
+        });
+      }
+      // One row per part of the card, each named and showing its own colour;
+      // tapping one opens its palette underneath. This replaced a chip row and a
+      // row of five colour squares that did the same job in two places — which
+      // is what made it impossible to tell which one you were meant to use.
+      const park = q("[data-park]");
       function drawRoles() {
+        // Put every native picker back in its park BEFORE wiping the list. The
+        // open row holds the real input, and innerHTML = "" would destroy the
+        // one element the rest of this panel reads its colours from.
+        for (const r of ROLES) park.appendChild(f(r.k));
         rolesHost.innerHTML = "";
-        const tabs = document.createElement("div"); tabs.className = "rolerow";
         for (const r of ROLES) {
-          const b = document.createElement("button");
-          b.className = "rolebtn" + (r.k === activeRole ? " on" : "");
-          b.innerHTML = '<span class="dot" style="background:' + f(r.k).value + '"></span>' + r.name;
-          b.onclick = () => { activeRole = r.k; drawRoles(); };
-          tabs.appendChild(b);
+          const open = r.k === activeRole;
+          const row = document.createElement("div");
+          row.className = "crow2" + (open ? " open" : "");
+          row.dataset.role = r.k;
+
+          const head = document.createElement("button");
+          head.type = "button";
+          head.className = "crhead";
+          head.setAttribute("aria-expanded", open ? "true" : "false");
+          head.innerHTML = '<span class="crname"></span>' +
+            '<span class="crsw" style="background:' + f(r.k).value + '"></span>' +
+            '<span class="crcaret">▸</span>';
+          head.querySelector(".crname").textContent = r.name;
+          head.onclick = () => { activeRole = open ? null : r.k; drawRoles(); };
+          row.appendChild(head);
+
+          if (open) {
+            const chips = document.createElement("div"); chips.className = "chiprow";
+            for (const hex of paletteChips()) {
+              const ch = document.createElement("button");
+              ch.type = "button";
+              ch.className = "chip" + (hex === f(r.k).value.toLowerCase() ? " on" : "");
+              ch.style.background = hex; ch.title = hex; ch.dataset.hex = hex;
+              ch.onclick = () => applyRole(r.k, hex);
+              chips.appendChild(ch);
+            }
+            // The real colour input, moved in — for a shade in none of the above.
+            const custom = document.createElement("span");
+            custom.className = "chipcustom";
+            custom.appendChild(f(r.k));
+            custom.appendChild(document.createTextNode("Custom…"));
+            chips.appendChild(custom);
+            row.appendChild(chips);
+          }
+          rolesHost.appendChild(row);
         }
-        rolesHost.appendChild(tabs);
-        const chips = document.createElement("div"); chips.className = "chiprow";
-        for (const hex of paletteChips()) {
-          const ch = document.createElement("button");
-          ch.className = "chip" + (hex === f(activeRole).value.toLowerCase() ? " on" : "");
-          ch.style.background = hex; ch.title = hex;
-          ch.onclick = () => {
-            f(activeRole).value = hex;
-            // Text is the one thing never chosen by eye — swapping the card
-            // colour would otherwise quietly leave unreadable text behind it.
-            if (activeRole === "bg") f("fg").value = pickTextColor(hex);
-            renderPreview(); drawTextureRow(); drawRoles();
-          };
-          chips.appendChild(ch);
-        }
-        rolesHost.appendChild(chips);
+      }
+      // The OS picker writes straight through. No rebuild here on purpose —
+      // this fires on every frame of a drag, and rebuilding would move the very
+      // input the picker is attached to.
+      for (const r of ROLES) {
+        f(r.k).oninput = () => applyRole(r.k, f(r.k).value.toLowerCase());
       }
       drawRoles();
 
@@ -2430,8 +2554,65 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
        * missing from the strip.
        */
       function paintBand(x, style, c1, c2, w, h) {
+        // Every texture is deliberately soft. The stamps are drawn ON TOP of
+        // this, so a band that competes with them is the one way the picker can
+        // make a card worse — hence the low alphas throughout.
         if (style === "flat") {
           x.fillStyle = c1; x.fillRect(0, 0, w, h);
+        } else if (style === "stripes") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.globalAlpha = .22;
+          const sw = w / 14;
+          for (let i = -h; i < w; i += sw * 2) {
+            x.beginPath(); x.moveTo(i, h); x.lineTo(i + h, 0);
+            x.lineTo(i + h + sw, 0); x.lineTo(i + sw, h); x.closePath(); x.fill();
+          }
+          x.globalAlpha = 1;
+        } else if (style === "dots") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.globalAlpha = .26;
+          const step = w / 16, r = step * 0.17;
+          for (let row = 0, y = step / 2; y < h; y += step * .8, row++) {
+            for (let px = (row % 2 ? step / 2 : 0) + step / 2; px < w; px += step) {
+              x.beginPath(); x.arc(px, y, r, 0, Math.PI * 2); x.fill();
+            }
+          }
+          x.globalAlpha = 1;
+        } else if (style === "chevron") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.strokeStyle = c2; x.globalAlpha = .24; x.lineWidth = Math.max(2, h / 26);
+          const step = h / 3;
+          for (let y = -h; y < h * 2; y += step) {
+            x.beginPath();
+            for (let px = 0; px <= w; px += w / 8) {
+              const up = Math.round(px / (w / 8)) % 2 === 0;
+              x.lineTo(px, y + (up ? 0 : step * .6));
+            }
+            x.stroke();
+          }
+          x.globalAlpha = 1; x.lineWidth = 1;
+        } else if (style === "grain") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          // Deterministic, not Math.random: the band is re-rendered on every
+          // save, and a different speckle each time would be a pointless new
+          // image for the wallets to fetch.
+          x.fillStyle = c2;
+          for (let i = 0; i < 2600; i++) {
+            const s = Math.sin(i * 12.9898) * 43758.5453;
+            const t = Math.sin(i * 78.233) * 43758.5453;
+            x.globalAlpha = .05 + ((s - Math.floor(s)) * .12);
+            x.fillRect((s - Math.floor(s)) * w, (t - Math.floor(t)) * h, 2, 2);
+          }
+          x.globalAlpha = 1;
+        } else if (style === "rays") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.globalAlpha = .16;
+          for (let i = 0; i < 12; i += 2) {
+            const a = (i / 12) * Math.PI * 2;
+            x.beginPath(); x.moveTo(w / 2, h / 2);
+            x.arc(w / 2, h / 2, w, a, a + Math.PI / 12); x.closePath(); x.fill();
+          }
+          x.globalAlpha = 1;
         } else if (style === "diagonal") {
           x.fillStyle = c1; x.fillRect(0, 0, w, h);
           x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
@@ -2453,12 +2634,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // It is still stored as the banner PNG, so Google's hero image and Apple's
       // strip backdrop are unchanged — what went away is uploading a photo.
       // "flat" is one colour; the rest shade toward a lighter version of it.
+      // Must stay in step with BAND_TEXTURES in src/routes/dashboard.ts. That
+      // allowlist is what refuses an unknown one, so a texture the browser can
+      // draw but the server rejects would silently save as flat.
       const TEXTURES = [
         { name: "Flat", style: "flat" },
         { name: "Gradient", style: "gradient" },
         { name: "Glow", style: "glow" },
         { name: "Diagonal", style: "diagonal" },
         { name: "Waves", style: "waves" },
+        { name: "Stripes", style: "stripes" },
+        { name: "Dots", style: "dots" },
+        { name: "Chevron", style: "chevron" },
+        { name: "Grain", style: "grain" },
+        { name: "Rays", style: "rays" },
       ];
       const btpl = q("[data-bandtex]");
       function drawTextureRow() {
@@ -2479,12 +2668,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         }
       }
       drawTextureRow();
-
-      const STAMP_ICONS = [
-        { name: "Dot", icon: "dot" }, { name: "Coffee", icon: "☕" },
-        { name: "Star", icon: "⭐" }, { name: "Heart", icon: "❤️" },
-        { name: "Donut", icon: "🍩" }, { name: "Boba", icon: "🧋" },
-      ];
 
       // Renders the full 0..target set and stores it (immediate, like banners).
       // The quiet flag is for the piggy-back call from save(), which toasts its own.
@@ -2508,19 +2691,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         }
         const { body } = await api("/card/" + c.id + "/stamps", { method: "POST", body: JSON.stringify({ style, strips }) });
         if (!body.ok) return toast(body.error || "Couldn't save stamps");
-        q("[data-a=rmstamp]").style.display = style === "custom" ? "" : "none";
         renderPreview();
         if (!quiet) toast("Stamp style saved ✓");
       }
 
-      const stpl = q("[data-stamptpl]");
-      for (const t of STAMP_ICONS) {
-        const bt = document.createElement("div"); bt.className = "bt"; bt.title = t.name;
-        bt.style.backgroundImage = "url(" + drawStampStrip(Math.ceil((Number(f("stampsTarget").value) || 10) / 2), Number(f("stampsTarget").value) || 10, t.icon) + ")";
-        bt.innerHTML = "<span>" + t.name + "</span>";
-        bt.onclick = () => { q("[data-emoji]").value = t.icon === "dot" ? "" : t.icon; applyStamps(t.icon); };
-        stpl.appendChild(bt);
-      }
+      // The six preset tiles (Dot, Coffee, Star, Heart, Donut, Boba) are gone:
+      // they were six ways to do what the emoji field does, and every card
+      // starts on dots anyway. Three routes remain — dots, any emoji, your own
+      // shape — and each is a different kind of answer rather than a shortcut.
       // Any emoji at all. The renderer already draws whatever glyph it is given,
       // so this only has to hand it one — and exactly one: firstGrapheme keeps
       // multi-code-point emoji (❤️, 🧑‍🍳) whole instead of slicing them in half.
@@ -2558,6 +2736,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // one: the grid image is the only place stamps are drawn now.
       q("[data-a=rmstamp]").onclick = async () => {
         customStampUrl = "";
+        q("[data-emoji]").value = "";
         await applyStamps("dot", true);
         toast("Back to plain dots");
       };
@@ -2676,22 +2855,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         <div class="metric"><b>\${sum("redemptions")}</b><span>rewards given</span></div>
         \${priced.length ? '<div class="metric"><b>' + money(influenced) + '</b><span>spend influenced</span></div>' : ""}\`;
 
-      // The gap line. "Customers" counts cards that were stamped or confirmed in
-      // a wallet; cards abandoned at the Add sheet and cards since deleted are
-      // named here rather than silently inflating or deflating the headline.
+      // Only the empty state now. The two "issued but not counted" figures that
+      // used to sit here — cards abandoned at the Add sheet, and cards since
+      // deleted — are both things an owner can do nothing about, and reading
+      // them as a scoreline against yourself is worse than not knowing. Both
+      // are still tracked and both are on the admin console.
       (async () => {
         const { body } = await api("/customers");
         const counts = body.counts || { active: 0, issuedNeverAdded: 0, removed: 0 };
-        // "Never reached a wallet" is not shown here: an owner can do nothing
-        // about a cancelled Add sheet, and it read as a failure of theirs. It
-        // lives on the admin console. "Could use a nudge" is gone too — it now
-        // sits under the message box, on the button that acts on it.
         const line = div.querySelector("[data-gap]");
-        if (!counts.active && !counts.removed) {
-          line.innerHTML = "No customers yet — they appear once someone adds your card and gets their first stamp.";
-        } else {
-          line.innerHTML = counts.removed ? "Also issued: " + counts.removed + " deleted the card" : "";
-        }
+        line.innerHTML = counts.active
+          ? ""
+          : "No customers yet — they appear once someone adds your card and gets their first stamp.";
         if (!priced.length) {
           line.insertAdjacentHTML("afterend",
             '<p class="muted" style="margin:2px 0 4px">Set an average spend in Card → Rules to see the money your stamps influenced.</p>');
@@ -2709,7 +2884,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <h2 class="sec">Notifications</h2>
+        <h2 class="sec">Notifications\${info("Each customer can be messaged once every 7 days. That is per person, not per card — someone holding your card on two phones still only hears from you once. Anyone inside the 7 days is skipped automatically.")}</h2>
         <label>Message</label>
         <div class="msgrow">
           <input data-msg maxlength="200">
@@ -2846,30 +3021,27 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       const div = document.createElement("div");
       const c = S.cards[0] || {};
       div.innerHTML = \`
-        <h2 class="sec first">Share</h2>
-        <!-- The card id MUST be in the staff link. Without it a bare /staff has
-             to guess which counter it is, and on a deployment with several
-             merchants the guess used to be "whoever owns the café named
-             default" — a stranger. -->
-        <div class="subsec">For staff</div>
-        <div class="sharelist">
-          <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Staff stamper <span class="sub2">they sign in with the PIN below</span></span><span class="arr">open →</span></a>
-        </div>
-        <div class="subsec">For customers</div>
-        <div class="sharelist">
-          <a href="/c/\${c.id || ""}" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
-          <a href="/c/\${c.id || ""}/qr" target="_blank"><span>QR poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
-        </div>
-
-        <h2 class="sec">Staff stamper</h2>
-        <p class="muted">Staff use this tool to punch cards.\${info("One PIN covers your whole counter. It is stored scrambled, so nobody can look it up — not even us. Setting a new one signs every staff phone out.")}</p>
+        <h2 class="sec first">Staff stamper</h2>
+        <p class="muted">Staff use this tool to punch cards.\${info("One PIN covers your whole counter, on every card you run. It is stored scrambled, so nobody can look it up — not even us. Setting a new one signs every staff phone out.")}</p>
         <label style="margin-top:14px" data-pinlabel>Staff PIN</label>
         <div class="copyrow" style="margin-top:6px">
           <input data-pin placeholder="4–12 digits" inputmode="numeric" autocomplete="off">
           <button class="btn btn-ghost" data-setpin>Set</button>
         </div>
-        <button class="btn btn-ghost" style="margin-top:8px;width:auto;padding:10px 14px" data-newpin>Generate a new PIN</button>
         <div data-pinout></div>
+        <!-- The card id MUST be in this link. Without it a bare /staff has to
+             guess which counter it is, and on a deployment with several
+             merchants the guess used to be "whoever owns the café named
+             default" — a stranger. -->
+        <div class="sharelist" style="margin-top:12px">
+          <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Open the stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
+        </div>
+
+        <h2 class="sec">Share</h2>
+        <div class="sharelist">
+          <a href="/c/\${c.id || ""}" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
+          <a href="/c/\${c.id || ""}/qr" target="_blank"><span>QR poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
+        </div>
 
         <h2 class="sec">Your account</h2>
         <label>Signed in as</label>
@@ -2893,19 +3065,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         div.querySelector("[data-pinlabel]").textContent = "Reset staff PIN";
         div.querySelector("[data-setpin]").textContent = "Reset";
         div.querySelector("[data-pin]").placeholder = "New PIN (4–12 digits)";
-        div.querySelector("[data-newpin]").textContent = "Generate a new PIN instead";
       }
 
       const pinOut = div.querySelector("[data-pinout]");
-      // Shown once, right after it's set — there is no way back to it later.
-      const reveal = (pin) => {
-        pinOut.innerHTML = '<div class="temp">New staff PIN: <strong>' + pin + '</strong><br>' +
-          'Write it down now. Every staff phone has to sign in again with it, on every card.</div>';
-      };
+      // The PIN is NOT painted back. "Generate a new PIN" is gone, so the owner
+      // always typed the one they just set and reading it back to them serves
+      // nobody — while putting a live counter credential on a screen that may be
+      // sitting open on the till does. What they do need is the consequence.
       const setPin = async (pin) => {
         const { body } = await api("/staff-pin", { method: "POST", body: JSON.stringify({ pin }) });
-        if (body.ok) reveal(body.staffPin);
-        else toast(body.error === "pin-too-short" ? "Use at least 4 digits" : (body.error || "Couldn’t set the PIN"));
+        if (!body.ok) {
+          return toast(body.error === "pin-too-short" ? "Use at least 4 digits" : (body.error || "Couldn’t set the PIN"));
+        }
+        pinOut.innerHTML = '<div class="temp">PIN saved. Every staff phone has been signed out — ' +
+          'they each need to sign in again with the new one.</div>';
+        div.querySelector("[data-pinlabel]").textContent = "Reset staff PIN";
+        div.querySelector("[data-setpin]").textContent = "Reset";
       };
       div.querySelector("[data-setpin]").onclick = () => {
         const el = div.querySelector("[data-pin]");
@@ -2914,8 +3089,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         el.value = "";
         setPin(pin);
       };
-      // Two taps rather than a dialog: this signs every staff phone out.
-      armBtn(div.querySelector("[data-newpin]"), "Confirm — sign all phones out?", () => setPin(""));
 
       div.querySelector("[data-pwsave]").onclick = async () => {
         const { body } = await api("/change-password", { method: "POST", body: JSON.stringify({

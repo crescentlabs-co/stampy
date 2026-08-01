@@ -760,6 +760,15 @@ async function main() {
   // silently fall through to a flat fill.
   await saveCard({ bandTexture: "haunted-mansion" });
   expect((await getCard("default"))!.band_texture === "waves", "an unknown band texture is refused, not stored");
+  // Every texture the designer offers has to be one this allowlist accepts.
+  // The two lists live in different files, and a name in only one of them saves
+  // as flat with no error at all — the owner picks Chevron and gets nothing.
+  const dashTextures = (await get("/dashboard")).body;
+  for (const t of ["flat", "gradient", "glow", "diagonal", "waves", "stripes", "dots", "chevron", "grain", "rays"]) {
+    expect(dashTextures.includes('style: "' + t + '"'), `the designer offers the ${t} band texture`);
+    await saveCard({ bandTexture: t });
+    expect((await getCard("default"))!.band_texture === t, `...and the server stores ${t} rather than refusing it`);
+  }
   // Any emoji is a valid stamp now, including one built from several code points
   // joined together — the column takes the glyph as-is.
   const chefPng = (await getPool().query<{ png: Buffer }>(

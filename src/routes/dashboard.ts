@@ -76,7 +76,13 @@ import { canNudge, MAX_NUDGES_PER_WEEK } from "../winback.js";
 export const dashboardRouter = Router();
 
 /** The textures the band can be filled with — must match the renderer in pages.ts. */
-const BAND_TEXTURES = ["flat", "gradient", "glow", "diagonal", "waves"];
+// Must stay in step with TEXTURES in the designer (src/pages.ts). This is the
+// allowlist that refuses an unknown texture; one the browser can draw but this
+// rejects would silently store as flat and the owner would never be told.
+const BAND_TEXTURES = [
+  "flat", "gradient", "glow", "diagonal", "waves",
+  "stripes", "dots", "chevron", "grain", "rays",
+];
 
 interface OwnerRequest extends Request {
   owner?: OwnerRow;

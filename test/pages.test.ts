@@ -186,16 +186,29 @@ describe("dashboard information architecture", () => {
   });
 
   // The links were under the card designer, which put "print this for the
-  // counter" on the page you open to change a colour. They are set-up-once
-  // things, so they sit together in Shop, split by who they are for.
-  it("keeps every shareable link in Shop, grouped by audience", () => {
+  // counter" on the page you open to change a colour. They live in Shop now:
+  // the stamper link sits with the PIN that unlocks it, the customer-facing
+  // ones under Share.
+  it("keeps every shareable link in Shop, beside what it needs", () => {
     expect(html).toContain(">Share<");
-    expect(html).toContain(">For staff<");
-    expect(html).toContain(">For customers<");
+    expect(html).toContain(">Staff stamper<");
     expect(html).not.toContain("Share this card");
     // The card id must stay on the staff link: a bare /staff once resolved to
     // whoever owned the café literally named "default" — a stranger's counter.
     expect(html).toContain('href="/staff?c=');
+    // The PIN comes before the links it gates, not in a section below them.
+    expect(html.indexOf("data-pinlabel")).toBeLessThan(html.indexOf(">Share<"));
+  });
+
+  // One way to set a PIN, not two. The generator went, and with it the page's
+  // only use of the two-tap arm() helper.
+  it("has one PIN control and never echoes a PIN back", () => {
+    expect(html).not.toContain("data-newpin");
+    expect(html).not.toContain("New staff PIN: ");
+    expect(html).not.toContain("function armBtn");
+    // Only the one PIN button remains. (The phrase itself still appears in two
+    // comments explaining what went and why, which is worth keeping.)
+    expect(html).not.toContain(">Generate a new PIN<");
   });
 
   // Subtext nobody reads became a popup on the action it describes, and an ⓘ
@@ -223,12 +236,71 @@ describe("dashboard information architecture", () => {
   // Three cohort rows and a card dropdown said what one line under the button
   // says. The limit was never enforced here anyway — canNudge decides.
   it("sends notifications from one box with one button", () => {
-    expect(html).toContain(">Notifications<");
+    expect(html).toContain("Notifications");
     expect(html).toContain("Push notification");
     expect(html).toContain("already messaged this week");
     expect(html).not.toContain("data-buckets");
     expect(html).not.toContain("Bring people back");
     expect(html).toContain("Find a customer");
+    // The 7-day rule is the thing people ask about, so it is on the heading.
+    expect(html).toContain("once every 7 days");
+    // "Also issued: N deleted the card" is gone — an owner can do nothing about
+    // it, and it read as a scoreline against them.
+    expect(html).not.toContain("Also issued");
+  });
+
+  // Two controls set the same five fields: a chip row and a row of five colour
+  // squares. Two controls for one job read as two different jobs.
+  it("picks colours from one labelled list, not a chip row plus five squares", () => {
+    expect(html).toContain("data-roles");
+    expect(html).toContain("crhead");
+    expect(html).toContain("Custom…");
+    expect(html).not.toContain("rolebtn");
+    // The native pickers stay in the DOM as the source of truth every other
+    // function reads through f("bg"). They are PARKED and moved into the open
+    // row — never hidden and clicked from a proxy, because .click() on a
+    // display:none colour input does not reliably open the OS picker.
+    expect(html).toContain('class="colorpark"');
+    expect(html).toContain("park.appendChild(f(r.k))");
+    expect(html).toContain('data-f="bandColor"');
+  });
+
+  // The OS picker fires input on every frame of a drag. Rebuilding the list
+  // there would move the very input the picker is attached to.
+  it("does not rebuild the colour list while the native picker is open", () => {
+    expect(html).toContain("function refreshSwatches()");
+    expect(html).toContain("applyRole(r.k, f(r.k).value.toLowerCase())");
+  });
+
+  // A texture the browser can draw but the server rejects saves as flat with no
+  // error, so the two lists have to be checked against each other.
+  it("offers the same band textures the server will accept", () => {
+    for (const t of ["stripes", "dots", "chevron", "grain", "rays"]) {
+      expect(html).toContain(`style: "${t}"`);
+    }
+  });
+
+  // Six preset tiles did what the emoji field does, and every card starts on
+  // dots anyway. Three routes remain, each a different kind of answer.
+  it("offers dots, any emoji or your own shape — no preset tiles", () => {
+    expect(html).not.toContain("data-stamptpl");
+    expect(html).not.toContain("STAMP_ICONS");
+    expect(html).toContain("data-emoji");
+    expect(html).toContain(">Plain dots<");
+  });
+
+  // A hint that pushes the form down is a paragraph with extra steps.
+  it("shows hints as a bubble, on hover and on tap", () => {
+    expect(html).toContain('infoTip.className = "itip"');
+    expect(html).not.toContain('className = "ibody"');
+    expect(html).toContain('addEventListener("mouseover"');
+    // Tap matters more than hover: on a phone there is no hover at all.
+    expect(html).toContain('addEventListener("click"');
+    // wireInfo runs again on every tab switch. The bubble's state is shared and
+    // the document-level listeners attach once, or an outside click would clear
+    // a stale reference and leave the current icon lit.
+    expect(html).toContain("document.body.dataset.infoWired");
+    expect(html).toContain("var infoTip = null, infoFor = null;");
   });
 
   it("keeps the staff PIN out of the card designer", () => {
