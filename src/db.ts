@@ -138,6 +138,12 @@ export type EventType =
   // knowing and never knowing where people drop out.
   | "join_view"
   | "wallet_click"
+  // v1.9 — the owner opened their printable poster. The step ABOVE join_view,
+  // and the only evidence that anything was ever put on a counter: a merchant
+  // who has never opened this has no poster up, so no scan can happen and no
+  // amount of waiting will change that. It separates "not working" from "not
+  // started", which look identical in every other number.
+  | "poster_view"
   // The stamp that filled the card. Replayable in principle, but only by
   // walking every stamp in order against a target that may have been edited
   // since — so it is written down at the moment it is true.
@@ -567,6 +573,15 @@ export async function migrate(): Promise<void> {
     -- it out of the owner's dashboard and off the join link while every pass
     -- already in a wallet keeps working.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+    -- v1.9: merchant-level admin. Archiving a MERCHANT retires the business and
+    -- everything under it; archiving a card only retired one programme, which is
+    -- the wrong unit when a merchant walks away. Same rules as a card: nothing
+    -- is deleted, every pass in a wallet keeps working, and it can be undone.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS archived_at timestamptz;
+    -- The only contact detail we had was owners.email, which is a login, not a
+    -- person to ring when their counter has been dark for a week.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS contact_phone text NOT NULL DEFAULT '';
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS contact_note text NOT NULL DEFAULT '';
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -1678,6 +1693,169 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_30d
        FROM cards c
       ORDER BY c.created_at DESC`,
+  );
+  return res.rows;
+}
+
+// ---------------------------------------------------- merchant health ----
+
+/** Days a merchant gets before the trial is up. Derived from signup, not stored:
+ *  adding a `trial_ends_at` column later is additive, and until money changes
+ *  hands a stored date is a second thing to keep true for no benefit. */
+export const TRIAL_DAYS = 30;
+
+export interface MerchantHealthRow {
+  id: string;
+  name: string;
+  /** Every owner email on the account, comma-joined. The login, not a person. */
+  owners: string | null;
+  contact_phone: string;
+  contact_note: string;
+  created_at: Date;
+  archived_at: Date | null;
+  /** Days since signup. `TRIAL_DAYS - trial_day` is what is left. */
+  trial_day: number;
+  /** Cards they run. One, for every merchant created since the V1 cap. */
+  cards: number;
+  /** The card's self-reported basket, in cents, and its symbol. */
+  basket_cents: number;
+  currency: string;
+  stamps_target: number;
+
+  // --- activation ---
+  /** First staff stamp anywhere on this merchant. Null = never activated. */
+  first_stamp_at: Date | null;
+  first_redeem_at: Date | null;
+  /** Has the owner ever opened their printable poster? Nothing can happen before this. */
+  poster_views: number;
+
+  // --- liveness ---
+  last_stamp_at: Date | null;
+  last_owner_login: Date | null;
+  logins_30d: number;
+  /** Net staff stamps = real counter visits. Welcome stamps and post-reward
+   *  resets are written to passes.stamp_count and emit no event, so they have
+   *  never been in this number. */
+  stamps: number;
+  stamps_7d: number;
+  stamps_30d: number;
+  stamps_prev_7d: number;
+  customers: number;
+  active_7d: number;
+  redemptions: number;
+  unclaimed_rewards: number;
+
+  // --- funnel (see adminFunnel for the Google caveat on `landed`) ---
+  scanned: number;
+  clicked: number;
+  made: number;
+  landed: number;
+  removed: number;
+  dropped: number;
+
+  // --- engagement / willingness to pay ---
+  card_edits: number;
+  nudges: number;
+  has_art: boolean;
+  staff_devices: number;
+
+  // --- breakage ---
+  pin_failed_24h: number;
+  lookup_failed_7d: number;
+  /** Nudges that were attempted and did not arrive. */
+  messages_failed: number;
+}
+
+/**
+ * One row per merchant, with everything the console triages on.
+ *
+ * Merchant-keyed on purpose. Every existing admin query groups by `cards`,
+ * which is the programme, not the business — with one card per merchant that is
+ * usually the same row, but it is the wrong unit to think in and it breaks the
+ * moment a merchant runs two.
+ *
+ * All of it is derived from `events` and `passes`; nothing new is tracked except
+ * `poster_view`. Archived merchants are INCLUDED and flagged, because the
+ * console is the one place a retired merchant is still visible.
+ */
+export async function merchantHealth(): Promise<MerchantHealthRow[]> {
+  // Their cards, as a scalar subquery source. Every per-merchant aggregate below
+  // sums over this rather than assuming a single card.
+  const ev = (filter: string, since = "") =>
+    `(SELECT count(*)::int FROM events e
+       WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+         AND ${filter}${since ? ` AND e.created_at > now() - interval '${since}'` : ""})`;
+  const res = await getPool().query<MerchantHealthRow>(
+    `SELECT m.id, m.name, m.created_at, m.archived_at, m.contact_phone, m.contact_note,
+            (SELECT string_agg(DISTINCT o.email, ', ')
+               FROM owners o WHERE o.id = m.owner_id) AS owners,
+            floor(extract(epoch FROM (now() - m.created_at)) / 86400.0)::int AS trial_day,
+            (SELECT count(*)::int FROM cards WHERE merchant_id = m.id) AS cards,
+            -- The card's basket, not the merchant's: only the card column is
+            -- written by the dashboard; merchants.average_spend_cents is a v1.3
+            -- backfill artefact that nothing keeps current.
+            COALESCE((SELECT max(average_spend_cents) FROM cards WHERE merchant_id = m.id), 0) AS basket_cents,
+            COALESCE((SELECT max(currency) FROM cards WHERE merchant_id = m.id), 'RM') AS currency,
+            COALESCE((SELECT max(stamps_target) FROM cards WHERE merchant_id = m.id), 0) AS stamps_target,
+
+            (SELECT min(e.created_at) FROM events e
+              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND e.type = 'stamp') AS first_stamp_at,
+            (SELECT min(e.created_at) FROM events e
+              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND e.type = 'redeem') AS first_redeem_at,
+            ${ev("e.type = 'poster_view'")} AS poster_views,
+
+            (SELECT max(e.created_at) FROM events e
+              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND e.type = 'stamp') AS last_stamp_at,
+            (SELECT max(l.created_at) FROM owner_logins l WHERE l.owner_id = m.owner_id) AS last_owner_login,
+            (SELECT count(*)::int FROM owner_logins l
+              WHERE l.owner_id = m.owner_id AND l.created_at > now() - interval '30 days') AS logins_30d,
+            GREATEST(${ev("e.type = 'stamp'")} - ${ev("e.type = 'undo'")}, 0) AS stamps,
+            ${ev("e.type = 'stamp'", "7 days")} AS stamps_7d,
+            ${ev("e.type = 'stamp'", "30 days")} AS stamps_30d,
+            -- The week before last, so the table can show a direction rather
+            -- than a number that could mean anything.
+            (SELECT count(*)::int FROM events e
+              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND e.type = 'stamp'
+                AND e.created_at > now() - interval '14 days'
+                AND e.created_at <= now() - interval '7 days') AS stamps_prev_7d,
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
+              WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND ${ACTIVE_PASS_SQL}) AS customers,
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
+              WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND ${LAST_VISIT_SQL} > now() - interval '7 days'
+                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_7d,
+            ${ev("e.type = 'redeem'")} AS redemptions,
+            (SELECT count(*)::int FROM passes p
+              WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
+
+            ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot', 'false') <> 'true'")} AS scanned,
+            ${ev("e.type = 'wallet_click'")} AS clicked,
+            ${ev("e.type = 'enroll'")} AS made,
+            ${ev("e.type = 'pass_added'")} AS landed,
+            ${ev("e.type = 'pass_removed'")} AS removed,
+            ${ev("e.type = 'pass_dropped'")} AS dropped,
+
+            ${ev("e.type = 'card_edited'")} AS card_edits,
+            ${ev("e.type = 'nudge'")} AS nudges,
+            EXISTS (SELECT 1 FROM card_logos l
+                     WHERE l.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)) AS has_art,
+            (SELECT count(DISTINCT e.actor)::int FROM events e
+              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND e.actor LIKE 'staff:%') AS staff_devices,
+
+            ${ev("e.type = 'pin_failed'", "24 hours")} AS pin_failed_24h,
+            ${ev("e.type = 'lookup_failed'", "7 days")} AS lookup_failed_7d,
+            (SELECT count(*)::int FROM messages g
+              WHERE g.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND g.delivered = false) AS messages_failed
+       FROM merchants m
+      ORDER BY m.created_at DESC`,
   );
   return res.rows;
 }
