@@ -32,6 +32,7 @@ import {
   cardsForMerchant,
   cardsForOwner,
   ensureMerchantForOwner,
+  currentSlug,
   merchantForOwner,
   clearResetToken,
   countOwners,
@@ -319,6 +320,10 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
     email: req.owner!.email,
     cards: out,
     hasStaffPin: (req.owner!.staff_pin_hash ?? "") !== "",
+    // What goes in a /j/ link: the poster and the shareable sign-up link both
+    // use it, because a merchant ref survives a rename, a second card and a
+    // change of ownership in a way a card link does not.
+    joinRef: merchant ? await currentSlug(merchant.id) : "",
   });
 });
 

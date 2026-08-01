@@ -40,6 +40,8 @@ import {
   cardsForMerchant,
   getMerchantByRef,
   joinTargetCard,
+  cafeLogoVersion,
+  currentSlug,
   merchantForCard,
   passForCustomer,
   resolveCustomer,
@@ -55,6 +57,7 @@ import {
   landingPage,
   marketingPage,
   notReadyPage,
+  posterPage,
   privacyPage,
   privacyPageBm,
   termsPage,
@@ -385,6 +388,29 @@ publicRouter.get("/c/:cardId/enroll/google", (req, res) =>
 );
 publicRouter.get("/qr", (_req, res) => cardQr(DEFAULT_CARD_ID, res));
 publicRouter.get("/c/:cardId/qr", (req, res) => cardQr(req.params.cardId!, res));
+
+/**
+ * The printable sign-up poster, in the card's own colours.
+ *
+ * Public on purpose: everything on it — the shop name, the offer, the QR — is
+ * already on the sign-up page any customer can open. Nothing here is owner-only,
+ * so it needs no session and an owner can send the link to a print shop.
+ *
+ * The QR inside points at the MERCHANT join link, not this card, so the printed
+ * sheet survives a rename or a second card (see CLAUDE.md).
+ */
+publicRouter.get("/c/:cardId/poster", async (req, res) => {
+  const card = await findCafe(req.params.cardId!);
+  if (card === "no-db") return void res.status(503).type("html").send(notReadyPage());
+  if (!card) return void res.status(404).type("html").send(notReadyPage());
+  const [merchant, business, logoVersion] = await Promise.all([
+    merchantForCard(card.id).catch(() => null),
+    businessNameForCard(card),
+    cafeLogoVersion(card.id).catch(() => 0),
+  ]);
+  const joinRef = merchant ? await currentSlug(merchant.id) : card.id;
+  res.type("html").send(posterPage(card, business, joinRef, logoVersion));
+});
 
 // Publicly served logo — Google Wallet requires a hosted programLogo URL.
 // Per-café: an uploaded logo from the database, else the bundled default.

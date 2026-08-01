@@ -2,6 +2,7 @@
  * All HTML pages, server-rendered from template strings — no frontend build,
  * nothing for the founder to compile. Mobile-first (staff use their phones).
  */
+import { contrastText, rgbToHex } from "./color.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
 import { DEFAULT_CARD_ID } from "./db.js";
@@ -380,13 +381,24 @@ export const MODAL_CSS = /* css */ `
   @media (prefers-reduced-motion: reduce) { .itip { transition: none; } }
 `;
 
+/**
+ * The shell every page is served in.
+ *
+ * `title` is ESCAPED here rather than at each call site. Several titles carry a
+ * shop name — the sign-up page, the poster, the counter sheet — and a title is
+ * plain text by definition, so there is no caller that wants markup in it.
+ * Escaping once is the only version of this that cannot be forgotten by the next
+ * page someone adds. It had been forgotten already: a shop named
+ * `</title><script>…` reached the title of a page every one of their customers
+ * loads.
+ */
 function page(title: string, body: string, extraCss = "", script = ""): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title}</title>
+<title>${esc(title)}</title>
 <style>${baseCss}${extraCss}</style>
 </head>
 <body>${body}${script ? `<script>${script}</script>` : ""}</body>
@@ -404,6 +416,23 @@ function page(title: string, body: string, extraCss = "", script = ""): string {
 const legalLine = `<p class="muted" style="margin-top:10px;font-size:.78rem">No name, no phone number, no email — ever.
   Adding this card means you accept our <a href="/terms" target="_blank">Terms</a> and
   <a href="/privacy" target="_blank">Privacy Policy</a>.</p>`;
+
+/**
+ * The one line that sells the card: the owner's own words, or a sentence built
+ * from their reward when they haven't written any.
+ *
+ * Shared by the sign-up page and the printed poster so the two cannot drift —
+ * the poster exists to get someone to that page, and a poster promising one
+ * thing and a page promising another is worse than no poster.
+ *
+ * Returns ESCAPED markup: this is owner-supplied text going into a page every
+ * one of their customers loads.
+ */
+export function signupLine(card: Pick<CardRow, "signup_message" | "stamps_target" | "reward">): string {
+  return card.signup_message
+    ? esc(card.signup_message)
+    : `Collect ${card.stamps_target} stamps, get a ${esc(card.reward.toLowerCase())}.`;
+}
 
 export function landingPage(
   card: CardRow,
@@ -442,14 +471,7 @@ export function landingPage(
     `<div class="card" style="text-align:center">
       <div style="font-size:3rem; margin-bottom:8px">☕️</div>
       <h1>${esc(card.name)}</h1>
-      <p class="sub">${
-        // The owner's own words when they've written some. esc() is not optional
-        // here: this is owner-supplied text going straight into the markup of a
-        // page every one of their customers loads.
-        card.signup_message
-          ? esc(card.signup_message)
-          : `Collect ${card.stamps_target} stamps, get a ${esc(card.reward.toLowerCase())}.`
-      }<br>
+      <p class="sub">${signupLine(card)}<br>
       Your card lives in your phone’s wallet — no app needed.</p>
       ${
         buttons
@@ -1731,6 +1753,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
     .row2 { display: flex; gap: 8px; }
     .row2 > div { flex: 1; }
+    /* Three number fields across a 375px phone. Smaller, tighter labels so
+       "Stamps to reward" wraps to two lines instead of shoving the columns
+       apart, and min-width:0 so flex actually lets them shrink. */
+    .row3 > div { min-width: 0; }
+    .row3 label { font-size: .78rem; line-height: 1.25; }
     /* --- live wallet-card preview --- */
     .pv { border-radius: 14px; padding: 16px; margin: 10px 0 4px; box-shadow: 0 4px 16px rgba(43,29,21,.18); }
     .pv-top { display: flex; align-items: center; gap: 10px; }
@@ -2049,20 +2076,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <div class="pv-note">Code ABC123 · updates by itself</div>
         </div>
 
-        <h2 class="sec">Shop name</h2>
+        <!-- No section headers above the fold. Each .sec costs ~50px of rule and
+             margin, and two of them plus a full-width spend row were most of
+             what stood between the preview and the design controls. What a
+             change DOES now lives in the Save popup, which is the moment it
+             matters, rather than as grey text nobody reads on the way past. -->
+        <label style="margin-top:14px">Shop name\${info("The name customers see on the card.")}</label>
         <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
-        <p class="muted" style="margin-top:6px">This is what customers see on the card.\${info("It is the only thing that changes on cards already in a wallet when you rename. Everything else about an issued card stays as it was.")}</p>
 
-        <h2 class="sec">Rules</h2>
-        <label>Reward</label><input data-f="reward" value="\${c.reward}">
-        <div class="row2">
+        <label style="margin-top:14px">Reward</label><input data-f="reward" value="\${c.reward}">
+        <div class="row2 row3">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
-          <div><label>Stamps to start with\${info("A new card starts here, and a card restarts here after a reward — so a returning customer is never worse off than someone walking in for the first time.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
+          <div><label>Welcome stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
+          <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers. Optional — leave at 0 to hide it.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
         </div>
-        <label style="margin-top:14px">Average spend per visit (RM)\${info("Turns stamps into a money figure at the top of Customers. Leave at 0 to hide it.")}</label>
-        <input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}">
 
-        <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. Leave blank and we write one from your reward.")}</label>
+        <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
         <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>
@@ -2777,11 +2806,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           "Save design",
         );
         if (!ok) return;
+        // No shopName here. The field sits above the fold now, next to Save
+        // rules — leaving its save on a button inside a collapsed section is how
+        // you get an owner who renamed their shop and lost it.
         await save({
-          // The card's own name follows the shop's. It used to be a second field
-          // nobody could tell apart from the first, and the only place it shows
-          // is the programme name on an Android card — which is the shop.
-          name: f("shopName").value, shopName: f("shopName").value,
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
         }, "Design");
@@ -2789,29 +2817,41 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         // re-render it — saving the field alone would leave the old band on the
         // card and the new one only in the picker.
         await saveBanner(bandPng(bandTexture, 750, 246));
-        // Keep the card-picker chip labels in sync without resetting the form.
-        const pk = document.querySelector("[data-pick]");
-        if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cards[Number(b.dataset.ci)].name; });
       };
 
       q("[data-a=saverules]").onclick = async () => {
+        // The rename is called out separately, because it is the one change here
+        // that reaches a card already in someone's wallet.
+        const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
         const ok = await modal(
-          "Change the rules?",
-          liveCustomers
+          "Save these changes?",
+          (liveCustomers
             ? "<p>New cards use these rules straight away. Your <strong>" + liveCustomers + "</strong> existing " +
               them() + " keep the reward and stamp count they were promised, and move onto the new rules " +
               "the next time they earn a reward.</p>"
-            : "<p>These rules apply to every card from here on.</p>",
-          "Save rules",
+            : "<p>These rules apply to every card from here on.</p>") +
+          (renamed && liveCustomers
+            ? '<p style="margin-top:8px">The new shop name <strong>does</strong> reach cards already in a wallet — ' +
+              "it is the only thing here that does. Your old sign-up links keep working.</p>"
+            : ""),
+          "Save",
         );
         if (!ok) return;
-        save({
+        await save({
+          shopName: f("shopName").value,
+          // The card's own name follows the shop's. It used to be a second field
+          // nobody could tell apart from the first, and the only place it shows
+          // is the programme name on an Android card — which is the shop.
+          name: f("shopName").value,
           reward: f("reward").value,
           stampsTarget: Number(f("stampsTarget").value),
           stampsStart: Number(f("stampsStart").value),
           averageSpend: Number(f("averageSpend").value) || 0,
           signupMessage: f("signupMessage").value,
-        }, "Rules");
+        }, "Card");
+        // Keep the card-picker chip labels in sync without resetting the form.
+        const pk = document.querySelector("[data-pick]");
+        if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cards[Number(b.dataset.ci)].name; });
       };
       return div;
     }
@@ -2884,7 +2924,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <h2 class="sec">Notifications\${info("Each customer can be messaged once every 7 days. That is per person, not per card — someone holding your card on two phones still only hears from you once. Anyone inside the 7 days is skipped automatically.")}</h2>
+        <h2 class="sec">Notifications\${info("Each customer can be messaged once every 7 days. Anyone inside that window is skipped automatically.")}</h2>
         <label>Message</label>
         <div class="msgrow">
           <input data-msg maxlength="200">
@@ -3038,9 +3078,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         </div>
 
         <h2 class="sec">Share</h2>
+        <!-- Both are /j/ links: the merchant ref survives a rename, a second
+             card and a change of ownership, and every ref a shop has ever held
+             keeps resolving — which is what makes a printed poster safe. Card
+             links stay live forever too, so nothing already shared breaks. -->
         <div class="sharelist">
-          <a href="/c/\${c.id || ""}" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
-          <a href="/c/\${c.id || ""}/qr" target="_blank"><span>QR poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
+          <a href="/j/\${S.joinRef || c.id || ""}" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
+          <a href="/c/\${c.id || ""}/poster" target="_blank"><span>Sign-up QR poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
         </div>
 
         <h2 class="sec">Your account</h2>
@@ -3115,13 +3159,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       if (seg.scrollWidth > seg.clientWidth) on.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
     // ---- app shell: owner-scoped tabs ----
-    const S = { cards: [], email: "", tab: "customers", selCard: 0, hasStaffPin: false };
+    const S = { cards: [], email: "", tab: "customers", selCard: 0, hasStaffPin: false, joinRef: "" };
 
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
       S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "customers";
       S.hasStaffPin = !!body.hasStaffPin;
+      S.joinRef = body.joinRef || "";
       // Three tabs, each one job: who your customers are and how it's going ·
       // what the card is · everything you set once. Home and Customers used to
       // be separate, which left a headline row on one page and the people it
@@ -3180,6 +3225,97 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     css,
     js,
   );
+}
+
+// --------------------------------------------------------------- poster ----
+
+/** What the poster says it is powered by. Renaming lives here, once. */
+const PRODUCT_NAME = "PunchMe";
+
+/**
+ * The owner's own printable sign-up poster, in their card's colours.
+ *
+ * What this replaces: the Shop tab used to link straight at `/c/:id/qr`, which
+ * serves a **bare PNG**. Printing that gives you a black square on white paper
+ * with no shop name, no offer, and nothing telling a customer they don't need to
+ * download anything — which is the single objection a poster has to answer.
+ *
+ * The QR encodes the MERCHANT join link, not a card link. That is the whole
+ * point of `/j/:ref`: a poster on a counter outlives a rename, a second card and
+ * a change of ownership (see CLAUDE.md). Retired slugs redirect forever, so a
+ * printed poster can never be killed by an edit in the dashboard.
+ */
+export function posterPage(
+  card: Pick<CardRow, "id" | "reward" | "stamps_target" | "signup_message"> & {
+    background_color: string;
+    accent_color: string;
+    label_color: string;
+  },
+  /** The shop's name — the merchant's, not the card's. */
+  business: string,
+  /** Merchant id or current slug: whatever `/j/:ref` should carry. */
+  joinRef: string,
+  /** 0 = no uploaded logo, so the header runs on type alone. */
+  logoVersion = 0,
+): string {
+  const bg = rgbToHex(card.background_color);
+  const accent = rgbToHex(card.accent_color);
+  // Never sampled: a shop whose brand colour is dark and whose accent is also
+  // dark would otherwise print a header nobody can read.
+  const onBg = contrastText(bg);
+  const ref = encodeURIComponent(joinRef);
+  const css = /* css */ `
+    body { max-width: 640px; }
+    .poster { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: #fff; }
+    .phead { background: ${bg}; color: ${onBg}; padding: 26px 28px 22px; text-align: center; }
+    .phead img { width: 74px; height: 74px; object-fit: contain; margin-bottom: 10px; }
+    .phead h1 { font-size: 1.7rem; margin: 0; color: ${onBg}; letter-spacing: -.01em; }
+    .pbody { padding: 26px 28px 20px; text-align: center; }
+    .poffer { font-size: 1.5rem; font-weight: 700; line-height: 1.25; margin: 0 0 8px;
+              text-wrap: balance; }
+    .pno { font-size: 1rem; color: var(--muted); margin: 0 0 20px; }
+    /* The QR is the point of the sheet, so it takes the space. Framed in the
+       card's accent so the paper reads as theirs from across a counter. */
+    .pqr { border: 6px solid ${accent}; border-radius: 16px; padding: 12px; background: #fff;
+           width: min(100%, 380px); margin: 0 auto; }
+    .pqr img { display: block; width: 100%; height: auto; }
+    .psteps { text-align: left; max-width: 340px; margin: 22px auto 0; color: var(--muted);
+              font-size: .92rem; line-height: 1.8; }
+    .pfoot { border-top: 1px solid var(--line); padding: 12px 28px; text-align: center;
+             color: var(--muted); font-size: .76rem; letter-spacing: .02em; }
+    .noprint { margin-top: 18px; }
+    @media print {
+      .noprint { display: none; }
+      body { max-width: none; padding: 0; background: #fff; }
+      .poster { border: none; border-radius: 0; }
+      /* Browsers strip background colours when printing unless told not to. The
+         brand colour IS the poster, so without this it prints as a white band
+         and the whole exercise is a plain QR again. */
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      @page { margin: 12mm; }
+    }`;
+  const body = `
+    <div class="poster">
+      <div class="phead">
+        ${logoVersion ? `<img src="/c/${encodeURIComponent(card.id)}/art/logo.png?v=${logoVersion}" alt="">` : ""}
+        <h1>${esc(business)}</h1>
+      </div>
+      <div class="pbody">
+        <p class="poffer">${signupLine(card)}</p>
+        <p class="pno">Scan to get your card — no app to download.</p>
+        <div class="pqr"><img src="/j/${ref}/qr" alt="Scan to add your loyalty card"></div>
+        <div class="psteps">
+          1. Point your camera at the code<br>
+          2. Tap <strong>Add to Apple Wallet</strong> or <strong>Google Wallet</strong><br>
+          3. Show the card when you order — it stamps itself
+        </div>
+      </div>
+      <div class="pfoot">Powered by ${PRODUCT_NAME}</div>
+    </div>
+    <div class="noprint">
+      <button class="btn btn-dark" onclick="window.print()">Print this poster</button>
+    </div>`;
+  return page(`${business} — sign-up poster`, body, css);
 }
 
 // ---------------------------------------------------------------- admin ----

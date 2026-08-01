@@ -465,6 +465,25 @@ async function main() {
   await updateCard("default", { signup_message: "" }); // back to the generated line
   expect((await signupPage()).includes(await generatedLine()), "clearing it falls back to the generated line");
 
+  // --- The printable sign-up poster ---
+  // The Shop tab used to link at /c/:id/qr, which is a bare PNG: printing it
+  // gives a black square with no shop name, no offer, and nothing saying there
+  // is no app to download.
+  await updateCard("default", { signup_message: "Free kopi on your 10th visit" });
+  const poster = await get("/c/default/poster");
+  expect(poster.status === 200, "the poster is served");
+  expect(poster.body.includes("Free kopi on your 10th visit"), "the poster headlines the owner's own sign-up line");
+  expect(poster.body.includes("no app to download"), "...and answers the one objection a poster has to answer");
+  expect(poster.body.includes("Powered by PunchMe"), "the poster carries the product footer");
+  // A poster on a counter has to outlive a rename or a second card, which is
+  // what /j/ is for and what a card link is not.
+  expect(/src="\/j\/[^"]+\/qr"/.test(poster.body), "the poster's QR is the merchant join link, not a card link");
+  expect(!poster.body.includes('src="/c/default/qr"'), "...and never the card QR");
+  const posterQrUrl = /src="(\/j\/[^"]+\/qr)"/.exec(poster.body)![1]!;
+  expect((await get(posterQrUrl)).status === 200, "the link inside the poster actually resolves");
+  expect((await get("/c/no-such-card/poster")).status === 404, "a poster for a card that isn't there 404s");
+  await updateCard("default", { signup_message: "" });
+
   // --- Self-serve branding: colours (hex↔rgb boundary) + logo upload ---
   const ov3 = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
   const dflt = ov3.cards.find((c: any) => c.id === "default");
@@ -1729,6 +1748,30 @@ async function main() {
     (await get("/dashboard")).body.includes('href="/staff?c='),
     "the dashboard's staff link names the card explicitly",
   );
+
+  // --- Renaming the shop still works now that it saves with the rules ---
+  // The shop name used to be saved by the Design button, inside a collapsed
+  // fold. It sits above the fold beside Save rules now, so it moved into that
+  // payload — and a rename silently doing nothing is the regression that move
+  // invites. Sent the way the button sends it: everything at once.
+  const renameOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  expect(typeof renameOv.joinRef === "string" && renameOv.joinRef.length > 0,
+    "overview hands the dashboard a /j/ ref for the share link and the poster");
+  const renameSave = await fetch(base + "/dashboard/api/card/default", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({
+      shopName: "Kopi Corner Two", name: "Kopi Corner Two",
+      reward: "Free coffee", stampsTarget: 8, stampsStart: 2, averageSpend: 4.5, signupMessage: "",
+    }),
+  });
+  expect(renameSave.status === 200, "saving the rules block succeeds");
+  const afterRename = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  expect(afterRename.cards.find((x: any) => x.id === "default").shopName === "Kopi Corner Two",
+    "...and the shop name saved with them");
+  // Every ref a merchant has ever held keeps resolving, which is what makes a
+  // printed poster safe to rename behind.
+  expect((await get("/j/" + renameOv.joinRef)).status < 400, "the OLD join ref still resolves after a rename");
+  expect((await get("/j/" + afterRename.joinRef)).status < 400, "and so does the new one");
 
   // --- The stamp grid is keyed by the TARGET it was drawn for ---
   // Regression, and the worst kind: nothing errored. card_stamp_strips was keyed

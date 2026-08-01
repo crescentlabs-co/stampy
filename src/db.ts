@@ -870,6 +870,23 @@ export async function claimSlug(merchantId: string, name: string): Promise<strin
   return merchantId; // absurd collision count — the id always works as a fallback
 }
 
+/**
+ * The readable ref to hand out for this merchant: their newest slug, or their
+ * id when they somehow have none.
+ *
+ * Newest, because `claimSlug` only ever ADDS — a rename reserves a new slug and
+ * keeps every older one resolving forever, so the last one claimed is the one
+ * that matches the shop's current name. Every earlier slug still works, which is
+ * what makes a printed poster safe to rename behind.
+ */
+export async function currentSlug(merchantId: string): Promise<string> {
+  const res = await getPool().query<{ slug: string }>(
+    `SELECT slug FROM merchant_slugs WHERE merchant_id = $1 ORDER BY created_at DESC, slug LIMIT 1`,
+    [merchantId],
+  );
+  return res.rows[0]?.slug ?? merchantId;
+}
+
 export async function getMerchant(id: string): Promise<MerchantRow | null> {
   const res = await getPool().query<MerchantRow>(`SELECT * FROM merchants WHERE id = $1`, [id]);
   return res.rows[0] ?? null;

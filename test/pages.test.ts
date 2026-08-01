@@ -13,6 +13,7 @@ import {
   marketingPage,
   MODAL_JS,
   PALETTE_JS,
+  posterPage,
   resetPage,
   staffPage,
 } from "../src/pages.js";
@@ -25,6 +26,17 @@ function inlineScripts(html: string): string[] {
   while ((m = re.exec(html)) !== null) if (m[1]!.trim()) out.push(m[1]!);
   return out;
 }
+
+/** A card as the poster sees it: colours in the DB's rgb() form. */
+const POSTER_CARD = {
+  id: "default",
+  reward: "Free coffee",
+  stamps_target: 10,
+  signup_message: "",
+  background_color: "rgb(59, 32, 22)",
+  accent_color: "rgb(214, 178, 120)",
+  label_color: "rgb(214, 178, 120)",
+} as never as Parameters<typeof posterPage>[0];
 
 const pages: [string, string][] = [
   ["marketing", marketingPage()],
@@ -44,6 +56,8 @@ const pages: [string, string][] = [
       "default",
     ),
   ],
+  // The poster is deliberately absent: it carries no inline <script> at all, so
+  // there is nothing here to compile. It gets its own block below instead.
 ];
 
 describe("inline page scripts parse", () => {
@@ -59,6 +73,94 @@ describe("inline page scripts parse", () => {
       }
     });
   }
+});
+
+// The Shop tab used to link at /c/:id/qr, which serves a bare PNG. Printing
+// that gives a black square on white paper with no shop name, no offer, and
+// nothing saying there is no app to download — the one objection a poster has
+// to answer.
+describe("the printable sign-up poster", () => {
+  const html = posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 3);
+
+  it("names the shop and the offer, not just a code", () => {
+    expect(html).toContain("Kopi Corner");
+    expect(html).toContain("Collect 10 stamps, get a free coffee.");
+    expect(html).toContain("no app to download");
+  });
+
+  // A poster on a counter has to outlive a rename or a second card, which is
+  // exactly what /j/ is for and what a card link is not.
+  it("encodes the merchant join link, never the card link", () => {
+    expect(html).toContain('src="/j/kopi-corner/qr"');
+    expect(html).not.toContain('src="/c/default/qr"');
+  });
+
+  it("uses the card's own colours and prints them", () => {
+    expect(html).toContain("#3b2016"); // the card background, on the header band
+    expect(html).toContain("#d6b278"); // the accent, framing the QR
+    // Browsers drop background colours when printing unless told otherwise, and
+    // the brand colour IS the poster.
+    expect(html).toContain("print-color-adjust: exact");
+  });
+
+  it("carries the product footer and hides its own controls on paper", () => {
+    expect(html).toContain("Powered by PunchMe");
+    expect(html).toContain(".noprint { display: none; }");
+  });
+
+  // Owner-supplied text, printed and served to the public.
+  it("escapes a shop name and a sign-up line that contain markup", () => {
+    const nasty = posterPage(
+      { ...POSTER_CARD, signup_message: '<img src=x onerror=alert(1)>' },
+      '<script>alert(1)</script>',
+      "kopi-corner",
+      0,
+    );
+    // Escaped, so it renders as the daft text it is rather than as a tag. The
+    // title is covered too: a shop named "</title><script>…" used to close the
+    // element and inject after it, on a page every customer loads.
+    expect(nasty).not.toContain("<script>alert(1)</script>");
+    expect(nasty).not.toContain("<img src=x");
+    expect(nasty).toContain("&lt;script&gt;");
+    expect(nasty).toContain("&lt;img src=x");
+  });
+
+  it("drops the logo slot entirely when none is uploaded", () => {
+    expect(posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 0)).not.toContain("art/logo.png");
+  });
+
+  // The poster exists to get someone to the sign-up page; a poster promising
+  // one thing and a page promising another is worse than no poster.
+  it("uses the same sign-up line the landing page shows", () => {
+    const own = { ...POSTER_CARD, signup_message: "Ten kopis, one free." };
+    expect(posterPage(own, "Kopi Corner", "kopi-corner", 0)).toContain("Ten kopis, one free.");
+    expect(
+      landingPage({ ...own, name: "Kopi Corner" } as never, true, true, "default"),
+    ).toContain("Ten kopis, one free.");
+  });
+});
+
+// A <title> is RCDATA, so a script inside it does not run — but "</title>"
+// closes it and everything after lands in the head as live markup. Several
+// titles carry a shop name, so the escape belongs in the shell, not at each
+// call site where the next page to be added would forget it.
+describe("a shop name can never break out of a page title", () => {
+  const evil = "</title><script>alert(1)</script>";
+
+  it("escapes it on the sign-up page customers load", () => {
+    const html = landingPage(
+      { name: evil, reward: "Free coffee", stamps_target: 10 } as never,
+      true,
+      true,
+      "default",
+    );
+    expect(html).not.toContain("</title><script>");
+    expect(html).toContain("&lt;/title&gt;");
+  });
+
+  it("escapes it on the printed poster", () => {
+    expect(posterPage(POSTER_CARD, evil, "kopi-corner", 0)).not.toContain("</title><script>");
+  });
 });
 
 describe("staff page is a gate, not a hidden panel", () => {
@@ -215,7 +317,7 @@ describe("dashboard information architecture", () => {
   // beside the field it explains. Tappable, not hover — this is used on a phone.
   it("moves what matters into the action and the rest behind an info button", () => {
     expect(html).toContain("Update the card everywhere?");
-    expect(html).toContain("Change the rules?");
+    expect(html).toContain("Save these changes?");
     expect(html).toContain("function info(text)");
     expect(html).toContain("wireInfo(panel)");
   });
