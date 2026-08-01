@@ -75,6 +75,122 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
 }
 
+/**
+ * The colour maths behind "upload your logo and we fill in the card".
+ *
+ * Kept as a SOURCE STRING because the dashboard's JavaScript lives inside a
+ * template literal and there is no build step — it cannot import a module. That
+ * would normally mean writing this twice, once for the browser and once to test
+ * it; exporting the source instead means test/pages.test.ts evaluates the very
+ * code the browser runs. Nothing here touches the DOM, so it is safe to eval.
+ *
+ * The point of the contrast functions: a palette pulled from a logo can easily
+ * be two dark colours, and text picked to "look brand-y" would then be
+ * unreadable on a phone at arm's length. Text is therefore never sampled — it
+ * is computed against whatever sits behind it.
+ */
+export const PALETTE_JS = /* js */ `
+  function _hex(n) { return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0"); }
+  function toRgb(hex) {
+    var h = String(hex || "").replace("#", "");
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    if (!/^[0-9a-f]{6}$/i.test(h)) return [0, 0, 0];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function toHex(r, g, b) { return "#" + _hex(r) + _hex(g) + _hex(b); }
+
+  /** WCAG relative luminance, 0 (black) to 1 (white). */
+  function relLuminance(hex) {
+    var c = toRgb(hex).map(function (v) {
+      var s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  /** WCAG contrast ratio, 1 (identical) to 21 (black on white). */
+  function contrastRatio(a, b) {
+    var la = relLuminance(a), lb = relLuminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  }
+  /** Text that can actually be read on this surface. Never sampled from a logo. */
+  function pickTextColor(bg) {
+    return contrastRatio("#ffffff", bg) >= contrastRatio("#141414", bg) ? "#ffffff" : "#141414";
+  }
+  /** Mix toward white (amount > 0) or black (amount < 0). */
+  function shiftColor(hex, amount) {
+    var c = toRgb(hex), t = amount > 0 ? 255 : 0, k = Math.abs(amount);
+    return toHex(c[0] + (t - c[0]) * k, c[1] + (t - c[1]) * k, c[2] + (t - c[2]) * k);
+  }
+  /** Away from a surface, so the two never read as the same colour. */
+  function separate(hex, from, minRatio) {
+    var out = hex, step = relLuminance(from) > 0.4 ? -0.12 : 0.12;
+    for (var i = 0; i < 6 && contrastRatio(out, from) < minRatio; i++) out = shiftColor(out, step);
+    return out;
+  }
+
+  /**
+   * One emoji, not one character: ❤️ and 🧑‍🍳 are several code points each, and
+   * slicing by character leaves half a glyph behind.
+   */
+  function firstGrapheme(s) {
+    var str = String(s || "").trim();
+    if (!str) return "";
+    try {
+      var seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+      var it = seg.segment(str)[Symbol.iterator]().next();
+      if (!it.done) return it.value.segment;
+    } catch (e) { /* older engine — fall through */ }
+    return Array.from(str)[0] || "";
+  }
+
+  /**
+   * Pixels (a flat RGBA array) → the five colours the card is built from.
+   * Coarse buckets rather than true clustering: a logo has a handful of flat
+   * colours, and 512 buckets separate them without the weight of k-means.
+   */
+  function paletteFrom(data) {
+    var buckets = {}, k;
+    for (var i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 128) continue;                       // transparent
+      var r = data[i], g = data[i + 1], b = data[i + 2];
+      var mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      if (mx > 244 && mn > 244) continue;                    // paper white
+      if (mx < 14) continue;                                 // pure black
+      k = (r >> 5) + "," + (g >> 5) + "," + (b >> 5);
+      var e = buckets[k] || (buckets[k] = { n: 0, r: 0, g: 0, b: 0 });
+      e.n++; e.r += r; e.g += g; e.b += b;
+    }
+    var list = [];
+    for (k in buckets) {
+      var q = buckets[k];
+      var r2 = q.r / q.n, g2 = q.g / q.n, b2 = q.b / q.n;
+      var mx2 = Math.max(r2, g2, b2), mn2 = Math.min(r2, g2, b2);
+      list.push({ n: q.n, hex: toHex(r2, g2, b2), sat: mx2 ? (mx2 - mn2) / mx2 : 0 });
+    }
+    if (!list.length) return null;
+    list.sort(function (a, c) { return c.n - a.n; });
+
+    // The card colour carries text, so it must be dark enough to hold some.
+    var bg = list[0].hex;
+    if (relLuminance(bg) > 0.45) bg = shiftColor(bg, -0.55);
+
+    // The most saturated colour with real presence — the brand's actual colour,
+    // not the grey it happens to be printed on.
+    var colourful = list.filter(function (x) { return x.sat > 0.25 && x.n >= list[0].n * 0.04; });
+    colourful.sort(function (a, c) { return c.sat - a.sat; });
+    var accent = colourful.length ? colourful[0].hex : shiftColor(bg, 0.45);
+
+    // The band sits behind the stamps, so it has to differ from the card AND
+    // leave the stamps visible on top of it.
+    var second = list.length > 1 ? list[1].hex : shiftColor(bg, 0.18);
+    var band = separate(second, bg, 1.35);
+    accent = separate(accent, band, 2.2);
+
+    var label = separate(list.length > 2 ? list[2].hex : accent, bg, 2.6);
+    return { bg: bg, band: band, accent: accent, label: label, fg: pickTextColor(bg) };
+  }
+`;
+
 function page(title: string, body: string, extraCss = "", script = ""): string {
   return `<!doctype html>
 <html lang="en">
@@ -1487,16 +1603,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     @media (prefers-reduced-motion: reduce) { .seg .thumb { transition: none; } }
     /* --- colour presets --- */
-    .presets { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
-    .preset { width: 38px; height: 38px; border-radius: 10px; border: 2px solid var(--field-border); cursor: pointer;
-              display: grid; place-items: center; font-size: .7rem; font-weight: 700; }
-    .preset:hover { border-color: var(--accent); transform: translateY(-1px); }
-    /* --- banner templates --- */
+    /* --- colours pulled out of an uploaded image --- */
+    .swatches { margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--ghost-bg); }
+    .swrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .swrow .sw { width: 30px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
+    .swrow .btn { width: auto; padding: 8px 12px; font-size: .85rem; margin-left: auto; }
+    .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
+    .emojirow input { flex: 1; font-size: 1.15rem; }
+    .emojirow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    /* --- band textures --- */
     .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
     .bantpl .bt { width: 72px; height: 32px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
                   position: relative; overflow: hidden; background-size: cover; background-position: center;
                   box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
     .bantpl .bt:hover { border-color: var(--accent); }
+    .bantpl .bt.sel { border-color: var(--accent); }
     .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
                        color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
     /* --- premium card preview --- */
@@ -1601,6 +1722,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .eye input { width: auto; }
   `;
   const js = /* js */ `
+    ${PALETTE_JS}
     const $ = (s, el=document) => el.querySelector(s);
     // Decided by the server from whether an email service is configured.
     const RESET_BY_EMAIL = ${canEmail ? "true" : "false"};
@@ -1694,20 +1816,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     }
 
     // Curated palettes so a new card looks good without fiddling. [bg, text, label]
-    const PRESETS = [
-      { name: "Espresso", bg: "#3b2016", fg: "#fffaf0", label: "#d6b278" },
-      { name: "Mocha",    bg: "#5b4033", fg: "#fff6ec", label: "#e6c9a8" },
-      { name: "Matcha",   bg: "#2f4a34", fg: "#f3f8ef", label: "#b7d6a0" },
-      { name: "Forest",   bg: "#143a2b", fg: "#eefaf1", label: "#8fd6a8" },
-      { name: "Berry",    bg: "#4a1f38", fg: "#fdeef6", label: "#e5a9cd" },
-      { name: "Rose",     bg: "#7d2144", fg: "#fff0f4", label: "#f4a9c0" },
-      { name: "Ocean",    bg: "#123047", fg: "#eef7fc", label: "#8fc4e6" },
-      { name: "Grape",    bg: "#38265e", fg: "#f2eefb", label: "#b9a4ec" },
-      { name: "Charcoal", bg: "#1f2124", fg: "#f4f4f5", label: "#a9d0ff" },
-      { name: "Sunset",   bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f" },
-      { name: "Honey",    bg: "#8a5a12", fg: "#fff8ea", label: "#ffd98a" },
-      { name: "Ink",      bg: "#101418", fg: "#eef2f6", label: "#7fd1c4" },
-    ];
 
     // The card editor: DESIGN (what it looks like) and RULES (how it behaves) as
     // two sections with their own Save, because they're two different jobs — the
@@ -1736,34 +1844,38 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         </div>
 
         <details class="fold">
-        <summary>Design — colours, logo, banner, stamps</summary>
-        <label style="margin-top:6px">Start from a template <span class="muted">(sets colours, banner, stamps & reward for your kind of shop)</span></label>
-        <div class="bantpl" data-vtpl></div>
+        <summary>Design — your logo, colours, band, stamps</summary>
 
-        <label style="margin-top:12px">Pick a theme <span class="muted">(a good-looking colour set in one tap)</span></label>
-        <div class="presets" data-presets></div>
-
-        <label style="margin-top:10px" class="muted">Or fine-tune the colours yourself</label>
-        <div class="colors">
-          <label>Card colour<input data-f="bg" type="color" value="\${c.bg}"></label>
-          <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
-          <label>Labels<input data-f="label" type="color" value="\${c.label}"></label>
-          <label>Stamps<input data-f="accent" type="color" value="\${c.accent}"></label>
-        </div>
-        <p class="muted" style="margin-top:6px">"Stamps" is the colour an earned stamp fills in with.</p>
+        <label class="sec first" style="margin-top:6px">Start from your logo</label>
+        <p class="muted" style="margin-top:-2px">Upload it and we read the colours out of it. Nothing changes until you tap <strong>Use these colours</strong>, and every colour stays editable below.</p>
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
-
-        <label style="margin-top:10px">Banner <span class="muted">(a photo behind your stamps)</span></label>
-        <div class="bantpl" data-bantpl></div>
         <div class="logorow" style="margin-top:8px">
-          <label class="btn btn-ghost" style="margin:0">Upload your own<input data-banner type="file" accept="image/*"></label>
-          <button class="btn btn-ghost" data-a="rmbanner" style="\${c.bannerVersion ? "" : "display:none"}">Remove banner</button>
+          <label class="btn btn-ghost" style="margin:0">Colours from another image<input data-brandpic type="file" accept="image/*"></label>
         </div>
+        <p class="muted" style="margin-top:6px">A shopfront, your packaging, a menu — anything with your colours in it. It is read on this device and never uploaded or shown on the card.</p>
+        <div class="swatches" data-swatches style="display:none"></div>
 
-        <label style="margin-top:12px">Stamp style <span class="muted">(big stamps that fill in, drawn on top of your banner)</span></label>
+        <label class="sec" style="margin-top:16px">Colours</label>
+        <div class="colors">
+          <label>Card<input data-f="bg" type="color" value="\${c.bg}"></label>
+          <label>Text<input data-f="fg" type="color" value="\${c.fg}"></label>
+          <label>Labels<input data-f="label" type="color" value="\${c.label}"></label>
+          <label>Stamps<input data-f="accent" type="color" value="\${c.accent}"></label>
+          <label>Band<input data-f="bandColor" type="color" value="\${c.bandColor}"></label>
+        </div>
+        <p class="muted" style="margin-top:6px">The <strong>band</strong> is the strip across the middle that the stamps sit on — give it its own colour so it stands apart from the card. "Stamps" is what an earned stamp fills in with.</p>
+
+        <label style="margin-top:12px">Band texture</label>
+        <div class="bantpl" data-bandtex></div>
+
+        <label style="margin-top:12px">Stamp icon <span class="muted">(the big stamps that fill in)</span></label>
+        <div class="emojirow">
+          <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
+          <button class="btn btn-ghost" data-a="useemoji">Use this</button>
+        </div>
         <div class="bantpl" data-stamptpl></div>
         <div class="logorow" style="margin-top:8px">
           <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
@@ -1969,19 +2081,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           .catch(() => {}); // a failure just means we try again next visit
       }
 
-      // preset swatches
-      const pc = q("[data-presets]");
-      for (const p of PRESETS) {
-        const sw = document.createElement("div");
-        sw.className = "preset"; sw.title = p.name;
-        sw.style.background = p.bg; sw.style.color = p.label;
-        sw.textContent = p.name[0];
-        // The accent follows the label colour, which is what filled a stamp
-        // before it became its own field — themes stay coherent out of the box.
-        sw.onclick = () => { f("bg").value = p.bg; f("fg").value = p.fg; f("label").value = p.label; f("accent").value = p.label; renderPreview(); };
-        pc.appendChild(sw);
-      }
-
       // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
       // fit "contain" letterboxes the whole image in; "cover" (the default) fills
       // the frame and crops the overflow. A logo MUST contain — cropping a
@@ -2017,6 +2116,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").style.display = "";
+        readPalette(url); // the logo is the first thing to take colours from
       }, "contain");
       // Removing the logo hides it here too, because the pass drops the image
       // entirely with no upload and shows the shop name alone — the preview has
@@ -2030,25 +2130,72 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         toast("Logo removed");
       };
 
-      // Banner: pre-made templates (drawn on a canvas from the card's colours,
-      // so they stay on-brand) plus "upload your own". Both save the same way.
+      // ---- Colours out of an image ----
+      // Read on this device and thrown away: the brand photo is a colour source,
+      // never something we store or show, which is why it can be any picture at
+      // all. Nothing is applied until the owner taps the button — an upload that
+      // silently repainted their card would be worse than no feature.
+      let found = null;
+      function readPalette(dataUrl) {
+        const im = new Image();
+        im.onload = () => {
+          // 64px is plenty to count colours by and keeps this instant on a phone.
+          const k = Math.min(64 / im.naturalWidth, 64 / im.naturalHeight, 1);
+          const cv = document.createElement("canvas");
+          cv.width = Math.max(1, Math.round(im.naturalWidth * k));
+          cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+          const x = cv.getContext("2d", { willReadFrequently: true });
+          x.drawImage(im, 0, 0, cv.width, cv.height);
+          let data;
+          try { data = x.getImageData(0, 0, cv.width, cv.height).data; }
+          catch (e) { return; } // tainted canvas — nothing to offer
+          found = paletteFrom(data);
+          showSwatches();
+        };
+        im.src = dataUrl;
+      }
+      function showSwatches() {
+        const host = q("[data-swatches]");
+        if (!found) {
+          host.style.display = "";
+          host.innerHTML = '<p class="muted" style="margin:0">No clear colours in that image — try one with more of your brand in it, or set the colours below yourself.</p>';
+          return;
+        }
+        host.style.display = "";
+        const chip = (hex, name) => '<span class="sw" title="' + name + '" style="background:' + hex + '"></span>';
+        host.innerHTML =
+          '<div class="swrow">' + chip(found.bg, "Card") + chip(found.band, "Band") +
+          chip(found.accent, "Stamps") + chip(found.label, "Labels") + chip(found.fg, "Text") +
+          '<button class="btn btn-ghost" data-a="usepal">Use these colours</button></div>' +
+          '<p class="muted" style="margin:6px 0 0">Text is chosen for readability rather than taken from the image, so it can always be read on the card.</p>';
+        host.querySelector("[data-a=usepal]").onclick = async () => {
+          f("bg").value = found.bg; f("fg").value = found.fg;
+          f("label").value = found.label; f("accent").value = found.accent;
+          f("bandColor").value = found.band;
+          renderPreview(); drawTextureRow();
+          await save({
+            bg: found.bg, fg: found.fg, label: found.label,
+            accent: found.accent, bandColor: found.band,
+          }, "Colours");
+          await saveBanner(bandPng(bandTexture, 750, 246));
+        };
+      }
+      // Any image, read locally. No kind → wireUpload hands back the data URL
+      // and nothing is posted.
+      wireUpload("[data-brandpic]", null, 512, 512, readPalette, "contain");
+
+      // The band is stored exactly where the uploaded banner photo used to be, so
+      // nothing downstream changes: Apple composites it behind the stamps, Google
+      // uses it as the hero image. Photos are gone — this is always generated.
       async function saveBanner(dataUrl) {
         const { body } = await api("/card/" + c.id + "/banner", { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
-        if (!body.ok) return toast(body.error || "Banner failed");
-        // Re-bake the strips: the banner is the backdrop INSIDE each strip PNG,
-        // so a new banner that isn't re-rendered would never reach the pass.
+        if (!body.ok) return toast(body.error || "Band failed");
+        // Re-bake the strips: the band is the backdrop INSIDE each strip PNG,
+        // so a new band that isn't re-rendered would never reach the pass.
         await loadBanner(dataUrl);
         await applyStamps(stampStyle || "dot", true);
-        q("[data-a=rmbanner]").style.display = ""; toast("Banner saved ✓");
+        toast("Band saved ✓");
       }
-      wireUpload("[data-banner]", null, 750, 246, saveBanner); // null kind → onDone handles the POST
-      q("[data-a=rmbanner]").onclick = async () => {
-        const { body } = await api("/card/" + c.id + "/banner", { method: "DELETE" });
-        if (!body.ok) return toast(body.error || "Couldn't remove banner");
-        await loadBanner("");
-        await applyStamps(stampStyle || "dot", true);
-        q("[data-a=rmbanner]").style.display = "none"; toast("Banner removed");
-      };
 
       function shade(hex, p) { // p in -1..1 → darken/lighten
         const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
@@ -2059,7 +2206,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       function drawBanner(style, c1, c2, w, h) {
         const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
         const x = cv.getContext("2d");
-        if (style === "diagonal") {
+        if (style === "flat") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+        } else if (style === "diagonal") {
           x.fillStyle = c1; x.fillRect(0, 0, w, h);
           x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
         } else if (style === "glow") {
@@ -2077,37 +2226,47 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         }
         return cv.toDataURL("image/png");
       }
-      const BANNERS = [
-        { name: "Gradient", style: "gradient", from: 1 },
-        { name: "Glow", style: "glow", from: 1 },
-        { name: "Diagonal", style: "diagonal", from: 1 },
-        { name: "Waves", style: "waves", from: 1 },
-        { name: "Slate", style: "gradient", c1: "#20242b", c2: "#3c434e" },
-        { name: "Sand", style: "gradient", c1: "#cdbfa3", c2: "#a98f66" },
-        { name: "Rose", style: "glow", c1: "#7d2144", c2: "#c85b86" },
-        { name: "Forest", style: "waves", c1: "#143a2b", c2: "#3f8a63" },
-        { name: "Dusk", style: "diagonal", c1: "#2b2140", c2: "#c98a5a" },
+      // ---- The band: the strip the stamps sit on, in its own colour ----
+      // It is still stored as the banner PNG, so Google's hero image and Apple's
+      // strip backdrop are unchanged — what went away is uploading a photo.
+      // "flat" is one colour; the rest shade toward a lighter version of it.
+      const TEXTURES = [
+        { name: "Flat", style: "flat" },
+        { name: "Gradient", style: "gradient" },
+        { name: "Glow", style: "glow" },
+        { name: "Diagonal", style: "diagonal" },
+        { name: "Waves", style: "waves" },
       ];
-      const btpl = q("[data-bantpl]");
-      for (const t of BANNERS) {
-        const c1 = t.from ? f("bg").value : t.c1;
-        const c2 = t.from ? shade(f("bg").value, 0.4) : t.c2;
-        const bt = document.createElement("div"); bt.className = "bt"; bt.title = t.name;
-        bt.style.backgroundImage = "url(" + drawBanner(t.style, c1, c2, 144, 64) + ")";
-        bt.innerHTML = "<span>" + t.name + "</span>";
-        bt.onclick = () => {
-          const a = t.from ? f("bg").value : t.c1, b = t.from ? shade(f("bg").value, 0.4) : t.c2;
-          saveBanner(drawBanner(t.style, a, b, 750, 246));
-        };
-        btpl.appendChild(bt);
+      let bandTexture = c.bandTexture || "gradient";
+      /** The band at any size, from whatever the colour picker currently says. */
+      function bandPng(style, w, h) {
+        const a = f("bandColor").value;
+        return drawBanner(style, a, shade(a, 0.35), w, h);
       }
+      const btpl = q("[data-bandtex]");
+      function drawTextureRow() {
+        btpl.innerHTML = "";
+        for (const t of TEXTURES) {
+          const bt = document.createElement("div");
+          bt.className = "bt" + (t.style === bandTexture ? " sel" : "");
+          bt.title = t.name;
+          bt.style.backgroundImage = "url(" + bandPng(t.style, 144, 64) + ")";
+          bt.innerHTML = "<span>" + t.name + "</span>";
+          bt.onclick = async () => {
+            bandTexture = t.style;
+            drawTextureRow();
+            await api("/card/" + c.id, { method: "POST", body: JSON.stringify({ bandTexture: t.style }) });
+            await saveBanner(bandPng(t.style, 750, 246));
+          };
+          btpl.appendChild(bt);
+        }
+      }
+      drawTextureRow();
 
       const STAMP_ICONS = [
         { name: "Dot", icon: "dot" }, { name: "Coffee", icon: "☕" },
-        { name: "Paw", icon: "🐾" }, { name: "Star", icon: "⭐" },
-        { name: "Heart", icon: "❤️" }, { name: "Donut", icon: "🍩" },
-        { name: "Boba", icon: "🧋" }, { name: "Croissant", icon: "🥐" },
-        { name: "Chicken", icon: "🍗" }, { name: "Flower", icon: "🌸" },
+        { name: "Star", icon: "⭐" }, { name: "Heart", icon: "❤️" },
+        { name: "Donut", icon: "🍩" }, { name: "Boba", icon: "🧋" },
       ];
 
       // Renders the full 0..target set and stores it (immediate, like banners).
@@ -2132,9 +2291,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         const bt = document.createElement("div"); bt.className = "bt"; bt.title = t.name;
         bt.style.backgroundImage = "url(" + drawStampStrip(Math.ceil((Number(f("stampsTarget").value) || 10) / 2), Number(f("stampsTarget").value) || 10, t.icon) + ")";
         bt.innerHTML = "<span>" + t.name + "</span>";
-        bt.onclick = () => applyStamps(t.icon);
+        bt.onclick = () => { q("[data-emoji]").value = t.icon === "dot" ? "" : t.icon; applyStamps(t.icon); };
         stpl.appendChild(bt);
       }
+      // Any emoji at all. The renderer already draws whatever glyph it is given,
+      // so this only has to hand it one — and exactly one: firstGrapheme keeps
+      // multi-code-point emoji (❤️, 🧑‍🍳) whole instead of slicing them in half.
+      q("[data-a=useemoji]").onclick = () => {
+        const one = firstGrapheme(q("[data-emoji]").value);
+        q("[data-emoji]").value = one;
+        applyStamps(one || "dot");
+      };
       // Upload your own stamp icon → normalise to a small square PNG → apply.
       // Rejected unless it has transparency: the shape is taken from the alpha
       // channel, so a fully opaque image would stamp a solid square.
@@ -2168,41 +2335,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         toast("Back to plain dots");
       };
 
-      // ---- Vertical templates: one tap sets a coordinated whole-card design ----
-      const VERTICALS = [
-        { name: "Coffee",      emoji: "☕", bg: "#3b2016", fg: "#fffaf0", label: "#d6b278", banner: "gradient", icon: "☕", reward: "Free coffee" },
-        { name: "Chicken rice", emoji: "🍗", bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f", banner: "diagonal", icon: "🍗", reward: "Free plate" },
-        { name: "Bubble tea",  emoji: "🧋", bg: "#38265e", fg: "#f2eefb", label: "#b9a4ec", banner: "glow",     icon: "🧋", reward: "Free drink" },
-        { name: "Bakery",      emoji: "🥐", bg: "#8a5a12", fg: "#fff8ea", label: "#ffd98a", banner: "gradient", icon: "🥐", reward: "Free pastry" },
-        { name: "Dessert",     emoji: "🍨", bg: "#7d2144", fg: "#fff0f4", label: "#f4a9c0", banner: "glow",     icon: "🍩", reward: "Free dessert" },
-        { name: "Anything",    emoji: "⭐", bg: "#1f2124", fg: "#f4f4f5", label: "#a9d0ff", banner: "waves",    icon: "⭐", reward: "Free reward" },
-      ];
-
-      // Applies the whole bundle: colours + reward (main save), banner, stamps.
-      async function applyVertical(v) {
-        f("bg").value = v.bg; f("fg").value = v.fg; f("label").value = v.label; f("accent").value = v.label;
-        f("reward").value = v.reward;
-        renderPreview();
-        const { body } = await api("/card/" + c.id, { method: "POST", body: JSON.stringify({
-          reward: v.reward, bg: v.bg, fg: v.fg, label: v.label, accent: v.label,
-        })});
-        if (!body.ok) return toast(body.error || "Couldn't apply template");
-        // saveBanner re-bakes the strips with the new backdrop, so this second
-        // call only needs to switch the icon — and it runs after, so the icon wins.
-        await saveBanner(drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 750, 246));
-        await applyStamps(v.icon, true);
-        toast(v.name + " template applied ✓");
-      }
-
-      const vtpl = q("[data-vtpl]");
-      for (const v of VERTICALS) {
-        const bt = document.createElement("div"); bt.className = "bt"; bt.title = v.name;
-        bt.style.backgroundImage = "url(" + drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 144, 64) + ")";
-        bt.innerHTML = "<span>" + v.emoji + " " + v.name + "</span>";
-        bt.onclick = () => applyVertical(v);
-        vtpl.appendChild(bt);
-      }
-
       // Two saves, disjoint field sets. Both re-render the stamp strips, because
       // a colour change (design) and a target change (rules) each alter them.
       // That re-render IS the pre-generation step: one PNG per stamp count, so a
@@ -2221,7 +2353,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         await save({
           name: f("name").value, shopName: f("shopName").value,
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
+          bandColor: f("bandColor").value,
         }, "Design");
+        // The band colour is baked into a stored PNG, so a colour change has to
+        // re-render it — saving the field alone would leave the old band on the
+        // card and the new one only in the picker.
+        await saveBanner(bandPng(bandTexture, 750, 246));
         // Keep the card-picker chip labels in sync without resetting the form.
         const pk = document.querySelector("[data-pick]");
         if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cards[Number(b.dataset.ci)].name; });
@@ -2727,6 +2864,7 @@ export function adminPage(): string {
                   position: relative; overflow: hidden; background-size: cover; background-position: center;
                   box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
     .bantpl .bt:hover { border-color: var(--accent); }
+    .bantpl .bt.sel { border-color: var(--accent); }
     .bantpl .bt.sel { border-color: var(--accent); }
     .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
                        color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }

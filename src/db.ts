@@ -41,6 +41,9 @@ export interface CardRow {
   label_color: string;
   /** Fill colour of an earned stamp in the rendered grid. Seeded from label_color. */
   accent_color: string;
+  /** The band across the middle — its own colour, and which texture fills it. */
+  band_color: string;
+  band_texture: string;
   /** Legacy plaintext column — blanked by the migration once hashed. Never read. */
   staff_pin: string;
   /** scrypt hash of the staff PIN (same format as a password hash). */
@@ -574,6 +577,30 @@ export async function migrate(): Promise<void> {
     const seeded = await getPool().query(`UPDATE cards SET accent_color = label_color`);
     console.log(`[migrate] accent_color seeded from label_color on ${seeded.rowCount} card(s)`);
   }
+
+  // v1.7: the band across the middle of the card — the strip the stamps sit on,
+  // in its own colour and texture. It replaces the uploaded banner photo, and is
+  // still rendered to a PNG and stored in card_banners, so Google's hero image
+  // and Apple's strip backdrop are unaffected.
+  //
+  // Seeded from each card's own background rather than the literal default, for
+  // the same reason as accent_color above: an existing card must look exactly as
+  // it did until its owner chooses otherwise. The differentiated band is what a
+  // NEW card, or a freshly extracted palette, starts from.
+  const hadBand = await getPool().query(
+    `SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'cards' AND column_name = 'band_color'`,
+  );
+  if (!hadBand.rowCount) {
+    await getPool().query(
+      `ALTER TABLE cards ADD COLUMN band_color text NOT NULL DEFAULT 'rgb(90, 52, 38)'`,
+    );
+    const bands = await getPool().query(`UPDATE cards SET band_color = background_color`);
+    console.log(`[migrate] band_color seeded from background_color on ${bands.rowCount} card(s)`);
+  }
+  await getPool().query(
+    `ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_texture text NOT NULL DEFAULT 'gradient'`,
+  );
 
   // The till id already sitting inside the actor string as "staff:<id>".
   // Independent of merchants and customers, so it can run here.
@@ -1141,6 +1168,8 @@ export async function updateCard(
     auto_winback_message: string;
     stamp_style: string;
     signup_message: string;
+    band_color: string;
+    band_texture: string;
     average_spend_cents: number;
     currency: string;
   }>,

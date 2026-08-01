@@ -23,6 +23,8 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     foreground_color: "rgb(255, 250, 240)",
     label_color: "rgb(214, 178, 120)",
     accent_color: "rgb(214, 178, 120)",
+    band_color: "rgb(90, 52, 38)",
+    band_texture: "gradient",
     staff_pin: "",
     staff_pin_hash: "",
     staff_session_epoch: 1,

@@ -6,7 +6,15 @@
  * structural promises the server relies on.
  */
 import { describe, expect, it } from "vitest";
-import { adminPage, dashboardPage, landingPage, marketingPage, resetPage, staffPage } from "../src/pages.js";
+import {
+  adminPage,
+  dashboardPage,
+  landingPage,
+  marketingPage,
+  PALETTE_JS,
+  resetPage,
+  staffPage,
+} from "../src/pages.js";
 
 /** Every <script>…</script> body in a page (skipping src-only tags). */
 function inlineScripts(html: string): string[] {
@@ -164,10 +172,114 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain('data-f="staffPin"');
   });
 
+  // The designer used to guess at the brand with six "verticals" and twelve
+  // colour themes. It now reads the colours out of the owner's own logo.
+  it("has no themes or vertical templates left to guess with", () => {
+    expect(html).not.toContain("data-presets");
+    expect(html).not.toContain("data-vtpl");
+    expect(html).toContain("data-brandpic");
+    expect(html).toContain("Use these colours");
+  });
+
+  it("builds the band from a colour and a texture, not an uploaded photo", () => {
+    expect(html).toContain('data-f="bandColor"');
+    expect(html).toContain("data-bandtex");
+    expect(html).not.toContain("data-banner]"); // the photo upload input
+    expect(html).not.toContain("rmbanner");
+  });
+
+  it("takes any emoji as the stamp", () => {
+    expect(html).toContain("data-emoji");
+    expect(html).toContain("firstGrapheme");
+  });
+
   // A PIN is only ever stored hashed, so it can never be read back out — the
   // one place it appears is the response to setting it.
   it("never asks for a PIN per card", () => {
     expect(html).not.toContain("rotate-pin");
     expect(html).not.toContain("Staff PIN: \" + r.staffPin");
+  });
+});
+
+/**
+ * The colour maths is shipped to the browser as a source string, so evaluating
+ * that same string here tests the code the dashboard actually runs rather than
+ * a second copy of it.
+ */
+describe("palette maths", () => {
+  const P = new Function(
+    PALETTE_JS +
+      "; return { contrastRatio, pickTextColor, firstGrapheme, paletteFrom, relLuminance, separate };",
+  )() as {
+    contrastRatio: (a: string, b: string) => number;
+    pickTextColor: (bg: string) => string;
+    firstGrapheme: (s: string) => string;
+    paletteFrom: (d: number[]) => { bg: string; band: string; accent: string; label: string; fg: string } | null;
+    relLuminance: (hex: string) => number;
+    separate: (hex: string, from: string, min: number) => string;
+  };
+
+  /** A flat RGBA array, `n` pixels of each colour given. */
+  const pixels = (...runs: [string, number][]) => {
+    const out: number[] = [];
+    for (const [hex, n] of runs) {
+      const h = hex.replace("#", "");
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+      for (let k = 0; k < n; k++) out.push(r!, g!, b!, 255);
+    }
+    return out;
+  };
+
+  it("computes WCAG contrast at the known extremes", () => {
+    expect(P.contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 1);
+    expect(P.contrastRatio("#3b2016", "#3b2016")).toBeCloseTo(1, 5);
+  });
+
+  // The whole reason text is computed rather than sampled: a logo can easily be
+  // two dark colours, and "brand-coloured" text on a dark card is unreadable at
+  // arm's length in a shop.
+  it("always picks readable text, whatever the card colour", () => {
+    for (const bg of ["#3b2016", "#ffffff", "#000000", "#7f7f7f", "#c0392b", "#f1c40f", "#123047"]) {
+      const fg = P.pickTextColor(bg);
+      expect(P.contrastRatio(fg, bg), `text on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("pulls a brand palette out of pixels, and keeps every part legible", () => {
+    // A logo that is mostly deep green with a gold mark on it.
+    const pal = P.paletteFrom(pixels(["#14402c", 900], ["#d4af37", 120], ["#8a6f2a", 40]))!;
+    expect(pal).not.toBeNull();
+    expect(P.contrastRatio(pal.fg, pal.bg)).toBeGreaterThanOrEqual(4.5);
+    // Stamps are drawn ON the band, so that is the pair that has to separate.
+    expect(P.contrastRatio(pal.accent, pal.band)).toBeGreaterThanOrEqual(2);
+    expect(P.contrastRatio(pal.band, pal.bg)).toBeGreaterThan(1.2);
+  });
+
+  it("still returns something usable from a one-colour logo", () => {
+    const pal = P.paletteFrom(pixels(["#c0392b", 500]))!;
+    expect(pal).not.toBeNull();
+    expect(P.contrastRatio(pal.fg, pal.bg)).toBeGreaterThanOrEqual(4.5);
+    expect(pal.band).not.toBe(pal.bg);
+  });
+
+  it("darkens a pale logo rather than putting text on near-white", () => {
+    const pal = P.paletteFrom(pixels(["#f7f3e8", 400], ["#e8d9a0", 100]))!;
+    expect(P.relLuminance(pal.bg)).toBeLessThan(0.5);
+    expect(P.contrastRatio(pal.fg, pal.bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("gives up rather than inventing a palette from a blank image", () => {
+    expect(P.paletteFrom(pixels(["#ffffff", 200]))).toBeNull();
+  });
+
+  // Slicing by character would leave half a glyph: ❤️ is two code points and
+  // 🧑‍🍳 is five, joined by zero-width joiners.
+  it("takes one whole emoji, not one code unit", () => {
+    expect(P.firstGrapheme("☕")).toBe("☕");
+    expect(P.firstGrapheme("❤️")).toBe("❤️");
+    expect(P.firstGrapheme("🧑‍🍳")).toBe("🧑‍🍳");
+    expect(P.firstGrapheme("🍩🍪🍫")).toBe("🍩");
+    expect(P.firstGrapheme("  ⭐  ")).toBe("⭐");
+    expect(P.firstGrapheme("")).toBe("");
   });
 });

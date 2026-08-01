@@ -727,6 +727,42 @@ async function main() {
       appliedCafe.background_color === "rgb(18, 48, 71)",
     "the design's reward, stamp style and colours land on the card",
   );
+
+  // --- The band: its own colour and texture, saved with the card ---
+  const saveCard = async (fields: Record<string, unknown>) => {
+    const r = await fetch(base + "/dashboard/api/card/default", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify(fields),
+    });
+    return { status: r.status, body: JSON.parse(await r.text()) };
+  };
+  await saveCard({ bandColor: "#123047", bandTexture: "waves" });
+  const banded = (await getCard("default"))!;
+  expect(banded.band_color === "rgb(18, 48, 71)", `the band colour is stored as rgb (${banded.band_color})`);
+  expect(banded.band_texture === "waves", "the band texture is stored");
+  const bandedOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  const bandedCard = bandedOv.cards.find((x: any) => x.id === "default");
+  expect(
+    bandedCard.bandColor === "#123047" && bandedCard.bandTexture === "waves",
+    "...and comes back to the designer as hex, so the pickers round-trip",
+  );
+  // The texture vocabulary is fixed: an unknown one would reach the renderer and
+  // silently fall through to a flat fill.
+  await saveCard({ bandTexture: "haunted-mansion" });
+  expect((await getCard("default"))!.band_texture === "waves", "an unknown band texture is refused, not stored");
+  // Any emoji is a valid stamp now, including one built from several code points
+  // joined together — the column takes the glyph as-is.
+  const chefPng = (await getPool().query<{ png: Buffer }>(
+    "SELECT png FROM card_stamp_strips WHERE card_id = 'default' LIMIT 1",
+  )).rows[0];
+  await fetch(base + "/dashboard/api/card/default/stamps", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({
+      style: "🧑‍🍳",
+      strips: [{ filled: 0, png: (chefPng?.png ?? Buffer.alloc(0)).toString("base64") || pngB64 }],
+    }),
+  });
+  expect((await getCard("default"))!.stamp_style === "🧑‍🍳", "a multi-code-point emoji survives as the stamp style");
   // The card's identity and links are NOT part of a design.
   expect(appliedCafe.name === "Nasi Lemak House", "applying a design never renames the card");
   expect((await get("/c/" + dfyOut.cardId)).status === 200, "and the sign-up link still works");

@@ -74,6 +74,9 @@ import { canNudge, MAX_NUDGES_PER_WEEK } from "../winback.js";
 
 export const dashboardRouter = Router();
 
+/** The textures the band can be filled with — must match the renderer in pages.ts. */
+const BAND_TEXTURES = ["flat", "gradient", "glow", "diagonal", "waves"];
+
 interface OwnerRequest extends Request {
   owner?: OwnerRow;
 }
@@ -287,6 +290,8 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       logoVersion, // 0 = no upload; used to cache-bust the preview image
       bannerVersion,
       stampStyle: card.stamp_style,
+      bandColor: rgbToHex(card.band_color),
+      bandTexture: card.band_texture,
       stampsVersion, // 0 = no rendered stamp grid (plain text dots)
       winbackMessage: card.auto_winback_message,
       signupMessage: card.signup_message,
@@ -376,6 +381,13 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
   if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
   if (typeof body.accent === "string") fields.accent_color = hexToRgb(body.accent);
+  // The band across the middle of the card. Its texture is a fixed vocabulary —
+  // anything else would reach the renderer as an unknown style and fall through
+  // to a flat fill without saying so.
+  if (typeof body.bandColor === "string") fields.band_color = hexToRgb(body.bandColor);
+  if (typeof body.bandTexture === "string" && BAND_TEXTURES.includes(body.bandTexture)) {
+    fields.band_texture = body.bandTexture;
+  }
   // The default text a nudge is pre-filled with. The column is still called
   // auto_winback_message from when a scheduler used it; nothing is automated
   // any more (see src/winback.ts), but event and column names here are
