@@ -56,6 +56,7 @@ import {
   setStaffPin,
   setStampStrips,
   stampStripsVersion,
+  targetsInUse,
   updateCard,
   updateMerchant,
   updateOwnerPassword,
@@ -267,10 +268,11 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   const merchant = await merchantForOwner(req.owner!.id);
   const out = [];
   for (const card of cards) {
-    const [logoVersion, bannerVersion, stampsVersion] = await Promise.all([
+    const [logoVersion, bannerVersion, stampsVersion, inUse] = await Promise.all([
       cafeLogoVersion(card.id),
       cafeBannerVersion(card.id),
       stampStripsVersion(card.id),
+      targetsInUse(card.id),
     ]);
     out.push({
       id: card.id,
@@ -293,6 +295,11 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
       bandColor: rgbToHex(card.band_color),
       bandTexture: card.band_texture,
       stampsVersion, // 0 = no rendered stamp grid (plain text dots)
+      // Targets still held by live passes. The browser is the only thing that can
+      // render a grid, so it has to know which older ones it still owes a set for
+      // — otherwise lowering the target blanks the grid on every card issued
+      // under the old one.
+      targetsInUse: inUse,
       winbackMessage: card.auto_winback_message,
       signupMessage: card.signup_message,
       shopName: merchant?.name ?? card.name,
@@ -506,20 +513,23 @@ dashboardRouter.post("/api/card/:id/stamps", requireOwner, async (req: OwnerRequ
   }
   const { style, strips } = (req.body ?? {}) as {
     style?: string;
-    strips?: { filled?: number; png?: string }[];
+    strips?: { target?: number; filled?: number; png?: string }[];
   };
   if (!Array.isArray(strips) || strips.length === 0) {
     return void res.status(400).json({ error: "missing-strips" });
   }
-  const decoded: { filled: number; png: Buffer }[] = [];
+  // `target` is required: a grid drawn for 8 and a grid drawn for 10 are
+  // different pictures at the same filled count, and storing them under one key
+  // is what used to blank a customer's grid when the owner lowered the target.
+  const decoded: { target: number; filled: number; png: Buffer }[] = [];
   for (const s of strips) {
-    if (typeof s?.png !== "string" || typeof s?.filled !== "number") {
+    if (typeof s?.png !== "string" || typeof s?.filled !== "number" || typeof s?.target !== "number") {
       return void res.status(400).json({ error: "bad-strip" });
     }
     const bytes = Buffer.from(s.png, "base64");
     const reject = validateArtPng(bytes); // strips carry the banner photo too
     if (reject) return void res.status(400).json({ error: reject });
-    decoded.push({ filled: Math.trunc(s.filled), png: bytes });
+    decoded.push({ target: Math.trunc(s.target), filled: Math.trunc(s.filled), png: bytes });
   }
   await setStampStrips(cardId, decoded);
   await updateCard(cardId, { stamp_style: (style ?? "").slice(0, 40) });

@@ -2370,8 +2370,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         // the whole set renders on a bare colour.
         await bannerReadyPromise;
         const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
+        // One set per target still in play, not just the current one. A pass keeps
+        // the target it was issued with, so an owner going 8 → 6 still has
+        // customers asking for an 8-slot grid — and before this they got a 404 and
+        // lost their stamps picture entirely. Usually one set; two until everyone
+        // on the old ruleset has earned their next reward.
+        const targets = [...new Set([target, ...(c.targetsInUse || [])])].filter((t) => t >= 1 && t <= 20);
         const strips = [];
-        for (let n = 0; n <= target; n++) strips.push({ filled: n, png: drawStampStrip(n, target, style).split(",")[1] });
+        for (const t of targets) {
+          for (let n = 0; n <= t; n++) {
+            strips.push({ target: t, filled: n, png: drawStampStrip(n, t, style).split(",")[1] });
+          }
+        }
         const { body } = await api("/card/" + c.id + "/stamps", { method: "POST", body: JSON.stringify({ style, strips }) });
         if (!body.ok) return toast(body.error || "Couldn't save stamps");
         q("[data-a=rmstamp]").style.display = style === "custom" ? "" : "none";

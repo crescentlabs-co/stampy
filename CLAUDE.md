@@ -38,6 +38,22 @@ permanent routes for the same reason — additive only, never retired.
 id, or any slug they have ever held (retired slugs 301 forever, so a rename can
 never kill a printed poster).
 
+**A pass carries its own ruleset**, snapshotted at issue: `stamps_target` and
+`reward`. Editing the card never rewrites them — the promise on a card already
+in a wallet stands. `redeemPass` is the one exception and the only one there
+should be: the reward has just been given, so it restarts the card on **today's**
+target and reward. That is what lets a rules change reach existing customers
+without asking anyone to delete their card and rescan.
+
+Because of that, **`card_stamp_strips` is keyed `(card_id, target, filled)`**.
+It was keyed without the target, and saving a card replaced the whole set at
+whatever the number now was — so lowering 8 → 6 made a customer at 7 of 8
+request a strip that no longer existed (404, grid gone), and raising 6 → 10
+redrew their 5-of-6 card as 5 of 10. Only a browser can render a grid, so
+`/api/overview` reports `targetsInUse` and the designer renders one set per live
+target; `setStampStrips` replaces every set at once, which is also what prunes a
+target nobody holds any more. Never key card art by a number a card can change.
+
 ## Invariants — do not break these
 
 1. **Boots with zero secrets.** The app must start and serve /setup with no env

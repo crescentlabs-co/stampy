@@ -167,6 +167,14 @@ async function main(): Promise<void> {
        ('ab12cd34','s-pastry','stamp')`,
   );
   await sql.query(`INSERT INTO cafe_logos (cafe_id, png) VALUES ('default','\\x89504e47')`);
+  // A rendered stamp grid from before the target was part of its key. Kopi Corner
+  // runs a 10-stamp card, so these eleven strips were drawn for 10 and the
+  // upgrade has to say so — otherwise every one of them is filed under target 0
+  // and no pass ever finds its picture again.
+  await sql.query(
+    `INSERT INTO cafe_stamp_strips (cafe_id, filled, png)
+     SELECT 'default', n, '\\x89504e47' FROM generate_series(0, 10) AS n`,
+  );
 
   const beforeIds = (await sql.query<{ id: string }>(`SELECT id FROM cafes ORDER BY id`)).rows.map((r) => r.id);
 
@@ -262,6 +270,24 @@ async function main(): Promise<void> {
 
   const logo = (await sql.query(`SELECT png FROM card_logos WHERE card_id = 'default'`)).rowCount;
   expect(logo === 1, "uploaded art follows its card through the rename");
+
+  // The stamp grid gained the target in its key. These rows were drawn for a
+  // 10-stamp card, and every pass on that card asks for its picture by target —
+  // so a backfill that left them at 0 would blank the grid on every card in a
+  // wallet. This is the only cover for that, since it is a live upgrade path.
+  const grid = (await sql.query<{ target: number; n: string }>(
+    `SELECT target, count(*) AS n FROM card_stamp_strips WHERE card_id = 'default' GROUP BY target`,
+  )).rows;
+  expect(grid.length === 1 && grid[0]!.target === 10, "old stamp grids are filed under the target they were drawn for");
+  expect(Number(grid[0]?.n) === 11, `all 11 strips survived the key change (got ${grid[0]?.n})`);
+  const gridKey = (await sql.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.key_column_usage
+      WHERE table_name = 'card_stamp_strips' ORDER BY column_name`,
+  )).rows.map((r) => r.column_name);
+  expect(
+    ["card_id", "filled", "target"].every((c) => gridKey.includes(c)),
+    `the primary key now includes the target (${gridKey.join(", ")})`,
+  );
 
   const custCount = (await sql.query<{ n: string }>(`SELECT count(*) AS n FROM customers`)).rows[0]!.n;
   expect(Number(custCount) === 4, `running migrate twice does not duplicate customers (got ${custCount})`);

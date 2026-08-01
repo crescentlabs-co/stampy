@@ -90,7 +90,7 @@ walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
     const [logo, banner, strip] = await Promise.all([
       getCardLogo(card.id).catch(() => null),
       getCardBanner(card.id).catch(() => null),
-      getStampStrip(card.id, filled).catch(() => null),
+      getStampStrip(card.id, row.stamps_target, filled).catch(() => null),
     ]);
     const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, await businessNameForCard(card));
     res

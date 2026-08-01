@@ -141,13 +141,15 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
     if (!validateArtPng(bytes)) await setCardBanner(card.id, bytes);
   }
   if (Array.isArray(b.strips) && b.strips.length) {
-    const decoded: { filled: number; png: Buffer }[] = [];
+    // The console renders the grid at the card's own target, so that is the key
+    // it is stored under — the browser has no separate number to send.
+    const decoded: { target: number; filled: number; png: Buffer }[] = [];
     let ok = true;
     for (const s of b.strips) {
       if (typeof s?.png !== "string" || typeof s?.filled !== "number") { ok = false; break; }
       const bytes = Buffer.from(s.png, "base64");
       if (validateArtPng(bytes)) { ok = false; break; }
-      decoded.push({ filled: Math.trunc(s.filled), png: bytes });
+      decoded.push({ target: card.stamps_target, filled: Math.trunc(s.filled), png: bytes });
     }
     if (ok) await setStampStrips(card.id, decoded);
   }
@@ -270,13 +272,13 @@ adminRouter.post("/api/card/:id/apply-template", requireAdmin, async (req, res) 
   // Strips are all-or-nothing: a half-applied grid would show the old art for
   // some stamp counts and the new art for others.
   if (Array.isArray(b.strips) && b.strips.length) {
-    const decoded: { filled: number; png: Buffer }[] = [];
+    const decoded: { target: number; filled: number; png: Buffer }[] = [];
     let ok = true;
     for (const s of b.strips) {
       if (typeof s?.png !== "string" || typeof s?.filled !== "number") { ok = false; break; }
       const bytes = Buffer.from(s.png, "base64");
       if (validateArtPng(bytes)) { ok = false; break; }
-      decoded.push({ filled: Math.trunc(s.filled), png: bytes });
+      decoded.push({ target: card.stamps_target, filled: Math.trunc(s.filled), png: bytes });
     }
     if (ok) await setStampStrips(card.id, decoded);
     else await deleteStampStrips(card.id);

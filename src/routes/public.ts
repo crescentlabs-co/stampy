@@ -252,7 +252,7 @@ async function enroll(
     const [logo, banner, strip] = await Promise.all([
       getCardLogo(card.id).catch(() => null),
       getCardBanner(card.id).catch(() => null),
-      getStampStrip(card.id, filled).catch(() => null),
+      getStampStrip(card.id, row.stamps_target, filled).catch(() => null),
     ]);
     const business = await businessNameForCard(card);
     const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, business);
@@ -422,11 +422,19 @@ async function serveBanner(cardId: string, res: import("express").Response): Pro
 publicRouter.get("/art/banner.png", (_req, res) => serveBanner(DEFAULT_CARD_ID, res));
 publicRouter.get("/c/:cardId/art/banner.png", (req, res) => serveBanner(req.params.cardId!, res));
 
-// Rendered stamp-grid strip for a given filled count — Google fetches this as
-// the hero image (Apple embeds the bytes directly). 404 when the café hasn't
-// set a stamp style (Google only references it when strips exist).
+// Rendered stamp-grid strip for a given filled count. Apple embeds the bytes
+// directly and never comes here; this URL is baked into Android cards issued
+// before the hero image became the plain band (see buildLoyaltyPatch), so it is
+// permanent and must keep serving something sensible.
+//
+// It carries no target, so it can only answer for the card's CURRENT one — which
+// is right for every card except one issued under an older ruleset. Those are
+// exactly the legacy Android cards above, and they stop asking on their next
+// stamp, when Google is re-sent a hero URI pointing at the band instead.
 async function serveStampStrip(cardId: string, filled: number, res: import("express").Response): Promise<void> {
-  const strip = await getStampStrip(cardId, filled).catch(() => null);
+  const card = await getCard(cardId).catch(() => null);
+  if (!card) return void res.status(404).end();
+  const strip = await getStampStrip(cardId, card.stamps_target, filled).catch(() => null);
   if (!strip) return void res.status(404).end();
   res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(strip.png);
 }

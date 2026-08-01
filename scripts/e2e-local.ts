@@ -26,7 +26,7 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@card.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCard, logEvent, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -540,10 +540,15 @@ async function main() {
 
   // --- Rich stamp grid: one strip PNG per count (Apple strip / Google hero) ---
   expect((await get("/art/stamps/2.png")).status === 404, "no stamp grid → strip 404 (falls back to text dots)");
+  // Read the target NOW, not from the seed row: earlier blocks edit the card, and
+  // the grid is stored under the target it was drawn for.
+  const T = (await getCard("default"))!.stamps_target;
   const stampUp = await fetch(base + "/dashboard/api/card/default/stamps", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ style: "☕", strips: [
-      { filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }, { filled: 2, png: pngB64 },
+      { target: T, filled: 0, png: pngB64 },
+      { target: T, filled: 1, png: pngB64 },
+      { target: T, filled: 2, png: pngB64 },
     ] }),
   });
   expect(stampUp.status === 200, "stamp-grid upload accepted");
@@ -554,12 +559,17 @@ async function main() {
   expect(dfltStamp.stampStyle === "☕" && dfltStamp.stampsVersion > 0, "overview reports stamp style + version");
   const badStamp = await fetch(base + "/dashboard/api/card/default/stamps", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
-    body: JSON.stringify({ style: "x", strips: [{ filled: 0, png: "bm90LWEtcG5n" }] }),
+    body: JSON.stringify({ style: "x", strips: [{ target: T, filled: 0, png: "bm90LWEtcG5n" }] }),
   });
   expect(badStamp.status === 400, "non-PNG strip rejected");
+  const noTarget = await fetch(base + "/dashboard/api/card/default/stamps", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ style: "x", strips: [{ filled: 0, png: pngB64 }] }),
+  });
+  expect(noTarget.status === 400, "a strip with no target is refused — the grid is keyed by it");
   const noAuthStamp = await fetch(base + "/dashboard/api/card/default/stamps", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ style: "x", strips: [{ filled: 0, png: pngB64 }] }),
+    body: JSON.stringify({ style: "x", strips: [{ target: T, filled: 0, png: pngB64 }] }),
   });
   expect(noAuthStamp.status === 401, "stamp-grid upload requires owner login");
   const rmStamp = await fetch(base + "/dashboard/api/card/default/stamps", { method: "DELETE", headers: { cookie } });
@@ -759,7 +769,11 @@ async function main() {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({
       style: "🧑‍🍳",
-      strips: [{ filled: 0, png: (chefPng?.png ?? Buffer.alloc(0)).toString("base64") || pngB64 }],
+      strips: [{
+        target: (await getCard("default"))!.stamps_target,
+        filled: 0,
+        png: (chefPng?.png ?? Buffer.alloc(0)).toString("base64") || pngB64,
+      }],
     }),
   });
   expect((await getCard("default"))!.stamp_style === "🧑‍🍳", "a multi-code-point emoji survives as the stamp style");
@@ -1705,6 +1719,69 @@ async function main() {
     (await get("/dashboard")).body.includes('href="/staff?c='),
     "the dashboard's staff link names the card explicitly",
   );
+
+  // --- The stamp grid is keyed by the TARGET it was drawn for ---
+  // Regression, and the worst kind: nothing errored. card_stamp_strips was keyed
+  // (card_id, filled) alone, and saving the card replaced the whole set at
+  // whatever the target now was. Drop 8 → 6 and a customer sitting at 7 of 8
+  // asked for a strip that no longer existed — 404, stamps picture gone. Raise
+  // 6 → 10 and their 5-of-6 card was redrawn as 5 of 10, understating their own
+  // progress. Their numbers and their reward were right the whole time; only the
+  // picture lied, and the picture is the card.
+  const gridCard = await addLegacyCard("owner@test.my", "Grid regression");
+  await updateCard(gridCard, { stamps_target: 8, reward: "Free croissant" });
+  const gridPass = await mk("apple", undefined, gridCard);
+  await logEvent(gridCard, gridPass.serial, "enroll");
+  await getPool().query(`UPDATE passes SET stamp_count = 7 WHERE serial = $1`, [gridPass.serial]);
+  await logEvent(gridCard, gridPass.serial, "stamp"); // makes the pass "active"
+
+  const putGrid = async (targets: number[]) => {
+    const strips = [];
+    for (const t of targets) for (let n = 0; n <= t; n++) strips.push({ target: t, filled: n, png: pngB64 });
+    return fetch(base + "/dashboard/api/card/" + gridCard + "/stamps", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ style: "☕", strips }),
+    });
+  };
+  expect((await putGrid([8])).status === 200, "a grid is stored for the target it was drawn for");
+
+  // The dashboard is told which older targets it still owes a set for — the
+  // browser is the only thing that can render one, so without this it cannot know.
+  const gridOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  expect(
+    (gridOv.cards.find((x: any) => x.id === gridCard)?.targetsInUse ?? []).includes(8),
+    "overview reports the targets live passes are still on",
+  );
+
+  // The owner drops 8 → 6 and the designer re-renders. It sends BOTH sets.
+  await updateCard(gridCard, { stamps_target: 6, reward: "Free muffin" });
+  expect((await putGrid([6, 8])).status === 200, "a re-render covers every target still in use");
+  expect(
+    (await getStampStrip(gridCard, 8, 7)) !== null,
+    "a customer at 7 of 8 still has their 8-slot grid after the target drops to 6",
+  );
+  expect((await getStampStrip(gridCard, 6, 6)) !== null, "and new customers get the 6-slot grid");
+  // Same filled count, different target — these must not be one row.
+  expect((await getStampStrip(gridCard, 8, 6)) !== null && (await getStampStrip(gridCard, 6, 6)) !== null,
+    "6-of-8 and 6-of-6 are separate pictures");
+
+  // Redeeming is the honest moment to move someone onto today's rules: the
+  // promise they were issued under has just been kept. It is also the only way
+  // that doesn't require them to delete their card and rescan the QR.
+  await getPool().query(`UPDATE passes SET stamp_count = 8 WHERE serial = $1`, [gridPass.serial]);
+  const gridRedeem = await fetch(base + "/staff/api/redeem", {
+    method: "POST", headers: { ...staffHeaders, "x-card-id": gridCard }, body: JSON.stringify({ serial: gridPass.serial }),
+  });
+  expect(gridRedeem.status === 200, "the card at its old target still redeems");
+  const rolled = (await getPool().query<{ stamps_target: number; reward: string; stamp_count: number }>(
+    `SELECT stamps_target, reward, stamp_count FROM passes WHERE serial = $1`, [gridPass.serial],
+  )).rows[0]!;
+  expect(rolled.stamps_target === 6, "redeeming rolls the card onto today's target");
+  expect(rolled.reward === "Free muffin", "...and today's reward");
+  expect(rolled.stamp_count === 2, "...restarting at the welcome-stamp count, not 0");
+  // Once nobody is left on 8, the next re-render prunes it — a replace, not a merge.
+  expect((await putGrid([6])).status === 200, "a re-render with only the live target succeeds");
+  expect((await getStampStrip(gridCard, 8, 7)) === null, "and the abandoned target's grids are pruned");
 
   // --- Rotating the PIN signs every staff phone out (break-glass) ---
   // Last, because it invalidates the sessions used above.
