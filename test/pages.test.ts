@@ -6,6 +6,7 @@
  * structural promises the server relies on.
  */
 import { describe, expect, it } from "vitest";
+import { FLAG_GUIDE } from "../src/health.js";
 import {
   adminPage,
   dashboardPage,
@@ -254,6 +255,94 @@ describe("forgot-password offer matches what the deployment can do", () => {
   it("keeps the reset flow enumeration-safe when it is offered", () => {
     // Still no hint about whether the address exists — only that mail was sent.
     expect(dashboardPage(true, "")).toContain("If that email has an account");
+  });
+});
+
+/**
+ * The console renders the SAME designer the owners get, not a copy of it.
+ *
+ * The copy it used to carry had three colours, one band and ten fixed icons,
+ * and every improvement to the real designer skipped it — a design built in the
+ * console looked nothing like one the owner could build. These tests fail if
+ * the two ever diverge again, which is the only thing keeping them together:
+ * browser code inside template literals is not type-checked.
+ */
+describe("one designer, two pages", () => {
+  const dash = dashboardPage(true, "");
+  const admin = adminPage();
+  /** The designer as it actually reaches the browser, from the served page. */
+  const panelOf = (html: string) => {
+    const i = html.indexOf("function designPanel(c, env)");
+    expect(i).toBeGreaterThan(-1);
+    // Up to the sentinel that only exists once, at the end of the shared block.
+    const j = html.indexOf("env.onRulesSaved();", i);
+    expect(j).toBeGreaterThan(i);
+    return html.slice(i, j);
+  };
+
+  it("ships the identical designer to both pages", () => {
+    expect(panelOf(admin)).toBe(panelOf(dash));
+    expect(panelOf(dash).length).toBeGreaterThan(10_000);
+  });
+
+  it("renders exactly one stamp and band renderer per page", () => {
+    for (const html of [dash, admin]) {
+      expect(html.match(/function drawStampStrip/g)!.length).toBe(1);
+      expect(html.match(/function paintBand/g)!.length).toBe(1);
+      expect(html.match(/\.crlist \{/g)!.length).toBe(1);
+    }
+  });
+
+  it("points the owner's copy at their card and the console's at a design", () => {
+    expect(dash).toContain('path: (suffix) => "/card/" + card.id + suffix');
+    expect(admin).toContain('path: (suffix) => "/design/" + d.id + suffix');
+  });
+
+  it("asks about live customers only where there are any", () => {
+    // A saved design is in nobody's wallet, so the "this reaches N customers"
+    // confirmation has no number to name and must not invent one.
+    expect(dash).toContain("customersPath: \"/customers?cardId=\"");
+    expect(admin).toContain("customersPath: null");
+  });
+});
+
+/**
+ * The console is one path down the page. It used to render every fact twice —
+ * once per merchant, once again in five "platform-wide" tables keyed on the
+ * programme — and explain each one in a paragraph of grey text nobody read.
+ */
+describe("the console says things once", () => {
+  const html = adminPage();
+
+  it("has no second, programme-keyed copy of the merchant view", () => {
+    expect(html).not.toContain("Platform-wide");
+    expect(html).not.toContain("All programmes");
+    expect(html).not.toContain("Counter audit");
+    expect(html).not.toContain("Win-back</h2>");
+  });
+
+  it("moved its prose onto info icons", () => {
+    expect(html).not.toContain('<p class="muted">');
+    expect(html).toContain("data-info=");
+  });
+
+  it("asks the four questions in the order you would ask them", () => {
+    const order = ["Did they start?", "Are people signing up?", "Do customers come back?", "Is it worth anything?"];
+    let at = -1;
+    for (const q of order) {
+      const i = html.indexOf(q);
+      expect(i).toBeGreaterThan(at);
+      at = i;
+    }
+  });
+
+  it("does not paint the drill-down as disabled", () => {
+    // Grey-on-grey made the most detailed part of the page read as switched off.
+    expect(html).not.toContain(".mdetail td { background: var(--ghost-bg)");
+  });
+
+  it("documents every problem it can raise", () => {
+    expect(html.match(/class="chipf warn"/g)!.length).toBe(FLAG_GUIDE.length);
   });
 });
 

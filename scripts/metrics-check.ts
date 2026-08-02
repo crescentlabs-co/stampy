@@ -12,6 +12,17 @@
  * These are deliberately plain SQL against `events`, not helpers in db.ts:
  * metrics are meant to be derivable by query rather than maintained as stored
  * aggregates, and this file is the standing evidence that they are.
+ *
+ * ---------------------------------------------------------------------------
+ * `pnpm metrics:check --merchant <name-or-id>` is a different job: point it at
+ * a REAL database and it prints one shop's console row beside the raw event
+ * counts underneath it, so "is that number actually right?" can be answered
+ * rather than argued about. It reads and never writes.
+ *
+ *   DATABASE_URL='<Railway DATABASE_PUBLIC_URL>' pnpm metrics:check --merchant "Kopi Corner"
+ *
+ * DATABASE_PUBLIC_URL, not DATABASE_URL — the latter is .railway.internal and
+ * only resolves inside Railway.
  */
 import EmbeddedPostgres from "embedded-postgres";
 import { mkdtempSync } from "node:fs";
@@ -34,6 +45,80 @@ function expect(cond: boolean, label: string): void {
     console.error("  FAIL:", label);
     failures++;
   }
+}
+
+/**
+ * Reconcile one shop's console row against the raw log.
+ *
+ * Everything the console shows is derived by query, so every figure has a
+ * countable thing underneath it. This prints both columns side by side. Where
+ * they can legitimately differ, it says why in the same breath — Value is a
+ * count times a self-reported basket, and Customers deliberately keeps people
+ * who have since deleted their card.
+ */
+async function reconcile(needle: string): Promise<number> {
+  if (!process.env.DATABASE_URL) {
+    console.error("Set DATABASE_URL to the database you want to read, e.g.\n" +
+      "  DATABASE_URL='<Railway DATABASE_PUBLIC_URL>' pnpm metrics:check --merchant \"Kopi Corner\"");
+    return 1;
+  }
+  const db = await import("../src/db.js");
+  const sql = db.getPool();
+  const rows = await db.merchantHealth();
+  const key = needle.toLowerCase();
+  const m = rows.find((r) => r.id === needle) ?? rows.find((r) => r.name.toLowerCase().includes(key));
+  if (!m) {
+    console.error(`No merchant matching "${needle}". Known: ` + rows.map((r) => r.name).join(", "));
+    await sql.end();
+    return 1;
+  }
+  const ret = (await db.adminRetention()).find((r) => r.id === m.id);
+  const one = async (text: string): Promise<number> => {
+    const r = await sql.query<{ n: string }>(text, [m.card_ids]);
+    return Number(r.rows[0]?.n ?? 0);
+  };
+  const evt = (type: string) =>
+    one(`SELECT count(*)::text AS n FROM events WHERE card_id = ANY($1) AND type = '${type}'`);
+
+  console.log(`\n${m.name}  (${m.id})`);
+  console.log(`signed up ${new Date(m.signed_up_at).toISOString().slice(0, 10)} · day ${m.trial_day} · ` +
+    `${m.cards} card(s): ${m.card_ids.join(", ")}`);
+
+  const stamps = await evt("stamp"), undos = await evt("undo");
+  const basket = m.basket_cents / 100;
+  const people = await one(
+    `SELECT count(DISTINCT COALESCE(p.customer_id, p.serial))::text AS n FROM passes p WHERE p.card_id = ANY($1)`,
+  );
+  console.log("\nWhat the console says, and what the log says:");
+  console.table([
+    { figure: "Counter visits", console: m.stamps, log: `${stamps} stamp − ${undos} undo = ${stamps - undos}` },
+    { figure: "Rewards given", console: m.redemptions, log: `${await evt("redeem")} redeem events` },
+    { figure: "Customers", console: m.customers,
+      log: `${people} pass-holders, of whom ${m.customers} ever stamped or reached a wallet` },
+    { figure: "Value", console: m.basket_cents ? `${m.currency}${Math.round(m.stamps * basket)}` : "—",
+      log: m.basket_cents ? `${m.stamps} visits × ${m.currency}${basket.toFixed(2)} basket (self-reported)` : "no basket set" },
+    { figure: "Opened sign-up page", console: m.scanned,
+      log: `poster ${m.opened_poster} + link ${m.opened_link} + untagged ${m.opened_other}` },
+    { figure: "Tapped Add", console: m.clicked, log: `${await evt("wallet_click")} wallet_click events` },
+    { figure: "Card made", console: m.made, log: `${await evt("enroll")} enroll events` },
+    { figure: "Landed in wallet", console: m.landed, log: `${await evt("pass_added")} pass_added (Apple always, Google since the callback)` },
+    { figure: "Came back a 2nd time", console: ret ? Math.round(ret.second_visit_rate * 100) + "%" : "—",
+      log: ret ? `of ${ret.started} people who ever got a stamp` : "no retention row" },
+  ]);
+
+  // The two figures that are not a plain count, spelled out rather than assumed.
+  console.log("\nRead these two carefully:");
+  console.log("  Value is a countable number times ONE assumption — the shop's own average basket,");
+  console.log("  typed by them and never re-checked. It is not incremental: some of these people");
+  console.log("  would have come in anyway, and nothing here can see the counterfactual.");
+  console.log("  Customers counts anyone who ever stamped or reached a wallet, INCLUDING people who");
+  console.log("  have since deleted the card. That is deliberate — churn must not erase its own evidence.");
+  if (new Date(m.signed_up_at) < new Date(db.FUNNEL_SINCE)) {
+    console.log(`\n  This shop predates the funnel (${db.FUNNEL_SINCE_LABEL}), so page opens and Add`);
+    console.log("  taps are missing for anything issued before then. Zeroes there are absent history.");
+  }
+  await sql.end();
+  return 0;
 }
 
 async function main() {
@@ -250,14 +335,27 @@ async function main() {
   await sql.end();
 }
 
-main()
-  .then(async () => {
-    await pg.stop();
-    console.log(failures === 0 ? "\nALL TEN QUESTIONS ANSWERED ✅" : `\n${failures} UNANSWERED ❌`);
-    process.exit(failures === 0 ? 0 : 1);
-  })
-  .catch(async (err) => {
-    console.error(err);
-    await pg.stop().catch(() => {});
+// --merchant reads a real database and never starts the embedded one.
+const mi = process.argv.indexOf("--merchant");
+if (mi !== -1) {
+  const needle = process.argv[mi + 1];
+  if (!needle) {
+    console.error('Usage: pnpm metrics:check --merchant "<shop name or id>"');
     process.exit(1);
-  });
+  }
+  reconcile(needle)
+    .then((code) => process.exit(code))
+    .catch((err) => { console.error(err); process.exit(1); });
+} else {
+  main()
+    .then(async () => {
+      await pg.stop();
+      console.log(failures === 0 ? "\nALL TEN QUESTIONS ANSWERED ✅" : `\n${failures} UNANSWERED ❌`);
+      process.exit(failures === 0 ? 0 : 1);
+    })
+    .catch(async (err) => {
+      console.error(err);
+      await pg.stop().catch(() => {});
+      process.exit(1);
+    });
+}

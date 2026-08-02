@@ -1398,6 +1398,36 @@ async function main() {
     headline === listed.customers.length && headline === listed.counts.active,
     `the Home headline counts people, like the list does (${headline} vs ${listed.customers.length})`,
   );
+
+  // --- Retention counts PEOPLE and NET stamps, not passes and raw events ---
+  // This is the bug the console was reporting as "no returning customers".
+  // The person above holds two passes and has been stamped on each: that is one
+  // customer who came back a second time. Keyed on the pass — as it was — they
+  // read as two customers who each came once and never returned, which drove a
+  // shop with real regulars to a second-visit rate of zero.
+  {
+    const { adminRetention: retQ, merchantHealth: mhQ } = await import("../src/db.js");
+    const mine = (await mhQ()).find((x) => x.card_ids.includes("default"))!;
+    const before = (await retQ()).find((r) => r.id === mine.id)!;
+    expect(
+      before.second_visit_rate > 0,
+      `a person holding two stamped passes is a returning customer (${Math.round(before.second_visit_rate * 100)}%)`,
+    );
+    // And an undo is a correction, so it takes its visit back off — every other
+    // metric in the codebase subtracts undos and this one used not to.
+    const beforeStarted = before.started;
+    const soloPerson = await mkCustomer(m1.id);
+    const soloPass = await mk("apple", soloPerson.id);
+    await logEvent("default", soloPass.serial, "stamp");
+    const withSolo = (await retQ()).find((r) => r.id === mine.id)!;
+    expect(withSolo.started === beforeStarted + 1, "a newly stamped customer joins the denominator");
+    await logEvent("default", soloPass.serial, "undo");
+    const undone = (await retQ()).find((r) => r.id === mine.id)!;
+    expect(
+      undone.started === beforeStarted,
+      `an undo takes the visit back off, so they are not counted as started (${undone.started} vs ${beforeStarted})`,
+    );
+  }
   // Lapse is measured across everything they hold, not per card.
   expect(mine[0].lastDays >= 39, "their last visit is the last stamp on ANY pass they hold");
 
