@@ -67,11 +67,12 @@ import {
 import { applyAndPush } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
 import { config, setupStatus } from "../config.js";
-import { hexToRgb, rgbToHex } from "../color.js";
+import { rgbToHex } from "../color.js";
+import { cardFieldsFromBody, designerCard } from "../cardView.js";
 import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateArtPng, validateLogoPng } from "../imageValidate.js";
-import { BAND_TEXTURES, dashboardPage, resetPage } from "../pages.js";
+import { dashboardPage, resetPage } from "../pages.js";
 import { canNudge, MAX_NUDGES_PER_WEEK } from "../winback.js";
 
 export const dashboardRouter = Router();
@@ -264,43 +265,13 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   // The shop name lives on the merchant, not the card — it's what the pass shows
   // as logoText, so the designer edits it alongside the card's own fields.
   const merchant = await merchantForOwner(req.owner!.id);
+  // designerCard() is shared with the admin console, which renders the same
+  // designer against any merchant's card — see src/cardView.ts. The PIN is
+  // never in it: only its scrypt hash is stored, so there is nothing to reveal.
   const out = [];
   for (const card of cards) {
-    const [logoVersion, bannerVersion, stampsVersion, inUse] = await Promise.all([
-      cafeLogoVersion(card.id),
-      cafeBannerVersion(card.id),
-      stampStripsVersion(card.id),
-      targetsInUse(card.id),
-    ]);
     out.push({
-      id: card.id,
-      name: card.name,
-      reward: card.reward,
-      stampsTarget: card.stamps_target,
-      stampsStart: card.stamps_start,
-      // The PIN is never sent back: only its scrypt hash is stored, so there is
-      // nothing to reveal. A forgotten PIN is replaced via /rotate-pin.
-      averageSpend: card.average_spend_cents / 100,
-      currency: card.currency,
-      // Colours cross the API as hex — that's what <input type="color"> speaks.
-      bg: rgbToHex(card.background_color),
-      fg: rgbToHex(card.foreground_color),
-      label: rgbToHex(card.label_color),
-      accent: rgbToHex(card.accent_color),
-      logoVersion, // 0 = no upload; used to cache-bust the preview image
-      bannerVersion,
-      stampStyle: card.stamp_style,
-      bandColor: rgbToHex(card.band_color),
-      bandTexture: card.band_texture,
-      stampsVersion, // 0 = no rendered stamp grid (plain text dots)
-      // Targets still held by live passes. The browser is the only thing that can
-      // render a grid, so it has to know which older ones it still owes a set for
-      // — otherwise lowering the target blanks the grid on every card issued
-      // under the old one.
-      targetsInUse: inUse,
-      winbackMessage: card.auto_winback_message,
-      signupMessage: card.signup_message,
-      shopName: merchant?.name ?? card.name,
+      ...(await designerCard(card, merchant?.name)),
       metrics: await cardMetrics(card.id),
     });
   }
@@ -374,51 +345,11 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   if (!(await ownerHasCard(req.owner!.id, cardId))) {
     return void res.status(403).json({ error: "not-your-card" });
   }
+  // The ownership check above is what authorises this; cardFieldsFromBody
+  // deliberately does no authorisation of its own, because the console calls it
+  // after a completely different check (requireAdmin).
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const fields: Parameters<typeof updateCard>[1] = {};
-  if (typeof body.name === "string" && body.name.trim()) fields.name = body.name.trim().slice(0, 60);
-  if (typeof body.reward === "string" && body.reward.trim()) fields.reward = body.reward.trim().slice(0, 60);
-  // Capped at 20: the strip image is always a two-row grid, so a higher target
-  // would render stamps too small to read on a 375pt-wide strip.
-  if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 20, 10);
-  if (body.stampsStart !== undefined) fields.stamps_start = clampInt(body.stampsStart, 0, 29, 2);
-  // Average spend crosses the API in major units ("4.50") and is stored in cents.
-  if (body.averageSpend !== undefined) {
-    const major = Number(body.averageSpend);
-    fields.average_spend_cents = Number.isFinite(major)
-      ? Math.max(0, Math.min(1_000_000, Math.round(major * 100)))
-      : 0;
-  }
-  // Currency is no longer an owner-facing choice — everything is RM. The column
-  // stays for the day that changes; nothing in the UI writes it.
-
-  // Colours arrive as hex from the pickers; stored as rgb(...) for PassKit.
-  if (typeof body.bg === "string") fields.background_color = hexToRgb(body.bg);
-  if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
-  if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
-  if (typeof body.accent === "string") fields.accent_color = hexToRgb(body.accent);
-  // The band across the middle of the card. Its texture is a fixed vocabulary —
-  // anything else would reach the renderer as an unknown style and fall through
-  // to a flat fill without saying so.
-  if (typeof body.bandColor === "string") fields.band_color = hexToRgb(body.bandColor);
-  if (typeof body.bandTexture === "string" && BAND_TEXTURES.includes(body.bandTexture)) {
-    fields.band_texture = body.bandTexture;
-  }
-  // The default text a nudge is pre-filled with. The column is still called
-  // auto_winback_message from when a scheduler used it; nothing is automated
-  // any more (see src/winback.ts), but event and column names here are
-  // effectively permanent, so it keeps its name.
-  if (typeof body.winbackMessage === "string" && body.winbackMessage.trim()) {
-    fields.auto_winback_message = body.winbackMessage.trim().slice(0, 200);
-  }
-  // The owner's own line on their sign-up page. Blank clears it, which is a
-  // real choice — it falls back to the generated "Collect N stamps, get a X" —
-  // so this one is deliberately not guarded on being non-empty.
-  if (typeof body.signupMessage === "string") {
-    fields.signup_message = body.signupMessage.trim().slice(0, 120);
-  }
-  // The staff PIN is NOT a card field — it belongs to the owner and lives at
-  // POST /api/staff-pin. Anything sent here is ignored on purpose.
+  const fields = cardFieldsFromBody(body);
   const card = await updateCard(cardId, fields, `owner:${req.owner!.id}`);
   if (!card) return void res.status(404).json({ error: "no-such-card" });
   // The shop name belongs to the merchant, not the card — it is what the pass

@@ -298,6 +298,31 @@ describe("one designer, two pages", () => {
     expect(admin).toContain('path: (suffix) => "/design/" + d.id + suffix');
   });
 
+  /**
+   * The extraction replaced designPanel's own `base` (the card's art path) with
+   * env.artUrl, and one use of it survived — on the banner-preview line, which
+   * only runs for a card that HAS a banner. It threw ReferenceError and took the
+   * whole designer down with it, on both pages, and nothing caught it: tsc
+   * happily compiles a free identifier in a non-module script.
+   *
+   * So: no identifier the panel does not define may be read inside it, beyond
+   * the handful it is documented to take from the page.
+   */
+  it("reads nothing from the page it does not declare", () => {
+    // Comments are stripped first: prose may mention a name the code must not use.
+    const panel = panelOf(dash)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    for (const gone of [/\bbase\b/, /\bS\.cards\b/, /\bartBase\b/]) {
+      expect(gone.test(panel), `the panel still reads ${gone}`).toBe(false);
+    }
+    // Everything that leaves the panel goes through env. (onRulesSaved is the
+    // sentinel panelOf slices at, so it sits just past the end by construction.)
+    for (const via of ["env.artUrl(", "env.path(", "env.customersPath", "env.designOpen", "env.showDetails"]) {
+      expect(panel).toContain(via);
+    }
+  });
+
   it("asks about live customers only where there are any", () => {
     // A saved design is in nobody's wallet, so the "this reaches N customers"
     // confirmation has no number to name and must not invent one.
@@ -339,6 +364,52 @@ describe("the console says things once", () => {
   it("does not paint the drill-down as disabled", () => {
     // Grey-on-grey made the most detailed part of the page read as switched off.
     expect(html).not.toContain(".mdetail td { background: var(--ghost-bg)");
+  });
+
+  /**
+   * The designer must be ON SCREEN, not one click away behind an empty pane.
+   * The first version shipped the shared panel but rendered "Name a design on
+   * the left to start one" until you typed a name — so the only design-looking
+   * thing on the page was the six business-type presets underneath it, and the
+   * console read as though nothing had changed at all.
+   */
+  it("puts the whole designer on screen, open", () => {
+    expect(html).toContain("designOpen: true");
+    expect(html).toContain('wrap.className = "designhost"');
+    // Both targets are reachable without creating anything first.
+    expect(html).toContain('data-mode="design"');
+    expect(html).toContain('data-mode="card"');
+    expect(html).toContain("Start a design");
+    expect(html).not.toContain("Name a design on the left");
+  });
+
+  it("has no trace of the preset card builder", () => {
+    for (const gone of ["VERTICALS", "data-vpick", "Business type", "Chicken rice", "Bubble tea"]) {
+      expect(html).not.toContain(gone);
+    }
+  });
+
+  it("edits a card's look but never its terms", () => {
+    expect(html).toContain("showDetails: false");
+    expect(html).toContain('rulesSaveLabel: "Save name"');
+    // The shop name is the one detail the console does set.
+    expect(html).toContain('data-f="shopName"');
+  });
+
+  it("opens on the portfolio, not on four hero numbers", () => {
+    expect(html).toContain("How everyone is doing");
+    for (const panel of ["Health", "Performance", "Value", "Retention"]) {
+      expect(html).toContain(">" + panel);
+    }
+    expect(html).toContain("lifebar");
+    // The old strip.
+    expect(html).not.toContain("stamping this week</span>");
+    expect(html).not.toContain("cards in wallets</span>");
+  });
+
+  it("draws the sign-up funnel as a funnel", () => {
+    expect(html).toContain('class="fnl"');
+    expect(html).toContain("function funnelHtml(m)");
   });
 
   it("documents every problem it can raise", () => {

@@ -2166,23 +2166,23 @@ export interface AdminRetentionRow {
  * medians are null when there isn't enough history to say, which the UI renders
  * as "—" rather than inventing a zero.
  */
-export async function adminRetention(): Promise<AdminRetentionRow[]> {
-  const res = await getPool().query<AdminRetentionRow>(
-    // One row per PERSON per MERCHANT, not per pass per card. Both changes fix
-    // real under-counting:
-    //
-    //   - Keyed on COALESCE(customer_id, serial) like every other customer
-    //     figure (invariant 5). Keyed on the pass, someone holding an Apple and
-    //     a Google card at one shop read as two customers who each came once
-    //     and never came back — which is how a shop with regulars could show a
-    //     2nd-visit rate of zero.
-    //   - Visits are NET stamps, so an `undo` correcting a mis-scan takes its
-    //     stamp back off. Counting raw stamp events made a scan-then-undo look
-    //     like a returning customer.
-    //
-    // Grouped by merchant because a business is the unit you act on, and
-    // rates/medians cannot be averaged across cards in the browser afterwards.
-    `WITH person AS (
+// One row per PERSON per MERCHANT, not per pass per card. Both changes fix real
+// under-counting:
+//
+//   - Keyed on COALESCE(customer_id, serial) like every other customer figure
+//     (invariant 5). Keyed on the pass, someone holding an Apple and a Google
+//     card at one shop read as two customers who each came once and never came
+//     back — which is how a shop with regulars could show a 2nd-visit rate of
+//     zero.
+//   - Visits are NET stamps, so an `undo` correcting a mis-scan takes its stamp
+//     back off. Counting raw stamp events made a scan-then-undo look like a
+//     returning customer.
+//
+// Shared verbatim by the per-merchant rows and the platform total below. The
+// platform figure cannot be averaged from the merchant rows — a rate over 3
+// customers and a rate over 300 do not average — so it is recomputed over
+// everyone, and this constant is what stops the two definitions drifting.
+const RETENTION_CTE = `WITH person AS (
        SELECT c.merchant_id,
               ${PERSON_KEY_SQL} AS person,
               min(p.created_at) AS joined,
@@ -2196,46 +2196,74 @@ export async function adminRetention(): Promise<AdminRetentionRow[]> {
          LEFT JOIN events e ON e.serial = p.serial
         GROUP BY c.merchant_id, ${PERSON_KEY_SQL}
      ),
-     started AS (SELECT * FROM person WHERE n > 0)
-     SELECT m.id, m.name,
-            (SELECT count(*)::int FROM started s WHERE s.merchant_id = m.id) AS started,
-            COALESCE((SELECT count(*) FILTER (WHERE n >= 2)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.merchant_id = m.id), 0)::float8 AS second_visit_rate,
-            COALESCE((SELECT count(*) FILTER (WHERE n >= 3)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.merchant_id = m.id), 0)::float8 AS third_visit_rate,
+     started AS (SELECT * FROM person WHERE n > 0)`;
+
+/**
+ * The retention columns, over whichever population `scope` selects.
+ *
+ * `scope` is SQL this file writes, never anything a caller supplies — it is
+ * either "s.merchant_id = m.id" for one business or a live-merchant filter for
+ * the platform.
+ */
+function retentionColumnsSql(scope: string, aliveScope: string): string {
+  const rate = (filter: string) =>
+    `COALESCE((SELECT count(*) FILTER (${filter})::numeric / NULLIF(count(*), 0)
+                 FROM started s WHERE ${scope}), 0)::float8`;
+  const alive = (days: number) => `COALESCE((
+       SELECT count(*) FILTER (WHERE s.last_stamp > now() - interval '${days} days')::numeric
+              / NULLIF(count(*), 0)
+         FROM person s
+        WHERE ${aliveScope} AND s.joined < now() - interval '${days} days'
+     ), 0)::float8`;
+  return `(SELECT count(*)::int FROM started s WHERE ${scope}) AS started,
+            ${rate("WHERE n >= 2")} AS second_visit_rate,
+            ${rate("WHERE n >= 3")} AS third_visit_rate,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
                       ORDER BY extract(epoch FROM (last_stamp - first_stamp)) / 86400.0 / (n - 1))
-               FROM started s WHERE s.merchant_id = m.id AND n >= 2)::float8 AS median_gap_days,
-            COALESCE((SELECT count(*) FILTER (WHERE first_redeem IS NOT NULL)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.merchant_id = m.id), 0)::float8 AS completion_rate,
+               FROM started s WHERE ${scope} AND n >= 2)::float8 AS median_gap_days,
+            ${rate("WHERE first_redeem IS NOT NULL")} AS completion_rate,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
                       ORDER BY extract(epoch FROM (first_redeem - s.joined)) / 86400.0)
-               FROM started s WHERE s.merchant_id = m.id AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
+               FROM started s WHERE ${scope} AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
                       ORDER BY extract(epoch FROM (first_stamp - s.joined)) / 86400.0)
-               FROM started s WHERE s.merchant_id = m.id)::float8 AS median_days_to_first_stamp,
-            ${aliveRateSql(30)} AS alive_30,
-            ${aliveRateSql(60)} AS alive_60,
-            ${aliveRateSql(90)} AS alive_90
+               FROM started s WHERE ${scope})::float8 AS median_days_to_first_stamp,
+            ${alive(30)} AS alive_30,
+            ${alive(60)} AS alive_60,
+            ${alive(90)} AS alive_90`;
+}
+
+/**
+ * Retention per merchant. Grouped by business because that is the unit you act
+ * on, and because rates and medians cannot be merged across cards afterwards.
+ */
+export async function adminRetention(): Promise<AdminRetentionRow[]> {
+  const res = await getPool().query<AdminRetentionRow>(
+    `${RETENTION_CTE}
+     SELECT m.id, m.name,
+            ${retentionColumnsSql("s.merchant_id = m.id", "s.merchant_id = m.id")}
        FROM merchants m
       ORDER BY m.created_at DESC`,
   );
   return res.rows;
 }
 
-// Of the customers old enough to judge (joined more than N days ago), the share
-// stamped within the last N days. People too new to have had the chance are
-// excluded rather than counted as churned, which would make every young
-// merchant look like a disaster. Everyone who joined is in the denominator,
-// including people who never got a stamp at all — a sign-up who never came back
-// to the counter is churn, not an absence of data.
-function aliveRateSql(days: number): string {
-  return `COALESCE((
-       SELECT count(*) FILTER (WHERE s.last_stamp > now() - interval '${days} days')::numeric
-              / NULLIF(count(*), 0)
-         FROM person s
-        WHERE s.merchant_id = m.id AND s.joined < now() - interval '${days} days'
-     ), 0)::float8`;
+/**
+ * The same figures across every LIVE merchant at once — the portfolio view.
+ *
+ * Archived shops are excluded: a closed account's customers are not evidence
+ * about whether the product retains people, and leaving them in would drag the
+ * platform number down for a reason that has nothing to do with the product.
+ */
+export async function platformRetention(): Promise<AdminRetentionRow> {
+  const live = `EXISTS (SELECT 1 FROM merchants mm
+                         WHERE mm.id = s.merchant_id AND mm.archived_at IS NULL)`;
+  const res = await getPool().query<AdminRetentionRow>(
+    `${RETENTION_CTE}
+     SELECT 'platform'::text AS id, 'Everyone'::text AS name,
+            ${retentionColumnsSql(live, live)}`,
+  );
+  return res.rows[0]!;
 }
 
 export interface AdminStaffRow {

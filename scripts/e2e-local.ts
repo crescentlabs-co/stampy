@@ -716,6 +716,24 @@ async function main() {
     "admin sees counter activity per staff phone",
   );
   expect(JSON.stringify(adminOk).indexOf("password") === -1, "admin overview never includes any password field");
+  // The portfolio figure is recomputed over everyone, never averaged from the
+  // per-shop rows — a rate over 3 customers and a rate over 300 do not average.
+  expect(
+    adminOk.platform && typeof adminOk.platform.second_visit_rate === "number" &&
+      typeof adminOk.platform.started === "number",
+    "the console gets a platform-wide retention row",
+  );
+  {
+    const rows = adminOk.retention.filter((r: any) => r.started > 0);
+    const started = rows.reduce((a: number, r: any) => a + r.started, 0);
+    const weighted = started
+      ? rows.reduce((a: number, r: any) => a + r.second_visit_rate * r.started, 0) / started
+      : 0;
+    expect(
+      Math.abs(adminOk.platform.second_visit_rate - weighted) < 0.0001,
+      `the platform rate is the weighted truth, not the mean of the rows (${adminOk.platform.second_visit_rate.toFixed(3)} vs ${weighted.toFixed(3)})`,
+    );
+  }
 
   // --- The console is keyed by MERCHANT, and the rollup adds up ---
   // The regression this re-keying invites: a merchant total that quietly
@@ -846,12 +864,14 @@ async function main() {
     body: JSON.stringify({ cafeName: "Sneaky", ownerEmail: "x@y.my" }),
   });
   expect(dfyForbidden.status === 403, "a non-admin can't create a café via the admin console");
+  // No design in the payload: setting a shop up creates the account and a plain
+  // card, and the console's real designer takes it from there. It used to build
+  // the card from one of six hard-coded business-type presets — a second, worse
+  // designer hiding inside a signup form.
   const dfy = await fetch(base + "/admin/api/card", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({
       cafeName: "Nasi Lemak House", ownerEmail: "nasi@lemak.my", reward: "Free plate",
-      bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f", stampStyle: "🍗",
-      banner: pngB64, strips: [{ filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }],
     }),
   });
   const dfyOut = JSON.parse(await dfy.text());
@@ -866,8 +886,79 @@ async function main() {
     body: JSON.stringify({ cafeName: "Dup", ownerEmail: "nasi@lemak.my" }),
   });
   expect(dfyDup.status === 409, "creating a café for an existing email → 409 email-taken");
-  // The created café carries its rendered stamp grid + isolation from other owners.
-  expect((await get("/c/" + dfyOut.cardId + "/art/stamps/1.png")).status === 200, "the done-for-you café serves its rendered stamp strip");
+
+  // --- The designer, pointed at a merchant's LIVE card ---------------------
+  // The console renders the owner dashboard's designer against any card. These
+  // are the admin-gated twins of /dashboard/api/card/:id, and they share their
+  // coercion (cardFieldsFromBody) and their response shape (designerCard), so
+  // the two cannot drift into clamping a value differently.
+  const adminGet = async (path: string) =>
+    JSON.parse((await get(path, { headers: { cookie: cookieNow } })).body);
+  const design = async (path: string, body: unknown, method = "POST") =>
+    (await fetch(base + "/admin/api/card/" + dfyOut.cardId + "/design" + path, {
+      method, headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify(body),
+    })).status;
+
+  const state = await adminGet("/admin/api/card/" + dfyOut.cardId + "/design-state");
+  expect(state.ok && state.card.id === dfyOut.cardId, "the designer can open on a merchant's own card");
+  // The panel is driven by hex; the columns are rgb(...) for PassKit.
+  expect(/^#[0-9a-f]{6}$/i.test(state.card.bg) && Array.isArray(state.card.targetsInUse),
+    "…with hex colours and the targets its customers still hold");
+  expect(!JSON.stringify(state).toLowerCase().includes("pin"), "the design state never carries a PIN");
+  expect(
+    (await get("/admin/api/card/" + dfyOut.cardId + "/design-state", { headers: { cookie: cookieOutsider } })).status === 403,
+    "a non-admin can't read a card's design state",
+  );
+
+  const beforeDesign = (await getCard(dfyOut.cardId))!;
+  expect(await design("", {
+    shopName: "Nasi Lemak House KL", bg: "#123047", fg: "#eef7fc", label: "#8fc4e6",
+    accent: "#ffd166", bandColor: "#0b1d2b", bandTexture: "chevron",
+  }) === 200, "the designer saves colours and the band onto a live card");
+  // The same fixed vocabulary owners get. An unknown texture reaches the
+  // renderer as a flat fill and nobody is told, so it must be refused here too.
+  await design("", { bandTexture: "haunted-mansion" });
+  expect(await design("/logo", { png: pngB64 }) === 200, "…its logo");
+  expect(await design("/stamps", {
+    style: "🍗", strips: [{ target: beforeDesign.stamps_target, filled: 0, png: pngB64 }],
+  }) === 200, "…and its stamp grid, at the card's own target");
+  expect(await design("/stamps", { style: "x", strips: [{ filled: 0, png: pngB64 }] }) === 400,
+    "a strip with no target is refused — that is how a grid gets filed under the wrong number");
+
+  const designed = (await getCard(dfyOut.cardId))!;
+  expect(
+    designed.background_color === "rgb(18, 48, 71)" && designed.accent_color === "rgb(255, 209, 102)" &&
+      designed.band_color === "rgb(11, 29, 43)" && designed.band_texture === "chevron" &&
+      designed.stamp_style === "🍗",
+    "every colour, the band and the stamps land on the live card",
+  );
+  expect(designed.reward === beforeDesign.reward && designed.stamps_target === beforeDesign.stamps_target,
+    "the console never touches a card's reward or stamp count");
+  expect((await get("/c/" + dfyOut.cardId + "/art/logo.png")).status === 200, "the uploaded logo is served");
+  expect((await get("/c/" + dfyOut.cardId + "/art/stamps/0.png")).status === 200, "the rendered grid is served");
+  // The shop name is the one detail it does set, and it belongs to the BUSINESS.
+  const dfyRenamed = await adminGet("/admin/api/card/" + dfyOut.cardId + "/design-state");
+  expect(dfyRenamed.card.shopName === "Nasi Lemak House KL", "the shop name saves onto the merchant");
+  expect(
+    (await fetch(base + "/admin/api/card/" + dfyOut.cardId + "/design", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieOutsider },
+      body: JSON.stringify({ bg: "#000000" }),
+    })).status === 403,
+    "a non-admin can't design somebody's card",
+  );
+
+  // The owner's own designer must still be handed the identical object, or the
+  // two pages are no longer running the same panel on the same data.
+  const ownerOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
+  const ownerCard = ownerOv.cards.find((c: any) => c.id === "default");
+  const adminCard = (await adminGet("/admin/api/card/default/design-state")).card;
+  const { metrics: _drop, ...ownerShape } = ownerCard;
+  expect(
+    JSON.stringify(ownerShape, Object.keys(ownerShape).sort()) ===
+      JSON.stringify(adminCard, Object.keys(ownerShape).sort()),
+    "the owner and the console open the designer on an identical card object",
+  );
 
   // --- Reusable card designs: mock one up now, push it onto a card later ---
   // The design is edited by the SAME browser code the owner dashboard runs

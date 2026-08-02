@@ -364,21 +364,6 @@ export const MODAL_JS = /* js */ `
  * doc comment on `designPanel` below.
  */
 /**
- * The band textures the designer offers, and the server's allowlist for them.
- *
- * One list, kept next to the browser's TEXTURES array inside DESIGN_PANEL_JS
- * below, because they have to be the same set: a texture the browser can draw
- * but the server refuses stores as flat and nobody is told. It used to be
- * declared separately in src/routes/dashboard.ts, which is two places to
- * remember — and now that the console saves designs through its own routes, it
- * would have been three.
- */
-export const BAND_TEXTURES = [
-  "flat", "gradient", "glow", "diagonal", "waves",
-  "stripes", "dots", "chevron", "grain", "rays",
-];
-
-/**
  * Styles for DESIGN_PANEL_JS. Any page that renders the designer includes this.
  *
  * Split out of the dashboard's stylesheet for the same reason the markup was:
@@ -387,6 +372,11 @@ export const BAND_TEXTURES = [
  * and lays out wrong in the other.
  */
 export const DESIGN_PANEL_CSS = /* css */ `
+    /* The designer's column. It was laid out against the dashboard's 480px
+       card, and the console is a 1000px page — without this the preview and
+       every control below it stretch, and the two stop looking alike. A
+       no-op on the dashboard, which already sits inside a 480px .card. */
+    .designhost { max-width: 480px; }
     .row2 { display: flex; gap: 8px; }
     .row2 > div { flex: 1; }
     /* Three number fields across a 375px phone. Smaller, tighter labels so
@@ -493,7 +483,7 @@ export const DESIGN_PANEL_JS = /* js */ `
      * env is everything the panel reaches outside itself, so it can edit a
      * merchant's real card or an unattached saved design without knowing which:
      *
-     *   api(path, opts)    the calling page's fetch wrapper, already base-scoped
+     *   api(path, opts)    the calling page's fetch wrapper, already prefixed
      *   path(suffix)       "/card/<id>" here, "/design/<id>" in the console
      *   artUrl(kind, v)    where the stored logo / band PNG is served from
      *   customersPath      the live-customer count, or null when there is no
@@ -529,7 +519,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         <!-- Design sits directly under the preview it changes, folded away. It is
              one block: the logo belongs with the colours it feeds, not pulled out
              on its own above them. -->
-        <details class="fold" style="margin-top:12px">
+        <details class="fold" style="margin-top:12px" \${env.designOpen ? "open" : ""}>
         <summary>Design</summary>
 
         <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it.")}</label>
@@ -585,6 +575,13 @@ export const DESIGN_PANEL_JS = /* js */ `
         <label style="margin-top:16px">Shop name\${info("The name customers see on the card.")}</label>
         <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
 
+        <!-- The card's TERMS. Hidden rather than dropped when env.showDetails is
+             false: renderPreview and drawStampStrip read stampsTarget and reward
+             to draw anything at all, so removing these inputs would leave the
+             designer unable to render the card it is designing. Hidden, they are
+             seeded from the card and never editable, so a save can only write
+             them back unchanged. -->
+        <div \${env.showDetails ? "" : "hidden"}>
         <label style="margin-top:14px">Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2 row3">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
@@ -594,8 +591,9 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
         <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
+        </div>
 
-        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>\`;
+        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">\${env.rulesSaveLabel}</button>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -726,7 +724,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       // banner preview
       if (c.bannerVersion) {
         const b = q("[data-pv-banner]");
-        b.style.backgroundImage = "url(" + base + "/art/banner.png" + bust(c.bannerVersion) + ")";
+        b.style.backgroundImage = "url(" + env.artUrl("banner", c.bannerVersion) + ")";
         b.classList.add("on");
       }
 
@@ -1117,9 +1115,9 @@ export const DESIGN_PANEL_JS = /* js */ `
       // It is still stored as the banner PNG, so Google's hero image and Apple's
       // strip backdrop are unchanged — what went away is uploading a photo.
       // "flat" is one colour; the rest shade toward a lighter version of it.
-      // Must stay in step with BAND_TEXTURES in src/routes/dashboard.ts. That
-      // allowlist is what refuses an unknown one, so a texture the browser can
-      // draw but the server rejects would silently save as flat.
+      // Must stay in step with BAND_TEXTURES in src/cardView.ts. That allowlist
+      // is what refuses an unknown one, so a texture the browser can draw but
+      // the server rejects would silently save as flat.
       const TEXTURES = [
         { name: "Flat", style: "flat" },
         { name: "Gradient", style: "gradient" },
@@ -1281,8 +1279,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         // that reaches a card already in someone's wallet.
         const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
         const ok = await modal(
-          "Save these changes?",
-          (liveCustomers
+          env.showDetails ? "Save these changes?" : "Save the shop name?",
+          // With the terms hidden the only thing this button can change is the
+          // name, so promising anything about rules would be a lie.
+          (!env.showDetails
+            ? "<p>Only the name changes. The reward and the stamp count stay exactly as they are.</p>"
+            : liveCustomers
             ? "<p>New cards use these rules straight away. Your <strong>" + liveCustomers + "</strong> existing " +
               them() + " keep the reward and stamp count they were promised, and move onto the new rules " +
               "the next time they earn a reward.</p>"
@@ -3163,6 +3165,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
           customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
           rulesNote: "",
+          // Folded: for an owner, design is a set-it-once job and the rules are
+          // what they come back to. The console opens it, because there the
+          // design IS the job.
+          designOpen: false,
+          showDetails: true,
+          rulesSaveLabel: "Save rules",
           // Keep the card-picker chip labels in sync without resetting the form.
           onRulesSaved: () => {
             const pk = document.querySelector("[data-pick]");
@@ -3519,15 +3527,37 @@ export function adminPage(): string {
     body { max-width: none; }
     .awrap { width: 100%; max-width: 1000px; }
     .purpose { color: var(--muted); font-size: .88rem; margin: 2px 0 0; }
-    /* --- is the platform alive right now --- */
-    .pstrip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 16px 0 26px; }
-    @media (min-width: 720px) { .pstrip { grid-template-columns: repeat(4, 1fr); } }
-    .ptile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-    .ptile b { display: block; font-family: var(--display); font-size: 1.8rem; line-height: 1;
-               letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-    .ptile span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
-                  letter-spacing: .05em; color: var(--muted); }
-    .ptile.alarm b { color: #9a3412; }
+    /* --- how everyone is doing: four lenses on the whole book --- */
+    /* Four hero numbers used to sit here — stamping this week, stamps 7d, cards
+       in wallets, need attention. None of them answered a question worth asking
+       before opening a shop. These four panels do: health, performance, value,
+       retention, each a few numbers rather than one. */
+    .pstrip { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 16px 0 30px; }
+    @media (min-width: 700px) { .pstrip { grid-template-columns: 1fr 1fr; } }
+    .ppanel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px; }
+    .ppanel h3 { margin: 0 0 12px; font-size: .68rem; text-transform: uppercase; letter-spacing: .07em;
+                 color: var(--muted); font-family: inherit; font-weight: 700; }
+    .ppanel dl { display: grid; grid-template-columns: 1fr auto; gap: 7px 14px; margin: 0; font-size: .9rem; }
+    .ppanel dt { color: var(--muted); }
+    .ppanel dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ppanel dd.big { font-family: var(--display); font-size: 1.25rem; line-height: 1.1; letter-spacing: -.01em; }
+    .ppanel dd.up { color: #15803d; }
+    .ppanel dd.down { color: #9a3412; }
+    .ppanel .foot { color: var(--muted); font-size: .74rem; margin: 10px 0 0; line-height: 1.45; }
+    /* The lifecycle bar: where the whole book sits, in one line. */
+    .lifebar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; margin: 2px 0 12px;
+               background: var(--ghost-bg); }
+    .lifebar i { display: block; }
+    .lifebar i.live { background: #15803d; }
+    .lifebar i.quiet { background: #b45309; }
+    .lifebar i.dead { background: #9a3412; }
+    .lifekey { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .82rem; }
+    .lifekey span { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+    .lifekey b { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .lifekey i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+    .lifekey i.live { background: #15803d; }
+    .lifekey i.quiet { background: #b45309; }
+    .lifekey i.dead { background: #9a3412; }
     /* --- who needs a call today --- */
     /* ONE line per shop, not one per problem: a shop with four things wrong used
        to take four cards and push everything else off the screen. */
@@ -3570,6 +3600,16 @@ export function adminPage(): string {
     .dpanel dt { color: var(--muted); }
     .dpanel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .dnote { color: var(--muted); font-size: .76rem; margin: 8px 0 0; line-height: 1.5; }
+    /* A funnel that looks like one. Six numbers in a list made you do the
+       subtraction yourself; the drop between steps is the thing being read. */
+    .fnl { display: grid; grid-template-columns: auto 1fr auto; gap: 5px 10px; align-items: center;
+           font-size: .84rem; }
+    .fnl .fl { color: var(--muted); white-space: nowrap; }
+    .fnl .fb { height: 16px; border-radius: 4px; background: var(--accent); min-width: 2px; }
+    .fnl .fb.zero { background: var(--line); }
+    .fnl .fv { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
+    .fnl .fd { font-size: .74rem; color: var(--muted); }
+    .fnl .fd.bad { color: #9a3412; font-weight: 600; }
     /* The one-liner that replaced the "anything wrong" panel: silent when the
        answer is no, which is most of the time. */
     .okline { color: var(--muted); font-size: .82rem; margin-top: 12px; }
@@ -3594,22 +3634,22 @@ export function adminPage(): string {
     #dfy input { width: 100%; }
     #dfy .btn { width: auto; padding: 10px 14px; margin-top: 12px; }
     /* --- designs: the list on the left, the real designer on the right --- */
+    .dstarget { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 16px; }
+    .dstarget select { width: auto; flex: 1; min-width: 180px; max-width: 320px; }
+    .dstarget .seg2 { display: flex; background: var(--ghost-bg); border-radius: 999px; padding: 4px; gap: 2px; }
+    .dstarget .seg2 button { width: auto; border: none; background: none; font: inherit; font-weight: 600;
+                             font-size: .85rem; color: var(--muted); padding: 8px 14px; border-radius: 999px;
+                             cursor: pointer; white-space: nowrap; }
+    .dstarget .seg2 button.on { background: var(--surface); color: var(--accent-dark);
+                                box-shadow: 0 2px 6px rgba(32,33,29,.14); }
+    /* The designer first and at its own width — .designhost caps it at the 480px
+       it was laid out for — with the push panel beside it rather than under. */
     .dsgrid { display: grid; grid-template-columns: 1fr; gap: 20px; align-items: start; }
-    @media (min-width: 860px) { .dsgrid { grid-template-columns: 280px 1fr; } }
-    .dslist { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
-    .dsitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 13px;
-              border: none; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--ink); }
-    .dsitem + .dsitem { border-top: 1px solid var(--line); }
-    .dsitem.on { background: var(--ghost-bg); }
-    .dsitem .sw { width: 26px; height: 26px; border-radius: 7px; flex: none;
-                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
-    .dsitem .nm { flex: 1; font-weight: 600; font-size: .9rem; overflow: hidden;
-                  text-overflow: ellipsis; white-space: nowrap; }
-    .dsnew { display: flex; gap: 8px; margin-top: 10px; }
-    .dsnew input { flex: 1; }
-    .dsnew .btn { width: auto; padding: 10px 14px; white-space: nowrap; }
-    .dspush { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 14px;
+    @media (min-width: 860px) { .dsgrid { grid-template-columns: 480px minmax(0, 1fr); } }
+    .dspush { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
               background: var(--surface); }
+    /* Card mode has nothing to push, and an empty bordered box reads as broken. */
+    .dspush:empty { display: none; }
     .dspush .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
     .dspush select { width: auto; flex: 1; min-width: 160px; }
     .dspush .btn { width: auto; padding: 10px 14px; white-space: nowrap; }
@@ -3654,36 +3694,213 @@ export function adminPage(): string {
       };
     }
 
-    // ---- the done-for-you starter designs (new account in one step) --------
-    function shade(hex, p) {
-      const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
-      let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-      r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
-      return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    // ---------------------------------------------------- the card designer ----
+    // The SAME panel the owner dashboard renders — see DESIGN_PANEL_JS — and it
+    // is on screen from the moment the section loads, with the Design block
+    // open. It points at one of two things:
+    //
+    //   a saved design   an unattached design_templates row, built for a
+    //                    prospect before they have an account, pushed later
+    //   a shop's card    a live card, edited exactly as its owner would
+    //
+    // Everything about that difference lives in the env passed below. The
+    // console used to carry its own smaller designer (three colours, one
+    // gradient band, ten fixed icons) plus six hard-coded "business type"
+    // presets in the signup form. Both are gone: there is one way to design a
+    // card, and it is the one owners use.
+    let designs = [], selDesign = null, dsMode = "design", selCard = null;
+
+    /** rgb(...) as stored for PassKit → the hex an <input type=color> speaks. */
+    const rgbHex = (v) => {
+      const m = /rgb\((\d+)[,\s]+(\d+)[,\s]+(\d+)\)/.exec(String(v || ""));
+      if (!m) return String(v || "#000000");
+      return "#" + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, "0")).join("");
+    };
+
+    async function loadDesigns(cards) {
+      const { body } = await api("/templates");
+      designs = body.templates || [];
+      if (selDesign && !designs.some((d) => d.id === selDesign)) selDesign = null;
+      if (!selDesign && designs.length) selDesign = designs[0].id;
+      drawDesignSection(cards);
     }
-    function dfyBanner(style, c1, c2, w, h) {
-      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-      const x = cv.getContext("2d");
-      if (style === "diagonal") {
-        x.fillStyle = c1; x.fillRect(0, 0, w, h);
-        x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
-      } else if (style === "glow") {
-        x.fillStyle = c1; x.fillRect(0, 0, w, h);
-        const g = x.createRadialGradient(w * .5, h * .5, 10, w * .5, h * .5, w * .6);
-        g.addColorStop(0, c2); g.addColorStop(1, c1); x.fillStyle = g; x.fillRect(0, 0, w, h);
-      } else if (style === "waves") {
-        x.fillStyle = c1; x.fillRect(0, 0, w, h); x.fillStyle = c2;
-        for (let k = 0; k < 3; k++) { x.globalAlpha = .18 + k * .12; x.beginPath(); x.moveTo(0, h * .4 + k * 34);
-          for (let px = 0; px <= w; px += 8) x.lineTo(px, h * .4 + k * 34 + Math.sin(px / 90 + k) * 26);
-          x.lineTo(w, h); x.lineTo(0, h); x.closePath(); x.fill(); } x.globalAlpha = 1;
-      } else {
-        const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, c1); g.addColorStop(1, c2);
-        x.fillStyle = g; x.fillRect(0, 0, w, h);
+
+    /** Create a design and open the designer on it straight away. */
+    async function newDesign(cards, name) {
+      const { body: r } = await api("/templates", {
+        method: "POST", body: JSON.stringify({ name: name || "Untitled design" }),
+      });
+      if (!r.ok) return void toast(r.error || "Couldn't create it");
+      selDesign = r.template.id;
+      dsMode = "design";
+      await loadDesigns(cards);
+    }
+
+    function drawDesignSection(cards) {
+      const live = cards.filter((c) => !c.archived_at);
+      if (!selCard && live.length) selCard = live[0].id;
+      // The target picker: a saved design, or somebody's real card.
+      $("#ds-target").innerHTML = \`
+        <div class="seg2">
+          <button type="button" data-mode="design" class="\${dsMode === "design" ? "on" : ""}">A saved design</button>
+          <button type="button" data-mode="card" class="\${dsMode === "card" ? "on" : ""}">A shop's card</button>
+        </div>
+        \${dsMode === "design"
+          ? (designs.length
+              ? '<select id="ds-pick">' + designs.map((d) =>
+                  '<option value="' + d.id + '"' + (d.id === selDesign ? " selected" : "") + ">" + esc(d.name) + "</option>").join("") + "</select>" +
+                '<button class="btn btn-ghost cbtn" id="ds-new" style="margin:0">+ New</button>' +
+                '<button class="btn btn-ghost cbtn" id="ds-del" style="margin:0">Delete</button>'
+              : '<button class="btn btn-dark cbtn" id="ds-new" style="margin:0;padding:10px 14px">Start a design</button>')
+          : (live.length
+              ? '<select id="ds-cardpick">' + live.map((c) =>
+                  '<option value="' + c.id + '"' + (c.id === selCard ? " selected" : "") + ">" + esc(c.name) + "</option>").join("") + "</select>"
+              : '<span class="flags">No shops yet.</span>')}\`;
+
+      $("#ds-target").querySelectorAll("[data-mode]").forEach((b) => {
+        b.onclick = () => { dsMode = b.dataset.mode; drawDesignSection(cards); };
+      });
+      const pick = $("#ds-pick");
+      if (pick) pick.onchange = () => { selDesign = pick.value; drawDesignSection(cards); };
+      const cpick = $("#ds-cardpick");
+      if (cpick) cpick.onchange = () => { selCard = cpick.value; drawDesignSection(cards); };
+      const nw = $("#ds-new");
+      if (nw) nw.onclick = () => newDesign(cards);
+      const del = $("#ds-del");
+      if (del) armBtn(del, "Tap again to delete", async () => {
+        await api("/templates/" + selDesign, { method: "DELETE" });
+        selDesign = null;
+        loadDesigns(cards);
+      });
+
+      if (dsMode === "design") drawDesignEditor(cards);
+      else drawCardEditor(cards);
+    }
+
+    /** The shared panel, mounted on a saved design. */
+    function drawDesignEditor(cards) {
+      const host = $("#ds-editor");
+      const push = $("#ds-push");
+      const d = designs.find((x) => x.id === selDesign);
+      if (!d) {
+        push.innerHTML = "";
+        host.innerHTML = '<div class="dsempty">Start a design and the full designer opens here — ' +
+          "upload a logo, we read the colours out of it, and you set the card, band and stamps.</div>";
+        return;
       }
-      return cv.toDataURL("image/png");
+      mountDesigner(host, {
+        id: d.id,
+        shopName: d.name, name: d.name, reward: d.reward,
+        stampsTarget: d.stamps_target, stampsStart: d.stamps_start,
+        averageSpend: 0, signupMessage: d.signup_message,
+        bg: rgbHex(d.bg), fg: rgbHex(d.fg), label: rgbHex(d.label_color),
+        accent: rgbHex(d.accent_color), bandColor: rgbHex(d.band_color),
+        bandTexture: d.band_texture, stampStyle: d.stamp_style,
+        logoVersion: d.has_logo ? d.art_version : 0,
+        bannerVersion: d.has_banner ? d.art_version : 0,
+        // A design has no passes, so there is no older target it still owes a
+        // grid for. On a real card below, this is populated and matters.
+        targetsInUse: [],
+      }, {
+        path: (suffix) => "/design/" + d.id + suffix,
+        artUrl: (kind, v) => "/admin/api/templates/" + d.id + "/" + kind + ".png" + (v ? "?v=" + v : ""),
+        // In nobody's wallet yet, so the save confirmation has no number to name.
+        customersPath: null,
+        onRulesSaved: () => loadDesigns(cards),
+      });
+      drawPush(cards, d);
     }
-    // Resolves to null on failure rather than rejecting — a missing backdrop
-    // must never block a card build.
+
+    /** The same panel, mounted on a merchant's live card. */
+    async function drawCardEditor(cards) {
+      const host = $("#ds-editor");
+      $("#ds-push").innerHTML = "";
+      if (!selCard) { host.innerHTML = '<div class="dsempty">No shops to design for yet.</div>'; return; }
+      host.innerHTML = '<div class="dsempty">Loading…</div>';
+      const { body } = await api("/card/" + selCard + "/design-state");
+      if (!body.ok) { host.innerHTML = '<div class="dsempty">Couldn\\'t load that card.</div>'; return; }
+      // Guard against a slow response landing after the picker moved on.
+      if (body.card.id !== selCard) return;
+      mountDesigner(host, body.card, {
+        path: (suffix) => "/card/" + body.card.id + "/design" + suffix,
+        artUrl: (kind, v) => "/c/" + body.card.id + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
+        // A real card has real holders, and the save confirmation names them.
+        customersPath: "/card/" + body.card.id + "/counts",
+        onRulesSaved: () => load(),
+      });
+    }
+
+    /**
+     * One mount point for both, so the two can never be given different panels.
+     * Only path, artUrl, customersPath and the follow-up differ; every flag
+     * below is the same either way.
+     */
+    function mountDesigner(host, card, env) {
+      host.innerHTML = "";
+      const wrap = document.createElement("div");
+      wrap.className = "designhost";
+      wrap.appendChild(designPanel(card, {
+        api, toast, modal, info,
+        ...env,
+        // Open, not folded: on the dashboard design is a set-it-once job behind
+        // the rules, but here the design IS the job.
+        designOpen: true,
+        // The console does not set a card's TERMS. The fields still exist and
+        // are seeded from the card — the preview and the stamp renderer read
+        // them — but they are hidden and never editable, so a save can only
+        // write them back unchanged. The shop name stays editable.
+        showDetails: false,
+        rulesSaveLabel: "Save name",
+        rulesNote: "",
+      }));
+      host.appendChild(wrap);
+    }
+
+    /** Push a saved design onto a live card. Look only — never the terms. */
+    function drawPush(cards, d) {
+      const host = $("#ds-push");
+      const live = cards.filter((c) => !c.archived_at);
+      if (!live.length) { host.innerHTML = ""; return; }
+      host.innerHTML = \`
+        <strong style="font-size:.9rem">Push "\${esc(d.name)}" onto a shop's card</strong>
+        <div class="flags" style="margin-top:4px">Colours, band and stamps only — their reward and
+          stamp count are left exactly as they are.</div>
+        <div class="row">
+          <select id="ds-pushto">\${live.map((c) => '<option value="' + c.id + '">' + esc(c.name) + "</option>").join("")}</select>
+          <button class="btn btn-dark" id="ds-go">Push design</button>
+        </div>\`;
+      // Two taps: it changes a card already in customers' wallets.
+      armBtn($("#ds-go"), "Tap again to push", async () => {
+        const cardId = $("#ds-pushto").value;
+        const card = cards.find((c) => c.id === cardId);
+        const btn = $("#ds-go");
+        btn.disabled = true; btn.textContent = "Pushing…";
+        // The grid is re-rendered here for THIS card's target: a saved design
+        // cannot know how many stamps the card it lands on needs, and the push
+        // deliberately does not change that number.
+        const target = card.stamps_target || 10;
+        const bannerUrl = d.has_banner
+          ? "/admin/api/templates/" + d.id + "/banner.png?v=" + d.art_version
+          : "";
+        const backdrop = await loadImg(bannerUrl);
+        const strips = [];
+        for (let n = 0; n <= target; n++) {
+          strips.push({
+            filled: n,
+            png: pushStrip(n, target, d.stamp_style || "dot", rgbHex(d.bg), rgbHex(d.accent_color), backdrop).split(",")[1],
+          });
+        }
+        const { body: r } = await api("/card/" + cardId + "/apply-template", {
+          method: "POST", body: JSON.stringify({ templateId: d.id, strips }),
+        });
+        btn.disabled = false; btn.textContent = "Push design";
+        if (r.ok) { toast("Pushed to " + card.name + " ✓"); setTimeout(load, 1200); }
+        else toast(r.error || "Push failed");
+      });
+    }
+
+    // Decodes a dataURL/URL so it can be composited. Resolves to null on
+    // failure rather than rejecting — a missing band must never block a push.
     function loadImg(src) {
       return new Promise((resolve) => {
         if (!src) return resolve(null);
@@ -3693,9 +3910,17 @@ export function adminPage(): string {
         im.src = src;
       });
     }
-    // Same geometry as the shared designer's drawStampStrip: @2x storeCard strip,
-    // two rows, 40px clear margin, short last row centred.
-    function dfyStrip(filled, target, icon, bg, accent, backdrop) {
+
+    /**
+     * The stamp grid for a PUSH, drawn at the target card's own stamp count.
+     *
+     * Same geometry as the shared designer's drawStampStrip — @2x storeCard
+     * strip, two rows, 40px clear margin, short last row centred — but it
+     * cannot call that one: it lives inside designPanel's closure and reads the
+     * live colour pickers, and a push renders from a stored design against a
+     * card that is not open in the editor.
+     */
+    function pushStrip(filled, target, icon, bg, accent, backdrop) {
       const W = 750, H = 246, M = 40;
       const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
       const x = cv.getContext("2d");
@@ -3714,7 +3939,7 @@ export function adminPage(): string {
         const inRow = Math.min(perRow, target - rowN * perRow);
         const cx = (W - cw * inRow) / 2 + cw * col + cw / 2, cy = M + ch * rowN + ch / 2;
         const on = i < filled;
-        if (icon === "dot") {
+        if (icon === "dot" || !icon) {
           x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2);
           x.fillStyle = accent; x.globalAlpha = on ? 1 : .25; x.fill(); x.globalAlpha = 1;
         } else {
@@ -3723,135 +3948,6 @@ export function adminPage(): string {
         }
       }
       return cv.toDataURL("image/png");
-    }
-    const VERTICALS = [
-      { name: "Coffee",       emoji: "☕", bg: "#3b2016", fg: "#fffaf0", label: "#d6b278", banner: "gradient", icon: "☕", reward: "Free coffee" },
-      { name: "Chicken rice", emoji: "🍗", bg: "#7a2f1c", fg: "#fff2ea", label: "#f6b98f", banner: "diagonal", icon: "🍗", reward: "Free plate" },
-      { name: "Bubble tea",   emoji: "🧋", bg: "#38265e", fg: "#f2eefb", label: "#b9a4ec", banner: "glow",     icon: "🧋", reward: "Free drink" },
-      { name: "Bakery",       emoji: "🥐", bg: "#8a5a12", fg: "#fff8ea", label: "#ffd98a", banner: "gradient", icon: "🥐", reward: "Free pastry" },
-      { name: "Dessert",      emoji: "🍨", bg: "#7d2144", fg: "#fff0f4", label: "#f4a9c0", banner: "glow",     icon: "🍩", reward: "Free dessert" },
-      { name: "Anything",     emoji: "⭐", bg: "#1f2124", fg: "#f4f4f5", label: "#a9d0ff", banner: "waves",    icon: "⭐", reward: "Free reward" },
-    ];
-    let picked = VERTICALS[0];
-
-    // ------------------------------------------------ saved card designs ----
-    // The SAME designer the owner dashboard renders — see DESIGN_PANEL_JS. It
-    // edits a design_templates row instead of a card, which is the only thing
-    // that differs, and that difference is entirely in the env below. The
-    // console used to carry its own smaller copy (three colours, one band, ten
-    // fixed icons); a design built there looked nothing like one the owner
-    // could build, and every improvement to the real designer skipped it.
-    let designs = [], selDesign = null;
-
-    async function loadDesigns(cards) {
-      const { body } = await api("/templates");
-      designs = body.templates || [];
-      if (selDesign && !designs.some((d) => d.id === selDesign)) selDesign = null;
-      if (!selDesign && designs.length) selDesign = designs[0].id;
-      drawDesigns(cards);
-    }
-
-    function drawDesigns(cards) {
-      const list = $("#ds-list");
-      list.innerHTML = designs.length
-        ? designs.map((d) => \`<button type="button" class="dsitem \${d.id === selDesign ? "on" : ""}" data-ds="\${d.id}">
-             <span class="sw" style="background:\${esc(d.bg)}"></span>
-             <span class="nm">\${esc(d.name)}</span>
-           </button>\`).join("")
-        : '<div class="dsempty">No saved designs yet.</div>';
-      list.querySelectorAll("[data-ds]").forEach((b) => {
-        b.onclick = () => { selDesign = b.dataset.ds; drawDesigns(cards); };
-      });
-      drawDesigner(cards);
-    }
-
-    /**
-     * Mount the shared designer on the selected design.
-     *
-     * The card shape it expects is built from the template row; the colours are
-     * stored rgb(...) for PassKit and the pickers need hex, hence rgbHex.
-     */
-    function drawDesigner(cards) {
-      const host = $("#ds-editor");
-      const d = designs.find((x) => x.id === selDesign);
-      if (!d) { host.innerHTML = '<p class="dsempty">Name a design on the left to start one.</p>'; return; }
-      const rgbHex = (v) => {
-        const m = /rgb\\((\\d+)[,\\s]+(\\d+)[,\\s]+(\\d+)\\)/.exec(String(v || ""));
-        if (!m) return String(v || "#000000");
-        return "#" + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, "0")).join("");
-      };
-      host.innerHTML = "";
-      host.appendChild(designPanel({
-        id: d.id,
-        shopName: d.name, name: d.name, reward: d.reward,
-        stampsTarget: d.stamps_target, stampsStart: d.stamps_start,
-        averageSpend: 0, signupMessage: d.signup_message,
-        bg: rgbHex(d.bg), fg: rgbHex(d.fg), label: rgbHex(d.label_color),
-        accent: rgbHex(d.accent_color), bandColor: rgbHex(d.band_color),
-        bandTexture: d.band_texture, stampStyle: d.stamp_style,
-        logoVersion: d.has_logo ? d.art_version : 0,
-        bannerVersion: d.has_banner ? d.art_version : 0,
-        targetsInUse: [],
-      }, {
-        api, toast, modal, info,
-        path: (suffix) => "/design/" + d.id + suffix,
-        artUrl: (kind, v) => "/admin/api/templates/" + d.id + "/" + kind + ".png" + (v ? "?v=" + v : ""),
-        // A design is in nobody's wallet, so there is no live count to warn about.
-        customersPath: null,
-        rulesNote: '<p class="dnote" style="margin:14px 0 0"><strong>Preview only.</strong> ' +
-          "The reward and the stamp numbers below shape this mock-up so you can show it to " +
-          "someone. Pushing a design never writes them onto a real card — it changes how a " +
-          "card looks and never what it promises.</p>",
-        onRulesSaved: () => loadDesigns(cards),
-      }));
-      drawPush(cards, d);
-    }
-
-    function drawPush(cards, d) {
-      const host = $("#ds-push");
-      const live = cards.filter((c) => !c.archived_at);
-      if (!live.length) { host.innerHTML = ""; return; }
-      host.innerHTML = \`
-        <strong style="font-size:.9rem">Push "\${esc(d.name)}" onto a card</strong>
-        <div class="row">
-          <select id="ds-target">\${live.map((c) => '<option value="' + c.id + '">' + esc(c.name) + "</option>").join("")}</select>
-          <button class="btn btn-dark" id="ds-go">Push design</button>
-          <button class="btn btn-ghost cbtn" id="ds-del" style="margin:0">Delete design</button>
-        </div>\`;
-      // Two taps: it changes a card that is already in customers' wallets.
-      armBtn($("#ds-go"), "Tap again to push", async () => {
-        const cardId = $("#ds-target").value;
-        const card = cards.find((c) => c.id === cardId);
-        const btn = $("#ds-go");
-        btn.disabled = true; btn.textContent = "Pushing…";
-        // The grid is re-rendered here for THIS card's target: a saved design
-        // cannot know how many stamps the card it lands on needs, and the push
-        // deliberately does not change that number.
-        const target = card.stamps_target || 10;
-        const strips = [];
-        const bannerUrl = d.has_banner
-          ? "/admin/api/templates/" + d.id + "/banner.png?v=" + d.art_version
-          : "";
-        const backdrop = await loadImg(bannerUrl);
-        const hex = (v) => {
-          const m = /rgb\\((\\d+)[,\\s]+(\\d+)[,\\s]+(\\d+)\\)/.exec(String(v || ""));
-          return m ? "#" + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, "0")).join("") : String(v);
-        };
-        for (let n = 0; n <= target; n++) {
-          strips.push({ filled: n, png: dfyStrip(n, target, d.stamp_style || "dot", hex(d.bg), hex(d.accent_color), backdrop).split(",")[1] });
-        }
-        const { body: r } = await api("/card/" + cardId + "/apply-template", {
-          method: "POST", body: JSON.stringify({ templateId: d.id, strips }),
-        });
-        btn.disabled = false; btn.textContent = "Push design";
-        if (r.ok) { toast("Pushed to " + card.name + " ✓"); setTimeout(load, 1200); }
-        else toast(r.error || "Push failed");
-      });
-      armBtn($("#ds-del"), "Tap again to delete", async () => {
-        await api("/templates/" + d.id, { method: "DELETE" });
-        selDesign = null;
-        loadDesigns(cards);
-      });
     }
 
     async function load() {
@@ -3926,6 +4022,33 @@ export function adminPage(): string {
 
       // ---- one merchant, four questions in the order you would ask them ------
       const retById = new Map((body.retention || []).map((r) => [r.id, r]));
+
+      /**
+       * The sign-up funnel as a funnel: a bar per step, and the DROP between
+       * steps, which is the thing actually being read. It was six numbers in a
+       * list, leaving you to do the subtraction yourself and never showing
+       * which gap was the big one.
+       */
+      function funnelHtml(m) {
+        const steps = [
+          ["Opened sign-up", m.scanned],
+          ["Tapped Add", m.clicked],
+          ["Card made", m.made],
+          ["Landed in wallet", m.landed],
+        ];
+        const top = Math.max(1, ...steps.map((x) => x[1]));
+        return '<div class="fnl">' + steps.map(([label, n], i) => {
+          const prev = i ? steps[i - 1][1] : null;
+          // Only a drop is worth naming, and only when there was enough at the
+          // step above to mean anything — "−100%" off a single visitor is noise.
+          const drop = prev && prev >= 5 && n < prev ? Math.round((1 - n / prev) * 100) : null;
+          return '<span class="fl">' + label + "</span>" +
+            '<span><span class="fb ' + (n ? "" : "zero") + '" style="width:' +
+              Math.max(2, Math.round((n / top) * 100)) + '%"></span></span>' +
+            '<span class="fv">' + n + (drop === null ? "" :
+              ' <span class="fd' + (drop >= 50 ? " bad" : "") + '">−' + drop + "%</span>") + "</span>";
+        }).join("") + "</div>";
+      }
       function detailHtml(m) {
         const v = m.value;
         const ret = retById.get(m.id) || {};
@@ -3957,13 +4080,10 @@ export function adminPage(): string {
 
           <div class="dpanel">
             <h4><span class="qn">2</span>Are people signing up?\${info("This is acquisition, not health — it names WHICH step is losing people. A drop from opened to tapped is the sign-up page; from made to landed is the wallet's own Add sheet. A QR scan and a tapped link both arrive as an ordinary page view, so the split comes from a tag on the poster QR and the share link; anything untagged, including posters printed before the tag existed, counts as untagged rather than lost.")}</h4>
-            <dl>
-              <dt>Opened sign-up page</dt><dd>\${m.scanned}</dd>
+            \${funnelHtml(m)}
+            <dl style="margin-top:10px">
               <dt style="padding-left:12px" class="flags">poster · link · untagged</dt>
               <dd class="flags">\${m.opened_poster} · \${m.opened_link} · \${m.opened_other}</dd>
-              <dt>Tapped Add</dt><dd>\${m.clicked}</dd>
-              <dt>Card made</dt><dd>\${m.made}</dd>
-              <dt>Landed in wallet</dt><dd>\${m.landed}</dd>
               <dt>Deleted / dropped</dt><dd>\${m.removed} / \${m.dropped}</dd>
             </dl>
             \${noFunnel ? \`<p class="dnote"><strong>Predates the funnel.</strong> Page opens and Add
@@ -4028,6 +4148,8 @@ export function adminPage(): string {
             <button class="btn btn-ghost cbtn" data-nfc="\${origin}/j/\${m.id}">Copy link</button>
             \${cards.map((c) => '<a class="btn btn-ghost cbtn" target="_blank" href="/c/' + c.id + '/poster">Poster</a>').join("")}
             \${cards.map((c) => '<a class="btn btn-ghost cbtn" target="_blank" href="/admin/card/' + c.id + '/sheet">Counter sheet</a>').join("")}
+            \${cards.filter((c) => !c.archived_at).map((c) =>
+              '<button class="btn btn-ghost cbtn" data-design="' + c.id + '">Design their card</button>').join("")}
             \${m.archived_at
               ? '<button class="btn btn-ghost dbtn" data-munarchive="' + m.id + '">Restore shop</button>'
               : '<button class="btn btn-ghost dbtn" data-marchive="' + m.id + '">Archive shop</button>'}
@@ -4048,21 +4170,86 @@ export function adminPage(): string {
         </div>\`;
       }
 
-      const stampsAll7d = merchants.reduce((a, m) => a + m.stamps_7d, 0);
-      const stampingThisWeek = live.filter((m) => m.stamps_7d > 0).length;
-      const inWallets = merchants.reduce((a, m) => a + Math.max(0, m.landed - m.removed), 0);
       const owners = body.owners || [];
+
+      // ---- how everyone is doing --------------------------------------------
+      // Summed over LIVE shops only: an archived account is closed, not broken,
+      // and leaving it in would drag every portfolio figure down for a reason
+      // that has nothing to do with the product.
+      const sum = (k) => live.reduce((a, m) => a + (m[k] || 0), 0);
+      // The three states a shop can be in, and they are mutually exclusive.
+      const never = live.filter((m) => !m.first_stamp_at);
+      const quiet = live.filter((m) => m.first_stamp_at && m.stamps_7d === 0);
+      const active = live.filter((m) => m.stamps_7d > 0);
+      const pctOf = (n) => live.length ? (n / live.length) * 100 : 0;
+      const s7 = sum("stamps_7d"), sPrev = sum("stamps_prev_7d");
+      const trend = sPrev ? Math.round(((s7 - sPrev) / sPrev) * 100) : null;
+      const newShops = live.filter((m) => Date.now() - new Date(m.signed_up_at).getTime() < 30 * 86400000).length;
+      // Money only counts shops that actually told us their basket — averaging
+      // in a zero from everyone else would understate it and look like a bug.
+      const withBasket = live.filter((m) => m.value.hasBasket);
+      const spend = withBasket.reduce((a, m) => a + m.value.spendThroughCard, 0);
+      const cur = live[0] ? live[0].currency : "RM";
+      const perShop = withBasket.length
+        ? [...withBasket].map((m) => m.value.spendThroughCard).sort((a, b) => a - b)[Math.floor(withBasket.length / 2)]
+        : 0;
+      const plat = body.platform || {};
 
       $("#app").innerHTML = \`
         <h1>Merchant health</h1>
         <p class="purpose">Get every shop from signed up → stamping → still stamping in 30 days → paying.
           Read top to bottom: what is alive, who needs a call, then any shop in full.</p>
 
+        <h2 style="margin-top:22px">How everyone is doing\${info("The whole book on four lenses, before any single shop. Archived shops are left out of all four — a closed account is not evidence about the product.")}</h2>
         <div class="pstrip">
-          <div class="ptile"><b>\${stampingThisWeek}/\${live.length}</b><span>stamping this week</span></div>
-          <div class="ptile"><b>\${stampsAll7d}</b><span>stamps · 7 days</span></div>
-          <div class="ptile"><b>\${inWallets}</b><span>cards in wallets</span></div>
-          <div class="ptile \${needing.length ? "alarm" : ""}"><b>\${needing.length}</b><span>need attention</span></div>
+          <div class="ppanel">
+            <h3>Health\${info("Where every live shop sits. Never started means not one stamp has ever been given at their counter. Gone quiet means they were stamping and have not this week — the single best predictor of churn.")}</h3>
+            <div class="lifebar">
+              <i class="live" style="width:\${pctOf(active.length)}%"></i>
+              <i class="quiet" style="width:\${pctOf(quiet.length)}%"></i>
+              <i class="dead" style="width:\${pctOf(never.length)}%"></i>
+            </div>
+            <div class="lifekey">
+              <span><i class="live"></i><b>\${active.length}</b> stamping now</span>
+              <span><i class="quiet"></i><b>\${quiet.length}</b> gone quiet</span>
+              <span><i class="dead"></i><b>\${never.length}</b> never started</span>
+            </div>
+            <p class="foot">\${live.length} live shop\${live.length === 1 ? "" : "s"}\${needing.length ? " · " + needing.length + " need you today" : " · nothing needs you"}</p>
+          </div>
+
+          <div class="ppanel">
+            <h3>Performance\${info("Counter activity across the book. Stamps are net of undos, and free welcome stamps have never been in them — one stamp is one real visit.")}</h3>
+            <dl>
+              <dt>Stamps this week</dt><dd class="big">\${s7}</dd>
+              <dt>vs last week</dt>
+              <dd class="\${trend === null ? "" : trend >= 0 ? "up" : "down"}">\${trend === null ? sPrev : (trend >= 0 ? "▲ " : "▼ ") + Math.abs(trend) + "% (" + sPrev + ")"}</dd>
+              <dt>Customers active this week</dt><dd>\${sum("active_7d")}</dd>
+              <dt>Cards in wallets</dt><dd>\${live.reduce((a, m) => a + Math.max(0, m.landed - m.removed), 0)}</dd>
+              <dt>New shops (30d)</dt><dd>\${newShops}</dd>
+            </dl>
+          </div>
+
+          <div class="ppanel">
+            <h3>Value\${info("What the book delivered, in money: counter visits times each shop's OWN self-reported basket. A countable number times one assumption, and not incremental — some of these people would have come anyway.")}</h3>
+            <dl>
+              <dt>Spend through cards</dt><dd class="big">\${cur}\${Math.round(spend).toLocaleString()}</dd>
+              <dt>Median per shop</dt><dd>\${cur}\${Math.round(perShop).toLocaleString()}</dd>
+              <dt>Rewards given</dt><dd>\${sum("redemptions")}</dd>
+              <dt>Rewards owed</dt><dd class="\${sum("unclaimed_rewards") ? "down" : ""}">\${sum("unclaimed_rewards")}</dd>
+            </dl>
+            <p class="foot">\${withBasket.length} of \${live.length} shop\${live.length === 1 ? "" : "s"} set a basket; the rest are not in the money figures.</p>
+          </div>
+
+          <div class="ppanel">
+            <h3>Retention\${info("Recomputed across every live shop's customers at once, not averaged from the per-shop rates — a rate over 3 customers and a rate over 300 do not average into anything. Counted per person, and per net stamp.")}</h3>
+            <dl>
+              <dt>Came back a 2nd time</dt><dd class="big">\${pct(plat.second_visit_rate)}</dd>
+              <dt>…a 3rd</dt><dd>\${pct(plat.third_visit_rate)}</dd>
+              <dt>Finished a card</dt><dd>\${pct(plat.completion_rate)}</dd>
+              <dt>Still active 30/60/90</dt><dd>\${pct(plat.alive_30)} · \${pct(plat.alive_60)} · \${pct(plat.alive_90)}</dd>
+            </dl>
+            <p class="foot">Across \${plat.started || 0} people who have ever been stamped.</p>
+          </div>
         </div>
 
         <h2>Needs you today\${info("Only shops with something actually wrong, worst first. The line under each name is the single most urgent thing to do about it. A healthy shop is not listed at all — that is the point.")}</h2>
@@ -4094,23 +4281,15 @@ export function adminPage(): string {
           <div class="tw"><table>\${MERCHANT_HEAD}\${archivedMerchants.map(merchantRow).join("")}</table></div>
         </details>\` : ""}
 
-        <h2 style="margin-top:34px">Card designs\${info("The same designer the owners get, pointed at a saved design instead of a real card. Build one for a prospect before they have an account, then push it onto their card once they sign up. Pushing changes colours, band and stamps only — never the reward or the stamp count, so it can never contradict what staff have been telling customers.")}</h2>
+        <h2 style="margin-top:34px">Card designs\${info("The same designer the owners get — logo, the colours read out of it, band and stamps. Point it at a saved design to build one for a prospect before they have an account, or straight at a shop's live card. It never changes a card's reward or stamp count; only its owner does that.")}</h2>
+        <div class="dstarget" id="ds-target"></div>
         <div class="dsgrid">
-          <div>
-            <div class="dslist" id="ds-list"></div>
-            <div class="dsnew">
-              <input id="ds-name" placeholder="New design name" maxlength="60">
-              <button class="btn btn-dark" id="ds-add">Add</button>
-            </div>
-            <div class="dspush" id="ds-push"></div>
-          </div>
           <div id="ds-editor"></div>
+          <div class="dspush" id="ds-push"></div>
         </div>
 
-        <h2 style="margin-top:34px">Set a shop up\${info("Creates the owner account and a matching card in one step. They get a temp password and a staff PIN, both shown once — the PIN is only ever stored scrambled and can never be looked up again.")}</h2>
+        <h2 style="margin-top:34px">Set a shop up\${info("Creates the owner account and a plain card. They get a temp password and a staff PIN, both shown once — the PIN is only ever stored scrambled and can never be looked up again. The designer above then opens on their new card.")}</h2>
         <div id="dfy">
-          <label>Business type</label>
-          <div class="bantpl" data-vpick></div>
           <label>Shop name</label><input id="dfy-name" placeholder="e.g. Nasi Lemak House">
           <label>Owner email</label><input id="dfy-email" type="email" placeholder="owner@card.my">
           <button class="btn btn-dark" id="dfy-create">Create shop + account</button>
@@ -4189,6 +4368,16 @@ export function adminPage(): string {
           await api("/merchant/" + id + "/unarchive", { method: "POST" });
           load();
         };
+        // Jump to the designer with this shop's card already selected. Same
+        // panel, same routes — the section below just changes what it points at.
+        scope.querySelectorAll("[data-design]").forEach((b) => {
+          b.onclick = () => {
+            selCard = b.dataset.design;
+            dsMode = "card";
+            drawDesignSection(body.cards || []);
+            $("#ds-target").scrollIntoView({ behavior: "smooth", block: "start" });
+          };
+        });
         // Archiving a programme is always safe — nothing is destroyed and it is
         // reversible — so the only refusal left is taking a shop's last card.
         const WHY = { "last-card": "Their only card — kept", "no-such-card": "Not found", already: "Already archived" };
@@ -4213,48 +4402,28 @@ export function adminPage(): string {
         });
       }
 
-      // ---- saved designs: add one, then the shared designer takes over -------
-      $("#ds-add").onclick = async () => {
-        const name = $("#ds-name").value.trim();
-        if (!name) return void toast("Give the design a name");
-        const { body: r } = await api("/templates", { method: "POST", body: JSON.stringify({ name }) });
-        if (!r.ok) return void toast(r.error || "Couldn't create it");
-        $("#ds-name").value = "";
-        selDesign = r.template.id;
-        loadDesigns(body.cards || []);
-      };
-
       // ---- set a shop up ------------------------------------------------------
-      const vpick = $("[data-vpick]");
-      VERTICALS.forEach((v, i) => {
-        const bt = document.createElement("div"); bt.className = "bt" + (i === 0 ? " sel" : ""); bt.title = v.name;
-        bt.style.backgroundImage = "url(" + dfyBanner(v.banner, v.bg, shade(v.bg, 0.4), 144, 64) + ")";
-        bt.innerHTML = "<span>" + v.emoji + " " + v.name + "</span>";
-        bt.onclick = () => { picked = v; vpick.querySelectorAll(".bt").forEach((x) => x.classList.remove("sel")); bt.classList.add("sel"); };
-        vpick.appendChild(bt);
-      });
+      // No design here any more. It used to build a card from one of six
+      // hard-coded business-type presets, which was a second designer hiding in
+      // a signup form; now it creates a plain card and the real designer above
+      // opens on it.
       $("#dfy-create").onclick = async () => {
         const cafeName = $("#dfy-name").value.trim(), ownerEmail = $("#dfy-email").value.trim();
         if (!cafeName) return void ($("#dfy-out").textContent = "Enter a shop name.");
         if (!ownerEmail.includes("@")) return void ($("#dfy-out").textContent = "Enter a valid owner email.");
         $("#dfy-create").disabled = true; $("#dfy-out").textContent = "Creating…";
-        const strips = [];
-        const bannerUrl = dfyBanner(picked.banner, picked.bg, shade(picked.bg, 0.4), 750, 246);
-        const backdrop = await loadImg(bannerUrl);
-        for (let n = 0; n <= 10; n++) strips.push({ filled: n, png: dfyStrip(n, 10, picked.icon, picked.bg, picked.label, backdrop).split(",")[1] });
-        const banner = bannerUrl.split(",")[1];
-        const { body: r } = await api("/card", { method: "POST", body: JSON.stringify({
-          cafeName, ownerEmail, reward: picked.reward,
-          bg: picked.bg, fg: picked.fg, label: picked.label, stampStyle: picked.icon,
-          banner, strips,
-        })});
+        const { body: r } = await api("/card", { method: "POST",
+          body: JSON.stringify({ cafeName, ownerEmail }) });
         $("#dfy-create").disabled = false;
         if (r.ok) {
           // The PIN is only ever stored hashed, so this is the one time it can be
           // read — after this it can only be replaced from the owner's dashboard.
           $("#dfy-out").innerHTML = '<div class="temp">Created <strong>' + esc(cafeName) + '</strong> for <strong>' + esc(r.ownerEmail) + '</strong>.<br>Temp password: <strong>' + r.tempPassword + '</strong> — they log in at /dashboard and can change it.<br>Staff PIN: <strong>' + r.staffPin + '</strong> — write this down now, it can’t be looked up later.</div>';
           $("#dfy-name").value = ""; $("#dfy-email").value = "";
-          setTimeout(load, 1500);
+          // Hand them straight to the designer, pointed at the card just made.
+          selCard = r.cardId;
+          dsMode = "card";
+          setTimeout(load, 1200);
         } else {
           $("#dfy-out").textContent = r.error === "email-taken" ? "That email already has an account." : (r.error || "Failed");
         }

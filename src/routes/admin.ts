@@ -26,6 +26,7 @@ import {
   adminRetention,
   adminStaffAudit,
   businessNameForCard,
+  cardCounts,
   archiveCard,
   createDesignTemplate,
   deleteDesignTemplate,
@@ -40,23 +41,29 @@ import {
   listDesignTemplates,
   merchantEdits,
   merchantHealth,
+  platformRetention,
   setMerchantArchived,
   setMerchantContact,
   setStaffPin,
   getOwner,
   getOwnerByEmail,
   linkOwnerCard,
+  deleteCardBanner,
+  deleteCardLogo,
+  merchantForCard,
   setCardBanner,
   setCardLogo,
+  updateMerchant,
   setStampStrips,
   updateCard,
   updateOwnerPassword,
   type OwnerRow,
 } from "../db.js";
+import { BAND_TEXTURES, cardFieldsFromBody, designerCard } from "../cardView.js";
 import { ensureClass } from "../googleWallet.js";
 import { triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng, validateLogoPng } from "../imageValidate.js";
-import { BAND_TEXTURES, adminPage, counterSheetPage } from "../pages.js";
+import { adminPage, counterSheetPage } from "../pages.js";
 
 export const adminRouter = Router();
 
@@ -103,11 +110,15 @@ adminRouter.get("/card/:id/sheet", requireAdmin, async (req, res) => {
  * and are unit-tested without a browser or a database.
  */
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [merchants, cards, owners, retention, staff] = await Promise.all([
+  const [merchants, cards, owners, retention, platform, staff] = await Promise.all([
     merchantHealth(),
     allCardsWithStats(),
     allOwners(),
     adminRetention(),
+    // The portfolio figure, recomputed over everyone rather than averaged from
+    // the rows above — a rate over 3 customers and a rate over 300 do not
+    // average into anything meaningful.
+    platformRetention(),
     adminStaffAudit(),
   ]);
   const withFlags = merchants.map((m) => ({
@@ -116,7 +127,7 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     value: value(m),
     trialLeft: trialDaysLeft(m),
   }));
-  res.json({ merchants: withFlags, cards, owners, retention, staff });
+  res.json({ merchants: withFlags, cards, owners, retention, platform, staff });
 });
 
 /** What this merchant has changed about their card — the WTP signal. */
@@ -146,17 +157,18 @@ adminRouter.post("/api/merchant/:id/contact", requireAdmin, async (req, res) => 
 });
 
 /**
- * Done-for-you onboarding: the platform operator creates a fully-designed café
- * AND a ready-to-use owner account in one shot (temp password returned once).
- * The design (colours, banner, stamp grid) is rendered in the admin's browser
- * and posted here — no server-side image work, same as the owner dashboard.
+ * Set a shop up: the owner account, their business and a plain card, in one
+ * step. The temp password and the staff PIN come back once and are never
+ * retrievable again.
+ *
+ * It no longer takes a design. It used to accept a colour set, a banner and a
+ * whole stamp grid rendered from one of six hard-coded "business type" presets
+ * (Coffee / Bubble tea / Bakery…), which was a second, poorer designer living
+ * inside a signup form. The console now opens the REAL designer on the card
+ * this creates — the routes below — so there is one way to design a card.
  */
 adminRouter.post("/api/card", requireAdmin, async (req, res) => {
-  const b = (req.body ?? {}) as {
-    cafeName?: string; ownerEmail?: string; reward?: string;
-    bg?: string; fg?: string; label?: string; stampStyle?: string;
-    banner?: string; strips?: { filled?: number; png?: string }[];
-  };
+  const b = (req.body ?? {}) as { cafeName?: string; ownerEmail?: string; reward?: string };
   const cafeName = (b.cafeName ?? "").trim();
   const ownerEmail = (b.ownerEmail ?? "").trim().toLowerCase();
   if (!cafeName) return void res.status(400).json({ error: "missing-card-name" });
@@ -177,47 +189,122 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
     stampsTarget: 10,
     stampsStart: 2,
   });
-
-  // Apply the chosen design. Colours arrive as hex; stored as rgb(...) for PassKit.
-  const fresh = await updateCard(card.id, {
-    reward,
-    ...(typeof b.bg === "string" ? { background_color: hexToRgb(b.bg) } : {}),
-    ...(typeof b.fg === "string" ? { foreground_color: hexToRgb(b.fg) } : {}),
-    ...(typeof b.label === "string" ? { label_color: hexToRgb(b.label) } : {}),
-    // The stamp fill follows the label colour here: these done-for-you designs
-    // predate the accent being its own field, and that is what they rendered with.
-    ...(typeof b.label === "string" ? { accent_color: hexToRgb(b.label) } : {}),
-    stamp_style: (b.stampStyle ?? "").slice(0, 40),
-  });
-
-  if (typeof b.banner === "string" && b.banner) {
-    const bytes = Buffer.from(b.banner, "base64");
-    if (!validateArtPng(bytes)) await setCardBanner(card.id, bytes);
-  }
-  if (Array.isArray(b.strips) && b.strips.length) {
-    // The console renders the grid at the card's own target, so that is the key
-    // it is stored under — the browser has no separate number to send.
-    const decoded: { target: number; filled: number; png: Buffer }[] = [];
-    let ok = true;
-    for (const s of b.strips) {
-      if (typeof s?.png !== "string" || typeof s?.filled !== "number") { ok = false; break; }
-      const bytes = Buffer.from(s.png, "base64");
-      if (validateArtPng(bytes)) { ok = false; break; }
-      decoded.push({ target: card.stamps_target, filled: Math.trunc(s.filled), png: bytes });
-    }
-    if (ok) await setStampStrips(card.id, decoded);
-  }
-
   await linkOwnerCard(owner.id, card.id);
   // One staff PIN per owner, never the shared "1234". Only its hash is stored,
   // so this response is the one chance to hand it over — the console shows it
   // beside the temp password.
   const staffPin = generateStaffPin();
   await setStaffPin(owner.id, staffPin);
-  void ensureClass(fresh ?? card).then((r) => {
+  void ensureClass(card).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });
   res.json({ ok: true, cardId: card.id, ownerEmail: owner.email, tempPassword, staffPin });
+});
+
+// ------------------------------------ the designer, on a merchant's own card ----
+// The console renders the owner dashboard's designer (DESIGN_PANEL_JS) and can
+// point it at any merchant's live card. These are the admin-gated twins of the
+// dashboard's /api/card/:id family, and they are thin on purpose: the coercion
+// (cardFieldsFromBody) and the response shape (designerCard) are shared, so the
+// two cannot clamp a value differently and land a design that does not match
+// the preview it was built against.
+//
+// Authorisation here is requireAdmin — NOT ownerHasCard. That is the whole
+// point: the operator sets cards up on merchants' behalf.
+
+/** Everything the designer needs to open on this card. */
+adminRouter.get("/api/card/:id/design-state", requireAdmin, async (req, res) => {
+  const card = await getCard(req.params.id!);
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
+  res.json({ ok: true, card: await designerCard(card, await businessNameForCard(card)) });
+});
+
+/**
+ * How many people this card actually reaches — the number the designer's save
+ * confirmation names. Same shape as the dashboard's /api/customers so the
+ * shared panel can read either without knowing which page it is on.
+ */
+adminRouter.get("/api/card/:id/counts", requireAdmin, async (req, res) => {
+  res.json({ counts: await cardCounts(req.params.id!) });
+});
+
+adminRouter.post("/api/card/:id/design", requireAdmin, async (req, res) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const card = await updateCard(req.params.id!, cardFieldsFromBody(body), `admin:${(req as AdminRequest).admin!.id}`);
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
+  // The shop name belongs to the merchant, not the card. Renaming keeps every
+  // previous slug resolving, so a printed poster can never be killed by it.
+  if (typeof body.shopName === "string" && body.shopName.trim()) {
+    const merchant = await merchantForCard(card.id);
+    if (merchant) await updateMerchant(merchant.id, { name: body.shopName.trim().slice(0, 60) });
+  }
+  void ensureClass(card).then((r) => {
+    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
+  });
+  res.json({ ok: true });
+});
+
+adminRouter.post("/api/card/:id/design/:kind(logo|banner)", requireAdmin, async (req, res) => {
+  const kind = req.params.kind as "logo" | "banner";
+  const { png } = (req.body ?? {}) as { png?: string };
+  if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
+  const bytes = Buffer.from(png, "base64");
+  // A band is a photo and dwarfs a logo, so the two caps differ.
+  const reject = kind === "logo" ? validateLogoPng(bytes) : validateArtPng(bytes);
+  if (reject) return void res.status(400).json({ error: reject });
+  const card = await getCard(req.params.id!);
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
+  if (kind === "logo") await setCardLogo(card.id, bytes);
+  else await setCardBanner(card.id, bytes);
+  void ensureClass(card).then((r) => {
+    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
+  });
+  res.json({ ok: true });
+});
+
+adminRouter.delete("/api/card/:id/design/:kind(logo|banner)", requireAdmin, async (req, res) => {
+  const card = await getCard(req.params.id!);
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
+  if (req.params.kind === "logo") await deleteCardLogo(card.id);
+  else await deleteCardBanner(card.id);
+  void ensureClass(card).then((r) => {
+    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
+  });
+  res.json({ ok: true });
+});
+
+/**
+ * The rendered stamp grid — one PNG per stamp count, per target still in play.
+ *
+ * `target` is required on every strip: a grid drawn for 8 and a grid drawn for
+ * 10 are different pictures at the same filled count, and storing them under
+ * one key is what used to blank a customer's grid when the target changed.
+ */
+adminRouter.post("/api/card/:id/design/stamps", requireAdmin, async (req, res) => {
+  const { style, strips } = (req.body ?? {}) as {
+    style?: string;
+    strips?: { target?: number; filled?: number; png?: string }[];
+  };
+  if (!Array.isArray(strips) || strips.length === 0) {
+    return void res.status(400).json({ error: "missing-strips" });
+  }
+  const decoded: { target: number; filled: number; png: Buffer }[] = [];
+  for (const s of strips) {
+    if (typeof s?.png !== "string" || typeof s?.filled !== "number" || typeof s?.target !== "number") {
+      return void res.status(400).json({ error: "bad-strip" });
+    }
+    const bytes = Buffer.from(s.png, "base64");
+    const reject = validateArtPng(bytes); // strips carry the band image too
+    if (reject) return void res.status(400).json({ error: reject });
+    decoded.push({ target: Math.trunc(s.target), filled: Math.trunc(s.filled), png: bytes });
+  }
+  await setStampStrips(req.params.id!, decoded);
+  const card = await updateCard(req.params.id!, { stamp_style: (style ?? "").slice(0, 40) });
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
+  void ensureClass(card).then((r) => {
+    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
+  });
+  res.json({ ok: true });
 });
 
 /**
