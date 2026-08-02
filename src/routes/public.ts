@@ -343,7 +343,12 @@ const cardQr = (cardId: string, res: import("express").Response) => qrFor(`/c/${
  * QR does not: that is the whole reason it exists.
  */
 const merchantQr = (merchantId: string, res: import("express").Response) =>
-  qrFor(`/j/${merchantId}`, res);
+  // `?s=poster` so a scan from the printed sheet is distinguishable from a
+  // tapped link — both arrive as a plain page view and are otherwise identical.
+  // `/j/` preserves the query string across its canonical redirect, and
+  // `sourceOf` already reads it. Posters printed before this keep working and
+  // simply count as unattributed.
+  qrFor(`/j/${merchantId}?s=poster`, res);
 
 publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage()));
 // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia. One route, one

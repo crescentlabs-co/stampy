@@ -715,6 +715,31 @@ export async function migrate(): Promise<void> {
   await backfillMerchants();
   await backfillCustomers();
   await backfillEventAttribution();
+  await backfillMerchantSignupDates();
+}
+
+/**
+ * Give backfilled merchants their real signup date.
+ *
+ * `backfillMerchants` mints a merchant row for every pre-v1.3 owner and inserts
+ * no `created_at`, so the column defaulted to `now()` — the moment the migration
+ * ran. Every merchant that predates the merchants table was therefore stamped
+ * with the deploy date, which made every trial look like it started the same
+ * day. The owner account's date was never touched and is the real signup.
+ *
+ * Only ever moves a date EARLIER, so a merchant legitimately created after their
+ * owner (an operator adding a second business later) is left alone. Idempotent:
+ * once it has run the predicate matches nothing.
+ */
+async function backfillMerchantSignupDates(): Promise<void> {
+  const fixed = await getPool().query(
+    `UPDATE merchants m SET created_at = o.created_at
+       FROM owners o
+      WHERE o.id = m.owner_id AND m.created_at > o.created_at`,
+  );
+  if (fixed.rowCount) {
+    console.log(`[migrate] dated ${fixed.rowCount} merchant(s) from their owner's signup`);
+  }
 }
 
 /**
@@ -1704,6 +1729,17 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
  *  hands a stored date is a second thing to keep true for no benefit. */
 export const TRIAL_DAYS = 30;
 
+/**
+ * When `join_view` and `wallet_click` started being recorded.
+ *
+ * Anything issued before this has no funnel rows and never will — a scan nobody
+ * wrote down cannot be reconstructed from anything later. Kept here as a fact
+ * about the data so the console can say "missing history" instead of showing
+ * four zeroes that read as a broken sign-up flow.
+ */
+export const FUNNEL_SINCE = "2026-07-28";
+export const FUNNEL_SINCE_LABEL = "28 July 2026";
+
 export interface MerchantHealthRow {
   id: string;
   name: string;
@@ -1712,6 +1748,15 @@ export interface MerchantHealthRow {
   contact_phone: string;
   contact_note: string;
   created_at: Date;
+  /**
+   * When this business actually signed up — the earlier of the merchant row and
+   * the owner account. NOT `created_at` alone: merchants backfilled in v1.3 were
+   * stamped with the migration's timestamp, which made every trial appear to
+   * start on the same day. `backfillMerchantSignupDates` repairs the stored
+   * column; this keeps the number right even if a row is ever created without
+   * one again.
+   */
+  signed_up_at: Date;
   archived_at: Date | null;
   /** Days since signup. `TRIAL_DAYS - trial_day` is what is left. */
   trial_day: number;
@@ -1750,7 +1795,15 @@ export interface MerchantHealthRow {
   unclaimed_rewards: number;
 
   // --- funnel (see adminFunnel for the Google caveat on `landed`) ---
+  /** Join pages opened, however they got there. A QR scan and a tapped link
+   *  both arrive as a plain page view, so this was never "scans". */
   scanned: number;
+  /** The same, split by the `?s=` tag the poster QR and share link now carry.
+   *  Anything untagged — including every poster printed before this — counts as
+   *  `opened_other`: unattributed, not lost. */
+  opened_poster: number;
+  opened_link: number;
+  opened_other: number;
   clicked: number;
   made: number;
   landed: number;
@@ -1793,7 +1846,12 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
     `SELECT m.id, m.name, m.created_at, m.archived_at, m.contact_phone, m.contact_note,
             (SELECT string_agg(DISTINCT o.email, ', ')
                FROM owners o WHERE o.id = m.owner_id) AS owners,
-            floor(extract(epoch FROM (now() - m.created_at)) / 86400.0)::int AS trial_day,
+            LEAST(m.created_at, COALESCE(
+              (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
+            )) AS signed_up_at,
+            floor(extract(epoch FROM (now() - LEAST(m.created_at, COALESCE(
+              (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
+            )))) / 86400.0)::int AS trial_day,
             (SELECT count(*)::int FROM cards WHERE merchant_id = m.id) AS cards,
             COALESCE((SELECT array_agg(id ORDER BY created_at) FROM cards WHERE merchant_id = m.id),
                      ARRAY[]::text[]) AS card_ids,
@@ -1841,6 +1899,9 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
                 AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
 
             ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot', 'false') <> 'true'")} AS scanned,
+            ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot','false') <> 'true' AND e.source = 'poster'")} AS opened_poster,
+            ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot','false') <> 'true' AND e.source = 'link'")} AS opened_link,
+            ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot','false') <> 'true' AND e.source NOT IN ('poster','link')")} AS opened_other,
             ${ev("e.type = 'wallet_click'")} AS clicked,
             ${ev("e.type = 'enroll'")} AS made,
             ${ev("e.type = 'pass_added'")} AS landed,

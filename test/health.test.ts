@@ -6,7 +6,7 @@
  * `now` is injected, so none of this depends on the wall clock.
  */
 import { describe, expect, it } from "vitest";
-import { triage, triageScore, trialDaysLeft, value } from "../src/health.js";
+import { FLAG_GUIDE, triage, triageScore, trialDaysLeft, value } from "../src/health.js";
 import type { MerchantHealthRow } from "../src/db.js";
 
 const NOW = Date.UTC(2026, 7, 1, 12, 0, 0);
@@ -17,13 +17,14 @@ function healthy(over: Partial<MerchantHealthRow> = {}): MerchantHealthRow {
   return {
     id: "m1", name: "Kopi Corner", owners: "a@shop.my",
     contact_phone: "", contact_note: "",
-    created_at: daysAgo(10), archived_at: null, trial_day: 10,
+    created_at: daysAgo(10), signed_up_at: daysAgo(10), archived_at: null, trial_day: 10,
     cards: 1, card_ids: ["c1"], basket_cents: 450, currency: "RM", stamps_target: 10,
     first_stamp_at: daysAgo(9), first_redeem_at: daysAgo(2), poster_views: 3,
     last_stamp_at: daysAgo(0), last_owner_login: daysAgo(1), logins_30d: 6,
     stamps: 120, stamps_7d: 40, stamps_30d: 120, stamps_prev_7d: 38,
     customers: 30, active_7d: 18, redemptions: 6, unclaimed_rewards: 1,
-    scanned: 60, clicked: 40, made: 35, landed: 30, removed: 2, dropped: 0,
+    scanned: 60, opened_poster: 45, opened_link: 10, opened_other: 5,
+    clicked: 40, made: 35, landed: 30, removed: 2, dropped: 0,
     card_edits: 3, nudges: 2, has_art: true, staff_devices: 3,
     pin_failed_24h: 0, lookup_failed_7d: 0, messages_failed: 0,
     ...over,
@@ -170,6 +171,44 @@ describe("the value figures a merchant could check themselves", () => {
 
   it("says when there is no basket rather than showing a confident zero", () => {
     expect(value(healthy({ basket_cents: 0 })).hasBasket).toBe(false);
+  });
+});
+
+// The console's legend is generated from FLAG_GUIDE. A rule that can fire with
+// no entry there is a chip on screen that nothing on the page explains.
+describe("every flag is documented", () => {
+  const documented = new Set(FLAG_GUIDE.map((g) => g.key));
+
+  it("has a guide entry for every key the rules can raise", () => {
+    // Deliberately extreme: one merchant tripping as many rules at once as the
+    // mutually-exclusive branches allow.
+    const raised = new Set<string>();
+    const cases: Partial<MerchantHealthRow>[] = [
+      { pin_failed_24h: 9, last_stamp_at: daysAgo(4) },
+      { messages_failed: 3 },
+      { stamps: 0, stamps_7d: 0, stamps_prev_7d: 0, trial_day: 9, poster_views: 0 },
+      { stamps_7d: 0, last_stamp_at: daysAgo(11) },
+      { stamps_7d: 3, stamps_prev_7d: 40 },
+      { staff_devices: 1 },
+      { lookup_failed_7d: 22 },
+      { scanned: 200, clicked: 4 },
+      { made: 90, landed: 3 },
+      { landed: 30, removed: 20, dropped: 4 },
+      { unclaimed_rewards: 12 },
+      { trial_day: 27 },
+      { trial_day: 44 },
+    ];
+    for (const c of cases) for (const f of triage(healthy(c), NOW)) raised.add(f.key);
+    for (const key of raised) expect(documented, `${key} is undocumented`).toContain(key);
+    // And the guide has no entries for rules that no longer exist.
+    expect(raised.size).toBe(documented.size);
+  });
+
+  it("gives every entry a rule and a reason, not just a name", () => {
+    for (const g of FLAG_GUIDE) {
+      expect(g.rule.length, `${g.key} has no rule`).toBeGreaterThan(10);
+      expect(g.why.length, `${g.key} has no reason`).toBeGreaterThan(10);
+    }
   });
 });
 

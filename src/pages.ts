@@ -3,9 +3,10 @@
  * nothing for the founder to compile. Mobile-first (staff use their phones).
  */
 import { contrastText, rgbToHex } from "./color.js";
+import { FLAG_GUIDE } from "./health.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
-import { DEFAULT_CARD_ID, TRIAL_DAYS } from "./db.js";
+import { DEFAULT_CARD_ID, FUNNEL_SINCE, FUNNEL_SINCE_LABEL, TRIAL_DAYS } from "./db.js";
 
 const baseCss = /* css */ `
   /* Font face is declared INLINE (not a separate cacheable stylesheet) so a
@@ -3122,7 +3123,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
              keeps resolving — which is what makes a printed poster safe. Card
              links stay live forever too, so nothing already shared breaks. -->
         <div class="sharelist">
-          <a href="/j/\${S.joinRef || c.id || ""}" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
+          <!-- ?s=link so a shared link is told apart from a poster scan. Both
+               are plain page views otherwise, and knowing which channel works
+               is the difference between printing more posters and posting more. -->
+          <a href="/j/\${S.joinRef || c.id || ""}?s=link" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
           <a href="/c/\${c.id || ""}/poster" target="_blank"><span>Sign-up QR poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
         </div>
 
@@ -3423,18 +3427,24 @@ export function adminPage(): string {
                   letter-spacing: .05em; color: var(--muted); }
     .ptile.alarm b { color: #9a3412; }
     /* --- Zone 1: what needs you today --- */
-    .triage { display: flex; flex-direction: column; gap: 8px; margin-bottom: 26px; }
-    .tcard { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 12px;
-             padding: 12px 14px; background: var(--surface); }
-    .tcard.critical { border-left-color: #9a3412; }
-    .tcard.warn { border-left-color: #b45309; }
-    .tcard.info { border-left-color: var(--accent); }
-    .tcard .tw1 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-    .tcard .tname { font-weight: 700; }
-    .tcard .tdetail { color: var(--muted); font-size: .86rem; margin-top: 3px; }
-    .tcard .taction { font-size: .86rem; margin-top: 5px; }
-    .tclear { border: 1px dashed var(--line); border-radius: 12px; padding: 18px; text-align: center;
-              color: var(--muted); }
+    /* ONE line per shop, not one per problem: a shop with four things wrong used
+       to take four cards and push everything else off the screen. */
+    .triage { border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+              margin-bottom: 26px; overflow: hidden; }
+    .trow { display: grid; grid-template-columns: 1fr; gap: 2px 14px; padding: 11px 14px;
+            border-left: 4px solid transparent; }
+    .trow + .trow { border-top: 1px solid var(--line); }
+    @media (min-width: 680px) { .trow { grid-template-columns: 200px 1fr; align-items: baseline; } }
+    .trow.critical { border-left-color: #9a3412; }
+    .trow.warn { border-left-color: #b45309; }
+    .trow.info { border-left-color: var(--accent); }
+    .trow .tname { font-weight: 700; }
+    .trow .taction { color: var(--muted); font-size: .85rem; }
+    .tclear { border: 1px dashed var(--line); border-radius: 14px; padding: 18px; text-align: center;
+              color: var(--muted); margin-bottom: 26px; }
+    /* --- the flag legend --- */
+    .legend td { font-size: .84rem; }
+    .legend td:first-child { white-space: nowrap; }
     /* Severity chips, reused in the table's Flags column. */
     .chipf { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px;
              border-radius: 999px; margin: 1px 3px 1px 0; white-space: nowrap; }
@@ -3802,6 +3812,7 @@ export function adminPage(): string {
           || new Date(b.created_at) - new Date(a.created_at);
       });
       const needing = ranked.filter((m) => m.flags.length && !m.archived_at);
+      const archivedMerchants = ranked.filter((m) => m.archived_at);
 
       const chips = (m) => m.flags
         .map((f) => '<span class="chipf ' + f.severity + '">' + esc(f.label) + "</span>").join("");
@@ -3877,15 +3888,29 @@ export function adminPage(): string {
           <div class="dpanel">
             <h4>Sign-up funnel</h4>
             <dl>
-              <dt>Scanned</dt><dd>\${f.scanned}</dd>
-              <dt>Tapped Add</dt><dd>\${f.clicked}</dd>
-              <dt>Card made</dt><dd>\${f.made}</dd>
-              <dt>Landed in wallet</dt><dd>\${f.landed}</dd>
+              <dt>Opened sign-up page</dt><dd>\${m.scanned}</dd>
+              <dt style="padding-left:12px" class="flags">from the poster QR</dt><dd class="flags">\${m.opened_poster}</dd>
+              <dt style="padding-left:12px" class="flags">from a shared link</dt><dd class="flags">\${m.opened_link}</dd>
+              <dt style="padding-left:12px" class="flags">untagged</dt><dd class="flags">\${m.opened_other}</dd>
+              <dt>Tapped Add</dt><dd>\${m.clicked}</dd>
+              <dt>Card made</dt><dd>\${m.made}</dd>
+              <dt>Landed in wallet</dt><dd>\${m.landed}</dd>
               <dt>Deleted / dropped</dt><dd>\${m.removed} / \${m.dropped}</dd>
             </dl>
-            <p class="dnote"><strong>Landed</strong> and <strong>Deleted</strong> depend on the
-              wallet telling us: Apple always has, Google only since the issuer callback was set up.
-              Older Android sign-ups under-report both, so read a low Landed with that in mind.</p>
+            \${new Date(m.signed_up_at) < new Date("${FUNNEL_SINCE}") ? \`<p class="dnote">
+              <strong>This merchant predates the funnel.</strong> Page opens and Add taps have only
+              been recorded since ${FUNNEL_SINCE_LABEL}, so cards issued before then show as zeroes
+              in the first two rows. That is missing history, not a broken flow.</p>\` : ""}
+            <p class="dnote">A QR scan and a tapped link both arrive as an ordinary page view, so
+              <strong>Opened</strong> has always meant "reached the sign-up page, however they got
+              there". The split comes from a tag on the poster QR and the share link; anything
+              else — including posters printed before the tag existed — counts as untagged.</p>
+            <p class="dnote"><strong>Card made</strong> always follows <strong>Tapped Add</strong>:
+              the tap is recorded before the pass is minted and even when minting fails, so it can
+              never be the smaller of the two on current data. <strong>Landed</strong> and
+              <strong>Deleted</strong> depend on the wallet telling us — Apple always has, Google
+              only since the issuer callback was set up, so older Android sign-ups under-report
+              both.</p>
           </div>
 
           <div class="dpanel">
@@ -4090,26 +4115,44 @@ export function adminPage(): string {
           <div class="ptile \${needing.length ? "alarm" : ""}"><b>\${needing.length}</b><span>need attention</span></div>
         </div>
 
-        <h2>Needs you today</h2>
-        <div class="triage">
-          \${needing.length ? needing.map((m) => m.flags.map((f) => \`
-            <div class="tcard \${f.severity}">
-              <div class="tw1"><span class="tname">\${esc(m.name)}</span>
-                <span class="chipf \${f.severity}">\${esc(f.label)}</span></div>
-              <div class="tdetail">\${esc(f.detail)}</div>
-              <div class="taction">\${esc(f.action)}</div>
-            </div>\`).join("")).join("")
-            : '<div class="tclear">Nothing needs you today. Every live merchant is stamping, nothing is broken, and no trial is about to run out.</div>'}
-        </div>
+        <h2>Needs you today \${needing.length ? '<span class="flags">· ' + needing.length + " shop" + (needing.length === 1 ? "" : "s") + "</span>" : ""}</h2>
+        \${needing.length ? \`<div class="triage">
+          \${needing.map((m) => \`
+            <div class="trow \${m.flags[0].severity}">
+              <div><span class="tname">\${esc(m.name)}</span></div>
+              <div>
+                <div>\${m.flags.map((f) => '<span class="chipf ' + f.severity + '">' + esc(f.label) + "</span>").join("")}</div>
+                <div class="taction">\${esc(m.flags[0].action)}</div>
+              </div>
+            </div>\`).join("")}
+        </div>\`
+          : '<div class="tclear">Nothing needs you today. Every live merchant is stamping, nothing is broken, and no trial is about to run out.</div>'}
+        <details class="fold" style="margin:-14px 0 26px"><summary>What these flags mean</summary>
+          <p class="muted">Every rule the console can raise, and exactly what fires it. Generated from
+            the same list the rules are keyed on, so a threshold here is the threshold in force.</p>
+          <div class="tw"><table class="legend">
+            <tr><th>Flag</th><th>Fires when</th><th>Why it matters</th></tr>
+            ${FLAG_GUIDE.map((g) => `<tr><td><span class="chipf warn">${esc(g.label)}</span></td><td>${esc(g.rule)}</td><td>${esc(g.why)}</td></tr>`).join("")}
+          </table></div>
+        </details>
 
         <h2>Merchants</h2>
         <p class="muted">Worst first, not alphabetical. Click a row for everything about that
-          merchant. <strong>Value</strong> is counter visits × their self-reported basket — a
-          countable number times one assumption, and not claimed as incremental.</p>
+          merchant. <strong>Activated</strong> is the first stamp at a real counter, not the
+          signup. <strong>Trial</strong> counts from the account's own signup date.
+          <strong>Value</strong> is counter visits × their self-reported basket — a countable
+          number times one assumption, and not claimed as incremental.</p>
         <div class="tw"><table>
           \${MERCHANT_HEAD}
-          \${ranked.map(merchantRow).join("")}
+          \${ranked.filter((m) => !m.archived_at).map(merchantRow).join("")}
         </table></div>
+        \${archivedMerchants.length ? \`<details class="fold" style="margin-top:12px">
+          <summary>Archived shops (\${archivedMerchants.length})</summary>
+          <p class="muted" style="margin:0 0 10px">Closed accounts. Nothing is deleted and every
+            card already in a wallet keeps working — they are just out of the working list, and
+            raise no flags. Restore one from inside its row.</p>
+          <div class="tw"><table>\${MERCHANT_HEAD}\${archivedMerchants.map(merchantRow).join("")}</table></div>
+        </details>\` : ""}
 
         <h2>Platform-wide tables</h2>
         <p class="muted">The same numbers grouped by programme rather than by merchant. Useful for

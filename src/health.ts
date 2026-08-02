@@ -30,6 +30,56 @@ export interface Flag {
 
 const RANK: Record<Severity, number> = { critical: 0, warn: 1, info: 2 };
 
+/**
+ * Every flag this file can raise, with the exact rule that fires it.
+ *
+ * Exported as DATA so the console's legend is generated from the same list the
+ * rules are keyed on — a definitions table written as prose in the page would
+ * drift the first time a threshold moved, and a threshold you cannot look up is
+ * a number you cannot trust. A test asserts every key raised below appears here.
+ */
+export const FLAG_GUIDE: { key: string; label: string; rule: string; why: string }[] = [
+  { key: "locked-out", label: "Staff locked out",
+    rule: "3+ failed staff PINs in 24h, and nothing stamped in the last 24h",
+    why: "The counter cannot sign in. Identical to apathy in every other number, and a two-minute fix." },
+  { key: "messages-failing", label: "Messages not arriving",
+    rule: "Any nudge recorded as undelivered",
+    why: "They think they are reaching customers and are not." },
+  { key: "never-activated", label: "Never set up / No stamps yet",
+    rule: "Zero stamps ever, and signed up 3+ days ago",
+    why: "Reads 'Never set up' when they have never opened their poster — nothing is on the counter — and 'No stamps yet' when they have." },
+  { key: "went-quiet", label: "Went quiet",
+    rule: "Has stamped before, but nothing in the last 7 days",
+    why: "The single best predictor of churn." },
+  { key: "slowing", label: "Slowing down",
+    rule: "5+ stamps last week, and this week is less than half of it",
+    why: "Caught before it becomes a dead counter." },
+  { key: "one-phone", label: "One phone only",
+    rule: "20+ stamps, all from a single staff device",
+    why: "If that person leaves or their phone dies, the programme stops." },
+  { key: "codes-failing", label: "Codes not matching",
+    rule: "5+ typed codes matched nothing in 7 days",
+    why: "Usually a worn poster or staff typing the wrong thing." },
+  { key: "signup-leak", label: "Scans not converting",
+    rule: "10+ join pages opened, and under 30% tapped Add",
+    why: "The poster is working and the sign-up page is losing them." },
+  { key: "not-landing", label: "Cards not landing",
+    rule: "10+ cards made, and under 40% confirmed in a wallet",
+    why: "The wallet's own Add sheet is failing. Apple-only figure — Google only reports since the issuer callback was set up." },
+  { key: "churning", label: "Customers deleting",
+    rule: "5+ cards landed, and over 30% later removed or dropped",
+    why: "'Removed' is the wallet telling us it was deleted; 'dropped' is Apple answering 410 for a device that no longer holds it." },
+  { key: "rewards-owed", label: "N rewards owed",
+    rule: "3+ customers sitting at their target un-redeemed",
+    why: "Staff are missing the reward banner. These customers did everything asked and got nothing, so they are the likeliest of all to give up." },
+  { key: "trial-ending", label: "Nd of trial left",
+    rule: "7 or fewer days left of the 30",
+    why: "The advice differs by whether they are actually stamping: one is a sale, the other is a decision." },
+  { key: "trial-expired", label: "Trial ended Nd ago",
+    rule: "Past 30 days from signup",
+    why: "Signup is taken as the earlier of the merchant row and the owner account — merchants backfilled in v1.3 carry the migration's date, not theirs." },
+];
+
 function daysSince(d: Date | string | null, now: number): number | null {
   if (!d) return null;
   return (now - new Date(d).getTime()) / DAY;

@@ -147,8 +147,9 @@ async function main(): Promise<void> {
     [pinHash],
   );
   await sql.query(
-    `INSERT INTO owners (id, email, password_hash) VALUES
-       ('own-1','a@shop.my','x'), ('own-2','b@shop.my','x')`,
+    `INSERT INTO owners (id, email, password_hash, created_at) VALUES
+       ('own-1','a@shop.my','x', now() - interval '200 days'),
+       ('own-2','b@shop.my','x', now() - interval '150 days')`,
   );
   await sql.query(
     `INSERT INTO owner_cafes (owner_id, cafe_id) VALUES
@@ -288,6 +289,29 @@ async function main(): Promise<void> {
     ["card_id", "filled", "target"].every((c) => gridKey.includes(c)),
     `the primary key now includes the target (${gridKey.join(", ")})`,
   );
+
+  // A merchant BACKFILLED from an old owner must carry that owner's signup date,
+  // not the migration's. backfillMerchants inserts no created_at, so the column
+  // defaulted to now() and every pre-v1.3 merchant was stamped with the deploy
+  // date — which made every trial in the console appear to start the same day.
+  // This is the only place that path is exercised.
+  const dated = (await sql.query<{ owner_id: string; drift_seconds: number }>(
+    `SELECT m.owner_id,
+            extract(epoch FROM (m.created_at - o.created_at))::float8 AS drift_seconds
+       FROM merchants m JOIN owners o ON o.id = m.owner_id
+      ORDER BY m.owner_id`,
+  )).rows;
+  expect(dated.length === 2, `both owners got a merchant (${dated.length})`);
+  expect(
+    dated.every((d) => Math.abs(d.drift_seconds) < 1),
+    `each merchant is dated from its owner's signup, not the migration (drift: ${dated.map((d) => Math.round(d.drift_seconds)).join(", ")}s)`,
+  );
+  // 200 days ago, so a trial derived from it is long over rather than "day 0".
+  const oldest = (await sql.query<{ age_days: number }>(
+    `SELECT floor(extract(epoch FROM (now() - created_at)) / 86400.0)::int AS age_days
+       FROM merchants WHERE owner_id = 'own-1'`,
+  )).rows[0]!;
+  expect(oldest.age_days >= 199, `the oldest merchant reads as ${oldest.age_days} days old, not brand new`);
 
   const custCount = (await sql.query<{ n: string }>(`SELECT count(*) AS n FROM customers`)).rows[0]!.n;
   expect(Number(custCount) === 4, `running migrate twice does not duplicate customers (got ${custCount})`);

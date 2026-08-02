@@ -26,7 +26,7 @@ async function main() {
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@card.my"; // comma-listed: BOTH are admins
 
-  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, reissuePass, createOwner, ensureMerchantForOwner, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -785,6 +785,26 @@ async function main() {
     posterSeen.flags.find((f: any) => f.key === "never-activated").label === "No stamps yet",
     "...and once the poster has been opened the diagnosis changes to 'poster up, nobody stamping'",
   );
+
+  // --- Sign-up channels: a poster scan and a shared link are told apart ---
+  // Both arrive as an ordinary page view, so the only thing separating them is
+  // the ?s= tag the poster QR and the dashboard's share link now carry.
+  const quietRef = await currentSlug(quietMerchant.id);
+  await get("/j/" + quietRef + "?s=poster");
+  await get("/j/" + quietRef + "?s=poster");
+  await get("/j/" + quietRef + "?s=link");
+  await get("/j/" + quietRef); // however they got here — an older printed poster
+  const chan = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+    .merchants.find((x: any) => x.id === quietMerchant.id);
+  expect(chan.opened_poster === 2, `poster scans are attributed (got ${chan.opened_poster})`);
+  expect(chan.opened_link === 1, `shared links are attributed (got ${chan.opened_link})`);
+  expect(chan.opened_other === 1, `an untagged visit counts as unattributed, not lost (got ${chan.opened_other})`);
+  expect(
+    chan.scanned === chan.opened_poster + chan.opened_link + chan.opened_other,
+    "the channel split adds up to the total opened",
+  );
+  // The QR itself has to carry the tag, or nothing above ever happens.
+  expect((await get("/j/" + quietRef + "/qr")).status === 200, "the merchant QR still renders");
 
   // --- Archiving a merchant takes it out of the work list entirely ---
   const arch = await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/archive", {
