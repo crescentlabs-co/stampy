@@ -870,35 +870,83 @@ async function main() {
   expect((await get("/c/" + dfyOut.cardId + "/art/stamps/1.png")).status === 200, "the done-for-you café serves its rendered stamp strip");
 
   // --- Reusable card designs: mock one up now, push it onto a card later ---
+  // The design is edited by the SAME browser code the owner dashboard runs
+  // (DESIGN_PANEL_JS), so these are the same request shapes /dashboard/api/card
+  // takes — pointed at a design_templates row instead of a card.
   const tplNew = await fetch(base + "/admin/api/templates", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({
-      name: "Ah Seng Kopitiam", reward: "Free kopi",
-      bg: "#123047", fg: "#eef7fc", label: "#8fc4e6", stampStyle: "☕", banner: pngB64,
-    }),
+    body: JSON.stringify({ name: "Ah Seng Kopitiam" }),
   });
   const tplOut = JSON.parse(await tplNew.text());
-  expect(tplNew.status === 200 && tplOut.id, "a card design can be saved before any merchant exists");
-  const tplList = JSON.parse((await get("/admin/api/templates", { headers: { cookie: cookieNow } })).body);
+  const tplId = tplOut.template?.id;
+  expect(tplNew.status === 200 && Boolean(tplId), "a card design can be started before any merchant exists");
+
+  const saveDesign = async (fields: Record<string, unknown>) =>
+    (await fetch(base + "/admin/api/design/" + tplId, {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify(fields),
+    })).status;
   expect(
-    tplList.templates.some((t: any) => t.id === tplOut.id && t.has_banner && t.reward === "Free kopi"),
-    "saved designs are listed with their art flags",
+    (await saveDesign({
+      reward: "Free kopi", bg: "#123047", fg: "#eef7fc", label: "#8fc4e6",
+      accent: "#ffd166", bandColor: "#0b1d2b", bandTexture: "chevron", stampsTarget: 6,
+    })) === 200,
+    "the shared designer saves a design the same way it saves a card",
   );
+  expect(
+    (await fetch(base + "/admin/api/design/" + tplId + "/stamps", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ style: "☕", strips: [{ target: 6, filled: 0, png: pngB64 }] }),
+    })).status === 200,
+    "...and its stamp style, whose pixels are deliberately not stored",
+  );
+  expect(
+    (await fetch(base + "/admin/api/design/" + tplId + "/banner", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ png: pngB64 }),
+    })).status === 200,
+    "...and its band image",
+  );
+  // An unknown texture must be refused here exactly as it is on a card, or a
+  // design would save as flat and look wrong only once it was pushed.
+  await saveDesign({ bandTexture: "haunted-mansion" });
+
+  const tplList = JSON.parse((await get("/admin/api/templates", { headers: { cookie: cookieNow } })).body);
+  const savedTpl = tplList.templates.find((t: any) => t.id === tplId);
+  expect(
+    savedTpl && savedTpl.has_banner && savedTpl.reward === "Free kopi" &&
+      savedTpl.accent_color === "rgb(255, 209, 102)" && savedTpl.band_color === "rgb(11, 29, 43)",
+    "a saved design carries all five colours, not the three the old console kept",
+  );
+  expect(savedTpl.band_texture === "chevron", "an unknown band texture is refused on a design too");
   expect(
     (await get("/admin/api/templates", { headers: { cookie: cookieOutsider } })).status === 403,
     "a non-admin can't read the design library",
   );
 
+  // The push is LOOK ONLY. What the card promises must survive it.
+  const beforePush = (await getCard(dfyOut.cardId))!;
   const applied = await fetch(base + "/admin/api/card/" + dfyOut.cardId + "/apply-template", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ templateId: tplOut.id, strips: [{ filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }] }),
+    body: JSON.stringify({ templateId: tplId, strips: [{ filled: 0, png: pngB64 }, { filled: 1, png: pngB64 }] }),
   });
   expect(applied.status === 200, "a design pushes onto a merchant's existing card");
   const appliedCafe = (await getCard(dfyOut.cardId))!;
   expect(
-    appliedCafe.reward === "Free kopi" && appliedCafe.stamp_style === "☕" &&
-      appliedCafe.background_color === "rgb(18, 48, 71)",
-    "the design's reward, stamp style and colours land on the card",
+    appliedCafe.stamp_style === "☕" && appliedCafe.background_color === "rgb(18, 48, 71)" &&
+      appliedCafe.accent_color === "rgb(255, 209, 102)" &&
+      appliedCafe.band_color === "rgb(11, 29, 43)" && appliedCafe.band_texture === "chevron",
+    "the design's colours, band and stamp style land on the card",
+  );
+  // The promise on a card already in a wallet is not the console's to rewrite,
+  // and pushing a design must never contradict what staff have been saying.
+  expect(
+    appliedCafe.reward === beforePush.reward && appliedCafe.stamps_target === beforePush.stamps_target,
+    `a push leaves the reward and the target alone (${appliedCafe.reward} / ${appliedCafe.stamps_target})`,
+  );
+  expect(
+    (await get("/c/" + dfyOut.cardId + "/art/stamps/1.png")).status === 200,
+    "...and the pushed grid is stored at the card's own target, not the design's",
   );
 
   // --- The band: its own colour and texture, saved with the card ---
@@ -959,8 +1007,10 @@ async function main() {
   );
   const sheet = await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieNow } });
   expect(
-    sheet.status === 200 && sheet.body.includes("/c/" + dfyOut.cardId + "/qr") && sheet.body.includes("Free kopi"),
-    "the printable counter sheet carries the card's QR and reward",
+    // The card's own reward, which the design push deliberately left alone.
+    sheet.status === 200 && sheet.body.includes("/c/" + dfyOut.cardId + "/qr") &&
+      sheet.body.includes(appliedCafe.reward),
+    `the printable counter sheet carries the card's QR and reward (${appliedCafe.reward})`,
   );
   expect(
     (await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieOutsider } })).status === 403,
@@ -1658,9 +1708,12 @@ async function main() {
   // --- The sign-up funnel is counted from events, so pruning cannot move it ---
   // This is the whole reason the funnel stopped counting pass rows: the 30-day
   // cleanup used to erase the evidence of a leak 30 days after it happened.
-  const { adminFunnel } = await import("../src/db.js");
+  // Points at merchantHealth, which is now the ONLY funnel implementation —
+  // adminFunnel was a second one keyed on the card, and the console rendered
+  // both. This is the copy that survived, so it is the copy that gets the test.
+  const { merchantHealth: funnelSource } = await import("../src/db.js");
   const funnelOf = async (cardId: string) =>
-    (await adminFunnel()).find((f) => f.id === cardId)!;
+    (await funnelSource()).find((m) => m.card_ids.includes(cardId))!;
   const abandoned = await mk(); // never stamped, never in a wallet
   await logEvent("default", abandoned.serial, "join_view", { metadata: { bot: false } });
   await logEvent("default", abandoned.serial, "wallet_click", { metadata: { wallet: "apple" } });

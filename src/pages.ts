@@ -351,6 +351,967 @@ export const MODAL_JS = /* js */ `
   }
 `;
 
+/**
+ * The card designer, as one shared string.
+ *
+ * Lives here rather than in the dashboard page because the admin console
+ * needs the SAME designer, not a second one that looks similar. It is spliced
+ * into both pages' inline scripts; `test/pages.test.ts` compiles each of them,
+ * which is the only type-checking any of this browser code gets.
+ *
+ * Depends on `MODAL_JS` for `info`, `modal` and `toast`, and on the calling
+ * page for `firstGrapheme`. Everything else it reaches is passed in — see the
+ * doc comment on `designPanel` below.
+ */
+/**
+ * The band textures the designer offers, and the server's allowlist for them.
+ *
+ * One list, kept next to the browser's TEXTURES array inside DESIGN_PANEL_JS
+ * below, because they have to be the same set: a texture the browser can draw
+ * but the server refuses stores as flat and nobody is told. It used to be
+ * declared separately in src/routes/dashboard.ts, which is two places to
+ * remember — and now that the console saves designs through its own routes, it
+ * would have been three.
+ */
+export const BAND_TEXTURES = [
+  "flat", "gradient", "glow", "diagonal", "waves",
+  "stripes", "dots", "chevron", "grain", "rays",
+];
+
+/**
+ * Styles for DESIGN_PANEL_JS. Any page that renders the designer includes this.
+ *
+ * Split out of the dashboard's stylesheet for the same reason the markup was:
+ * the console renders the same panel, and a second hand-kept copy of these
+ * selectors would drift from it silently — a designer that works in one place
+ * and lays out wrong in the other.
+ */
+export const DESIGN_PANEL_CSS = /* css */ `
+    .row2 { display: flex; gap: 8px; }
+    .row2 > div { flex: 1; }
+    /* Three number fields across a 375px phone. Smaller, tighter labels so
+       "Stamps to reward" wraps to two lines instead of shoving the columns
+       apart, and min-width:0 so flex actually lets them shrink. */
+    .row3 > div { min-width: 0; }
+    .row3 label { font-size: .78rem; line-height: 1.25; }
+    /* --- live wallet-card preview --- */
+    .pv { border-radius: 14px; padding: 16px; margin: 10px 0 4px; box-shadow: 0 4px 16px rgba(43,29,21,.18); }
+    .pv-top { display: flex; align-items: center; gap: 10px; }
+    .pv-logo { width: 34px; height: 34px; border-radius: 8px; object-fit: contain; background: rgba(255,255,255,.14); }
+    .pv-name { font-weight: 700; font-size: 1.02rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pv-hdr { text-align: right; }
+    .pv-lbl { font-size: .62rem; letter-spacing: .08em; font-weight: 600; }
+    .pv-progress { font-size: 1.05rem; font-weight: 700; }
+    .pv-dots { font-size: 1.25rem; letter-spacing: 3px; margin: 2px 0 10px; }
+    /* The two secondary fields, side by side as Wallet lays them out. */
+    .pv-row2 { display: flex; gap: 14px; margin-top: 10px; }
+    .pv-row2 > div { flex: 1; min-width: 0; }
+    .pv-row2 > div + div { text-align: right; }
+    .pv-reward { font-size: .95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pv-qr { background: #fff; color: #1d1d1f; width: 74px; height: 74px; border-radius: 8px;
+             margin: 14px auto 2px; display: flex; align-items: center; justify-content: center;
+             font-weight: 700; font-size: .8rem; letter-spacing: 1px; }
+    .pv-note { text-align: center; font-size: .72rem; margin-top: 6px; opacity: .75; }
+    /* Inline rejection notice (e.g. a stamp upload with no transparency) —
+       stays on screen, unlike a toast, because it asks the owner to go and fix
+       the file and come back. */
+    .err { color: #a33; background: #fdeaea; border: 1px solid #f2c9c9; border-radius: 10px;
+           padding: 10px 12px; font-size: .84rem; margin-top: 8px; }
+    /* --- designer controls --- */
+    /* Where the five native pickers sit while no row is open. They are moved out
+       into the open row, not proxied — see drawRoles. */
+    .colorpark { display: none; }
+    .chipcustom input[type=color] { width: 30px; height: 30px; padding: 2px; margin: 0;
+                                    border: 1px solid var(--field-border); border-radius: 8px;
+                                    background: var(--surface); cursor: pointer; }
+    .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+    .logorow input[type=file] { display: none; }
+    .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    .copyrow { display: flex; gap: 8px; margin-top: 4px; }
+    .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: var(--ghost-bg); }
+    .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    /* --- colour presets --- */
+    /* --- colours pulled out of an uploaded image --- */
+    .swatches { margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--ghost-bg); }
+    .swrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .swrow .sw { width: 30px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
+    .swrow .btn { width: auto; padding: 8px 12px; font-size: .85rem; margin-left: auto; }
+    /* --- colours: one named row per part of the card, opening to its palette --- */
+    /* This replaced a chip row AND a row of five colour squares that set the
+       same five fields. Two controls for one job read as two different jobs. */
+    .crlist { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 6px 0 10px;
+              background: var(--surface); }
+    .crow2 + .crow2 { border-top: 1px solid var(--line); }
+    .crhead { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px;
+              border: none; background: none; font: inherit; color: var(--ink); cursor: pointer; text-align: left; }
+    .crname { flex: 1; font-weight: 600; font-size: .92rem; }
+    .crsw { width: 26px; height: 26px; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+    .crcaret { color: var(--muted); font-size: .8rem; transition: transform .18s; }
+    .crow2.open .crcaret { transform: rotate(90deg); }
+    .crow2.open .crname { color: var(--accent-dark); }
+    .crow2.open { background: var(--ghost-bg); }
+    .crow2 .chiprow { padding: 0 14px 14px; margin-top: 0; }
+    .chipcustom { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; color: var(--muted);
+                  margin-left: 4px; }
+    .chiprow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .chip { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+            padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+    .chip:hover { border-color: var(--accent); }
+    .chip.on { border-color: var(--accent); }
+    .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
+    .emojirow input { flex: 1; font-size: 1.15rem; }
+    .emojirow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    /* --- band textures --- */
+    .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
+    .bantpl .bt { width: 72px; height: 32px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+                  position: relative; overflow: hidden; background-size: cover; background-position: center;
+                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+    .bantpl .bt:hover { border-color: var(--accent); }
+    .bantpl .bt.sel { border-color: var(--accent); }
+    .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
+                       color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
+    /* --- premium card preview --- */
+    .pv { border-radius: 18px; padding: 16px; margin: 10px 0 4px; overflow: hidden;
+          box-shadow: 0 10px 30px -8px rgba(43,29,21,.35), 0 2px 6px rgba(43,29,21,.15); }
+    /* Sits BELOW the top bar, exactly as Wallet stacks the strip under the
+       logo/logoText/header band. Bleeds to the card's side edges only. */
+    .pv-banner { height: 64px; margin: 12px -16px; background-size: cover; background-position: center; display: none; }
+    .pv-banner.on { display: block; }
+    /* A decorative banner may be cropped; the stamp grid may NOT — it is the
+       information the customer reads, so show the whole strip at its real shape. */
+    .pv-banner.strip { height: auto; aspect-ratio: 750 / 246; background-size: 100% 100%; }
+`;
+
+export const DESIGN_PANEL_JS = /* js */ `
+    /**
+     * The card designer, shared VERBATIM by the owner dashboard and the admin
+     * console. Parity between the two is guaranteed by them being the same code
+     * rather than by two implementations agreeing — the console used to carry a
+     * poorer copy (three colours, one band, ten fixed icons) that drifted from
+     * this one the moment either changed.
+     *
+     * env is everything the panel reaches outside itself, so it can edit a
+     * merchant's real card or an unattached saved design without knowing which:
+     *
+     *   api(path, opts)    the calling page's fetch wrapper, already base-scoped
+     *   path(suffix)       "/card/<id>" here, "/design/<id>" in the console
+     *   artUrl(kind, v)    where the stored logo / band PNG is served from
+     *   customersPath      the live-customer count, or null when there is no
+     *                      card to count — a design has no customers yet
+     *   rulesNote          HTML above the rules block, or ""
+     *   onRulesSaved()     the caller's own follow-up
+     *   toast/modal/info   shared with MODAL_JS
+     */
+    function designPanel(c, env) {
+      const div = document.createElement("div");
+      const api = env.api, toast = env.toast, modal = env.modal, info = env.info;
+      const P = (suffix) => env.path(suffix || "");
+      const bust = (v) => v ? "?v=" + v : "";
+      const logoSrc = env.artUrl("logo", c.logoVersion);
+      div.innerHTML = \`
+        <label class="sec first" style="display:block">Preview</label>
+        <div class="pv" data-pv>
+          <div class="pv-top">
+            <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="" style="\${c.logoVersion ? "" : "display:none"}">
+            <span class="pv-name" data-pv-name></span>
+            <div class="pv-hdr"><div class="pv-progress" data-pv-progress></div></div>
+          </div>
+          <div class="pv-banner" data-pv-banner></div>
+          <div class="pv-dots" data-pv-dots></div>
+          <div class="pv-row2">
+            <div><div class="pv-lbl">REWARD</div><div class="pv-reward" data-pv-reward></div></div>
+            <div><div class="pv-lbl">PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
+          </div>
+          <div class="pv-qr">QR</div>
+          <div class="pv-note">Code ABC123 · updates by itself</div>
+        </div>
+
+        <!-- Design sits directly under the preview it changes, folded away. It is
+             one block: the logo belongs with the colours it feeds, not pulled out
+             on its own above them. -->
+        <details class="fold" style="margin-top:12px">
+        <summary>Design</summary>
+
+        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it.")}</label>
+        <div class="logorow">
+          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+        </div>
+        <div class="swatches" data-swatches style="display:none"></div>
+
+        <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
+        <div class="crlist" data-roles></div>
+        <!-- The five native pickers are the source of truth every other function
+             reads through f("bg"), f("bandColor") and so on, so they must exist
+             from the start. They are PARKED here and MOVED into whichever row is
+             open, rather than hidden and clicked from a proxy: calling .click()
+             on a display:none colour input does not reliably open the OS picker,
+             so the owner has to be tapping the real thing. -->
+        <div class="colorpark" data-park>
+          <input data-f="bg" type="color" value="\${c.bg}">
+          <input data-f="fg" type="color" value="\${c.fg}">
+          <input data-f="label" type="color" value="\${c.label}">
+          <input data-f="accent" type="color" value="\${c.accent}">
+          <input data-f="bandColor" type="color" value="\${c.bandColor}">
+        </div>
+
+        <label style="margin-top:14px">Band\${info("The pattern behind the stamps. They are all kept deliberately soft — the stamps are drawn on top, and a busy band makes them hard to read.")}</label>
+        <div class="bantpl" data-bandtex></div>
+
+        <label style="margin-top:14px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
+        <div class="emojirow">
+          <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
+          <button class="btn btn-ghost" data-a="useemoji">Use this</button>
+        </div>
+        <div class="logorow" style="margin-top:8px">
+          <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
+          <!-- Always visible, not only for an uploaded stamp. With the preset
+               tiles gone this is the only way back to plain dots, and a control
+               that appears once you no longer need it is no control at all. -->
+          <button class="btn btn-ghost" data-a="rmstamp">Plain dots</button>
+          \${info("One shape on a see-through background (PNG or SVG), not a photo. Its own colours are ignored — it gets filled with your stamp colour.")}
+        </div>
+        <p class="err" data-stamperr style="display:none"></p>
+
+        <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
+        </details>
+
+        <!-- No section headers here. Each .sec costs ~50px of rule and margin,
+             and two of them plus a full-width spend row were most of what stood
+             between the preview and the controls. What a change DOES now lives
+             in the Save popup, which is the moment it matters, rather than as
+             grey text nobody reads on the way past. -->
+        \${env.rulesNote}
+        <label style="margin-top:16px">Shop name\${info("The name customers see on the card.")}</label>
+        <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
+
+        <label style="margin-top:14px">Reward</label><input data-f="reward" value="\${c.reward}">
+        <div class="row2 row3">
+          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
+          <div><label>Welcome stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
+          <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers. Optional — leave at 0 to hide it.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
+        </div>
+
+        <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
+        <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
+
+        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>\`;
+
+      const f = (k) => div.querySelector('[data-f=' + k + ']');
+      const q = (s) => div.querySelector(s);
+
+      // ---- Rich stamp grid engine (declared before renderPreview, which uses it) ----
+      // Big stamps that fill in (like a real punch card), rendered in the browser
+      // and stored server-side. Apple uses them as the strip image, Google as the
+      // hero image. Emoji glyphs bake in this device's emoji look.
+      // Declared up here, not beside the texture picker: drawStampStrip reads
+      // them and renderPreview calls it during setup, so declaring these further
+      // down would leave them in the dead zone and throw.
+      let bandTexture = c.bandTexture || "gradient";
+      /** The band at any size, from whatever the colour picker currently says. */
+      function bandPng(style, w, h) {
+        const a = f("bandColor").value;
+        return drawBanner(style, a, shade(a, 0.35), w, h);
+      }
+      let stampStyle = c.stampStyle || "";  // '' = plain dots, 'custom' = uploaded
+      let customStampUrl = null;             // dataURL of an uploaded stamp icon
+      const stampImg = new Image();          // holds that uploaded icon for drawing
+
+      // The banner is the BACKDROP the stamps are drawn onto, so it has to be
+      // decoded before any strip is rendered — the pass has one strip slot, and
+      // whatever we bake in here is all the customer ever sees.
+      const bannerImg = new Image();
+      let bannerReady = false;
+      function loadBanner(src) {
+        return new Promise((resolve) => {
+          if (!src) { bannerReady = false; return resolve(); }
+          bannerImg.onload = () => { bannerReady = true; resolve(); };
+          bannerImg.onerror = () => { bannerReady = false; resolve(); };
+          bannerImg.src = src;
+        });
+      }
+      // Drawn from the hosted copy, which is same-origin, so the canvas stays
+      // untainted and toDataURL keeps working.
+      const bannerReadyPromise = loadBanner(
+        c.bannerVersion ? env.artUrl("banner", c.bannerVersion) : "",
+      );
+
+      // Draws the stamp grid for filled/target onto a wide strip → dataURL.
+      // Filled cells show the icon; empty cells show a faint "hole" of it.
+      // Mirrors stampGrid() in src/passModel.ts — always two rows, so the strip
+      // keeps one shape at any target. No build step here, so it cannot import;
+      // if you change the rule, change it in both places.
+      function stampGridCols(target) { return Math.max(1, Math.ceil(target / 2)); }
+
+      // Paints the uploaded stamp shape in one flat colour: draw it, then
+      // "source-in" a fill over it, which keeps the alpha channel and throws away
+      // whatever colours the file itself had. That is why an upload must be
+      // transparent — a photo would come out as a solid rectangle.
+      function shapeStamp(img, size, color) {
+        const s = document.createElement("canvas"); s.width = size; s.height = size;
+        const sx = s.getContext("2d");
+        const k = Math.min(size / img.naturalWidth, size / img.naturalHeight); // contain, never crop
+        const w = img.naturalWidth * k, h = img.naturalHeight * k;
+        sx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        sx.globalCompositeOperation = "source-in";
+        sx.fillStyle = color; sx.fillRect(0, 0, size, size);
+        return s;
+      }
+
+      /**
+       * One strip image for one stamp count. 750x246 is the @2x storeCard strip
+       * (375x123pt); the grid is centred with a 40px clear margin all round, and
+       * an odd target leaves the last row one short, centred.
+       *
+       * @2x rather than @3x on purpose: once a banner photo is composited in,
+       * an @3x strip weighs ~414KB and a full set of 21 comes to 8MB, which
+       * overruns both the upload cap and the request body. @2x halves the
+       * dimensions for ~190KB each, and the strip is imagery with no fine text,
+       * so an @3x phone upscaling it is not noticeable.
+       * Earned stamps take the accent colour; unearned are the same shape at 25%.
+       */
+      function drawStampStrip(filled, target, icon) {
+        const W = 750, H = 246, M = 40;
+        const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+        const x = cv.getContext("2d");
+        // The band, drawn from what the pickers say RIGHT NOW — then the stamps
+        // on top. Apple has one strip slot, so the band and the grid have to
+        // arrive as a single image.
+        //
+        // This used to composite the stored banner PNG instead, which meant the
+        // band colour did nothing until it had been saved, re-uploaded and
+        // re-downloaded: you dragged the picker and the card never moved. Now
+        // the picker is the source and the stored PNG is only the copy the
+        // wallets fetch.
+        const bandHex = f("bandColor").value;
+        paintBand(x, bandTexture, bandHex, shade(bandHex, 0.35), W, H);
+        const accent = f("accent").value;
+        const cols = stampGridCols(target), rows = target > 1 ? 2 : 1;
+        const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
+        const r = Math.min(cw, ch) * 0.34;
+        const perRow = Math.ceil(target / rows);
+        const customReady = customStampUrl && stampImg.complete && stampImg.naturalWidth > 0;
+        const shaped = icon === "custom" && customReady
+          ? { on: shapeStamp(stampImg, Math.ceil(r * 2), accent), size: Math.ceil(r * 2) }
+          : null;
+        for (let i = 0; i < target; i++) {
+          const rowN = Math.floor(i / perRow), col = i % perRow;
+          // A short final row is centred rather than left-aligned.
+          const inRow = Math.min(perRow, target - rowN * perRow);
+          const rowW = cw * inRow, rowX = (W - rowW) / 2;
+          const cx = rowX + cw * col + cw / 2, cy = M + ch * rowN + ch / 2;
+          const on = i < filled;
+          if (shaped) {
+            x.globalAlpha = on ? 1 : .25;
+            x.drawImage(shaped.on, cx - shaped.size / 2, cy - shaped.size / 2);
+            x.globalAlpha = 1;
+          } else if (icon === "dot" || icon === "custom") {
+            // "dot" style, or a custom stamp whose source isn't in memory (e.g.
+            // after a reload) — a clean circle in the same two states.
+            x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2);
+            x.fillStyle = accent;
+            x.globalAlpha = on ? 1 : .25;
+            x.fill();
+            x.globalAlpha = 1;
+          } else {
+            x.font = (r * 1.9) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle";
+            x.globalAlpha = on ? 1 : .25;
+            x.fillText(icon, cx, cy);
+            x.globalAlpha = 1;
+          }
+        }
+        return cv.toDataURL("image/png");
+      }
+
+      // banner preview
+      if (c.bannerVersion) {
+        const b = q("[data-pv-banner]");
+        b.style.backgroundImage = "url(" + base + "/art/banner.png" + bust(c.bannerVersion) + ")";
+        b.classList.add("on");
+      }
+
+      // Mirrors getHeaderFieldValue() in src/passModel.ts, which is the canonical
+      // version — the pass and this preview must never disagree about the header.
+      function headerValue(earned, total) {
+        const e = Math.max(0, Math.min(earned, total));
+        if (e >= total) return "Reward ready";
+        const left = total - e;
+        return left <= e ? left + " left" : e + " earned";
+      }
+
+      function renderPreview() {
+        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
+        const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
+        const pv = q("[data-pv]");
+        pv.style.background = f("bg").value;
+        pv.style.color = f("fg").value;
+        q("[data-pv-name]").textContent = f("shopName").value || "Your card";
+        q("[data-pv-progress]").textContent = headerValue(start, target);
+        q("[data-pv-tally]").textContent = start + "/" + target;
+        q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
+        for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
+        // When a rich stamp style is active, show the rendered grid in the strip
+        // (it shares the slot with the banner — stamps win, matching the card).
+        // Set both states explicitly every time. This used to only ever ADD the
+        // class, so which image you saw depended on whether the banner or the
+        // strip painted last — the preview could show a banner the pass didn't have.
+        const dots = q("[data-pv-dots]"), banner = q("[data-pv-banner]");
+        if (stampStyle) {
+          dots.style.display = "none";
+          banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
+          banner.classList.add("on", "strip");
+        } else {
+          dots.style.display = "";
+          banner.classList.remove("strip");
+          banner.classList.toggle("on", Boolean(c.bannerVersion));
+          dots.textContent = "●".repeat(start) + "○".repeat(target - start);
+        }
+      }
+      for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
+      renderPreview();
+
+      // Self-heal: the stamp grid now lives only in the strip image, so a card
+      // with no rendered strips would show a customer no stamps at all. Cards
+      // made before that was true have none, so render the default set once, the
+      // first time their owner opens this panel. Silent — nothing was asked for.
+      if (!c.stampsVersion) {
+        applyStamps(stampStyle || "dot", true).then(() => { c.stampsVersion = 1; })
+          .catch(() => {}); // a failure just means we try again next visit
+      }
+
+      // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
+      // fit "contain" letterboxes the whole image in; "cover" (the default) fills
+      // the frame and crops the overflow. A logo MUST contain — cropping a
+      // wordmark to fill a frame chops the first and last letters off.
+      function wireUpload(inputSel, kind, w, h, onDone, fit) {
+        q(inputSel).onchange = () => {
+          const file = q(inputSel).files[0]; if (!file) return;
+          const img = new Image();
+          img.onload = async () => {
+            URL.revokeObjectURL(img.src);
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext.bind(canvas);
+            if (fit === "keep") {
+              // Keep the image's OWN shape and only cap the size. The logo needs
+              // this: padding a square mark into a wide frame made the wallets
+              // scale that whole frame down into their logo slot, leaving the
+              // mark itself a fraction of the space it should have had. No
+              // different upload could fix it, which is what made it feel like
+              // there was a spec nobody had been told.
+              const s = Math.min(w / img.width, h / img.height, 1);
+              const dw = Math.max(1, Math.round(img.width * s));
+              const dh = Math.max(1, Math.round(img.height * s));
+              canvas.width = dw; canvas.height = dh;
+              ctx("2d").drawImage(img, 0, 0, dw, dh);
+            } else {
+              canvas.width = w; canvas.height = h;
+              const s = fit === "contain"
+                ? Math.min(w / img.width, h / img.height)
+                : Math.max(w / img.width, h / img.height);
+              ctx("2d").drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
+            }
+            const dataUrl = canvas.toDataURL("image/png");
+            if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
+            const { body } = await api(P("/" + kind), {
+              method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+            });
+            if (body.ok) { onDone(dataUrl); toast((kind === "logo" ? "Logo" : "Banner") + " saved ✓"); }
+            else toast(body.error || "Upload failed");
+          };
+          img.onerror = () => toast("Couldn't read that image");
+          img.src = URL.createObjectURL(file);
+        };
+      }
+      // Capped at Apple's 160×50pt logo band at @3x, but NOT padded to it: the
+      // image keeps its own shape, so a square mark stays square and fills the
+      // wallet's logo slot, and a wide wordmark stays wide. Whichever they have
+      // is the right shape to upload.
+      wireUpload("[data-logo]", "logo", 480, 150, (url) => {
+        const im = q("[data-pv-logo]");
+        im.src = url; im.style.display = ""; c.logoVersion = 1;
+        q("[data-a=rmlogo]").style.display = "";
+        readPalette(url); // the logo is where the colours come from
+      }, "keep");
+      // Removing the logo hides it here too, because the pass drops the image
+      // entirely with no upload and shows the shop name alone — the preview has
+      // to agree, or the owner is designing against something they won't get.
+      q("[data-a=rmlogo]").onclick = async () => {
+        const { body } = await api(P("/logo"), { method: "DELETE" });
+        if (!body.ok) return toast(body.error || "Couldn't remove logo");
+        c.logoVersion = 0;
+        q("[data-pv-logo]").style.display = "none";
+        q("[data-a=rmlogo]").style.display = "none";
+        toast("Logo removed");
+      };
+
+      // ---- Colours out of the logo ----
+      // Read on this device: the palette is pulled from the logo the owner is
+      // already uploading, so there is no second image to explain. Nothing is
+      // applied until they tap the button — an upload that silently repainted
+      // their card would be worse than no feature at all.
+      let found = null;
+      function readPalette(dataUrl) {
+        const im = new Image();
+        im.onload = () => {
+          // 64px is plenty to count colours by and keeps this instant on a phone.
+          const k = Math.min(64 / im.naturalWidth, 64 / im.naturalHeight, 1);
+          const cv = document.createElement("canvas");
+          cv.width = Math.max(1, Math.round(im.naturalWidth * k));
+          cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+          const x = cv.getContext("2d", { willReadFrequently: true });
+          x.drawImage(im, 0, 0, cv.width, cv.height);
+          let data;
+          try { data = x.getImageData(0, 0, cv.width, cv.height).data; }
+          catch (e) { return; } // tainted canvas — nothing to offer
+          found = paletteFrom(data);
+          showSwatches();
+          drawRoles();
+        };
+        im.src = dataUrl;
+      }
+      function showSwatches() {
+        const host = q("[data-swatches]");
+        host.style.display = "";
+        if (!found) {
+          host.innerHTML = '<p class="muted" style="margin:0">No clear colours in that logo — set the colours below yourself.</p>';
+          return;
+        }
+        const chip = (hex, name) => '<span class="sw" title="' + name + '" style="background:' + hex + '"></span>';
+        host.innerHTML =
+          '<div class="swrow">' + chip(found.bg, "Card") + chip(found.band, "Band") +
+          chip(found.accent, "Stamps") + chip(found.label, "Labels") + chip(found.fg, "Text") +
+          '<button class="btn btn-ghost" data-a="usepal">Use these colours</button></div>' +
+          '<p class="muted" style="margin:6px 0 0">Text is chosen for readability rather than taken from the logo, so it can always be read on the card.</p>';
+        host.querySelector("[data-a=usepal]").onclick = async () => {
+          f("bg").value = found.bg; f("fg").value = found.fg;
+          f("label").value = found.label; f("accent").value = found.accent;
+          f("bandColor").value = found.band;
+          renderPreview(); drawTextureRow(); drawRoles();
+          await save({
+            bg: found.bg, fg: found.fg, label: found.label,
+            accent: found.accent, bandColor: found.band,
+          }, "Colours");
+          await saveBanner(bandPng(bandTexture, 750, 246));
+        };
+      }
+
+      // ---- Swap any colour into any role ----
+      // Matching a shade by hand in a colour picker is the fiddliest thing on
+      // this page, and it is never what the owner wants: they want the black
+      // that is already in their logo, on the card instead of behind the stamps.
+      // So every colour in play is offered for every role. The neutrals are here
+      // because "make the card black" is the most common ask of all and no logo
+      // reliably contains a usable one.
+      const NEUTRALS = ["#111111", "#2b2b2b", "#6e6e68", "#f4f1ea", "#ffffff"];
+      const ROLES = [
+        { k: "bg", name: "Card" }, { k: "bandColor", name: "Band" },
+        { k: "accent", name: "Stamps" }, { k: "label", name: "Labels" },
+        { k: "fg", name: "Text" },
+      ];
+      // Nothing open to begin with: the list reads as five named parts of the
+      // card, which is the question an owner actually has ("what colour is the
+      // band?"), rather than a palette they have to decode.
+      let activeRole = null;
+      const rolesHost = q("[data-roles]");
+      function paletteChips() {
+        const seen = {}, out = [];
+        const add = (hex) => {
+          const h = String(hex || "").toLowerCase();
+          if (!/^#[0-9a-f]{6}$/.test(h) || seen[h]) return;
+          seen[h] = 1; out.push(h);
+        };
+        if (found) [found.bg, found.band, found.accent, found.label].forEach(add);
+        ROLES.forEach((r) => add(f(r.k).value));
+        NEUTRALS.forEach(add);
+        return out;
+      }
+      /**
+       * Put a colour on a role and redraw everything that shows it — WITHOUT
+       * rebuilding the list. The open row holds the live <input type="color">,
+       * and dragging in the OS picker fires input continuously; re-rendering
+       * mid-drag would move that input out from under the picker.
+       */
+      function applyRole(role, hex) {
+        f(role).value = hex;
+        // Text is the one thing never chosen by eye — swapping the card colour
+        // would otherwise quietly leave unreadable text behind it.
+        if (role === "bg") f("fg").value = pickTextColor(hex);
+        renderPreview(); drawTextureRow(); refreshSwatches();
+      }
+      /** Header swatches and the selected chip, updated in place. */
+      function refreshSwatches() {
+        rolesHost.querySelectorAll("[data-role]").forEach((row) => {
+          const k = row.dataset.role;
+          row.querySelector(".crsw").style.background = f(k).value;
+          row.querySelectorAll(".chip").forEach((ch) => {
+            ch.classList.toggle("on", ch.dataset.hex === f(k).value.toLowerCase());
+          });
+        });
+      }
+      // One row per part of the card, each named and showing its own colour;
+      // tapping one opens its palette underneath. This replaced a chip row and a
+      // row of five colour squares that did the same job in two places — which
+      // is what made it impossible to tell which one you were meant to use.
+      const park = q("[data-park]");
+      function drawRoles() {
+        // Put every native picker back in its park BEFORE wiping the list. The
+        // open row holds the real input, and innerHTML = "" would destroy the
+        // one element the rest of this panel reads its colours from.
+        for (const r of ROLES) park.appendChild(f(r.k));
+        rolesHost.innerHTML = "";
+        for (const r of ROLES) {
+          const open = r.k === activeRole;
+          const row = document.createElement("div");
+          row.className = "crow2" + (open ? " open" : "");
+          row.dataset.role = r.k;
+
+          const head = document.createElement("button");
+          head.type = "button";
+          head.className = "crhead";
+          head.setAttribute("aria-expanded", open ? "true" : "false");
+          head.innerHTML = '<span class="crname"></span>' +
+            '<span class="crsw" style="background:' + f(r.k).value + '"></span>' +
+            '<span class="crcaret">▸</span>';
+          head.querySelector(".crname").textContent = r.name;
+          head.onclick = () => { activeRole = open ? null : r.k; drawRoles(); };
+          row.appendChild(head);
+
+          if (open) {
+            const chips = document.createElement("div"); chips.className = "chiprow";
+            for (const hex of paletteChips()) {
+              const ch = document.createElement("button");
+              ch.type = "button";
+              ch.className = "chip" + (hex === f(r.k).value.toLowerCase() ? " on" : "");
+              ch.style.background = hex; ch.title = hex; ch.dataset.hex = hex;
+              ch.onclick = () => applyRole(r.k, hex);
+              chips.appendChild(ch);
+            }
+            // The real colour input, moved in — for a shade in none of the above.
+            const custom = document.createElement("span");
+            custom.className = "chipcustom";
+            custom.appendChild(f(r.k));
+            custom.appendChild(document.createTextNode("Custom…"));
+            chips.appendChild(custom);
+            row.appendChild(chips);
+          }
+          rolesHost.appendChild(row);
+        }
+      }
+      // The OS picker writes straight through. No rebuild here on purpose —
+      // this fires on every frame of a drag, and rebuilding would move the very
+      // input the picker is attached to.
+      for (const r of ROLES) {
+        f(r.k).oninput = () => applyRole(r.k, f(r.k).value.toLowerCase());
+      }
+      drawRoles();
+
+      // The band is stored exactly where the uploaded banner photo used to be, so
+      // nothing downstream changes: Apple composites it behind the stamps, Google
+      // uses it as the hero image. Photos are gone — this is always generated.
+      async function saveBanner(dataUrl) {
+        const { body } = await api(P("/banner"), { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
+        if (!body.ok) return toast(body.error || "Band failed");
+        // Re-bake the strips: the band is the backdrop INSIDE each strip PNG,
+        // so a new band that isn't re-rendered would never reach the pass.
+        await loadBanner(dataUrl);
+        await applyStamps(stampStyle || "dot", true);
+        toast("Band saved ✓");
+      }
+
+      function shade(hex, p) { // p in -1..1 → darken/lighten
+        const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
+        let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+        r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+      /** The band as a data URL, for the texture swatches and the stored PNG. */
+      function drawBanner(style, c1, c2, w, h) {
+        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+        paintBand(cv.getContext("2d"), style, c1, c2, w, h);
+        return cv.toDataURL("image/png");
+      }
+      /**
+       * The same band painted straight onto a context. drawStampStrip needs it
+       * synchronously — going via an Image and a data URL would not have decoded
+       * by the time the stamps are drawn on top, so the band would simply be
+       * missing from the strip.
+       */
+      function paintBand(x, style, c1, c2, w, h) {
+        // Every texture is deliberately soft. The stamps are drawn ON TOP of
+        // this, so a band that competes with them is the one way the picker can
+        // make a card worse — hence the low alphas throughout.
+        if (style === "flat") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+        } else if (style === "stripes") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.globalAlpha = .22;
+          const sw = w / 14;
+          for (let i = -h; i < w; i += sw * 2) {
+            x.beginPath(); x.moveTo(i, h); x.lineTo(i + h, 0);
+            x.lineTo(i + h + sw, 0); x.lineTo(i + sw, h); x.closePath(); x.fill();
+          }
+          x.globalAlpha = 1;
+        } else if (style === "dots") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.globalAlpha = .26;
+          const step = w / 16, r = step * 0.17;
+          for (let row = 0, y = step / 2; y < h; y += step * .8, row++) {
+            for (let px = (row % 2 ? step / 2 : 0) + step / 2; px < w; px += step) {
+              x.beginPath(); x.arc(px, y, r, 0, Math.PI * 2); x.fill();
+            }
+          }
+          x.globalAlpha = 1;
+        } else if (style === "chevron") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.strokeStyle = c2; x.globalAlpha = .24; x.lineWidth = Math.max(2, h / 26);
+          const step = h / 3;
+          for (let y = -h; y < h * 2; y += step) {
+            x.beginPath();
+            for (let px = 0; px <= w; px += w / 8) {
+              const up = Math.round(px / (w / 8)) % 2 === 0;
+              x.lineTo(px, y + (up ? 0 : step * .6));
+            }
+            x.stroke();
+          }
+          x.globalAlpha = 1; x.lineWidth = 1;
+        } else if (style === "grain") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          // Deterministic, not Math.random: the band is re-rendered on every
+          // save, and a different speckle each time would be a pointless new
+          // image for the wallets to fetch.
+          x.fillStyle = c2;
+          for (let i = 0; i < 2600; i++) {
+            const s = Math.sin(i * 12.9898) * 43758.5453;
+            const t = Math.sin(i * 78.233) * 43758.5453;
+            x.globalAlpha = .05 + ((s - Math.floor(s)) * .12);
+            x.fillRect((s - Math.floor(s)) * w, (t - Math.floor(t)) * h, 2, 2);
+          }
+          x.globalAlpha = 1;
+        } else if (style === "rays") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.globalAlpha = .16;
+          for (let i = 0; i < 12; i += 2) {
+            const a = (i / 12) * Math.PI * 2;
+            x.beginPath(); x.moveTo(w / 2, h / 2);
+            x.arc(w / 2, h / 2, w, a, a + Math.PI / 12); x.closePath(); x.fill();
+          }
+          x.globalAlpha = 1;
+        } else if (style === "diagonal") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
+        } else if (style === "glow") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h);
+          const g = x.createRadialGradient(w * .5, h * .5, 10, w * .5, h * .5, w * .6);
+          g.addColorStop(0, c2); g.addColorStop(1, c1); x.fillStyle = g; x.fillRect(0, 0, w, h);
+        } else if (style === "waves") {
+          x.fillStyle = c1; x.fillRect(0, 0, w, h); x.fillStyle = c2;
+          for (let k = 0; k < 3; k++) { x.globalAlpha = .18 + k * .12; x.beginPath(); x.moveTo(0, h * .4 + k * 34);
+            for (let px = 0; px <= w; px += 8) x.lineTo(px, h * .4 + k * 34 + Math.sin(px / 90 + k) * 26);
+            x.lineTo(w, h); x.lineTo(0, h); x.closePath(); x.fill(); } x.globalAlpha = 1;
+        } else { // gradient
+          const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, c1); g.addColorStop(1, c2);
+          x.fillStyle = g; x.fillRect(0, 0, w, h);
+        }
+      }
+      // ---- The band: the strip the stamps sit on, in its own colour ----
+      // It is still stored as the banner PNG, so Google's hero image and Apple's
+      // strip backdrop are unchanged — what went away is uploading a photo.
+      // "flat" is one colour; the rest shade toward a lighter version of it.
+      // Must stay in step with BAND_TEXTURES in src/routes/dashboard.ts. That
+      // allowlist is what refuses an unknown one, so a texture the browser can
+      // draw but the server rejects would silently save as flat.
+      const TEXTURES = [
+        { name: "Flat", style: "flat" },
+        { name: "Gradient", style: "gradient" },
+        { name: "Glow", style: "glow" },
+        { name: "Diagonal", style: "diagonal" },
+        { name: "Waves", style: "waves" },
+        { name: "Stripes", style: "stripes" },
+        { name: "Dots", style: "dots" },
+        { name: "Chevron", style: "chevron" },
+        { name: "Grain", style: "grain" },
+        { name: "Rays", style: "rays" },
+      ];
+      const btpl = q("[data-bandtex]");
+      function drawTextureRow() {
+        btpl.innerHTML = "";
+        for (const t of TEXTURES) {
+          const bt = document.createElement("div");
+          bt.className = "bt" + (t.style === bandTexture ? " sel" : "");
+          bt.title = t.name;
+          bt.style.backgroundImage = "url(" + bandPng(t.style, 144, 64) + ")";
+          bt.innerHTML = "<span>" + t.name + "</span>";
+          bt.onclick = async () => {
+            bandTexture = t.style;
+            drawTextureRow();
+            await api(P(), { method: "POST", body: JSON.stringify({ bandTexture: t.style }) });
+            await saveBanner(bandPng(t.style, 750, 246));
+          };
+          btpl.appendChild(bt);
+        }
+      }
+      drawTextureRow();
+
+      // Renders the full 0..target set and stores it (immediate, like banners).
+      // The quiet flag is for the piggy-back call from save(), which toasts its own.
+      async function applyStamps(style, quiet) {
+        stampStyle = style;
+        // The banner is baked into every strip, so it must be decoded first or
+        // the whole set renders on a bare colour.
+        await bannerReadyPromise;
+        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
+        // One set per target still in play, not just the current one. A pass keeps
+        // the target it was issued with, so an owner going 8 → 6 still has
+        // customers asking for an 8-slot grid — and before this they got a 404 and
+        // lost their stamps picture entirely. Usually one set; two until everyone
+        // on the old ruleset has earned their next reward.
+        const targets = [...new Set([target, ...(c.targetsInUse || [])])].filter((t) => t >= 1 && t <= 20);
+        const strips = [];
+        for (const t of targets) {
+          for (let n = 0; n <= t; n++) {
+            strips.push({ target: t, filled: n, png: drawStampStrip(n, t, style).split(",")[1] });
+          }
+        }
+        const { body } = await api(P("/stamps"), { method: "POST", body: JSON.stringify({ style, strips }) });
+        if (!body.ok) return toast(body.error || "Couldn't save stamps");
+        renderPreview();
+        if (!quiet) toast("Stamp style saved ✓");
+      }
+
+      // The six preset tiles (Dot, Coffee, Star, Heart, Donut, Boba) are gone:
+      // they were six ways to do what the emoji field does, and every card
+      // starts on dots anyway. Three routes remain — dots, any emoji, your own
+      // shape — and each is a different kind of answer rather than a shortcut.
+      // Any emoji at all. The renderer already draws whatever glyph it is given,
+      // so this only has to hand it one — and exactly one: firstGrapheme keeps
+      // multi-code-point emoji (❤️, 🧑‍🍳) whole instead of slicing them in half.
+      q("[data-a=useemoji]").onclick = () => {
+        const one = firstGrapheme(q("[data-emoji]").value);
+        q("[data-emoji]").value = one;
+        applyStamps(one || "dot");
+      };
+      // Upload your own stamp icon → normalise to a small square PNG → apply.
+      // Rejected unless it has transparency: the shape is taken from the alpha
+      // channel, so a fully opaque image would stamp a solid square.
+      wireUpload("[data-stampimg]", null, 160, 160, (dataUrl) => {
+        const err = q("[data-stamperr]");
+        const probe = new Image();
+        probe.onload = () => {
+          const cv = document.createElement("canvas");
+          cv.width = probe.naturalWidth; cv.height = probe.naturalHeight;
+          const px = cv.getContext("2d");
+          px.drawImage(probe, 0, 0);
+          const data = px.getImageData(0, 0, cv.width, cv.height).data;
+          let clear = 0;
+          for (let i = 3; i < data.length; i += 4) if (data[i] < 24) clear++;
+          if (clear < data.length / 4 * 0.02) {
+            err.textContent = "That image has no see-through background, so it would stamp a solid block. Save it as a PNG or SVG with transparency, or pick a built-in stamp above.";
+            err.style.display = "";
+            return;
+          }
+          err.style.display = "none";
+          customStampUrl = dataUrl; stampImg.src = dataUrl;
+          stampImg.onload = () => applyStamps("custom");
+        };
+        probe.src = dataUrl;
+      });
+      // Back to plain dots — which is still a rendered strip, not the absence of
+      // one: the grid image is the only place stamps are drawn now.
+      q("[data-a=rmstamp]").onclick = async () => {
+        customStampUrl = "";
+        q("[data-emoji]").value = "";
+        await applyStamps("dot", true);
+        toast("Back to plain dots");
+      };
+
+      // Two saves, disjoint field sets. Both re-render the stamp strips, because
+      // a colour change (design) and a target change (rules) each alter them.
+      // That re-render IS the pre-generation step: one PNG per stamp count, so a
+      // customer's stamp only ever swaps which stored image the pass points at.
+      async function save(fields, label) {
+        const { body } = await api(P(), { method: "POST", body: JSON.stringify(fields) });
+        if (!body.ok) return toast(body.error || "Save failed");
+        Object.assign(c, fields);
+        // Always regenerate, even on plain dots: the strip image is now the only
+        // place stamps are drawn, so a card with no strips would show nothing.
+        await applyStamps(stampStyle || "dot", true);
+        toast(label + " saved ✓");
+      }
+
+      // How many people this actually reaches. Read once when the panel opens, so
+      // both confirmations can name a real number rather than talk in the
+      // abstract about "your customers".
+      // A saved design has none: it is not in anybody's wallet yet, so the
+      // confirmations below drop to their "no customers" wording rather than
+      // inventing a number.
+      let liveCustomers = 0;
+      if (env.customersPath) (async () => {
+        const { body } = await api(env.customersPath);
+        liveCustomers = (body.counts || {}).active || 0;
+      })();
+      const them = () => liveCustomers === 1 ? "customer" : "customers";
+
+      // The sentences that used to sit as grey subtext under these two buttons
+      // are now in front of the button. Same words, read this time.
+      q("[data-a=savedesign]").onclick = async () => {
+        const ok = await modal(
+          "Update the card everywhere?",
+          liveCustomers
+            ? "<p>The new look reaches all <strong>" + liveCustomers + "</strong> " + them() +
+              " who already hold your card, not just new ones. Their stamps and reward are untouched.</p>"
+            : "<p>This is how your card will look to everyone who takes one.</p>",
+          "Save design",
+        );
+        if (!ok) return;
+        // No shopName here. The field sits above the fold now, next to Save
+        // rules — leaving its save on a button inside a collapsed section is how
+        // you get an owner who renamed their shop and lost it.
+        await save({
+          bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
+          bandColor: f("bandColor").value,
+        }, "Design");
+        // The band colour is baked into a stored PNG, so a colour change has to
+        // re-render it — saving the field alone would leave the old band on the
+        // card and the new one only in the picker.
+        await saveBanner(bandPng(bandTexture, 750, 246));
+      };
+
+      q("[data-a=saverules]").onclick = async () => {
+        // The rename is called out separately, because it is the one change here
+        // that reaches a card already in someone's wallet.
+        const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
+        const ok = await modal(
+          "Save these changes?",
+          (liveCustomers
+            ? "<p>New cards use these rules straight away. Your <strong>" + liveCustomers + "</strong> existing " +
+              them() + " keep the reward and stamp count they were promised, and move onto the new rules " +
+              "the next time they earn a reward.</p>"
+            : "<p>These rules apply to every card from here on.</p>") +
+          (renamed && liveCustomers
+            ? '<p style="margin-top:8px">The new shop name <strong>does</strong> reach cards already in a wallet — ' +
+              "it is the only thing here that does. Your old sign-up links keep working.</p>"
+            : ""),
+          "Save",
+        );
+        if (!ok) return;
+        await save({
+          shopName: f("shopName").value,
+          // The card's own name follows the shop's. It used to be a second field
+          // nobody could tell apart from the first, and the only place it shows
+          // is the programme name on an Android card — which is the shop.
+          name: f("shopName").value,
+          reward: f("reward").value,
+          stampsTarget: Number(f("stampsTarget").value),
+          stampsStart: Number(f("stampsStart").value),
+          averageSpend: Number(f("averageSpend").value) || 0,
+          signupMessage: f("signupMessage").value,
+        }, "Card");
+        env.onRulesSaved();
+      };
+      return div;
+    }
+`;
+
 /** Styles for MODAL_JS. Both pages that use the popup must include this. */
 export const MODAL_CSS = /* css */ `
   .mdl { position: fixed; inset: 0; z-index: 50; background: rgba(24,20,16,.55);
@@ -1791,49 +2752,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
                    letter-spacing: .05em; color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 14px; }
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
-    .row2 { display: flex; gap: 8px; }
-    .row2 > div { flex: 1; }
-    /* Three number fields across a 375px phone. Smaller, tighter labels so
-       "Stamps to reward" wraps to two lines instead of shoving the columns
-       apart, and min-width:0 so flex actually lets them shrink. */
-    .row3 > div { min-width: 0; }
-    .row3 label { font-size: .78rem; line-height: 1.25; }
-    /* --- live wallet-card preview --- */
-    .pv { border-radius: 14px; padding: 16px; margin: 10px 0 4px; box-shadow: 0 4px 16px rgba(43,29,21,.18); }
-    .pv-top { display: flex; align-items: center; gap: 10px; }
-    .pv-logo { width: 34px; height: 34px; border-radius: 8px; object-fit: contain; background: rgba(255,255,255,.14); }
-    .pv-name { font-weight: 700; font-size: 1.02rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pv-hdr { text-align: right; }
-    .pv-lbl { font-size: .62rem; letter-spacing: .08em; font-weight: 600; }
-    .pv-progress { font-size: 1.05rem; font-weight: 700; }
-    .pv-dots { font-size: 1.25rem; letter-spacing: 3px; margin: 2px 0 10px; }
-    /* The two secondary fields, side by side as Wallet lays them out. */
-    .pv-row2 { display: flex; gap: 14px; margin-top: 10px; }
-    .pv-row2 > div { flex: 1; min-width: 0; }
-    .pv-row2 > div + div { text-align: right; }
-    .pv-reward { font-size: .95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pv-qr { background: #fff; color: #1d1d1f; width: 74px; height: 74px; border-radius: 8px;
-             margin: 14px auto 2px; display: flex; align-items: center; justify-content: center;
-             font-weight: 700; font-size: .8rem; letter-spacing: 1px; }
-    .pv-note { text-align: center; font-size: .72rem; margin-top: 6px; opacity: .75; }
-    /* Inline rejection notice (e.g. a stamp upload with no transparency) —
-       stays on screen, unlike a toast, because it asks the owner to go and fix
-       the file and come back. */
-    .err { color: #a33; background: #fdeaea; border: 1px solid #f2c9c9; border-radius: 10px;
-           padding: 10px 12px; font-size: .84rem; margin-top: 8px; }
-    /* --- designer controls --- */
-    /* Where the five native pickers sit while no row is open. They are moved out
-       into the open row, not proxied — see drawRoles. */
-    .colorpark { display: none; }
-    .chipcustom input[type=color] { width: 30px; height: 30px; padding: 2px; margin: 0;
-                                    border: 1px solid var(--field-border); border-radius: 8px;
-                                    background: var(--surface); cursor: pointer; }
-    .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
-    .logorow input[type=file] { display: none; }
-    .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
-    .copyrow { display: flex; gap: 8px; margin-top: 4px; }
-    .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: var(--ghost-bg); }
-    .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    ${DESIGN_PANEL_CSS}
     .account { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 20px; }
     .card { max-width: 480px; }
     /* --- card dropdown selector --- */
@@ -1865,56 +2784,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     @media (prefers-reduced-motion: reduce) { .seg .thumb { transition: none; } }
-    /* --- colour presets --- */
-    /* --- colours pulled out of an uploaded image --- */
-    .swatches { margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--ghost-bg); }
-    .swrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .swrow .sw { width: 30px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
-    .swrow .btn { width: auto; padding: 8px 12px; font-size: .85rem; margin-left: auto; }
-    /* --- colours: one named row per part of the card, opening to its palette --- */
-    /* This replaced a chip row AND a row of five colour squares that set the
-       same five fields. Two controls for one job read as two different jobs. */
-    .crlist { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 6px 0 10px;
-              background: var(--surface); }
-    .crow2 + .crow2 { border-top: 1px solid var(--line); }
-    .crhead { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px;
-              border: none; background: none; font: inherit; color: var(--ink); cursor: pointer; text-align: left; }
-    .crname { flex: 1; font-weight: 600; font-size: .92rem; }
-    .crsw { width: 26px; height: 26px; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
-    .crcaret { color: var(--muted); font-size: .8rem; transition: transform .18s; }
-    .crow2.open .crcaret { transform: rotate(90deg); }
-    .crow2.open .crname { color: var(--accent-dark); }
-    .crow2.open { background: var(--ghost-bg); }
-    .crow2 .chiprow { padding: 0 14px 14px; margin-top: 0; }
-    .chipcustom { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; color: var(--muted);
-                  margin-left: 4px; }
-    .chiprow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
-    .chip { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
-            padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
-    .chip:hover { border-color: var(--accent); }
-    .chip.on { border-color: var(--accent); }
-    .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
-    .emojirow input { flex: 1; font-size: 1.15rem; }
-    .emojirow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
-    /* --- band textures --- */
-    .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
-    .bantpl .bt { width: 72px; height: 32px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
-                  position: relative; overflow: hidden; background-size: cover; background-position: center;
-                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
-    .bantpl .bt:hover { border-color: var(--accent); }
-    .bantpl .bt.sel { border-color: var(--accent); }
-    .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
-                       color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
-    /* --- premium card preview --- */
-    .pv { border-radius: 18px; padding: 16px; margin: 10px 0 4px; overflow: hidden;
-          box-shadow: 0 10px 30px -8px rgba(43,29,21,.35), 0 2px 6px rgba(43,29,21,.15); }
-    /* Sits BELOW the top bar, exactly as Wallet stacks the strip under the
-       logo/logoText/header band. Bleeds to the card's side edges only. */
-    .pv-banner { height: 64px; margin: 12px -16px; background-size: cover; background-position: center; display: none; }
-    .pv-banner.on { display: block; }
-    /* A decorative banner may be cropped; the stamp grid may NOT — it is the
-       information the customer reads, so show the whole strip at its real shape. */
-    .pv-banner.strip { height: auto; aspect-ratio: 750 / 246; background-size: 100% 100%; }
     /* --- share tab --- */
     .sharelist { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 16px; }
     .sharelist a { display: flex; justify-content: space-between; align-items: center; gap: 8px;
@@ -2089,811 +2958,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     // The card editor: DESIGN (what it looks like) and RULES (how it behaves) as
     // two sections with their own Save, because they're two different jobs — the
     // old single panel mixed a colour picker with the staff PIN behind one button.
-    function designPanel(c) {
-      const div = document.createElement("div");
-      const base = c.id === "default" ? "" : "/c/" + c.id;
-      const bust = (v) => v ? "?v=" + v : "";
-      const logoSrc = base + "/art/logo.png" + bust(c.logoVersion);
-      div.innerHTML = \`
-        <label class="sec first" style="display:block">Preview</label>
-        <div class="pv" data-pv>
-          <div class="pv-top">
-            <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="" style="\${c.logoVersion ? "" : "display:none"}">
-            <span class="pv-name" data-pv-name></span>
-            <div class="pv-hdr"><div class="pv-progress" data-pv-progress></div></div>
-          </div>
-          <div class="pv-banner" data-pv-banner></div>
-          <div class="pv-dots" data-pv-dots></div>
-          <div class="pv-row2">
-            <div><div class="pv-lbl">REWARD</div><div class="pv-reward" data-pv-reward></div></div>
-            <div><div class="pv-lbl">PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
-          </div>
-          <div class="pv-qr">QR</div>
-          <div class="pv-note">Code ABC123 · updates by itself</div>
-        </div>
-
-        <!-- Design sits directly under the preview it changes, folded away. It is
-             one block: the logo belongs with the colours it feeds, not pulled out
-             on its own above them. -->
-        <details class="fold" style="margin-top:12px">
-        <summary>Design</summary>
-
-        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it.")}</label>
-        <div class="logorow">
-          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
-          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
-        </div>
-        <div class="swatches" data-swatches style="display:none"></div>
-
-        <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
-        <div class="crlist" data-roles></div>
-        <!-- The five native pickers are the source of truth every other function
-             reads through f("bg"), f("bandColor") and so on, so they must exist
-             from the start. They are PARKED here and MOVED into whichever row is
-             open, rather than hidden and clicked from a proxy: calling .click()
-             on a display:none colour input does not reliably open the OS picker,
-             so the owner has to be tapping the real thing. -->
-        <div class="colorpark" data-park>
-          <input data-f="bg" type="color" value="\${c.bg}">
-          <input data-f="fg" type="color" value="\${c.fg}">
-          <input data-f="label" type="color" value="\${c.label}">
-          <input data-f="accent" type="color" value="\${c.accent}">
-          <input data-f="bandColor" type="color" value="\${c.bandColor}">
-        </div>
-
-        <label style="margin-top:14px">Band\${info("The pattern behind the stamps. They are all kept deliberately soft — the stamps are drawn on top, and a busy band makes them hard to read.")}</label>
-        <div class="bantpl" data-bandtex></div>
-
-        <label style="margin-top:14px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
-        <div class="emojirow">
-          <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
-          <button class="btn btn-ghost" data-a="useemoji">Use this</button>
-        </div>
-        <div class="logorow" style="margin-top:8px">
-          <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
-          <!-- Always visible, not only for an uploaded stamp. With the preset
-               tiles gone this is the only way back to plain dots, and a control
-               that appears once you no longer need it is no control at all. -->
-          <button class="btn btn-ghost" data-a="rmstamp">Plain dots</button>
-          \${info("One shape on a see-through background (PNG or SVG), not a photo. Its own colours are ignored — it gets filled with your stamp colour.")}
-        </div>
-        <p class="err" data-stamperr style="display:none"></p>
-
-        <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
-        </details>
-
-        <!-- No section headers here. Each .sec costs ~50px of rule and margin,
-             and two of them plus a full-width spend row were most of what stood
-             between the preview and the controls. What a change DOES now lives
-             in the Save popup, which is the moment it matters, rather than as
-             grey text nobody reads on the way past. -->
-        <label style="margin-top:16px">Shop name\${info("The name customers see on the card.")}</label>
-        <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
-
-        <label style="margin-top:14px">Reward</label><input data-f="reward" value="\${c.reward}">
-        <div class="row2 row3">
-          <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
-          <div><label>Welcome stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
-          <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers. Optional — leave at 0 to hide it.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
-        </div>
-
-        <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
-        <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
-
-        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">Save rules</button>\`;
-
-      const f = (k) => div.querySelector('[data-f=' + k + ']');
-      const q = (s) => div.querySelector(s);
-
-      // ---- Rich stamp grid engine (declared before renderPreview, which uses it) ----
-      // Big stamps that fill in (like a real punch card), rendered in the browser
-      // and stored server-side. Apple uses them as the strip image, Google as the
-      // hero image. Emoji glyphs bake in this device's emoji look.
-      // Declared up here, not beside the texture picker: drawStampStrip reads
-      // them and renderPreview calls it during setup, so declaring these further
-      // down would leave them in the dead zone and throw.
-      let bandTexture = c.bandTexture || "gradient";
-      /** The band at any size, from whatever the colour picker currently says. */
-      function bandPng(style, w, h) {
-        const a = f("bandColor").value;
-        return drawBanner(style, a, shade(a, 0.35), w, h);
-      }
-      let stampStyle = c.stampStyle || "";  // '' = plain dots, 'custom' = uploaded
-      let customStampUrl = null;             // dataURL of an uploaded stamp icon
-      const stampImg = new Image();          // holds that uploaded icon for drawing
-
-      // The banner is the BACKDROP the stamps are drawn onto, so it has to be
-      // decoded before any strip is rendered — the pass has one strip slot, and
-      // whatever we bake in here is all the customer ever sees.
-      const bannerImg = new Image();
-      let bannerReady = false;
-      function loadBanner(src) {
-        return new Promise((resolve) => {
-          if (!src) { bannerReady = false; return resolve(); }
-          bannerImg.onload = () => { bannerReady = true; resolve(); };
-          bannerImg.onerror = () => { bannerReady = false; resolve(); };
-          bannerImg.src = src;
-        });
-      }
-      // Drawn from the hosted copy, which is same-origin, so the canvas stays
-      // untainted and toDataURL keeps working.
-      const bannerReadyPromise = loadBanner(
-        c.bannerVersion ? base + "/art/banner.png" + bust(c.bannerVersion) : "",
-      );
-
-      // Draws the stamp grid for filled/target onto a wide strip → dataURL.
-      // Filled cells show the icon; empty cells show a faint "hole" of it.
-      // Mirrors stampGrid() in src/passModel.ts — always two rows, so the strip
-      // keeps one shape at any target. No build step here, so it cannot import;
-      // if you change the rule, change it in both places.
-      function stampGridCols(target) { return Math.max(1, Math.ceil(target / 2)); }
-
-      // Paints the uploaded stamp shape in one flat colour: draw it, then
-      // "source-in" a fill over it, which keeps the alpha channel and throws away
-      // whatever colours the file itself had. That is why an upload must be
-      // transparent — a photo would come out as a solid rectangle.
-      function shapeStamp(img, size, color) {
-        const s = document.createElement("canvas"); s.width = size; s.height = size;
-        const sx = s.getContext("2d");
-        const k = Math.min(size / img.naturalWidth, size / img.naturalHeight); // contain, never crop
-        const w = img.naturalWidth * k, h = img.naturalHeight * k;
-        sx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        sx.globalCompositeOperation = "source-in";
-        sx.fillStyle = color; sx.fillRect(0, 0, size, size);
-        return s;
-      }
-
-      /**
-       * One strip image for one stamp count. 750x246 is the @2x storeCard strip
-       * (375x123pt); the grid is centred with a 40px clear margin all round, and
-       * an odd target leaves the last row one short, centred.
-       *
-       * @2x rather than @3x on purpose: once a banner photo is composited in,
-       * an @3x strip weighs ~414KB and a full set of 21 comes to 8MB, which
-       * overruns both the upload cap and the request body. @2x halves the
-       * dimensions for ~190KB each, and the strip is imagery with no fine text,
-       * so an @3x phone upscaling it is not noticeable.
-       * Earned stamps take the accent colour; unearned are the same shape at 25%.
-       */
-      function drawStampStrip(filled, target, icon) {
-        const W = 750, H = 246, M = 40;
-        const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
-        const x = cv.getContext("2d");
-        // The band, drawn from what the pickers say RIGHT NOW — then the stamps
-        // on top. Apple has one strip slot, so the band and the grid have to
-        // arrive as a single image.
-        //
-        // This used to composite the stored banner PNG instead, which meant the
-        // band colour did nothing until it had been saved, re-uploaded and
-        // re-downloaded: you dragged the picker and the card never moved. Now
-        // the picker is the source and the stored PNG is only the copy the
-        // wallets fetch.
-        const bandHex = f("bandColor").value;
-        paintBand(x, bandTexture, bandHex, shade(bandHex, 0.35), W, H);
-        const accent = f("accent").value;
-        const cols = stampGridCols(target), rows = target > 1 ? 2 : 1;
-        const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
-        const r = Math.min(cw, ch) * 0.34;
-        const perRow = Math.ceil(target / rows);
-        const customReady = customStampUrl && stampImg.complete && stampImg.naturalWidth > 0;
-        const shaped = icon === "custom" && customReady
-          ? { on: shapeStamp(stampImg, Math.ceil(r * 2), accent), size: Math.ceil(r * 2) }
-          : null;
-        for (let i = 0; i < target; i++) {
-          const rowN = Math.floor(i / perRow), col = i % perRow;
-          // A short final row is centred rather than left-aligned.
-          const inRow = Math.min(perRow, target - rowN * perRow);
-          const rowW = cw * inRow, rowX = (W - rowW) / 2;
-          const cx = rowX + cw * col + cw / 2, cy = M + ch * rowN + ch / 2;
-          const on = i < filled;
-          if (shaped) {
-            x.globalAlpha = on ? 1 : .25;
-            x.drawImage(shaped.on, cx - shaped.size / 2, cy - shaped.size / 2);
-            x.globalAlpha = 1;
-          } else if (icon === "dot" || icon === "custom") {
-            // "dot" style, or a custom stamp whose source isn't in memory (e.g.
-            // after a reload) — a clean circle in the same two states.
-            x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2);
-            x.fillStyle = accent;
-            x.globalAlpha = on ? 1 : .25;
-            x.fill();
-            x.globalAlpha = 1;
-          } else {
-            x.font = (r * 1.9) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle";
-            x.globalAlpha = on ? 1 : .25;
-            x.fillText(icon, cx, cy);
-            x.globalAlpha = 1;
-          }
-        }
-        return cv.toDataURL("image/png");
-      }
-
-      // banner preview
-      if (c.bannerVersion) {
-        const b = q("[data-pv-banner]");
-        b.style.backgroundImage = "url(" + base + "/art/banner.png" + bust(c.bannerVersion) + ")";
-        b.classList.add("on");
-      }
-
-      // Mirrors getHeaderFieldValue() in src/passModel.ts, which is the canonical
-      // version — the pass and this preview must never disagree about the header.
-      function headerValue(earned, total) {
-        const e = Math.max(0, Math.min(earned, total));
-        if (e >= total) return "Reward ready";
-        const left = total - e;
-        return left <= e ? left + " left" : e + " earned";
-      }
-
-      function renderPreview() {
-        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
-        const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
-        const pv = q("[data-pv]");
-        pv.style.background = f("bg").value;
-        pv.style.color = f("fg").value;
-        q("[data-pv-name]").textContent = f("shopName").value || "Your card";
-        q("[data-pv-progress]").textContent = headerValue(start, target);
-        q("[data-pv-tally]").textContent = start + "/" + target;
-        q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
-        for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
-        // When a rich stamp style is active, show the rendered grid in the strip
-        // (it shares the slot with the banner — stamps win, matching the card).
-        // Set both states explicitly every time. This used to only ever ADD the
-        // class, so which image you saw depended on whether the banner or the
-        // strip painted last — the preview could show a banner the pass didn't have.
-        const dots = q("[data-pv-dots]"), banner = q("[data-pv-banner]");
-        if (stampStyle) {
-          dots.style.display = "none";
-          banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
-          banner.classList.add("on", "strip");
-        } else {
-          dots.style.display = "";
-          banner.classList.remove("strip");
-          banner.classList.toggle("on", Boolean(c.bannerVersion));
-          dots.textContent = "●".repeat(start) + "○".repeat(target - start);
-        }
-      }
-      for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
-      renderPreview();
-
-      // Self-heal: the stamp grid now lives only in the strip image, so a card
-      // with no rendered strips would show a customer no stamps at all. Cards
-      // made before that was true have none, so render the default set once, the
-      // first time their owner opens this panel. Silent — nothing was asked for.
-      if (!c.stampsVersion) {
-        applyStamps(stampStyle || "dot", true).then(() => { c.stampsVersion = 1; })
-          .catch(() => {}); // a failure just means we try again next visit
-      }
-
-      // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
-      // fit "contain" letterboxes the whole image in; "cover" (the default) fills
-      // the frame and crops the overflow. A logo MUST contain — cropping a
-      // wordmark to fill a frame chops the first and last letters off.
-      function wireUpload(inputSel, kind, w, h, onDone, fit) {
-        q(inputSel).onchange = () => {
-          const file = q(inputSel).files[0]; if (!file) return;
-          const img = new Image();
-          img.onload = async () => {
-            URL.revokeObjectURL(img.src);
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext.bind(canvas);
-            if (fit === "keep") {
-              // Keep the image's OWN shape and only cap the size. The logo needs
-              // this: padding a square mark into a wide frame made the wallets
-              // scale that whole frame down into their logo slot, leaving the
-              // mark itself a fraction of the space it should have had. No
-              // different upload could fix it, which is what made it feel like
-              // there was a spec nobody had been told.
-              const s = Math.min(w / img.width, h / img.height, 1);
-              const dw = Math.max(1, Math.round(img.width * s));
-              const dh = Math.max(1, Math.round(img.height * s));
-              canvas.width = dw; canvas.height = dh;
-              ctx("2d").drawImage(img, 0, 0, dw, dh);
-            } else {
-              canvas.width = w; canvas.height = h;
-              const s = fit === "contain"
-                ? Math.min(w / img.width, h / img.height)
-                : Math.max(w / img.width, h / img.height);
-              ctx("2d").drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
-            }
-            const dataUrl = canvas.toDataURL("image/png");
-            if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
-            const { body } = await api("/card/" + c.id + "/" + kind, {
-              method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
-            });
-            if (body.ok) { onDone(dataUrl); toast((kind === "logo" ? "Logo" : "Banner") + " saved ✓"); }
-            else toast(body.error || "Upload failed");
-          };
-          img.onerror = () => toast("Couldn't read that image");
-          img.src = URL.createObjectURL(file);
-        };
-      }
-      // Capped at Apple's 160×50pt logo band at @3x, but NOT padded to it: the
-      // image keeps its own shape, so a square mark stays square and fills the
-      // wallet's logo slot, and a wide wordmark stays wide. Whichever they have
-      // is the right shape to upload.
-      wireUpload("[data-logo]", "logo", 480, 150, (url) => {
-        const im = q("[data-pv-logo]");
-        im.src = url; im.style.display = ""; c.logoVersion = 1;
-        q("[data-a=rmlogo]").style.display = "";
-        readPalette(url); // the logo is where the colours come from
-      }, "keep");
-      // Removing the logo hides it here too, because the pass drops the image
-      // entirely with no upload and shows the shop name alone — the preview has
-      // to agree, or the owner is designing against something they won't get.
-      q("[data-a=rmlogo]").onclick = async () => {
-        const { body } = await api("/card/" + c.id + "/logo", { method: "DELETE" });
-        if (!body.ok) return toast(body.error || "Couldn't remove logo");
-        c.logoVersion = 0;
-        q("[data-pv-logo]").style.display = "none";
-        q("[data-a=rmlogo]").style.display = "none";
-        toast("Logo removed");
-      };
-
-      // ---- Colours out of the logo ----
-      // Read on this device: the palette is pulled from the logo the owner is
-      // already uploading, so there is no second image to explain. Nothing is
-      // applied until they tap the button — an upload that silently repainted
-      // their card would be worse than no feature at all.
-      let found = null;
-      function readPalette(dataUrl) {
-        const im = new Image();
-        im.onload = () => {
-          // 64px is plenty to count colours by and keeps this instant on a phone.
-          const k = Math.min(64 / im.naturalWidth, 64 / im.naturalHeight, 1);
-          const cv = document.createElement("canvas");
-          cv.width = Math.max(1, Math.round(im.naturalWidth * k));
-          cv.height = Math.max(1, Math.round(im.naturalHeight * k));
-          const x = cv.getContext("2d", { willReadFrequently: true });
-          x.drawImage(im, 0, 0, cv.width, cv.height);
-          let data;
-          try { data = x.getImageData(0, 0, cv.width, cv.height).data; }
-          catch (e) { return; } // tainted canvas — nothing to offer
-          found = paletteFrom(data);
-          showSwatches();
-          drawRoles();
-        };
-        im.src = dataUrl;
-      }
-      function showSwatches() {
-        const host = q("[data-swatches]");
-        host.style.display = "";
-        if (!found) {
-          host.innerHTML = '<p class="muted" style="margin:0">No clear colours in that logo — set the colours below yourself.</p>';
-          return;
-        }
-        const chip = (hex, name) => '<span class="sw" title="' + name + '" style="background:' + hex + '"></span>';
-        host.innerHTML =
-          '<div class="swrow">' + chip(found.bg, "Card") + chip(found.band, "Band") +
-          chip(found.accent, "Stamps") + chip(found.label, "Labels") + chip(found.fg, "Text") +
-          '<button class="btn btn-ghost" data-a="usepal">Use these colours</button></div>' +
-          '<p class="muted" style="margin:6px 0 0">Text is chosen for readability rather than taken from the logo, so it can always be read on the card.</p>';
-        host.querySelector("[data-a=usepal]").onclick = async () => {
-          f("bg").value = found.bg; f("fg").value = found.fg;
-          f("label").value = found.label; f("accent").value = found.accent;
-          f("bandColor").value = found.band;
-          renderPreview(); drawTextureRow(); drawRoles();
-          await save({
-            bg: found.bg, fg: found.fg, label: found.label,
-            accent: found.accent, bandColor: found.band,
-          }, "Colours");
-          await saveBanner(bandPng(bandTexture, 750, 246));
-        };
-      }
-
-      // ---- Swap any colour into any role ----
-      // Matching a shade by hand in a colour picker is the fiddliest thing on
-      // this page, and it is never what the owner wants: they want the black
-      // that is already in their logo, on the card instead of behind the stamps.
-      // So every colour in play is offered for every role. The neutrals are here
-      // because "make the card black" is the most common ask of all and no logo
-      // reliably contains a usable one.
-      const NEUTRALS = ["#111111", "#2b2b2b", "#6e6e68", "#f4f1ea", "#ffffff"];
-      const ROLES = [
-        { k: "bg", name: "Card" }, { k: "bandColor", name: "Band" },
-        { k: "accent", name: "Stamps" }, { k: "label", name: "Labels" },
-        { k: "fg", name: "Text" },
-      ];
-      // Nothing open to begin with: the list reads as five named parts of the
-      // card, which is the question an owner actually has ("what colour is the
-      // band?"), rather than a palette they have to decode.
-      let activeRole = null;
-      const rolesHost = q("[data-roles]");
-      function paletteChips() {
-        const seen = {}, out = [];
-        const add = (hex) => {
-          const h = String(hex || "").toLowerCase();
-          if (!/^#[0-9a-f]{6}$/.test(h) || seen[h]) return;
-          seen[h] = 1; out.push(h);
-        };
-        if (found) [found.bg, found.band, found.accent, found.label].forEach(add);
-        ROLES.forEach((r) => add(f(r.k).value));
-        NEUTRALS.forEach(add);
-        return out;
-      }
-      /**
-       * Put a colour on a role and redraw everything that shows it — WITHOUT
-       * rebuilding the list. The open row holds the live <input type="color">,
-       * and dragging in the OS picker fires input continuously; re-rendering
-       * mid-drag would move that input out from under the picker.
-       */
-      function applyRole(role, hex) {
-        f(role).value = hex;
-        // Text is the one thing never chosen by eye — swapping the card colour
-        // would otherwise quietly leave unreadable text behind it.
-        if (role === "bg") f("fg").value = pickTextColor(hex);
-        renderPreview(); drawTextureRow(); refreshSwatches();
-      }
-      /** Header swatches and the selected chip, updated in place. */
-      function refreshSwatches() {
-        rolesHost.querySelectorAll("[data-role]").forEach((row) => {
-          const k = row.dataset.role;
-          row.querySelector(".crsw").style.background = f(k).value;
-          row.querySelectorAll(".chip").forEach((ch) => {
-            ch.classList.toggle("on", ch.dataset.hex === f(k).value.toLowerCase());
-          });
-        });
-      }
-      // One row per part of the card, each named and showing its own colour;
-      // tapping one opens its palette underneath. This replaced a chip row and a
-      // row of five colour squares that did the same job in two places — which
-      // is what made it impossible to tell which one you were meant to use.
-      const park = q("[data-park]");
-      function drawRoles() {
-        // Put every native picker back in its park BEFORE wiping the list. The
-        // open row holds the real input, and innerHTML = "" would destroy the
-        // one element the rest of this panel reads its colours from.
-        for (const r of ROLES) park.appendChild(f(r.k));
-        rolesHost.innerHTML = "";
-        for (const r of ROLES) {
-          const open = r.k === activeRole;
-          const row = document.createElement("div");
-          row.className = "crow2" + (open ? " open" : "");
-          row.dataset.role = r.k;
-
-          const head = document.createElement("button");
-          head.type = "button";
-          head.className = "crhead";
-          head.setAttribute("aria-expanded", open ? "true" : "false");
-          head.innerHTML = '<span class="crname"></span>' +
-            '<span class="crsw" style="background:' + f(r.k).value + '"></span>' +
-            '<span class="crcaret">▸</span>';
-          head.querySelector(".crname").textContent = r.name;
-          head.onclick = () => { activeRole = open ? null : r.k; drawRoles(); };
-          row.appendChild(head);
-
-          if (open) {
-            const chips = document.createElement("div"); chips.className = "chiprow";
-            for (const hex of paletteChips()) {
-              const ch = document.createElement("button");
-              ch.type = "button";
-              ch.className = "chip" + (hex === f(r.k).value.toLowerCase() ? " on" : "");
-              ch.style.background = hex; ch.title = hex; ch.dataset.hex = hex;
-              ch.onclick = () => applyRole(r.k, hex);
-              chips.appendChild(ch);
-            }
-            // The real colour input, moved in — for a shade in none of the above.
-            const custom = document.createElement("span");
-            custom.className = "chipcustom";
-            custom.appendChild(f(r.k));
-            custom.appendChild(document.createTextNode("Custom…"));
-            chips.appendChild(custom);
-            row.appendChild(chips);
-          }
-          rolesHost.appendChild(row);
-        }
-      }
-      // The OS picker writes straight through. No rebuild here on purpose —
-      // this fires on every frame of a drag, and rebuilding would move the very
-      // input the picker is attached to.
-      for (const r of ROLES) {
-        f(r.k).oninput = () => applyRole(r.k, f(r.k).value.toLowerCase());
-      }
-      drawRoles();
-
-      // The band is stored exactly where the uploaded banner photo used to be, so
-      // nothing downstream changes: Apple composites it behind the stamps, Google
-      // uses it as the hero image. Photos are gone — this is always generated.
-      async function saveBanner(dataUrl) {
-        const { body } = await api("/card/" + c.id + "/banner", { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
-        if (!body.ok) return toast(body.error || "Band failed");
-        // Re-bake the strips: the band is the backdrop INSIDE each strip PNG,
-        // so a new band that isn't re-rendered would never reach the pass.
-        await loadBanner(dataUrl);
-        await applyStamps(stampStyle || "dot", true);
-        toast("Band saved ✓");
-      }
-
-      function shade(hex, p) { // p in -1..1 → darken/lighten
-        const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
-        let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-        r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
-        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-      }
-      /** The band as a data URL, for the texture swatches and the stored PNG. */
-      function drawBanner(style, c1, c2, w, h) {
-        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-        paintBand(cv.getContext("2d"), style, c1, c2, w, h);
-        return cv.toDataURL("image/png");
-      }
-      /**
-       * The same band painted straight onto a context. drawStampStrip needs it
-       * synchronously — going via an Image and a data URL would not have decoded
-       * by the time the stamps are drawn on top, so the band would simply be
-       * missing from the strip.
-       */
-      function paintBand(x, style, c1, c2, w, h) {
-        // Every texture is deliberately soft. The stamps are drawn ON TOP of
-        // this, so a band that competes with them is the one way the picker can
-        // make a card worse — hence the low alphas throughout.
-        if (style === "flat") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-        } else if (style === "stripes") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.globalAlpha = .22;
-          const sw = w / 14;
-          for (let i = -h; i < w; i += sw * 2) {
-            x.beginPath(); x.moveTo(i, h); x.lineTo(i + h, 0);
-            x.lineTo(i + h + sw, 0); x.lineTo(i + sw, h); x.closePath(); x.fill();
-          }
-          x.globalAlpha = 1;
-        } else if (style === "dots") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.globalAlpha = .26;
-          const step = w / 16, r = step * 0.17;
-          for (let row = 0, y = step / 2; y < h; y += step * .8, row++) {
-            for (let px = (row % 2 ? step / 2 : 0) + step / 2; px < w; px += step) {
-              x.beginPath(); x.arc(px, y, r, 0, Math.PI * 2); x.fill();
-            }
-          }
-          x.globalAlpha = 1;
-        } else if (style === "chevron") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.strokeStyle = c2; x.globalAlpha = .24; x.lineWidth = Math.max(2, h / 26);
-          const step = h / 3;
-          for (let y = -h; y < h * 2; y += step) {
-            x.beginPath();
-            for (let px = 0; px <= w; px += w / 8) {
-              const up = Math.round(px / (w / 8)) % 2 === 0;
-              x.lineTo(px, y + (up ? 0 : step * .6));
-            }
-            x.stroke();
-          }
-          x.globalAlpha = 1; x.lineWidth = 1;
-        } else if (style === "grain") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          // Deterministic, not Math.random: the band is re-rendered on every
-          // save, and a different speckle each time would be a pointless new
-          // image for the wallets to fetch.
-          x.fillStyle = c2;
-          for (let i = 0; i < 2600; i++) {
-            const s = Math.sin(i * 12.9898) * 43758.5453;
-            const t = Math.sin(i * 78.233) * 43758.5453;
-            x.globalAlpha = .05 + ((s - Math.floor(s)) * .12);
-            x.fillRect((s - Math.floor(s)) * w, (t - Math.floor(t)) * h, 2, 2);
-          }
-          x.globalAlpha = 1;
-        } else if (style === "rays") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.globalAlpha = .16;
-          for (let i = 0; i < 12; i += 2) {
-            const a = (i / 12) * Math.PI * 2;
-            x.beginPath(); x.moveTo(w / 2, h / 2);
-            x.arc(w / 2, h / 2, w, a, a + Math.PI / 12); x.closePath(); x.fill();
-          }
-          x.globalAlpha = 1;
-        } else if (style === "diagonal") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
-        } else if (style === "glow") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          const g = x.createRadialGradient(w * .5, h * .5, 10, w * .5, h * .5, w * .6);
-          g.addColorStop(0, c2); g.addColorStop(1, c1); x.fillStyle = g; x.fillRect(0, 0, w, h);
-        } else if (style === "waves") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h); x.fillStyle = c2;
-          for (let k = 0; k < 3; k++) { x.globalAlpha = .18 + k * .12; x.beginPath(); x.moveTo(0, h * .4 + k * 34);
-            for (let px = 0; px <= w; px += 8) x.lineTo(px, h * .4 + k * 34 + Math.sin(px / 90 + k) * 26);
-            x.lineTo(w, h); x.lineTo(0, h); x.closePath(); x.fill(); } x.globalAlpha = 1;
-        } else { // gradient
-          const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, c1); g.addColorStop(1, c2);
-          x.fillStyle = g; x.fillRect(0, 0, w, h);
-        }
-      }
-      // ---- The band: the strip the stamps sit on, in its own colour ----
-      // It is still stored as the banner PNG, so Google's hero image and Apple's
-      // strip backdrop are unchanged — what went away is uploading a photo.
-      // "flat" is one colour; the rest shade toward a lighter version of it.
-      // Must stay in step with BAND_TEXTURES in src/routes/dashboard.ts. That
-      // allowlist is what refuses an unknown one, so a texture the browser can
-      // draw but the server rejects would silently save as flat.
-      const TEXTURES = [
-        { name: "Flat", style: "flat" },
-        { name: "Gradient", style: "gradient" },
-        { name: "Glow", style: "glow" },
-        { name: "Diagonal", style: "diagonal" },
-        { name: "Waves", style: "waves" },
-        { name: "Stripes", style: "stripes" },
-        { name: "Dots", style: "dots" },
-        { name: "Chevron", style: "chevron" },
-        { name: "Grain", style: "grain" },
-        { name: "Rays", style: "rays" },
-      ];
-      const btpl = q("[data-bandtex]");
-      function drawTextureRow() {
-        btpl.innerHTML = "";
-        for (const t of TEXTURES) {
-          const bt = document.createElement("div");
-          bt.className = "bt" + (t.style === bandTexture ? " sel" : "");
-          bt.title = t.name;
-          bt.style.backgroundImage = "url(" + bandPng(t.style, 144, 64) + ")";
-          bt.innerHTML = "<span>" + t.name + "</span>";
-          bt.onclick = async () => {
-            bandTexture = t.style;
-            drawTextureRow();
-            await api("/card/" + c.id, { method: "POST", body: JSON.stringify({ bandTexture: t.style }) });
-            await saveBanner(bandPng(t.style, 750, 246));
-          };
-          btpl.appendChild(bt);
-        }
-      }
-      drawTextureRow();
-
-      // Renders the full 0..target set and stores it (immediate, like banners).
-      // The quiet flag is for the piggy-back call from save(), which toasts its own.
-      async function applyStamps(style, quiet) {
-        stampStyle = style;
-        // The banner is baked into every strip, so it must be decoded first or
-        // the whole set renders on a bare colour.
-        await bannerReadyPromise;
-        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
-        // One set per target still in play, not just the current one. A pass keeps
-        // the target it was issued with, so an owner going 8 → 6 still has
-        // customers asking for an 8-slot grid — and before this they got a 404 and
-        // lost their stamps picture entirely. Usually one set; two until everyone
-        // on the old ruleset has earned their next reward.
-        const targets = [...new Set([target, ...(c.targetsInUse || [])])].filter((t) => t >= 1 && t <= 20);
-        const strips = [];
-        for (const t of targets) {
-          for (let n = 0; n <= t; n++) {
-            strips.push({ target: t, filled: n, png: drawStampStrip(n, t, style).split(",")[1] });
-          }
-        }
-        const { body } = await api("/card/" + c.id + "/stamps", { method: "POST", body: JSON.stringify({ style, strips }) });
-        if (!body.ok) return toast(body.error || "Couldn't save stamps");
-        renderPreview();
-        if (!quiet) toast("Stamp style saved ✓");
-      }
-
-      // The six preset tiles (Dot, Coffee, Star, Heart, Donut, Boba) are gone:
-      // they were six ways to do what the emoji field does, and every card
-      // starts on dots anyway. Three routes remain — dots, any emoji, your own
-      // shape — and each is a different kind of answer rather than a shortcut.
-      // Any emoji at all. The renderer already draws whatever glyph it is given,
-      // so this only has to hand it one — and exactly one: firstGrapheme keeps
-      // multi-code-point emoji (❤️, 🧑‍🍳) whole instead of slicing them in half.
-      q("[data-a=useemoji]").onclick = () => {
-        const one = firstGrapheme(q("[data-emoji]").value);
-        q("[data-emoji]").value = one;
-        applyStamps(one || "dot");
-      };
-      // Upload your own stamp icon → normalise to a small square PNG → apply.
-      // Rejected unless it has transparency: the shape is taken from the alpha
-      // channel, so a fully opaque image would stamp a solid square.
-      wireUpload("[data-stampimg]", null, 160, 160, (dataUrl) => {
-        const err = q("[data-stamperr]");
-        const probe = new Image();
-        probe.onload = () => {
-          const cv = document.createElement("canvas");
-          cv.width = probe.naturalWidth; cv.height = probe.naturalHeight;
-          const px = cv.getContext("2d");
-          px.drawImage(probe, 0, 0);
-          const data = px.getImageData(0, 0, cv.width, cv.height).data;
-          let clear = 0;
-          for (let i = 3; i < data.length; i += 4) if (data[i] < 24) clear++;
-          if (clear < data.length / 4 * 0.02) {
-            err.textContent = "That image has no see-through background, so it would stamp a solid block. Save it as a PNG or SVG with transparency, or pick a built-in stamp above.";
-            err.style.display = "";
-            return;
-          }
-          err.style.display = "none";
-          customStampUrl = dataUrl; stampImg.src = dataUrl;
-          stampImg.onload = () => applyStamps("custom");
-        };
-        probe.src = dataUrl;
-      });
-      // Back to plain dots — which is still a rendered strip, not the absence of
-      // one: the grid image is the only place stamps are drawn now.
-      q("[data-a=rmstamp]").onclick = async () => {
-        customStampUrl = "";
-        q("[data-emoji]").value = "";
-        await applyStamps("dot", true);
-        toast("Back to plain dots");
-      };
-
-      // Two saves, disjoint field sets. Both re-render the stamp strips, because
-      // a colour change (design) and a target change (rules) each alter them.
-      // That re-render IS the pre-generation step: one PNG per stamp count, so a
-      // customer's stamp only ever swaps which stored image the pass points at.
-      async function save(fields, label) {
-        const { body } = await api("/card/" + c.id, { method: "POST", body: JSON.stringify(fields) });
-        if (!body.ok) return toast(body.error || "Save failed");
-        Object.assign(c, fields);
-        // Always regenerate, even on plain dots: the strip image is now the only
-        // place stamps are drawn, so a card with no strips would show nothing.
-        await applyStamps(stampStyle || "dot", true);
-        toast(label + " saved ✓");
-      }
-
-      // How many people this actually reaches. Read once when the panel opens, so
-      // both confirmations can name a real number rather than talk in the
-      // abstract about "your customers".
-      let liveCustomers = 0;
-      (async () => {
-        const { body } = await api("/customers?cardId=" + encodeURIComponent(c.id));
-        liveCustomers = (body.counts || {}).active || 0;
-      })();
-      const them = () => liveCustomers === 1 ? "customer" : "customers";
-
-      // The sentences that used to sit as grey subtext under these two buttons
-      // are now in front of the button. Same words, read this time.
-      q("[data-a=savedesign]").onclick = async () => {
-        const ok = await modal(
-          "Update the card everywhere?",
-          liveCustomers
-            ? "<p>The new look reaches all <strong>" + liveCustomers + "</strong> " + them() +
-              " who already hold your card, not just new ones. Their stamps and reward are untouched.</p>"
-            : "<p>This is how your card will look to everyone who takes one.</p>",
-          "Save design",
-        );
-        if (!ok) return;
-        // No shopName here. The field sits above the fold now, next to Save
-        // rules — leaving its save on a button inside a collapsed section is how
-        // you get an owner who renamed their shop and lost it.
-        await save({
-          bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
-          bandColor: f("bandColor").value,
-        }, "Design");
-        // The band colour is baked into a stored PNG, so a colour change has to
-        // re-render it — saving the field alone would leave the old band on the
-        // card and the new one only in the picker.
-        await saveBanner(bandPng(bandTexture, 750, 246));
-      };
-
-      q("[data-a=saverules]").onclick = async () => {
-        // The rename is called out separately, because it is the one change here
-        // that reaches a card already in someone's wallet.
-        const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
-        const ok = await modal(
-          "Save these changes?",
-          (liveCustomers
-            ? "<p>New cards use these rules straight away. Your <strong>" + liveCustomers + "</strong> existing " +
-              them() + " keep the reward and stamp count they were promised, and move onto the new rules " +
-              "the next time they earn a reward.</p>"
-            : "<p>These rules apply to every card from here on.</p>") +
-          (renamed && liveCustomers
-            ? '<p style="margin-top:8px">The new shop name <strong>does</strong> reach cards already in a wallet — ' +
-              "it is the only thing here that does. Your old sign-up links keep working.</p>"
-            : ""),
-          "Save",
-        );
-        if (!ok) return;
-        await save({
-          shopName: f("shopName").value,
-          // The card's own name follows the shop's. It used to be a second field
-          // nobody could tell apart from the first, and the only place it shows
-          // is the programme name on an Android card — which is the shop.
-          name: f("shopName").value,
-          reward: f("reward").value,
-          stampsTarget: Number(f("stampsTarget").value),
-          stampsStart: Number(f("stampsStart").value),
-          averageSpend: Number(f("averageSpend").value) || 0,
-          signupMessage: f("signupMessage").value,
-        }, "Card");
-        // Keep the card-picker chip labels in sync without resetting the form.
-        const pk = document.querySelector("[data-pick]");
-        if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => { b.textContent = S.cards[Number(b.dataset.ci)].name; });
-      };
-      return div;
-    }
+    ${DESIGN_PANEL_JS}
 
     // ---- Home: totals across ALL cards + per-card breakdown + customer preview ----
     function homePanel() {
@@ -3087,7 +3152,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         // merchants that added a card before that cap existed, so they can edit
         // both until an operator removes the spare.
         host.innerHTML = "";
-        host.appendChild(designPanel(S.cards[S.selCard]));
+        // The owner edits their real card, so every path points at it and the
+        // customer count is a live number. The console passes a different env
+        // and gets the same panel — see DESIGN_PANEL_JS.
+        const card = S.cards[S.selCard];
+        const artBase = card.id === "default" ? "" : "/c/" + card.id;
+        host.appendChild(designPanel(card, {
+          api, toast, modal, info,
+          path: (suffix) => "/card/" + card.id + suffix,
+          artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
+          customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
+          rulesNote: "",
+          // Keep the card-picker chip labels in sync without resetting the form.
+          onRulesSaved: () => {
+            const pk = document.querySelector("[data-pick]");
+            if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => {
+              b.textContent = S.cards[Number(b.dataset.ci)].name;
+            });
+          },
+        }));
       }
       draw();
       return div;
@@ -3413,12 +3496,31 @@ export function counterSheetPage(
   return page(`${business} — counter sheet`, body, css);
 }
 
+/**
+ * The merchant console — one page, one path down it.
+ *
+ * What it is for, in one sentence: get a shop from signed up → stamping → still
+ * stamping in 30 days → paying. Everything on the page answers one of four
+ * questions in that order — did they start, are people signing up, do those
+ * customers come back, is it worth money — and the drill-down asks them in
+ * exactly that order.
+ *
+ * It used to render each of those facts TWICE: once per merchant in a row's
+ * drill-down, and again in five "platform-wide" tables keyed on the loyalty
+ * programme instead of the business. Almost every shop runs one programme, so
+ * they were the same rows twice, and the two funnels were free to disagree.
+ * Only the merchant view survives.
+ *
+ * The prose went with it. Explanations live on ⓘ icons (MODAL_JS) beside the
+ * heading they explain, so the page is numbers and the words are one tap away.
+ */
 export function adminPage(): string {
   const css = /* css */ `
     body { max-width: none; }
-    .awrap { width: 100%; max-width: 960px; }
-    /* --- Zone 0: is the platform alive --- */
-    .pstrip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0 22px; }
+    .awrap { width: 100%; max-width: 1000px; }
+    .purpose { color: var(--muted); font-size: .88rem; margin: 2px 0 0; }
+    /* --- is the platform alive right now --- */
+    .pstrip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 16px 0 26px; }
     @media (min-width: 720px) { .pstrip { grid-template-columns: repeat(4, 1fr); } }
     .ptile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
     .ptile b { display: block; font-family: var(--display); font-size: 1.8rem; line-height: 1;
@@ -3426,11 +3528,11 @@ export function adminPage(): string {
     .ptile span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
                   letter-spacing: .05em; color: var(--muted); }
     .ptile.alarm b { color: #9a3412; }
-    /* --- Zone 1: what needs you today --- */
+    /* --- who needs a call today --- */
     /* ONE line per shop, not one per problem: a shop with four things wrong used
        to take four cards and push everything else off the screen. */
     .triage { border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
-              margin-bottom: 26px; overflow: hidden; }
+              margin-bottom: 12px; overflow: hidden; }
     .trow { display: grid; grid-template-columns: 1fr; gap: 2px 14px; padding: 11px 14px;
             border-left: 4px solid transparent; }
     .trow + .trow { border-top: 1px solid var(--line); }
@@ -3441,8 +3543,7 @@ export function adminPage(): string {
     .trow .tname { font-weight: 700; }
     .trow .taction { color: var(--muted); font-size: .85rem; }
     .tclear { border: 1px dashed var(--line); border-radius: 14px; padding: 18px; text-align: center;
-              color: var(--muted); margin-bottom: 26px; }
-    /* --- the flag legend --- */
+              color: var(--muted); margin-bottom: 12px; }
     .legend td { font-size: .84rem; }
     .legend td:first-child { white-space: nowrap; }
     /* Severity chips, reused in the table's Flags column. */
@@ -3451,27 +3552,33 @@ export function adminPage(): string {
     .chipf.critical { background: #fdeaea; color: #9a3412; }
     .chipf.warn { background: #fef3c7; color: #92400e; }
     .chipf.info { background: var(--ghost-bg); color: var(--muted); }
-    /* --- Zone 2/3: the merchant table and its drill-down --- */
+    /* --- the one table, and what opens under a row --- */
     .mrow { cursor: pointer; }
     .mrow:hover td { background: var(--ghost-bg); }
     .mname { font-weight: 700; }
-    .mdetail td { background: var(--ghost-bg); }
+    /* NOT var(--ghost-bg). Painting the whole drill-down grey made the most
+       detailed part of the console read as disabled. It is content; it gets a
+       surface and a rule down its left edge to show what it belongs to. */
+    .mdetail > td { background: var(--surface); border-left: 3px solid var(--accent); padding: 16px 18px; }
     .dgrid { display: grid; gap: 14px; grid-template-columns: 1fr; }
     @media (min-width: 760px) { .dgrid { grid-template-columns: 1fr 1fr; } }
-    .dpanel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .dpanel { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--bg); }
     .dpanel h4 { margin: 0 0 8px; font-size: .74rem; text-transform: uppercase; letter-spacing: .06em;
                  color: var(--muted); }
+    .dpanel h4 .qn { color: var(--accent-dark); font-variant-numeric: tabular-nums; margin-right: 6px; }
     .dpanel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: .88rem; }
     .dpanel dt { color: var(--muted); }
     .dpanel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .dnote { color: var(--muted); font-size: .76rem; margin: 8px 0 0; line-height: 1.5; }
-    .darch { color: var(--muted); font-style: italic; }
+    /* The one-liner that replaced the "anything wrong" panel: silent when the
+       answer is no, which is most of the time. */
+    .okline { color: var(--muted); font-size: .82rem; margin-top: 12px; }
+    .badline { color: #9a3412; font-weight: 600; font-size: .85rem; margin-top: 12px; }
     table { border-collapse: collapse; width: 100%; font-size: .9rem; margin-top: 12px; }
     th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
     .flags { font-size: .78rem; color: var(--muted); }
-    /* Something that needs a phone call: a quiet merchant, a deleted card, an
-       unclaimed reward, a phone redeeming far more than it stamps. */
+    /* Something that needs a phone call. */
     .bad { color: #9a3412; font-weight: 600; }
     .tw { overflow-x: auto; }
     .rst { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: end; }
@@ -3479,53 +3586,52 @@ export function adminPage(): string {
     .rst .btn { width: auto; padding: 10px 14px; }
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
     .nfc { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
-    .cbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
-    /* Removing a card is not an edit that can be undone, so it gets the same
-       two-tap treatment as giving away a reward. */
-    .dbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
-    /* A retired programme. Still listed here — this is the only place it shows
-       at all — so it needs to read as retired at a glance. */
+    .cbtn, .dbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
     .arch { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
             background: var(--ghost-bg); color: var(--muted); padding: 2px 6px; border-radius: 5px; }
     .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
-    .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
-    .bantpl .bt { width: 84px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
-                  position: relative; overflow: hidden; background-size: cover; background-position: center;
-                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
-    .bantpl .bt:hover { border-color: var(--accent); }
-    .bantpl .bt.sel { border-color: var(--accent); }
-    .bantpl .bt.sel { border-color: var(--accent); }
-    .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
-                       color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
     #dfy label { display: block; margin-top: 10px; }
     #dfy input { width: 100%; }
     #dfy .btn { width: auto; padding: 10px 14px; margin-top: 12px; }
-    /* --- card designs: form on the left, the thing you'd show a prospect on the right --- */
-    #tpl label { display: block; margin-top: 10px; }
-    #tpl input[type=text], #tpl input:not([type]) { width: 100%; }
-    #tpl .btn { width: auto; padding: 10px 14px; margin-top: 14px; }
-    .tplgrid { display: grid; grid-template-columns: 1fr 260px; gap: 24px; align-items: start; }
-    @media (max-width: 680px) { .tplgrid { grid-template-columns: 1fr; } }
-    .tplcolors { display: flex; gap: 14px; margin-top: 10px; }
-    .tplcolors label { margin: 0; font-size: .8rem; color: var(--muted); }
-    .tplcolors input { width: 44px; height: 30px; padding: 0; border: none; background: none; }
-    /* A wallet card, roughly to scale — enough to judge a logo against a colour. */
-    .mock { border-radius: 14px; padding: 14px; min-height: 190px; margin-top: 6px;
-            box-shadow: 0 6px 22px rgba(0,0,0,.16); position: relative; overflow: hidden; }
-    .mock .mb { position: absolute; inset: 0 0 auto 0; height: 62px; background-size: cover; background-position: center; }
-    .mock .mtop { position: relative; display: flex; align-items: center; gap: 8px; margin-top: 66px; }
-    .mock .mlogo { width: 30px; height: 30px; border-radius: 7px; object-fit: cover; background: rgba(255,255,255,.14); }
-    .mock .mname { font-weight: 700; font-size: .95rem; }
-    .mock .mlbl { font-size: .55rem; letter-spacing: .1em; opacity: .75; margin-top: 12px; }
-    .mock .mdots { font-size: 1.1rem; letter-spacing: 3px; margin-top: 2px; }
-    .mock .mrew { font-weight: 700; font-size: .9rem; margin-top: 1px; }
+    /* --- designs: the list on the left, the real designer on the right --- */
+    .dsgrid { display: grid; grid-template-columns: 1fr; gap: 20px; align-items: start; }
+    @media (min-width: 860px) { .dsgrid { grid-template-columns: 280px 1fr; } }
+    .dslist { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+    .dsitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 13px;
+              border: none; background: none; font: inherit; text-align: left; cursor: pointer; color: var(--ink); }
+    .dsitem + .dsitem { border-top: 1px solid var(--line); }
+    .dsitem.on { background: var(--ghost-bg); }
+    .dsitem .sw { width: 26px; height: 26px; border-radius: 7px; flex: none;
+                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+    .dsitem .nm { flex: 1; font-weight: 600; font-size: .9rem; overflow: hidden;
+                  text-overflow: ellipsis; white-space: nowrap; }
+    .dsnew { display: flex; gap: 8px; margin-top: 10px; }
+    .dsnew input { flex: 1; }
+    .dsnew .btn { width: auto; padding: 10px 14px; white-space: nowrap; }
+    .dspush { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-top: 14px;
+              background: var(--surface); }
+    .dspush .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .dspush select { width: auto; flex: 1; min-width: 160px; }
+    .dspush .btn { width: auto; padding: 10px 14px; white-space: nowrap; }
+    .dsempty { color: var(--muted); font-size: .88rem; padding: 26px 14px; text-align: center; }
+    ${MODAL_CSS}
+    ${DESIGN_PANEL_CSS}
   `;
   const js = /* js */ `
+    ${PALETTE_JS}
+    ${MODAL_JS}
+    ${DESIGN_PANEL_JS}
     const $ = (s, el=document) => el.querySelector(s);
     async function api(p, o={}) {
       const r = await fetch("/admin/api" + p, { ...o, headers: { "Content-Type": "application/json", ...(o.headers||{}) } });
       return { status: r.status, body: await r.json().catch(() => ({})) };
     }
+    function toast(msg) {
+      const t = $(".toast"); t.textContent = msg; t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 2600);
+    }
+    const esc = (s) => String(s == null ? "" : s)
+      .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
 
     // Two-tap confirmation, same idiom as the stamper and the dashboard: a
     // browser dialog can be suppressed, after which confirm() returns false and
@@ -3548,14 +3654,14 @@ export function adminPage(): string {
       };
     }
 
-    // ---- Client-side card renderers (same approach as the owner dashboard) ----
+    // ---- the done-for-you starter designs (new account in one step) --------
     function shade(hex, p) {
       const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
       let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
       r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
       return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
     }
-    function drawBanner(style, c1, c2, w, h) {
+    function dfyBanner(style, c1, c2, w, h) {
       const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
       const x = cv.getContext("2d");
       if (style === "diagonal") {
@@ -3576,11 +3682,8 @@ export function adminPage(): string {
       }
       return cv.toDataURL("image/png");
     }
-    // Same geometry as the owner designer's copy (see designPanel): @3x storeCard
-    // strip, two rows, 60px clear margin, short last row centred. The accent
-    // colour fills an earned stamp; unearned is the same shape at 25%.
-    // Decodes a dataURL/URL so it can be composited. Resolves to null on failure
-    // rather than rejecting — a missing backdrop must never block a card build.
+    // Resolves to null on failure rather than rejecting — a missing backdrop
+    // must never block a card build.
     function loadImg(src) {
       return new Promise((resolve) => {
         if (!src) return resolve(null);
@@ -3590,13 +3693,13 @@ export function adminPage(): string {
         im.src = src;
       });
     }
-    function drawStampStrip(filled, target, icon, bg, accent, backdrop) {
+    // Same geometry as the shared designer's drawStampStrip: @2x storeCard strip,
+    // two rows, 40px clear margin, short last row centred.
+    function dfyStrip(filled, target, icon, bg, accent, backdrop) {
       const W = 750, H = 246, M = 40;
       const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
       const x = cv.getContext("2d");
       x.fillStyle = bg; x.fillRect(0, 0, W, H);
-      // Same as the owner designer: the banner is baked in behind the stamps,
-      // because the pass has a single strip slot for both.
       if (backdrop && backdrop.naturalWidth > 0) {
         const k = Math.max(W / backdrop.naturalWidth, H / backdrop.naturalHeight); // cover
         const bw = backdrop.naturalWidth * k, bh = backdrop.naturalHeight * k;
@@ -3631,144 +3734,123 @@ export function adminPage(): string {
     ];
     let picked = VERTICALS[0];
 
-    // ------------------------------------------------- reusable card designs ----
-    // Saved before the merchant exists, applied to their card once they sign up.
-    // Stamp strips are NOT stored on a design — they depend on the target card's
-    // stamp count, so they're re-rendered here at apply time.
-    const STAMP_ICONS = ["dot", "☕", "🍗", "🧋", "🥐", "🍨", "🍜", "⭐", "🌸", "🍺"];
-    let tplIcon = "dot";
-    let tplLogoB64 = "";   // stripped of its data: prefix, ready to POST
-    let tplLogoUrl = "";   // for the live preview
+    // ------------------------------------------------ saved card designs ----
+    // The SAME designer the owner dashboard renders — see DESIGN_PANEL_JS. It
+    // edits a design_templates row instead of a card, which is the only thing
+    // that differs, and that difference is entirely in the env below. The
+    // console used to carry its own smaller copy (three colours, one band, ten
+    // fixed icons); a design built there looked nothing like one the owner
+    // could build, and every improvement to the real designer skipped it.
+    let designs = [], selDesign = null;
 
-    function readAsPng(file, cb) {
-      // Everything is normalised to a square PNG so the wallet gets one format
-      // whatever the prospect sent us (usually a JPG off WhatsApp).
-      const img = new Image();
-      const fr = new FileReader();
-      fr.onload = () => { img.onload = () => {
-        const S = 300;
-        const cv = document.createElement("canvas"); cv.width = S; cv.height = S;
-        const x = cv.getContext("2d");
-        const side = Math.min(img.width, img.height);
-        x.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
-        cb(cv.toDataURL("image/png"));
-      }; img.src = fr.result; };
-      fr.readAsDataURL(file);
-    }
-
-    function drawTplMock() {
-      const bg = $("#tpl-bg").value, fg = $("#tpl-fg").value, lbl = $("#tpl-label").value;
-      const name = $("#tpl-name").value.trim() || "Their shop";
-      const reward = $("#tpl-reward").value.trim() || "Free reward";
-      const dots = tplIcon === "dot"
-        ? "●●●○○○○○○○"
-        : tplIcon.repeat(3) + "·".repeat(7);
-      const m = $("#tpl-mock");
-      m.style.background = bg; m.style.color = fg;
-      m.innerHTML =
-        '<div class="mb" style="background-image:url(' + drawBanner("gradient", bg, shade(bg, 0.4), 260, 62) + ')"></div>' +
-        '<div class="mtop">' +
-          (tplLogoUrl ? '<img class="mlogo" src="' + tplLogoUrl + '">' : '<div class="mlogo"></div>') +
-          '<span class="mname">' + name + "</span>" +
-        "</div>" +
-        '<div class="mlbl" style="color:' + lbl + '">YOUR STAMPS</div>' +
-        '<div class="mdots">' + dots + "</div>" +
-        '<div class="mlbl" style="color:' + lbl + '">REWARD</div>' +
-        '<div class="mrew">' + reward + "</div>";
-    }
-
-    function wireTemplates(cards) {
-      const ipick = $("[data-ipick]");
-      ipick.innerHTML = "";
-      STAMP_ICONS.forEach((ic, i) => {
-        const bt = document.createElement("div");
-        bt.className = "bt" + (i === 0 ? " sel" : "");
-        bt.style.display = "grid"; bt.style.placeItems = "center";
-        bt.style.width = "44px"; bt.style.background = "var(--ghost-bg)";
-        bt.textContent = ic === "dot" ? "●" : ic;
-        bt.onclick = () => {
-          tplIcon = ic;
-          ipick.querySelectorAll(".bt").forEach((x) => x.classList.remove("sel"));
-          bt.classList.add("sel"); drawTplMock();
-        };
-        ipick.appendChild(bt);
-      });
-      ["#tpl-name", "#tpl-reward", "#tpl-bg", "#tpl-fg", "#tpl-label"].forEach((s) => {
-        $(s).oninput = drawTplMock;
-      });
-      $("#tpl-logo").onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        readAsPng(file, (url) => { tplLogoUrl = url; tplLogoB64 = url.split(",")[1]; drawTplMock(); });
-      };
-      drawTplMock();
-
-      $("#tpl-save").onclick = async () => {
-        const name = $("#tpl-name").value.trim();
-        if (!name) return void ($("#tpl-out").textContent = "Give the design a name.");
-        const bg = $("#tpl-bg").value;
-        const { body: r } = await api("/templates", { method: "POST", body: JSON.stringify({
-          name, reward: $("#tpl-reward").value.trim() || "Free reward",
-          bg, fg: $("#tpl-fg").value, label: $("#tpl-label").value,
-          stampStyle: tplIcon,
-          logo: tplLogoB64,
-          banner: drawBanner("gradient", bg, shade(bg, 0.4), 750, 246).split(",")[1],
-        })});
-        $("#tpl-out").textContent = r.ok ? "" : (r.error || "Failed");
-        if (r.ok) { $("#tpl-name").value = ""; drawTplMock(); listTemplates(cards); }
-      };
-      listTemplates(cards);
-    }
-
-    async function listTemplates(cards) {
+    async function loadDesigns(cards) {
       const { body } = await api("/templates");
-      const t = $("#tpl-table");
-      const list = body.templates || [];
-      if (!list.length) {
-        t.innerHTML = '<tr><td class="flags">No saved designs yet.</td></tr>';
-        return;
-      }
-      const opts = cards.map((c) => '<option value="' + c.id + '">' + c.name + "</option>").join("");
-      t.innerHTML = "<tr><th>Design</th><th>Reward</th><th>Colours</th><th>Push onto a card</th><th></th></tr>" +
-        list.map((x) => \`<tr>
-          <td><strong>\${x.name}</strong><br><span class="flags">\${x.has_logo ? "logo · " : ""}\${x.stamp_style === "dot" ? "dots" : x.stamp_style}</span></td>
-          <td>\${x.reward}</td>
-          <td><span style="display:inline-block;width:34px;height:18px;border-radius:5px;background:\${x.bg}"></span></td>
-          <td><select data-to="\${x.id}">\${opts}</select>
-              <button class="btn btn-ghost cbtn" data-apply="\${x.id}">Apply</button></td>
-          <td><button class="btn btn-ghost cbtn" data-deltpl="\${x.id}">Delete</button></td>
-        </tr>\`).join("");
+      designs = body.templates || [];
+      if (selDesign && !designs.some((d) => d.id === selDesign)) selDesign = null;
+      if (!selDesign && designs.length) selDesign = designs[0].id;
+      drawDesigns(cards);
+    }
 
-      t.querySelectorAll("[data-apply]").forEach((b) => {
-        b.onclick = async () => {
-          const id = b.dataset.apply;
-          const cardId = t.querySelector('[data-to="' + id + '"]').value;
-          const card = cards.find((c) => c.id === cardId);
-          const tpl = list.find((x) => x.id === id);
-          b.disabled = true; b.textContent = "Applying…";
-          // Re-render the stamp grid for THIS card's target — a saved design
-          // can't know how many stamps the card it lands on will need.
-          const target = card.stamps_target || 10;
-          const icon = tpl.stamp_style || "dot";
-          const strips = [];
-          // No backdrop here: the template's banner lives server-side as bytea
-          // and isn't in this payload, so these strips render on the flat colour.
-          // The owner's next design save re-bakes them with the banner behind.
-          for (let n = 0; n <= target; n++) {
-            strips.push({ filled: n, png: drawStampStrip(n, target, icon, tpl.bg, tpl.label_color).split(",")[1] });
-          }
-          const { body: r } = await api("/card/" + cardId + "/apply-template", {
-            method: "POST", body: JSON.stringify({ templateId: id, strips }),
-          });
-          b.disabled = false; b.textContent = r.ok ? "Applied ✓" : "Failed";
-          if (r.ok) setTimeout(load, 1200);
-        };
+    function drawDesigns(cards) {
+      const list = $("#ds-list");
+      list.innerHTML = designs.length
+        ? designs.map((d) => \`<button type="button" class="dsitem \${d.id === selDesign ? "on" : ""}" data-ds="\${d.id}">
+             <span class="sw" style="background:\${esc(d.bg)}"></span>
+             <span class="nm">\${esc(d.name)}</span>
+           </button>\`).join("")
+        : '<div class="dsempty">No saved designs yet.</div>';
+      list.querySelectorAll("[data-ds]").forEach((b) => {
+        b.onclick = () => { selDesign = b.dataset.ds; drawDesigns(cards); };
       });
-      t.querySelectorAll("[data-deltpl]").forEach((b) => {
-        b.onclick = async () => {
-          await api("/templates/" + b.dataset.deltpl, { method: "DELETE" });
-          listTemplates(cards);
+      drawDesigner(cards);
+    }
+
+    /**
+     * Mount the shared designer on the selected design.
+     *
+     * The card shape it expects is built from the template row; the colours are
+     * stored rgb(...) for PassKit and the pickers need hex, hence rgbHex.
+     */
+    function drawDesigner(cards) {
+      const host = $("#ds-editor");
+      const d = designs.find((x) => x.id === selDesign);
+      if (!d) { host.innerHTML = '<p class="dsempty">Name a design on the left to start one.</p>'; return; }
+      const rgbHex = (v) => {
+        const m = /rgb\\((\\d+)[,\\s]+(\\d+)[,\\s]+(\\d+)\\)/.exec(String(v || ""));
+        if (!m) return String(v || "#000000");
+        return "#" + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, "0")).join("");
+      };
+      host.innerHTML = "";
+      host.appendChild(designPanel({
+        id: d.id,
+        shopName: d.name, name: d.name, reward: d.reward,
+        stampsTarget: d.stamps_target, stampsStart: d.stamps_start,
+        averageSpend: 0, signupMessage: d.signup_message,
+        bg: rgbHex(d.bg), fg: rgbHex(d.fg), label: rgbHex(d.label_color),
+        accent: rgbHex(d.accent_color), bandColor: rgbHex(d.band_color),
+        bandTexture: d.band_texture, stampStyle: d.stamp_style,
+        logoVersion: d.has_logo ? d.art_version : 0,
+        bannerVersion: d.has_banner ? d.art_version : 0,
+        targetsInUse: [],
+      }, {
+        api, toast, modal, info,
+        path: (suffix) => "/design/" + d.id + suffix,
+        artUrl: (kind, v) => "/admin/api/templates/" + d.id + "/" + kind + ".png" + (v ? "?v=" + v : ""),
+        // A design is in nobody's wallet, so there is no live count to warn about.
+        customersPath: null,
+        rulesNote: '<p class="dnote" style="margin:14px 0 0"><strong>Preview only.</strong> ' +
+          "The reward and the stamp numbers below shape this mock-up so you can show it to " +
+          "someone. Pushing a design never writes them onto a real card — it changes how a " +
+          "card looks and never what it promises.</p>",
+        onRulesSaved: () => loadDesigns(cards),
+      }));
+      drawPush(cards, d);
+    }
+
+    function drawPush(cards, d) {
+      const host = $("#ds-push");
+      const live = cards.filter((c) => !c.archived_at);
+      if (!live.length) { host.innerHTML = ""; return; }
+      host.innerHTML = \`
+        <strong style="font-size:.9rem">Push "\${esc(d.name)}" onto a card</strong>
+        <div class="row">
+          <select id="ds-target">\${live.map((c) => '<option value="' + c.id + '">' + esc(c.name) + "</option>").join("")}</select>
+          <button class="btn btn-dark" id="ds-go">Push design</button>
+          <button class="btn btn-ghost cbtn" id="ds-del" style="margin:0">Delete design</button>
+        </div>\`;
+      // Two taps: it changes a card that is already in customers' wallets.
+      armBtn($("#ds-go"), "Tap again to push", async () => {
+        const cardId = $("#ds-target").value;
+        const card = cards.find((c) => c.id === cardId);
+        const btn = $("#ds-go");
+        btn.disabled = true; btn.textContent = "Pushing…";
+        // The grid is re-rendered here for THIS card's target: a saved design
+        // cannot know how many stamps the card it lands on needs, and the push
+        // deliberately does not change that number.
+        const target = card.stamps_target || 10;
+        const strips = [];
+        const bannerUrl = d.has_banner
+          ? "/admin/api/templates/" + d.id + "/banner.png?v=" + d.art_version
+          : "";
+        const backdrop = await loadImg(bannerUrl);
+        const hex = (v) => {
+          const m = /rgb\\((\\d+)[,\\s]+(\\d+)[,\\s]+(\\d+)\\)/.exec(String(v || ""));
+          return m ? "#" + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, "0")).join("") : String(v);
         };
+        for (let n = 0; n <= target; n++) {
+          strips.push({ filled: n, png: dfyStrip(n, target, d.stamp_style || "dot", hex(d.bg), hex(d.accent_color), backdrop).split(",")[1] });
+        }
+        const { body: r } = await api("/card/" + cardId + "/apply-template", {
+          method: "POST", body: JSON.stringify({ templateId: d.id, strips }),
+        });
+        btn.disabled = false; btn.textContent = "Push design";
+        if (r.ok) { toast("Pushed to " + card.name + " ✓"); setTimeout(load, 1200); }
+        else toast(r.error || "Push failed");
+      });
+      armBtn($("#ds-del"), "Tap again to delete", async () => {
+        await api("/templates/" + d.id, { method: "DELETE" });
+        selDesign = null;
+        loadDesigns(cards);
       });
     }
 
@@ -3783,7 +3865,6 @@ export function adminPage(): string {
         return;
       }
       const origin = location.origin;
-      const nfcUrl = (id) => origin + (id === "default" ? "/" : "/c/" + id);
       // "3 days ago" beats a date when the question is "is this one alive?".
       const ago = (d) => {
         if (!d) return "never";
@@ -3793,19 +3874,15 @@ export function adminPage(): string {
       const pct = (x) => (x === null || x === undefined) ? "—" : Math.round(x * 100) + "%";
       const num = (x, dp) => (x === null || x === undefined) ? "—" : Number(x).toFixed(dp || 0);
       const stale = (d, days) => !d || (Date.now() - new Date(d).getTime()) > days * 86400000;
-      const esc = (s) => String(s == null ? "" : s)
-        .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+      const days = (from, to) => (from && to)
+        ? Math.max(0, Math.round((new Date(to) - new Date(from)) / 86400000)) + "d" : "—";
 
-      // ---------------------------------------------------- merchant view ----
-      // Merchants, not programmes. Every panel below this still groups by card,
-      // and that is fine — they are filtered down by a merchant's card_ids
-      // rather than rewritten, because those queries are correct and tested.
       const merchants = body.merchants || [];
       const live = merchants.filter((m) => !m.archived_at);
       const money = (m, n) => m.currency + Math.round(n).toLocaleString();
 
-      // Worst first. A console sorted alphabetically makes you read every row to
-      // find the one that needs you, which is the job this page exists to do.
+      // Worst first, not alphabetical. A console sorted by name makes you read
+      // every row to find the one that needs you, which is this page's job.
       const ranked = [...merchants].sort((a, b) => {
         const sev = (x) => x.flags.length ? ({ critical: 0, warn: 1, info: 2 })[x.flags[0].severity] : 9;
         return sev(a) - sev(b) || b.flags.length - a.flags.length
@@ -3813,7 +3890,6 @@ export function adminPage(): string {
       });
       const needing = ranked.filter((m) => m.flags.length && !m.archived_at);
       const archivedMerchants = ranked.filter((m) => m.archived_at);
-
       const chips = (m) => m.flags
         .map((f) => '<span class="chipf ' + f.severity + '">' + esc(f.label) + "</span>").join("");
 
@@ -3844,269 +3920,143 @@ export function adminPage(): string {
       };
 
       const MERCHANT_HEAD = \`<tr>
-        <th>Merchant</th><th>Trial</th><th>Activated</th><th>Last stamp</th>
-        <th>Customers</th><th>Stamps 7d/30d</th><th>Value</th><th>Owner seen</th><th>Flags</th>
+        <th>Shop</th><th>Trial</th><th>Activated</th><th>Last stamp</th>
+        <th>Customers</th><th>Stamps 7d/30d</th><th>Value</th><th>Owner seen</th><th>Problems</th>
       </tr>\`;
 
-      // ---- Zone 3: one merchant, everything about them -----------------------
-      // The per-card panels are filtered by card_ids rather than re-queried, so
-      // a merchant running two cards sums correctly and there is exactly one
-      // definition of retention/funnel/staff on the platform.
-      const mine = (rows, m) => rows.filter((r) => m.card_ids.includes(r.id || r.card_id));
-      const days = (from, to) => (from && to)
-        ? Math.max(0, Math.round((new Date(to) - new Date(from)) / 86400000)) + "d" : "—";
-
+      // ---- one merchant, four questions in the order you would ask them ------
+      const retById = new Map((body.retention || []).map((r) => [r.id, r]));
       function detailHtml(m) {
         const v = m.value;
-        const f = mine(body.funnel, m).reduce((a, r) => ({
-          scanned: a.scanned + r.scanned, clicked: a.clicked + r.clicked,
-          made: a.made + r.made, landed: a.landed + r.landed,
-        }), { scanned: 0, clicked: 0, made: 0, landed: 0 });
-        const ret = mine(body.retention, m)[0] || {};
-        const staffRows = body.staff.filter((s) => m.card_ids.includes(s.card_id));
+        const ret = retById.get(m.id) || {};
+        const staffRows = (body.staff || []).filter((s) => s.merchant_id === m.id);
+        const cards = (body.cards || []).filter((c) => m.card_ids.includes(c.id));
+        // Silent when nothing is wrong, which is most of the time. The old
+        // "Counter & engagement" panel listed these eight numbers whether or not
+        // any of them meant anything.
+        const wrong = [];
+        if (m.pin_failed_24h) wrong.push(m.pin_failed_24h + " failed staff PINs today");
+        if (m.lookup_failed_7d >= 5) wrong.push(m.lookup_failed_7d + " codes matched nothing this week");
+        if (m.messages_failed) wrong.push(m.messages_failed + " messages never arrived");
+        if (m.staff_devices === 1 && m.stamps >= 20) wrong.push("only one staff phone has ever stamped");
+        if (m.unclaimed_rewards >= 3) wrong.push(m.unclaimed_rewards + " rewards earned and not handed over");
+        const noFunnel = new Date(m.signed_up_at) < new Date("${FUNNEL_SINCE}");
         return \`
         <div class="dgrid">
           <div class="dpanel">
-            <h4>Activation &amp; value</h4>
+            <h4><span class="qn">1</span>Did they start?\${info("Activated means the first stamp given to a real customer at the counter — not signing up, not issuing a card. Nothing else on this page means anything until it says yes.")}</h4>
             <dl>
-              <dt>Signed up</dt><dd>\${ago(m.created_at)}</dd>
-              <dt>To first stamp</dt><dd>\${days(m.created_at, m.first_stamp_at)}</dd>
-              <dt>To first reward</dt><dd>\${days(m.created_at, m.first_redeem_at)}</dd>
+              <dt>Signed up</dt><dd>\${ago(m.signed_up_at)}</dd>
+              <dt>Activated</dt><dd class="\${m.first_stamp_at ? "" : "bad"}">\${m.first_stamp_at ? ago(m.first_stamp_at) : "never"}</dd>
+              <dt>Took</dt><dd>\${days(m.signed_up_at, m.first_stamp_at)}</dd>
               <dt>Poster opened</dt><dd class="\${m.poster_views ? "" : "bad"}">\${m.poster_views ? m.poster_views + "×" : "never"}</dd>
               <dt>Counter visits</dt><dd>\${m.stamps}</dd>
-              <dt>Spend through card</dt><dd>\${v.hasBasket ? money(m, v.spendThroughCard) : "no basket set"}</dd>
-              <dt>Spend per reward</dt><dd>\${v.hasBasket ? money(m, v.spendPerReward) : "—"}</dd>
-              <dt>Rewards given</dt><dd>\${v.rewardsGiven}</dd>
-              <dt>Rewards owed</dt><dd class="\${m.unclaimed_rewards >= 3 ? "bad" : ""}">\${m.unclaimed_rewards}</dd>
+              <dt>Last stamp</dt><dd class="\${stale(m.last_stamp_at, 7) ? "bad" : ""}">\${ago(m.last_stamp_at)}</dd>
             </dl>
-            <p class="dnote">Counter visits are staff stamps from the event log — free welcome
-              stamps and the reset after a reward never appear there. Spend is that count times the
-              merchant's own self-reported basket, so it is a countable number times one assumption.
-              It is <strong>not</strong> incremental: some of these people would have come anyway.</p>
           </div>
 
           <div class="dpanel">
-            <h4>Sign-up funnel</h4>
+            <h4><span class="qn">2</span>Are people signing up?\${info("This is acquisition, not health — it names WHICH step is losing people. A drop from opened to tapped is the sign-up page; from made to landed is the wallet's own Add sheet. A QR scan and a tapped link both arrive as an ordinary page view, so the split comes from a tag on the poster QR and the share link; anything untagged, including posters printed before the tag existed, counts as untagged rather than lost.")}</h4>
             <dl>
               <dt>Opened sign-up page</dt><dd>\${m.scanned}</dd>
-              <dt style="padding-left:12px" class="flags">from the poster QR</dt><dd class="flags">\${m.opened_poster}</dd>
-              <dt style="padding-left:12px" class="flags">from a shared link</dt><dd class="flags">\${m.opened_link}</dd>
-              <dt style="padding-left:12px" class="flags">untagged</dt><dd class="flags">\${m.opened_other}</dd>
+              <dt style="padding-left:12px" class="flags">poster · link · untagged</dt>
+              <dd class="flags">\${m.opened_poster} · \${m.opened_link} · \${m.opened_other}</dd>
               <dt>Tapped Add</dt><dd>\${m.clicked}</dd>
               <dt>Card made</dt><dd>\${m.made}</dd>
               <dt>Landed in wallet</dt><dd>\${m.landed}</dd>
               <dt>Deleted / dropped</dt><dd>\${m.removed} / \${m.dropped}</dd>
             </dl>
-            \${new Date(m.signed_up_at) < new Date("${FUNNEL_SINCE}") ? \`<p class="dnote">
-              <strong>This merchant predates the funnel.</strong> Page opens and Add taps have only
-              been recorded since ${FUNNEL_SINCE_LABEL}, so cards issued before then show as zeroes
-              in the first two rows. That is missing history, not a broken flow.</p>\` : ""}
-            <p class="dnote">A QR scan and a tapped link both arrive as an ordinary page view, so
-              <strong>Opened</strong> has always meant "reached the sign-up page, however they got
-              there". The split comes from a tag on the poster QR and the share link; anything
-              else — including posters printed before the tag existed — counts as untagged.</p>
-            <p class="dnote"><strong>Card made</strong> always follows <strong>Tapped Add</strong>:
-              the tap is recorded before the pass is minted and even when minting fails, so it can
-              never be the smaller of the two on current data. <strong>Landed</strong> and
-              <strong>Deleted</strong> depend on the wallet telling us — Apple always has, Google
-              only since the issuer callback was set up, so older Android sign-ups under-report
-              both.</p>
+            \${noFunnel ? \`<p class="dnote"><strong>Predates the funnel.</strong> Page opens and Add
+              taps have only been recorded since ${FUNNEL_SINCE_LABEL}, so cards issued before then
+              show as zeroes above. Missing history, not a broken flow.</p>\` : ""}
           </div>
 
           <div class="dpanel">
-            <h4>Do customers come back</h4>
+            <h4><span class="qn">3</span>Do customers come back?\${info("Retention, counted per PERSON and per net stamp: someone holding an Apple and a Google card is one customer, and a staff undo takes its visit back off. This is the number a renewal turns on — a shop whose customers never return a second time is paying for a card nobody uses.")}</h4>
             <dl>
-              <dt>2nd visit</dt><dd>\${pct(ret.second_visit_rate)}</dd>
-              <dt>3rd visit</dt><dd>\${pct(ret.third_visit_rate)}</dd>
-              <dt>Finish a card</dt><dd>\${pct(ret.completion_rate)}</dd>
-              <dt>Median gap</dt><dd>\${num(ret.median_gap_days, 1)} d</dd>
-              <dt>Days to 1st stamp</dt><dd>\${num(ret.median_days_to_first_stamp, 1)}</dd>
+              <dt>Customers who ever got a stamp</dt><dd>\${ret.started ?? 0}</dd>
+              <dt>Came back a 2nd time</dt><dd>\${pct(ret.second_visit_rate)}</dd>
+              <dt>…a 3rd</dt><dd>\${pct(ret.third_visit_rate)}</dd>
+              <dt>Finished a card</dt><dd>\${pct(ret.completion_rate)}</dd>
+              <dt>Days between visits</dt><dd>\${num(ret.median_gap_days, 1)}</dd>
               <dt>Still active 30/60/90</dt><dd>\${pct(ret.alive_30)} · \${pct(ret.alive_60)} · \${pct(ret.alive_90)}</dd>
+              <dt>Nudged → came back</dt><dd>\${m.nudged ? m.nudge_returned + " of " + m.nudged : "—"}</dd>
             </dl>
           </div>
 
           <div class="dpanel">
-            <h4>Counter &amp; engagement</h4>
+            <h4><span class="qn">4</span>Is it worth anything?\${info("Counter visits × the shop's OWN self-reported average basket. A countable number times one assumption — and deliberately not incremental: some of these people would have come in anyway, and there is no way to see the counterfactual. Free welcome stamps and the reset after a reward emit no event, so they have never been in it. Blank means they never told us their basket.")}</h4>
             <dl>
-              <dt>Staff phones</dt><dd class="\${m.staff_devices === 1 ? "bad" : ""}">\${m.staff_devices}</dd>
+              <dt>Spend through the card</dt><dd>\${v.hasBasket ? money(m, v.spendThroughCard) : "no basket set"}</dd>
+              <dt>Spend per reward</dt><dd>\${v.hasBasket ? money(m, v.spendPerReward) : "—"}</dd>
+              <dt>Rewards given</dt><dd>\${v.rewardsGiven}</dd>
+              <dt>Rewards owed</dt><dd class="\${m.unclaimed_rewards >= 3 ? "bad" : ""}">\${m.unclaimed_rewards}</dd>
               <dt>Owner logins (30d)</dt><dd>\${m.logins_30d}</dd>
-              <dt>Card edits</dt><dd>\${m.card_edits}</dd>
-              <dt>Nudges sent</dt><dd>\${m.nudges}</dd>
-              <dt>Logo uploaded</dt><dd>\${m.has_art ? "yes" : "no"}</dd>
-              <dt>Failed PINs (24h)</dt><dd class="\${m.pin_failed_24h ? "bad" : ""}">\${m.pin_failed_24h}</dd>
-              <dt>Codes not found (7d)</dt><dd class="\${m.lookup_failed_7d >= 5 ? "bad" : ""}">\${m.lookup_failed_7d}</dd>
-              <dt>Messages failed</dt><dd class="\${m.messages_failed ? "bad" : ""}">\${m.messages_failed}</dd>
+              <dt>Made it theirs\${info("Whether the owner has ever changed their own card. Unprompted configuration is the clearest evidence a merchant considers the thing theirs, and it is the closest signal to willingness-to-pay there is before money changes hands.")}</dt>
+              <dd>\${m.card_edits ? m.card_edits + " edits, last " + ago(m.last_card_edit_at) : "never touched it"}</dd>
             </dl>
-            <p class="dnote">Logins, edits and nudges are the closest thing to a
-              willingness-to-pay signal before any money changes hands: they are the merchant
-              choosing to touch the product unprompted.</p>
           </div>
         </div>
 
-        \${staffRows.length ? \`<div class="dpanel" style="margin-top:14px">
-          <h4>Staff phones</h4>
+        \${wrong.length
+          ? '<p class="badline">Wrong right now: ' + wrong.map(esc).join(" · ") + "</p>"
+          : '<p class="okline">Nothing broken: staff can sign in, codes match, messages arrive.</p>'}
+
+        \${staffRows.length ? \`<details class="fold" style="margin-top:12px">
+          <summary>Counter phones (\${staffRows.length})\${info("A PHONE, not a person — signing out and back in mints a new id, and changing the PIN resets them all. Rewards is flagged when one phone hands out rewards on more than 30% of the stamps it adds; that is the shape free-coffee-for-friends takes.")}</summary>
           <div class="tw"><table>
-            <tr><th>Phone</th><th>Stamps</th><th>Redeems</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>
+            <tr><th>Phone</th><th>Stamps</th><th>Rewards</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>
             \${staffRows.map((s) => \`<tr>
-              <td class="flags">\${esc(s.actor)}</td><td>\${s.stamps}</td>
+              <td class="nfc">\${esc(s.actor.replace("staff:", ""))}</td><td>\${s.stamps}</td>
               <td class="\${s.stamps >= 10 && s.redeems / s.stamps > 0.3 ? "bad" : ""}">\${s.redeems}</td>
               <td>\${s.undos}</td><td>\${s.forced}</td><td>\${ago(s.last_seen)}</td>
             </tr>\`).join("")}
           </table></div>
-          <p class="dnote">A phone, not a person — signing out and back in mints a new id.</p>
-        </div>\` : ""}
+        </details>\` : ""}
+
+        <details class="fold" style="margin-top:10px">
+          <summary>Every change they have made (\${m.card_edits})</summary>
+          <div data-edits="\${m.id}" class="flags">Loading…</div>
+        </details>
 
         <div class="dpanel" style="margin-top:14px">
-          <h4>Admin</h4>
+          <h4>Contact &amp; actions</h4>
           <div class="flags" style="margin-bottom:8px">
             Sign-up link: <span class="nfc">\${origin}/j/\${m.id}</span>
           </div>
           <div class="rst" style="margin-top:0">
             <button class="btn btn-ghost cbtn" data-nfc="\${origin}/j/\${m.id}">Copy link</button>
-            \${m.card_ids.map((id) => '<a class="btn btn-ghost cbtn" target="_blank" href="/c/' + id + '/poster">Poster</a>').join("")}
-            \${m.card_ids.map((id) => '<a class="btn btn-ghost cbtn" target="_blank" href="/admin/card/' + id + '/sheet">Counter sheet</a>').join("")}
+            \${cards.map((c) => '<a class="btn btn-ghost cbtn" target="_blank" href="/c/' + c.id + '/poster">Poster</a>').join("")}
+            \${cards.map((c) => '<a class="btn btn-ghost cbtn" target="_blank" href="/admin/card/' + c.id + '/sheet">Counter sheet</a>').join("")}
             \${m.archived_at
-              ? '<button class="btn btn-ghost dbtn" data-munarchive="' + m.id + '">Restore merchant</button>'
-              : '<button class="btn btn-ghost dbtn" data-marchive="' + m.id + '">Archive merchant</button>'}
+              ? '<button class="btn btn-ghost dbtn" data-munarchive="' + m.id + '">Restore shop</button>'
+              : '<button class="btn btn-ghost dbtn" data-marchive="' + m.id + '">Archive shop</button>'}
           </div>
           <label style="margin-top:12px">Phone</label>
           <input data-phone="\${m.id}" value="\${esc(m.contact_phone)}" placeholder="Who to ring">
           <label style="margin-top:8px">Notes</label>
           <input data-note="\${m.id}" value="\${esc(m.contact_note)}" placeholder="Anything worth remembering">
           <button class="btn btn-ghost cbtn" data-savecontact="\${m.id}" style="margin-top:8px">Save contact</button>
-        </div>
-
-        <div class="dpanel" style="margin-top:14px">
-          <h4>What they have changed</h4>
-          <div data-edits="\${m.id}" class="flags">Loading…</div>
+          \${cards.length ? \`<div class="flags" style="margin-top:12px">
+            Programme\${cards.length === 1 ? "" : "s"}, for the NFC sticker\${info("The Add-to-Wallet URL to program onto an NFC sticker. You set these up for merchants; they never see it. A card id is printed on posters and baked into every Android card ever issued from it, so archiving is the only safe retirement — nothing is deleted and cards already in wallets keep stamping.")}
+            \${cards.map((c) => '<div style="margin-top:6px"><span class="nfc">' + origin + (c.id === "default" ? "/" : "/c/" + c.id) + "</span> " +
+              '<button class="btn btn-ghost cbtn" data-nfc="' + origin + (c.id === "default" ? "/" : "/c/" + c.id) + '">Copy</button> ' +
+              (c.archived_at
+                ? '<button class="btn btn-ghost dbtn" data-unarchive="' + c.id + '">Restore</button>'
+                : '<button class="btn btn-ghost dbtn" data-archive="' + c.id + '">Archive</button>') + "</div>").join("")}
+          </div>\` : ""}
         </div>\`;
       }
 
-      const cardRow = (c) => \`
-        <tr>
-          <td><strong>\${c.name}</strong><br><span class="flags">\${c.id}</span></td>
-          <td>\${c.owners || "—"}</td>
-          <td>\${c.active}<br><span class="flags">\${c.active_7d} this week</span></td>
-          <td>\${c.stamps}<br><span class="flags">\${c.stamps_7d} / 7d · \${c.stamps_30d} / 30d</span></td>
-          <td>\${c.redemptions}</td>
-          <td class="\${stale(c.last_stamp_at, 7) ? "bad" : ""}">\${ago(c.last_stamp_at)}</td>
-          <td class="\${stale(c.last_owner_login, 30) ? "bad" : ""}">\${ago(c.last_owner_login)}</td>
-          <td class="flags"><span class="nfc">\${nfcUrl(c.id)}</span><br>
-            <button class="btn btn-ghost cbtn" data-nfc="\${nfcUrl(c.id)}">Copy</button>
-            <a class="btn btn-ghost cbtn" href="/admin/card/\${c.id}/sheet" target="_blank">Counter sheet</a>
-            \${c.archived_at
-              ? '<button class="btn btn-ghost dbtn" data-unarchive="' + c.id + '">Restore</button>'
-              : '<button class="btn btn-ghost dbtn" data-archive="' + c.id + '">Archive</button>'}</td>
-        </tr>\`;
-      // Retired programmes drop out of every table into a fold underneath it, so
-      // each section is the shops actually being run — but their numbers are one
-      // click away rather than gone. Archiving re-runs load(), so a card moves
-      // down the moment it is archived.
-      const archivedIds = new Set(body.cards.filter((c) => c.archived_at).map((c) => c.id));
-      /** → { live, fold }: rows for the section's table, and its Archived fold. */
-      function splitArchived(items, idOf, header, rowFn, note) {
-        const live = items.filter((x) => !archivedIds.has(idOf(x)));
-        const gone = items.filter((x) => archivedIds.has(idOf(x)));
-        const fold = gone.length
-          ? \`<details class="fold" style="margin-top:12px">
-               <summary>Archived (\${gone.length})</summary>
-               \${note ? '<p class="muted" style="margin:0 0 10px">' + note + "</p>" : ""}
-               <div class="tw"><table>\${header}\${gone.map(rowFn).join("")}</table></div>
-             </details>\`
-          : "";
-        return { live: live.map(rowFn).join(""), fold };
-      }
-
-      const CARD_HEAD = \`<tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>\`;
-      const main = splitArchived(
-        body.cards, (c) => c.id, CARD_HEAD, cardRow,
-        "Off their owner's dashboard and off their join link. Cards already in customers' wallets still stamp, and everything they do is still recorded. Restore puts one back.",
-      );
-      const rows = main.live;
-      const archivedBlock = main.fold;
-
-      // The sign-up funnel, every figure counted from the event log rather than
-      // from pass rows — so the 30-day cleanup of never-used cards cannot move
-      // any of these numbers. Each step's drop says something different about
-      // where a merchant's flow is leaking.
-      const byId = new Map(body.cards.map((c) => [c.id, c]));
-      const drop = (from, to) => (from > 0 ? Math.round((1 - to / from) * 100) : null);
-      const lossy = (from, to) => from >= 10 && drop(from, to) >= 50;
-      const funnelRow = (f) => {
-        const c = byId.get(f.id) || {};
-        return \`
-        <tr>
-          <td><strong>\${f.name}</strong>\${c.archived_at ? ' <span class="arch">archived</span>' : ""}</td>
-          <td>\${f.scanned}</td>
-          <td class="\${lossy(f.scanned, f.clicked) ? "bad" : ""}">\${f.clicked}</td>
-          <td class="\${lossy(f.clicked, f.made) ? "bad" : ""}">\${f.made}</td>
-          <td class="\${lossy(f.made, f.landed) ? "bad" : ""}">\${f.landed}</td>
-          <td class="\${c.removed ? "bad" : ""}">\${c.removed ?? 0}</td>
-          <td>\${c.active ?? 0}</td>
-        </tr>\`;
-      };
-      const FUNNEL_HEAD = \`<tr><th>Programme</th><th>Scanned</th><th>Tapped Add</th><th>Card made</th><th>Landed</th><th>Deleted</th><th>Customers</th></tr>\`;
-      const funnel = splitArchived(body.funnel || [], (f) => f.id, FUNNEL_HEAD, funnelRow);
-
-      const retRow = (r) => \`
-        <tr>
-          <td><strong>\${r.name}</strong></td>
-          <td>\${pct(r.second_visit_rate)}</td>
-          <td>\${pct(r.third_visit_rate)}</td>
-          <td>\${num(r.median_gap_days, 1)}</td>
-          <td>\${num(r.median_days_to_first_stamp, 1)}</td>
-          <td>\${pct(r.completion_rate)}</td>
-          <td>\${num(r.median_days_to_reward, 0)}</td>
-          <td class="\${r.unclaimed_rewards ? "bad" : ""}">\${r.unclaimed_rewards}</td>
-          <td>\${pct(r.alive_30)} · \${pct(r.alive_60)} · \${pct(r.alive_90)}</td>
-        </tr>\`;
-      const RET_HEAD = \`<tr><th>Programme</th><th>2nd visit</th><th>3rd visit</th><th>Days between</th><th>To 1st stamp</th><th>Finish a card</th><th>Days to reward</th><th>Owed</th><th>Still active 30/60/90</th></tr>\`;
-      const ret = splitArchived(body.retention || [], (r) => r.id, RET_HEAD, retRow);
-
-      const staffRow = (s) => {
-        // The fraud signal: a phone giving out rewards disproportionately to the
-        // stamps it adds. Small numbers are noise, so only flag real volume.
-        const share = s.stamps ? s.redeems / s.stamps : 0;
-        const odd = s.stamps >= 10 && share > 0.3;
-        return \`<tr>
-          <td>\${s.cafe_name}</td>
-          <td class="nfc">\${s.actor.replace("staff:", "")}</td>
-          <td>\${s.stamps}</td>
-          <td class="\${odd ? "bad" : ""}">\${s.redeems}\${s.stamps ? " (" + Math.round(share * 100) + "%)" : ""}</td>
-          <td>\${s.undos}</td>
-          <td>\${s.forced}</td>
-          <td class="flags">\${ago(s.last_seen)}</td>
-        </tr>\`;
-      };
-      const STAFF_HEAD = \`<tr><th>Programme</th><th>Phone</th><th>Stamps</th><th>Rewards given</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>\`;
-      const staff = splitArchived(body.staff || [], (x) => x.card_id, STAFF_HEAD, staffRow);
-      // Did chasing quiet customers actually work, and is anyone leaning on the
-      // override at the counter? Both are only answerable now that events record
-      // who did what.
-      const wbRow = (c) => {
-        const rate = c.nudged ? Math.round((c.nudge_returned / c.nudged) * 100) + "%" : "—";
-        return \`<tr>
-          <td><strong>\${c.name}</strong></td>
-          <td>\${c.nudged}</td>
-          <td>\${c.nudge_returned}</td>
-          <td>\${Math.max(0, c.nudged - c.nudge_returned)}</td>
-          <td>\${rate}</td>
-        </tr>\`;
-      };
-      const WB_HEAD = \`<tr><th>Programme</th><th>Nudged</th><th>Came back</th><th>Didn't</th><th>Return rate</th></tr>\`;
-      const wb = splitArchived(body.cards, (c) => c.id, WB_HEAD, wbRow);
-      const opts = body.owners.map((o) => '<option value="' + o.id + '">' + o.email + '</option>').join("");
-      // Zone 0: only figures that can go DOWN. Totals that only ever rise
-      // (customers ever, rewards ever) cannot tell you anything is wrong, so
-      // they are not here — they are in the table, per merchant, where they
-      // mean something.
       const stampsAll7d = merchants.reduce((a, m) => a + m.stamps_7d, 0);
       const stampingThisWeek = live.filter((m) => m.stamps_7d > 0).length;
       const inWallets = merchants.reduce((a, m) => a + Math.max(0, m.landed - m.removed), 0);
+      const owners = body.owners || [];
 
       $("#app").innerHTML = \`
         <h1>Merchant health</h1>
-        <p class="sub">\${live.length} live merchant\${live.length === 1 ? "" : "s"} · \${body.owners.length} owner accounts</p>
+        <p class="purpose">Get every shop from signed up → stamping → still stamping in 30 days → paying.
+          Read top to bottom: what is alive, who needs a call, then any shop in full.</p>
 
         <div class="pstrip">
           <div class="ptile"><b>\${stampingThisWeek}/\${live.length}</b><span>stamping this week</span></div>
@@ -4115,140 +4065,71 @@ export function adminPage(): string {
           <div class="ptile \${needing.length ? "alarm" : ""}"><b>\${needing.length}</b><span>need attention</span></div>
         </div>
 
-        <h2>Needs you today \${needing.length ? '<span class="flags">· ' + needing.length + " shop" + (needing.length === 1 ? "" : "s") + "</span>" : ""}</h2>
+        <h2>Needs you today\${info("Only shops with something actually wrong, worst first. The line under each name is the single most urgent thing to do about it. A healthy shop is not listed at all — that is the point.")}</h2>
         \${needing.length ? \`<div class="triage">
           \${needing.map((m) => \`
             <div class="trow \${m.flags[0].severity}">
               <div><span class="tname">\${esc(m.name)}</span></div>
               <div>
-                <div>\${m.flags.map((f) => '<span class="chipf ' + f.severity + '">' + esc(f.label) + "</span>").join("")}</div>
+                <div>\${chips(m)}</div>
                 <div class="taction">\${esc(m.flags[0].action)}</div>
               </div>
             </div>\`).join("")}
         </div>\`
-          : '<div class="tclear">Nothing needs you today. Every live merchant is stamping, nothing is broken, and no trial is about to run out.</div>'}
-        <details class="fold" style="margin:-14px 0 26px"><summary>What these flags mean</summary>
-          <p class="muted">Every rule the console can raise, and exactly what fires it. Generated from
-            the same list the rules are keyed on, so a threshold here is the threshold in force.</p>
+          : '<div class="tclear">Nothing needs you today.</div>'}
+        <details class="fold" style="margin:0 0 26px"><summary>What these problems mean</summary>
           <div class="tw"><table class="legend">
-            <tr><th>Flag</th><th>Fires when</th><th>Why it matters</th></tr>
+            <tr><th>Problem</th><th>Fires when</th><th>Why it matters</th></tr>
             ${FLAG_GUIDE.map((g) => `<tr><td><span class="chipf warn">${esc(g.label)}</span></td><td>${esc(g.rule)}</td><td>${esc(g.why)}</td></tr>`).join("")}
           </table></div>
         </details>
 
-        <h2>Merchants</h2>
-        <p class="muted">Worst first, not alphabetical. Click a row for everything about that
-          merchant. <strong>Activated</strong> is the first stamp at a real counter, not the
-          signup. <strong>Trial</strong> counts from the account's own signup date.
-          <strong>Value</strong> is counter visits × their self-reported basket — a countable
-          number times one assumption, and not claimed as incremental.</p>
+        <h2>Every shop\${info("Worst first, never alphabetical. Click any row for that shop in full. Trial counts from the account's own signup date. Value is counter visits times their self-reported basket.")}</h2>
         <div class="tw"><table>
           \${MERCHANT_HEAD}
           \${ranked.filter((m) => !m.archived_at).map(merchantRow).join("")}
         </table></div>
         \${archivedMerchants.length ? \`<details class="fold" style="margin-top:12px">
-          <summary>Archived shops (\${archivedMerchants.length})</summary>
-          <p class="muted" style="margin:0 0 10px">Closed accounts. Nothing is deleted and every
-            card already in a wallet keeps working — they are just out of the working list, and
-            raise no flags. Restore one from inside its row.</p>
+          <summary>Archived shops (\${archivedMerchants.length})\${info("Closed accounts. Nothing is deleted and every card already in a wallet keeps working — they are just out of the working list, raise no problems, and are left out of the tiles above. Restore one from inside its row.")}</summary>
           <div class="tw"><table>\${MERCHANT_HEAD}\${archivedMerchants.map(merchantRow).join("")}</table></div>
         </details>\` : ""}
 
-        <h2>Platform-wide tables</h2>
-        <p class="muted">The same numbers grouped by programme rather than by merchant. Useful for
-          comparing merchants against each other; the per-merchant view above is what you act on.</p>
-        <details class="fold" style="margin-top:10px"><summary>All programmes</summary>
-
-        <div class="tw"><table>
-          <tr><th>Programme</th><th>Owner(s)</th><th>Customers</th><th>Stamps</th><th>Redeemed</th><th>Last stamp</th><th>Owner last in</th><th>Sign-up / NFC link</th></tr>
-          \${rows}
-        </table></div>
-        \${archivedBlock}
-        <p class="muted" style="margin-top:8px">The sign-up / NFC link is the Add-to-Wallet URL to program onto a card's NFC sticker — you set these up for merchants (they don't see it).</p>
-
-        <h2>Sign-up funnel</h2>
-        <p class="muted">One row per loyalty programme — each row IS one programme, and every number in it counts <em>customers</em>, never programmes. Read left to right: a big drop between two columns is where that merchant is losing sign-ups. Red marks a step losing half or more, once there are at least 10 to judge by.</p>
-        <p class="muted"><strong>Scanned</strong> opened the poster link (crawlers excluded) · <strong>Tapped Add</strong> chose a wallet · <strong>Card made</strong> got one issued · <strong>Landed</strong> is confirmed sitting in their wallet.</p>
-        <p class="muted">A tap is recorded before the card is minted and even when minting fails, so <strong>Tapped Add</strong> can never be lower than <strong>Card made</strong> on recent data. If it is higher, Adds are failing — expired Apple certificates or unconfigured Google — and that is worth acting on.</p>
-        <p class="muted">Counted from the event log, so the automatic cleanup of never-used cards never moves these numbers. Three things to read carefully: scans and taps have only been recorded since <strong>28 July 2026</strong>, so anything from before that shows <strong>0</strong> in the first two columns — that is missing history, not a real drop-off; <strong>Landed</strong> counts each add, so someone who deletes and re-adds counts twice and can push it above <strong>Card made</strong>; and <strong>Landed</strong> and <strong>Deleted</strong> rely on the wallet telling us — Apple always has, Google only since the issuer callback was set up, so older Android sign-ups under-report on those two.</p>
-        <div class="tw"><table>
-          \${FUNNEL_HEAD}
-          \${funnel.live}
-        </table></div>
-        \${funnel.fold}
-
-        <h2>Do they come back?</h2>
-        <p class="muted">The only questions that decide whether a merchant renews. <strong>2nd visit</strong> is the big one: of everyone who ever got a stamp, how many came back at all. <strong>To 1st stamp</strong> is time-to-value. <strong>Owed</strong> = cards sitting at their target with the reward not yet claimed. <strong>Still active</strong> counts only cards old enough to judge, so a new merchant isn't scored as a failure.</p>
-        <div class="tw"><table>
-          \${RET_HEAD}
-          \${ret.live}
-        </table></div>
-        \${ret.fold}
-
-        <h2>Win-back</h2>
-        <p class="muted"><strong>Came back</strong> = a stamp after the last message, so the nudge worked. One rule governs sending: each customer can be messaged once every 7 days, counted per person rather than per card. Nothing goes out on a timer.</p>
-        <div class="tw"><table>
-          \${WB_HEAD}
-          \${wb.live}
-        </table></div>
-        \${wb.fold}
-
-        <h2>Counter audit</h2>
-        <p class="muted">Per staff <em>phone</em>, not per person — a device that signs out and back in gets a new id, and changing the PIN resets them all. So this is "phone A vs phone B". <strong>Redeems</strong> is flagged when a phone hands out rewards on more than 30% of the stamps it adds; that's the shape free-coffee-for-friends takes. <strong>Forced</strong> = confirmed past the "just stamped" warning.</p>
-        <div class="tw"><table>
-          \${STAFF_HEAD}
-          \${staff.live || '<tr><td colspan="7" class="flags">No counter activity yet.</td></tr>'}
-        </table></div>
-        \${staff.fold}
-        </details>
-
-        <h2>Card designs</h2>
-        <p class="muted">Mock a card up for a prospect before they have an account, then push it onto their card once they sign up — after that all they touch is the wording and the colours. Drop in their logo and you have something to show them in a minute.</p>
-        <div id="tpl">
-          <div class="tplgrid">
-            <div>
-              <label>Design name</label><input id="tpl-name" placeholder="e.g. Ah Seng Kopitiam">
-              <label>Reward</label><input id="tpl-reward" placeholder="Free coffee">
-              <label>Logo <span class="muted">(square PNG or JPG)</span></label>
-              <input id="tpl-logo" type="file" accept="image/*">
-              <label>Stamp icon</label>
-              <div class="bantpl" data-ipick></div>
-              <div class="tplcolors">
-                <label>Card<input id="tpl-bg" type="color" value="#3b2016"></label>
-                <label>Text<input id="tpl-fg" type="color" value="#fffaf0"></label>
-                <label>Labels<input id="tpl-label" type="color" value="#d6b278"></label>
-              </div>
-              <button class="btn btn-dark" id="tpl-save">Save this design</button>
+        <h2 style="margin-top:34px">Card designs\${info("The same designer the owners get, pointed at a saved design instead of a real card. Build one for a prospect before they have an account, then push it onto their card once they sign up. Pushing changes colours, band and stamps only — never the reward or the stamp count, so it can never contradict what staff have been telling customers.")}</h2>
+        <div class="dsgrid">
+          <div>
+            <div class="dslist" id="ds-list"></div>
+            <div class="dsnew">
+              <input id="ds-name" placeholder="New design name" maxlength="60">
+              <button class="btn btn-dark" id="ds-add">Add</button>
             </div>
-            <div>
-              <label>Preview</label>
-              <div class="mock" id="tpl-mock"></div>
-            </div>
+            <div class="dspush" id="ds-push"></div>
           </div>
-          <div id="tpl-out"></div>
-          <div class="tw"><table id="tpl-table"></table></div>
+          <div id="ds-editor"></div>
         </div>
 
-        <h2>Create a café (done-for-you)</h2>
-        <p class="muted">Design a card and set up the owner's account in one step. Pick their business type, and we build a matching card. They get a temp password to log in and take over.</p>
+        <h2 style="margin-top:34px">Set a shop up\${info("Creates the owner account and a matching card in one step. They get a temp password and a staff PIN, both shown once — the PIN is only ever stored scrambled and can never be looked up again.")}</h2>
         <div id="dfy">
           <label>Business type</label>
           <div class="bantpl" data-vpick></div>
-          <label>Café name</label><input id="dfy-name" placeholder="e.g. Nasi Lemak House">
+          <label>Shop name</label><input id="dfy-name" placeholder="e.g. Nasi Lemak House">
           <label>Owner email</label><input id="dfy-email" type="email" placeholder="owner@card.my">
-          <button class="btn btn-dark" id="dfy-create">Create café + account</button>
+          <button class="btn btn-dark" id="dfy-create">Create shop + account</button>
         </div>
         <div id="dfy-out"></div>
 
-        <h2>Reset an owner's password</h2>
-        <p class="muted">Passwords are stored scrambled and can never be viewed — this sets a NEW temporary one to hand over.</p>
+        <h2>Reset a password\${info("Passwords are stored scrambled and can never be viewed. This sets a NEW temporary one to hand over.")}</h2>
         <div class="rst">
-          <div><label>Owner</label><select id="who">\${opts}</select></div>
+          <div><label>Owner</label><select id="who">\${owners.map((o) => '<option value="' + o.id + '">' + esc(o.email) + "</option>").join("")}</select></div>
           <button class="btn btn-dark" id="reset">Generate temp password</button>
         </div>
         <div id="tempout"></div>\`;
 
-      wireTemplates(body.cards);
+      // Delegated from #app, which contains the drill-downs and the designer
+      // too — so one call covers markup rendered later. Once only: #app itself
+      // survives every re-render, and wiring it per load stacks duplicate
+      // listeners on the same element.
+      if (!$("#app").dataset.infoRoot) { $("#app").dataset.infoRoot = "1"; wireInfo($("#app")); }
+      loadDesigns(body.cards || []);
 
       // ---- merchant row: expand, and the actions inside it -------------------
       // The detail is built on first open and left in the DOM, so re-opening a
@@ -4257,7 +4138,7 @@ export function adminPage(): string {
       document.querySelectorAll("[data-m]").forEach((tr) => {
         tr.onclick = async (e) => {
           // Anything clickable inside the detail must not toggle the row shut.
-          if (e.target.closest("button, a, input, label")) return;
+          if (e.target.closest("button, a, input, label, summary")) return;
           const id = tr.dataset.m;
           const row = document.querySelector('[data-d="' + id + '"]');
           const cell = row.firstElementChild;
@@ -4277,7 +4158,7 @@ export function adminPage(): string {
                     .join(" · ");
                   return "<div>" + ago(x.created_at) + " — " + (what || "design") + "</div>";
                 }).join("")
-              : "Nothing changed since setup. A merchant who never touches their own card is one who has not made it theirs.";
+              : "Nothing changed since setup.";
           }
         };
       });
@@ -4308,26 +4189,59 @@ export function adminPage(): string {
           await api("/merchant/" + id + "/unarchive", { method: "POST" });
           load();
         };
+        // Archiving a programme is always safe — nothing is destroyed and it is
+        // reversible — so the only refusal left is taking a shop's last card.
+        const WHY = { "last-card": "Their only card — kept", "no-such-card": "Not found", already: "Already archived" };
+        scope.querySelectorAll("[data-archive]").forEach((b) => {
+          armBtn(b, "Tap again to archive", async () => {
+            b.disabled = true;
+            const { body: r } = await api("/card/" + b.dataset.archive + "/archive", { method: "POST" });
+            if (r.ok) return void load();
+            b.disabled = false;
+            b.textContent = WHY[r.error] || "Failed";
+          });
+        });
+        // Restoring needs no confirmation: it puts back something still there.
+        scope.querySelectorAll("[data-unarchive]").forEach((b) => {
+          b.onclick = async () => {
+            b.disabled = true;
+            const { body: r } = await api("/card/" + b.dataset.unarchive + "/unarchive", { method: "POST" });
+            if (r.ok) return void load();
+            b.disabled = false;
+            b.textContent = "Failed";
+          };
+        });
       }
 
-      // Business-type swatches (click to select the design bundle).
+      // ---- saved designs: add one, then the shared designer takes over -------
+      $("#ds-add").onclick = async () => {
+        const name = $("#ds-name").value.trim();
+        if (!name) return void toast("Give the design a name");
+        const { body: r } = await api("/templates", { method: "POST", body: JSON.stringify({ name }) });
+        if (!r.ok) return void toast(r.error || "Couldn't create it");
+        $("#ds-name").value = "";
+        selDesign = r.template.id;
+        loadDesigns(body.cards || []);
+      };
+
+      // ---- set a shop up ------------------------------------------------------
       const vpick = $("[data-vpick]");
       VERTICALS.forEach((v, i) => {
         const bt = document.createElement("div"); bt.className = "bt" + (i === 0 ? " sel" : ""); bt.title = v.name;
-        bt.style.backgroundImage = "url(" + drawBanner(v.banner, v.bg, shade(v.bg, 0.4), 144, 64) + ")";
+        bt.style.backgroundImage = "url(" + dfyBanner(v.banner, v.bg, shade(v.bg, 0.4), 144, 64) + ")";
         bt.innerHTML = "<span>" + v.emoji + " " + v.name + "</span>";
         bt.onclick = () => { picked = v; vpick.querySelectorAll(".bt").forEach((x) => x.classList.remove("sel")); bt.classList.add("sel"); };
         vpick.appendChild(bt);
       });
       $("#dfy-create").onclick = async () => {
         const cafeName = $("#dfy-name").value.trim(), ownerEmail = $("#dfy-email").value.trim();
-        if (!cafeName) return void ($("#dfy-out").textContent = "Enter a café name.");
+        if (!cafeName) return void ($("#dfy-out").textContent = "Enter a shop name.");
         if (!ownerEmail.includes("@")) return void ($("#dfy-out").textContent = "Enter a valid owner email.");
         $("#dfy-create").disabled = true; $("#dfy-out").textContent = "Creating…";
         const strips = [];
-        const bannerUrl = drawBanner(picked.banner, picked.bg, shade(picked.bg, 0.4), 750, 246);
+        const bannerUrl = dfyBanner(picked.banner, picked.bg, shade(picked.bg, 0.4), 750, 246);
         const backdrop = await loadImg(bannerUrl);
-        for (let n = 0; n <= 10; n++) strips.push({ filled: n, png: drawStampStrip(n, 10, picked.icon, picked.bg, picked.label, backdrop).split(",")[1] });
+        for (let n = 0; n <= 10; n++) strips.push({ filled: n, png: dfyStrip(n, 10, picked.icon, picked.bg, picked.label, backdrop).split(",")[1] });
         const banner = bannerUrl.split(",")[1];
         const { body: r } = await api("/card", { method: "POST", body: JSON.stringify({
           cafeName, ownerEmail, reward: picked.reward,
@@ -4338,48 +4252,16 @@ export function adminPage(): string {
         if (r.ok) {
           // The PIN is only ever stored hashed, so this is the one time it can be
           // read — after this it can only be replaced from the owner's dashboard.
-          $("#dfy-out").innerHTML = '<div class="temp">Created <strong>' + cafeName + '</strong> for <strong>' + r.ownerEmail + '</strong>.<br>Temp password: <strong>' + r.tempPassword + '</strong> — they log in at /dashboard and can change it.<br>Staff PIN: <strong>' + r.staffPin + '</strong> — write this down now, it can’t be looked up later.</div>';
+          $("#dfy-out").innerHTML = '<div class="temp">Created <strong>' + esc(cafeName) + '</strong> for <strong>' + esc(r.ownerEmail) + '</strong>.<br>Temp password: <strong>' + r.tempPassword + '</strong> — they log in at /dashboard and can change it.<br>Staff PIN: <strong>' + r.staffPin + '</strong> — write this down now, it can’t be looked up later.</div>';
           $("#dfy-name").value = ""; $("#dfy-email").value = "";
-          setTimeout(load, 1500); // refresh the table to show the new café
+          setTimeout(load, 1500);
         } else {
           $("#dfy-out").textContent = r.error === "email-taken" ? "That email already has an account." : (r.error || "Failed");
         }
       };
-      $("#app").querySelectorAll(".cbtn").forEach((b) => {
-        b.onclick = async () => {
-          try { await navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; }
-          catch { b.textContent = b.dataset.nfc; }
-        };
-      });
-      // Archiving is always safe — nothing is destroyed and it is reversible —
-      // so the only refusal left is taking away a shop's last live card.
-      const WHY = {
-        "last-card": "Their only card — kept",
-        "no-such-card": "Not found",
-        already: "Already archived",
-      };
-      $("#app").querySelectorAll("[data-archive]").forEach((b) => {
-        armBtn(b, "Tap again to archive", async () => {
-          b.disabled = true;
-          const { body: r } = await api("/card/" + b.dataset.archive + "/archive", { method: "POST" });
-          if (r.ok) return void load();
-          b.disabled = false;
-          b.textContent = WHY[r.error] || "Failed";
-        });
-      });
-      // Restoring needs no confirmation: it puts back something still there.
-      $("#app").querySelectorAll("[data-unarchive]").forEach((b) => {
-        b.onclick = async () => {
-          b.disabled = true;
-          const { body: r } = await api("/card/" + b.dataset.unarchive + "/unarchive", { method: "POST" });
-          if (r.ok) return void load();
-          b.disabled = false;
-          b.textContent = "Failed";
-        };
-      });
       $("#reset").onclick = async () => {
         const { body: r } = await api("/owner/" + $("#who").value + "/reset-password", { method: "POST" });
-        if (r.ok) $("#tempout").innerHTML = '<div class="temp">New password for <strong>' + r.email + '</strong>: <strong>' + r.tempPassword + '</strong><br>Give it to them; they can change it in their dashboard.</div>';
+        if (r.ok) $("#tempout").innerHTML = '<div class="temp">New password for <strong>' + esc(r.email) + '</strong>: <strong>' + r.tempPassword + '</strong><br>Give it to them; they can change it in their dashboard.</div>';
         else $("#tempout").textContent = r.error || "Failed";
       };
     }
@@ -4387,7 +4269,7 @@ export function adminPage(): string {
   `;
   return page(
     "Stampy — Admin",
-    `<div class="card awrap" id="app"><p class="sub">Loading…</p></div>`,
+    `<div class="card awrap" id="app"><p class="sub">Loading…</p></div><div class="toast"></div>`,
     css,
     js,
   );

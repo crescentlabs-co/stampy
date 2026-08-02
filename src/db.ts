@@ -454,6 +454,25 @@ export async function migrate(): Promise<void> {
       banner      bytea,
       created_at  timestamptz NOT NULL DEFAULT now()
     );
+    -- v1.6: a design now carries everything the OWNER's designer can set, because
+    -- it is literally that designer pointed at this row instead of a card. Three
+    -- columns short of it and the console would silently drop the accent, the
+    -- band colour and the band texture on every push — a design that looked right
+    -- while you built it and wrong once it landed.
+    ALTER TABLE design_templates ADD COLUMN IF NOT EXISTS accent_color text NOT NULL DEFAULT 'rgb(214,178,120)';
+    ALTER TABLE design_templates ADD COLUMN IF NOT EXISTS band_color   text NOT NULL DEFAULT 'rgb(90,52,38)';
+    ALTER TABLE design_templates ADD COLUMN IF NOT EXISTS band_texture text NOT NULL DEFAULT 'gradient';
+    -- Preview-only fields. The shared designer draws its mock-up from a card's
+    -- shape, so a design has to have that shape too — but none of these are
+    -- pushed onto a real card. A push changes how a card LOOKS and never what it
+    -- promises, so a design can never contradict what staff have been telling
+    -- customers about their reward.
+    ALTER TABLE design_templates ADD COLUMN IF NOT EXISTS stamps_target  integer NOT NULL DEFAULT 10;
+    ALTER TABLE design_templates ADD COLUMN IF NOT EXISTS stamps_start   integer NOT NULL DEFAULT 0;
+    ALTER TABLE design_templates ADD COLUMN IF NOT EXISTS signup_message text NOT NULL DEFAULT '';
+    -- Bumped on every art write, so the designer's preview can cache-bust the
+    -- logo and band it just uploaded instead of showing the previous one.
+    ALTER TABLE design_templates ADD COLUMN IF NOT EXISTS art_version integer NOT NULL DEFAULT 0;
     -- v1.3: the BUSINESS, finally distinct from the card it runs. One merchant
     -- per login for now; the unique index is what enforces that, and dropping it
     -- is how you'd allow several later.
@@ -1812,7 +1831,14 @@ export interface MerchantHealthRow {
 
   // --- engagement / willingness to pay ---
   card_edits: number;
+  /** When they last changed their own card. Null = never made it theirs. */
+  last_card_edit_at: Date | null;
   nudges: number;
+  /** Win-back, per PERSON: people messaged at least once, and how many then
+   *  came back in. Lived only in the per-card table before, which is why it was
+   *  the one thing the merchant drill-down could not show. */
+  nudged: number;
+  nudge_returned: number;
   has_art: boolean;
   staff_devices: number;
 
@@ -1909,7 +1935,24 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             ${ev("e.type = 'pass_dropped'")} AS dropped,
 
             ${ev("e.type = 'card_edited'")} AS card_edits,
+            (SELECT max(e.created_at) FROM events e
+              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND e.type = 'card_edited') AS last_card_edit_at,
             ${ev("e.type = 'nudge'")} AS nudges,
+            -- Win-back, counted per PERSON like every other customer figure: two
+            -- wallet cards belonging to one person who was messaged once must not
+            -- read as two people messaged.
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
+              WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND EXISTS (SELECT 1 FROM events e
+                             WHERE e.serial = p.serial AND e.type = 'nudge')) AS nudged,
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
+              WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND EXISTS (SELECT 1 FROM events s
+                             WHERE s.serial = p.serial AND s.type = 'stamp'
+                               AND s.created_at > (SELECT max(n.created_at) FROM events n
+                                                    WHERE n.serial = p.serial
+                                                      AND n.type = 'nudge'))) AS nudge_returned,
             EXISTS (SELECT 1 FROM card_logos l
                      WHERE l.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)) AS has_art,
             (SELECT count(DISTINCT e.actor)::int FROM events e
@@ -1989,48 +2032,92 @@ export interface DesignTemplateRow {
   bg: string;
   fg: string;
   label_color: string;
+  accent_color: string;
+  band_color: string;
+  band_texture: string;
   stamp_style: string;
+  /** Preview-only. A push never writes these onto a real card. */
+  stamps_target: number;
+  stamps_start: number;
+  signup_message: string;
+  art_version: number;
   created_at: Date;
   has_logo: boolean;
   has_banner: boolean;
 }
 
+/** Every column except the image bytes, which stream separately. */
+const TEMPLATE_COLUMNS_SQL = `id, name, reward, bg, fg, label_color, accent_color,
+            band_color, band_texture, stamp_style, stamps_target, stamps_start,
+            signup_message, art_version, created_at,
+            logo IS NOT NULL AS has_logo, banner IS NOT NULL AS has_banner`;
+
 /** Templates, newest first. Never selects the image bytes — those stream separately. */
 export async function listDesignTemplates(): Promise<DesignTemplateRow[]> {
   const res = await getPool().query<DesignTemplateRow>(
-    `SELECT id, name, reward, bg, fg, label_color, stamp_style, created_at,
-            logo IS NOT NULL AS has_logo, banner IS NOT NULL AS has_banner
-       FROM design_templates ORDER BY created_at DESC`,
+    `SELECT ${TEMPLATE_COLUMNS_SQL} FROM design_templates ORDER BY created_at DESC`,
   );
   return res.rows;
 }
 
-export async function createDesignTemplate(row: {
-  name: string;
-  reward: string;
-  bg: string;
-  fg: string;
-  labelColor: string;
-  stampStyle: string;
-  logo: Buffer | null;
-  banner: Buffer | null;
-}): Promise<{ id: string }> {
+/**
+ * A new design, with nothing set but a name.
+ *
+ * Created empty on purpose: the shared designer edits a row that already exists,
+ * exactly as it edits a card, and saves each change as it is made. Building a
+ * whole design in the browser and posting it once would be a second save path
+ * that has to stay in step with the owner's — which is the duplication this
+ * whole change is removing.
+ */
+export async function createDesignTemplate(name: string): Promise<DesignTemplateRow> {
   const id = generateShortCode(8).toLowerCase();
-  await getPool().query(
-    `INSERT INTO design_templates (id, name, reward, bg, fg, label_color, stamp_style, logo, banner)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [id, row.name, row.reward, row.bg, row.fg, row.labelColor, row.stampStyle, row.logo, row.banner],
+  const res = await getPool().query<DesignTemplateRow>(
+    `INSERT INTO design_templates (id, name) VALUES ($1, $2)
+     RETURNING ${TEMPLATE_COLUMNS_SQL}`,
+    [id, name],
   );
-  return { id };
+  return res.rows[0]!;
+}
+
+/** Column allowlist for `updateDesignTemplate` — never interpolate a caller's key. */
+const TEMPLATE_WRITABLE = new Set([
+  "name", "reward", "bg", "fg", "label_color", "accent_color",
+  "band_color", "band_texture", "stamp_style", "stamps_target",
+  "stamps_start", "signup_message",
+]);
+
+/** Patch a design. Mirrors `updateCard`, so the shared designer drives both. */
+export async function updateDesignTemplate(
+  id: string,
+  fields: Record<string, string | number>,
+): Promise<DesignTemplateRow | null> {
+  const keys = Object.keys(fields).filter((k) => TEMPLATE_WRITABLE.has(k));
+  if (keys.length === 0) return getDesignTemplate(id);
+  const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
+  const res = await getPool().query<DesignTemplateRow>(
+    `UPDATE design_templates SET ${sets} WHERE id = $1 RETURNING ${TEMPLATE_COLUMNS_SQL}`,
+    [id, ...keys.map((k) => fields[k]!)],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Store a design's logo or band. Bumps `art_version` so the preview refetches. */
+export async function setDesignTemplateArt(
+  id: string,
+  kind: "logo" | "banner",
+  png: Buffer | null,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE design_templates SET ${kind} = $2, art_version = art_version + 1 WHERE id = $1`,
+    [id, png],
+  );
 }
 
 export async function getDesignTemplate(id: string): Promise<
   (DesignTemplateRow & { logo: Buffer | null; banner: Buffer | null }) | null
 > {
   const res = await getPool().query(
-    `SELECT id, name, reward, bg, fg, label_color, stamp_style, created_at, logo, banner,
-            logo IS NOT NULL AS has_logo, banner IS NOT NULL AS has_banner
-       FROM design_templates WHERE id = $1`,
+    `SELECT ${TEMPLATE_COLUMNS_SQL}, logo, banner FROM design_templates WHERE id = $1`,
     [id],
   );
   return res.rows[0] ?? null;
@@ -2050,8 +2137,11 @@ export async function logOwnerLogin(ownerId: string): Promise<void> {
 }
 
 export interface AdminRetentionRow {
+  /** MERCHANT id, not a card. One business, however many programmes it runs. */
   id: string;
   name: string;
+  /** People who ever got a stamp — the denominator for the two rates below. */
+  started: number;
   /** Of customers who ever got a stamp, the share who came back a second / third time. */
   second_visit_rate: number;
   third_visit_rate: number;
@@ -2062,9 +2152,7 @@ export interface AdminRetentionRow {
   median_days_to_reward: number | null;
   /** Time to value: median days from joining to the first stamp. */
   median_days_to_first_stamp: number | null;
-  /** Cards at their target with no redeem yet — what the merchant owes. */
-  unclaimed_rewards: number;
-  /** Of cards old enough to judge, the share still visiting. Retention, plainly. */
+  /** Of customers old enough to judge, the share still visiting. Retention, plainly. */
   alive_30: number;
   alive_60: number;
   alive_90: number;
@@ -2080,62 +2168,81 @@ export interface AdminRetentionRow {
  */
 export async function adminRetention(): Promise<AdminRetentionRow[]> {
   const res = await getPool().query<AdminRetentionRow>(
-    `WITH visits AS (
-       SELECT p.card_id, p.serial, p.created_at,
-              count(*) FILTER (WHERE e.type = 'stamp')::int AS n,
+    // One row per PERSON per MERCHANT, not per pass per card. Both changes fix
+    // real under-counting:
+    //
+    //   - Keyed on COALESCE(customer_id, serial) like every other customer
+    //     figure (invariant 5). Keyed on the pass, someone holding an Apple and
+    //     a Google card at one shop read as two customers who each came once
+    //     and never came back — which is how a shop with regulars could show a
+    //     2nd-visit rate of zero.
+    //   - Visits are NET stamps, so an `undo` correcting a mis-scan takes its
+    //     stamp back off. Counting raw stamp events made a scan-then-undo look
+    //     like a returning customer.
+    //
+    // Grouped by merchant because a business is the unit you act on, and
+    // rates/medians cannot be averaged across cards in the browser afterwards.
+    `WITH person AS (
+       SELECT c.merchant_id,
+              ${PERSON_KEY_SQL} AS person,
+              min(p.created_at) AS joined,
+              GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
+                     - count(*) FILTER (WHERE e.type = 'undo'), 0)::int AS n,
               min(e.created_at) FILTER (WHERE e.type = 'stamp') AS first_stamp,
               max(e.created_at) FILTER (WHERE e.type = 'stamp') AS last_stamp,
               min(e.created_at) FILTER (WHERE e.type = 'redeem') AS first_redeem
-         FROM passes p LEFT JOIN events e ON e.serial = p.serial
-        GROUP BY p.card_id, p.serial, p.created_at
+         FROM passes p
+         JOIN cards c ON c.id = p.card_id
+         LEFT JOIN events e ON e.serial = p.serial
+        GROUP BY c.merchant_id, ${PERSON_KEY_SQL}
      ),
-     started AS (SELECT * FROM visits WHERE n > 0)
-     SELECT c.id, c.name,
+     started AS (SELECT * FROM person WHERE n > 0)
+     SELECT m.id, m.name,
+            (SELECT count(*)::int FROM started s WHERE s.merchant_id = m.id) AS started,
             COALESCE((SELECT count(*) FILTER (WHERE n >= 2)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.card_id = c.id), 0)::float8 AS second_visit_rate,
+                        FROM started s WHERE s.merchant_id = m.id), 0)::float8 AS second_visit_rate,
             COALESCE((SELECT count(*) FILTER (WHERE n >= 3)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.card_id = c.id), 0)::float8 AS third_visit_rate,
+                        FROM started s WHERE s.merchant_id = m.id), 0)::float8 AS third_visit_rate,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
                       ORDER BY extract(epoch FROM (last_stamp - first_stamp)) / 86400.0 / (n - 1))
-               FROM started s WHERE s.card_id = c.id AND n >= 2)::float8 AS median_gap_days,
+               FROM started s WHERE s.merchant_id = m.id AND n >= 2)::float8 AS median_gap_days,
             COALESCE((SELECT count(*) FILTER (WHERE first_redeem IS NOT NULL)::numeric / NULLIF(count(*), 0)
-                        FROM started s WHERE s.card_id = c.id), 0)::float8 AS completion_rate,
+                        FROM started s WHERE s.merchant_id = m.id), 0)::float8 AS completion_rate,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
-                      ORDER BY extract(epoch FROM (first_redeem - s.created_at)) / 86400.0)
-               FROM started s WHERE s.card_id = c.id AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
+                      ORDER BY extract(epoch FROM (first_redeem - s.joined)) / 86400.0)
+               FROM started s WHERE s.merchant_id = m.id AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
             (SELECT percentile_cont(0.5) WITHIN GROUP (
-                      ORDER BY extract(epoch FROM (first_stamp - s.created_at)) / 86400.0)
-               FROM started s WHERE s.card_id = c.id)::float8 AS median_days_to_first_stamp,
-            (SELECT count(*)::int FROM passes p
-              WHERE p.card_id = c.id AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
+                      ORDER BY extract(epoch FROM (first_stamp - s.joined)) / 86400.0)
+               FROM started s WHERE s.merchant_id = m.id)::float8 AS median_days_to_first_stamp,
             ${aliveRateSql(30)} AS alive_30,
             ${aliveRateSql(60)} AS alive_60,
             ${aliveRateSql(90)} AS alive_90
-       FROM cards c
-      ORDER BY c.created_at DESC`,
+       FROM merchants m
+      ORDER BY m.created_at DESC`,
   );
   return res.rows;
 }
 
-// Of the cards old enough to judge (joined more than N days ago), the share that
-// have been stamped within the last N days. Cards too young to have had the
-// chance are excluded rather than counted as churned, which would make every
-// young merchant look like a disaster.
+// Of the customers old enough to judge (joined more than N days ago), the share
+// stamped within the last N days. People too new to have had the chance are
+// excluded rather than counted as churned, which would make every young
+// merchant look like a disaster. Everyone who joined is in the denominator,
+// including people who never got a stamp at all — a sign-up who never came back
+// to the counter is churn, not an absence of data.
 function aliveRateSql(days: number): string {
   return `COALESCE((
-       SELECT count(*) FILTER (
-                WHERE EXISTS (SELECT 1 FROM events e
-                               WHERE e.serial = p.serial AND e.type = 'stamp'
-                                 AND e.created_at > now() - interval '${days} days')
-              )::numeric / NULLIF(count(*), 0)
-         FROM passes p
-        WHERE p.card_id = c.id AND p.created_at < now() - interval '${days} days'
+       SELECT count(*) FILTER (WHERE s.last_stamp > now() - interval '${days} days')::numeric
+              / NULLIF(count(*), 0)
+         FROM person s
+        WHERE s.merchant_id = m.id AND s.joined < now() - interval '${days} days'
      ), 0)::float8`;
 }
 
 export interface AdminStaffRow {
-  card_id: string;
-  cafe_name: string;
+  /** MERCHANT id. There is one staff PIN per owner covering every card they
+   *  run, so a counter phone was never card-scoped — grouping by card split one
+   *  phone into two rows the moment a merchant ran two programmes. */
+  merchant_id: string;
   /** `staff:<deviceId>` — a PHONE, not a person. A re-sign-in mints a new one. */
   actor: string;
   stamps: number;
@@ -2146,55 +2253,24 @@ export interface AdminStaffRow {
   last_seen: Date;
 }
 
-export interface AdminFunnelRow {
-  id: string;
-  name: string;
-  /** Poster or link opened. Crawlers and link previews excluded. */
-  scanned: number;
-  /** Chose a wallet on that page. */
-  clicked: number;
-  /** A card was minted for them. */
-  made: number;
-  /** Confirmed sitting in a wallet. See the caveat on this function. */
-  landed: number;
-}
-
-/**
- * The sign-up funnel: scanned → tapped Add → card made → landed in a wallet.
- *
- * Derived entirely from `events`, and that is the point. The old version
- * counted `passes` rows, which meant `pruneAbandonedPasses` quietly erased the
- * evidence of a leak 30 days after it happened — the measurement was coupled to
- * rows we want to stay free to drop. `events.serial` has no foreign key to
- * `passes` (only `registrations` does), so a pruned card leaves its join_view,
- * wallet_click and enroll rows exactly where they were and none of these
- * numbers move.
- *
- * What it answers: lots of scans and few taps is a landing-page problem; lots of
- * taps and few cards means the Add flow is broken; cards made but not landing is
- * customers backing out of the wallet's own Add sheet.
- *
- * **Caveat the UI must repeat:** `landed` comes from `pass_added`, which Apple
- * has always reported and Google only reports since the issuer callback was
- * configured. Cards issued before that never report, so this column reads low
- * for older Android sign-ups. `metadata.platform_source` separates the two if a
- * later query needs to.
- */
-export async function adminFunnel(): Promise<AdminFunnelRow[]> {
-  const res = await getPool().query<AdminFunnelRow>(
-    `SELECT c.id, c.name,
-            count(*) FILTER (
-              WHERE e.type = 'join_view' AND COALESCE(e.metadata->>'bot', 'false') <> 'true'
-            )::int AS scanned,
-            count(*) FILTER (WHERE e.type = 'wallet_click')::int AS clicked,
-            count(*) FILTER (WHERE e.type = 'enroll')::int AS made,
-            count(*) FILTER (WHERE e.type = 'pass_added')::int AS landed
-       FROM cards c LEFT JOIN events e ON e.card_id = c.id
-      GROUP BY c.id, c.name
-      ORDER BY c.created_at`,
-  );
-  return res.rows;
-}
+// `adminFunnel()` used to live here: one row per card of
+// scanned → tapped Add → card made → landed. It was deleted, not moved.
+// `merchantHealth` already computes every one of those figures per merchant
+// (plus the `?s=` channel split, plus removed/dropped) off the same events, and
+// two implementations of one funnel is how the two of them drift. The console
+// rendered both and they were always the same rows twice.
+//
+// The reasoning it carried is worth keeping, because it still governs the
+// surviving copy:
+//
+//   - Derived entirely from `events`, never from `passes` rows. The original
+//     counted passes, which meant `pruneAbandonedPasses` quietly erased the
+//     evidence of a leak 30 days after it happened. `events.serial` has no
+//     foreign key to `passes`, so a pruned card leaves its join_view,
+//     wallet_click and enroll rows exactly where they were.
+//   - `landed` comes from `pass_added`, which Apple has always reported and
+//     Google only reports since the issuer callback was configured, so it reads
+//     low for older Android sign-ups. The console must keep saying so.
 
 /**
  * Per-device counter activity. The outlier to look for is a device whose redeem
@@ -2206,7 +2282,7 @@ export async function adminFunnel(): Promise<AdminFunnelRow[]> {
  */
 export async function adminStaffAudit(): Promise<AdminStaffRow[]> {
   const res = await getPool().query<AdminStaffRow>(
-    `SELECT e.card_id, c.name AS cafe_name, e.actor,
+    `SELECT c.merchant_id, e.actor,
             count(*) FILTER (WHERE e.type = 'stamp')::int AS stamps,
             count(*) FILTER (WHERE e.type = 'redeem')::int AS redeems,
             count(*) FILTER (WHERE e.type = 'undo')::int AS undos,
@@ -2214,9 +2290,9 @@ export async function adminStaffAudit(): Promise<AdminStaffRow[]> {
             min(e.created_at) AS first_seen, max(e.created_at) AS last_seen
        FROM events e JOIN cards c ON c.id = e.card_id
       WHERE e.actor LIKE 'staff:%'
-      GROUP BY e.card_id, c.name, e.actor
+      GROUP BY c.merchant_id, e.actor
       ORDER BY count(*) FILTER (WHERE e.type = 'stamp') DESC
-      LIMIT 100`,
+      LIMIT 200`,
   );
   return res.rows;
 }

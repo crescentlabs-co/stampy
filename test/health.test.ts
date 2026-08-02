@@ -25,7 +25,8 @@ function healthy(over: Partial<MerchantHealthRow> = {}): MerchantHealthRow {
     customers: 30, active_7d: 18, redemptions: 6, unclaimed_rewards: 1,
     scanned: 60, opened_poster: 45, opened_link: 10, opened_other: 5,
     clicked: 40, made: 35, landed: 30, removed: 2, dropped: 0,
-    card_edits: 3, nudges: 2, has_art: true, staff_devices: 3,
+    card_edits: 3, last_card_edit_at: daysAgo(4), nudges: 2, nudged: 2, nudge_returned: 1,
+    has_art: true, staff_devices: 3,
     pin_failed_24h: 0, lookup_failed_7d: 0, messages_failed: 0,
     ...over,
   };
