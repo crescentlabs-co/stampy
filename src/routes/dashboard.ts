@@ -31,6 +31,7 @@ import {
   cardMetrics,
   cardsForMerchant,
   cardsForOwner,
+  counterActivity,
   ensureMerchantForOwner,
   currentSlug,
   merchantForOwner,
@@ -629,6 +630,19 @@ function onePerCustomer(views: CustomerView[]): CustomerView[] {
   }
   return out;
 }
+
+/**
+ * GET /api/counter — what happened at this shop's counter.
+ *
+ * Read-only, and scoped to the owner's own cards through `cardsForOwner`, which
+ * already excludes archived ones. There is no per-staff identity in this system
+ * — one PIN per owner, any signed-in device stamps — so nothing here is
+ * attributed to a person and nothing is judged. See `counterActivity`.
+ */
+dashboardRouter.get("/api/counter", requireOwner, async (req: OwnerRequest, res) => {
+  const owned = await cardsForOwner(req.owner!.id);
+  res.json({ ok: true, counter: await counterActivity(owned.map((c) => c.id)) });
+});
 
 /** GET /api/customers?cardId=all|<id> — cohort summary, counts, and the searchable list. */
 dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, res) => {

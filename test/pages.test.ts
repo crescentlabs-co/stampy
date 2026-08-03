@@ -417,6 +417,84 @@ describe("the console says things once", () => {
   });
 });
 
+/**
+ * "At the counter" states facts and stops.
+ *
+ * There is no per-staff identity in this product — one PIN per owner, any
+ * signed-in device stamps — so nothing on this screen can say who did anything,
+ * and it must not imply that anything is wrong. Almost every pattern it shows
+ * has an ordinary explanation: a customer transferred from a paper card, an
+ * honest mistake corrected, a quiet Tuesday.
+ *
+ * That constraint is a matter of wording and styling, which is exactly the kind
+ * of thing that erodes one well-meaning edit at a time. So it is a test.
+ */
+describe("the counter view judges nothing", () => {
+  const html = dashboardPage(true, "");
+  const block = html.slice(html.indexOf("// ---- At the counter"), html.indexOf('// "Set" or "Reset"'));
+
+  it("is actually on the page", () => {
+    expect(block.length).toBeGreaterThan(500);
+    expect(html).toContain("At the counter");
+    expect(html).toContain('data-counter');
+  });
+
+  it("uses no word that implies something is wrong", () => {
+    for (const word of [
+      "suspicious", "unusual", "warning", "alert", "abnormal", "anomal",
+      "flagged", "irregular", "excessive", "too many", "review this",
+    ]) {
+      expect(block.toLowerCase()).not.toContain(word);
+    }
+  });
+
+  it("computes no ratio, rate or percentage", () => {
+    // A ratio is an opinion about two numbers. The screen shows both instead.
+    expect(block).not.toMatch(/\/\s*(k\.stamps|k\.customers|stamps|customers)\b/);
+    expect(block).not.toContain("toFixed");
+    expect(block).not.toContain("Math.round(");
+    expect(block).not.toContain("%");
+  });
+
+  it("styles no row differently from another", () => {
+    // No severity class, no alarm colour, no conditional emphasis. Matched as
+    // styling rather than as substrings — "cleared" contains "red".
+    for (const cls of [/class="[^"]*\bbad\b/, /class="[^"]*\bwarn\b/, /class="[^"]*\bcritical\b/,
+                       /class="[^"]*\bdanger\b/, /#9a3412/, /color:\s*red/]) {
+      expect(cls.test(block), `the counter block styles something with ${cls}`).toBe(false);
+    }
+    // And no class chosen by a value — that is a verdict rendered as CSS.
+    expect(block).not.toMatch(/\?\s*"[a-z-]*(bad|warn|alarm)/);
+  });
+
+  it("does not invent a stamps-added edit", () => {
+    // Adding a stamp is the ordinary action; only `undo` is a correction.
+    // "Stamps added" would be the stamps-given number under a darker label.
+    expect(block).toContain("Stamps taken back");
+    expect(block).not.toMatch(/stamps added/i);
+  });
+
+  it("names the forced stamp for what happened, not what it might mean", () => {
+    expect(block).toContain("Stamped again within a minute");
+  });
+
+  it("says what the device list actually is", () => {
+    // Both of these mislead if left unsaid: it is not a list of signed-in
+    // phones, and a cleared browser reappears as a new one.
+    expect(block).toContain("not phones signed in");
+    expect(block).toContain("browser data is");
+    // The only device control that exists is the PIN reset directly above it.
+    expect(block).toContain("reset the staff PIN above");
+  });
+
+  it("opens its drill-downs in the read-only sheet, not a browser dialog", () => {
+    // Invariant 8: a suppressed confirm() returns false silently.
+    expect(block).toContain("sheet(");
+    expect(block).not.toContain("confirm(");
+    expect(block).not.toContain("alert(");
+  });
+});
+
 describe("dashboard information architecture", () => {
   const html = dashboardPage(true, "");
 

@@ -2866,6 +2866,165 @@ export async function pruneAbandonedPasses(olderThanDays = 30): Promise<number> 
   return res.rowCount ?? 0;
 }
 
+// ------------------------------------------------------ counter activity ----
+
+/** How long a staff device stays in the list. See `counterActivity`. */
+const DEVICE_WINDOW_DAYS = 14;
+
+export interface CounterDay {
+  /** ISO date, in the server's timezone — the same day boundary staff work to. */
+  day: string;
+  stamps: number;
+  customers: number;
+  rewards: number;
+}
+
+export interface CounterCorrection {
+  at: Date;
+  /** `undo` or `redeem`. Named, never interpreted. */
+  type: string;
+  /** The printed short code, so the owner can match it to a card if they want. */
+  code: string | null;
+}
+
+export interface CounterDevice {
+  /** `events.device_id` — a PHONE, and only since it last signed in. */
+  device_id: string;
+  first_seen: Date;
+  last_seen: Date;
+  stamps: number;
+}
+
+export interface CounterActivity {
+  stamps: number;
+  customers: number;
+  /** Stamps staff confirmed past the 60s same-card cooldown. See below. */
+  stampedAgain: number;
+  rewards: number;
+  takenBack: number;
+  phones: number;
+  lastStampAt: Date | null;
+  days: CounterDay[];
+  corrections: CounterCorrection[];
+  devices: CounterDevice[];
+}
+
+/**
+ * What happened at this shop's counter — facts, and only facts.
+ *
+ * The screen this feeds is deliberately not a staff-performance tool: there is
+ * no per-staff identity in this system (one PIN per owner, any signed-in device
+ * can stamp), so nothing here is attributed to a person and nothing is judged.
+ * It returns counts; the owner decides whether any of them mean anything.
+ *
+ * Three things are true of this data that the UI must not get wrong:
+ *
+ * 1. **Welcome stamps are already excluded, for free.** A card's starting
+ *    stamps and the restart after a reward are written straight to
+ *    `passes.stamp_count` (`createPass`, `redeemPass`) and emit no event — so
+ *    `type = 'stamp'` has only ever meant "somebody stamped at the counter".
+ *    There is nothing to filter out, and nothing that could drift.
+ * 2. **`forced` is the literal "stamped again in one interaction" event**, not
+ *    an inference. The stamper refuses a second stamp on the same card inside
+ *    60s (STAMP_COOLDOWN_MS, src/routes/staff.ts) unless staff confirm, and the
+ *    confirmation is what sets this column. A forced stamp is still one stamp:
+ *    it counts once in `stamps` and once in `stampedAgain`, never twice in
+ *    either.
+ * 3. **Customers are PEOPLE** (invariant 5). Someone holding an Apple and a
+ *    Google card is one customer stamped, not two.
+ *
+ * `undo` is the only correction that exists. There is no "stamp added" edit —
+ * adding a stamp IS the ordinary action — so the caller must not present one.
+ */
+export async function counterActivity(cardIds: string[]): Promise<CounterActivity> {
+  const empty: CounterActivity = {
+    stamps: 0, customers: 0, stampedAgain: 0, rewards: 0, takenBack: 0,
+    phones: 0, lastStampAt: null, days: [], corrections: [], devices: [],
+  };
+  if (cardIds.length === 0) return empty;
+
+  const sql = getPool();
+  // "Today" is the server's day, which is the day boundary staff work to.
+  const today = `e.created_at >= date_trunc('day', now())`;
+  const [totals, days, corrections, devices] = await Promise.all([
+    sql.query<{
+      stamps: string; customers: string; stamped_again: string; rewards: string;
+      taken_back: string; phones: string; last_stamp: Date | null;
+    }>(
+      `SELECT count(*) FILTER (WHERE e.type = 'stamp' AND ${today})::text AS stamps,
+              count(DISTINCT COALESCE(e.customer_id, e.serial))
+                FILTER (WHERE e.type = 'stamp' AND ${today})::text AS customers,
+              count(*) FILTER (WHERE e.type = 'stamp' AND e.forced AND ${today})::text AS stamped_again,
+              count(*) FILTER (WHERE e.type = 'redeem' AND ${today})::text AS rewards,
+              count(*) FILTER (WHERE e.type = 'undo' AND ${today})::text AS taken_back,
+              count(DISTINCT e.device_id)
+                FILTER (WHERE e.type = 'stamp' AND e.device_id <> '' AND ${today})::text AS phones,
+              max(e.created_at) FILTER (WHERE e.type = 'stamp') AS last_stamp
+         FROM events e WHERE e.card_id = ANY($1)`,
+      [cardIds],
+    ),
+    // One row per day for the last week, including days with nothing on them —
+    // a missing Sunday reads as an error, a Sunday with 0 reads as a Sunday.
+    sql.query<CounterDay>(
+      `SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+              count(*) FILTER (WHERE e.type = 'stamp')::int AS stamps,
+              count(DISTINCT COALESCE(e.customer_id, e.serial))
+                FILTER (WHERE e.type = 'stamp')::int AS customers,
+              count(*) FILTER (WHERE e.type = 'redeem')::int AS rewards
+         FROM generate_series(date_trunc('day', now()) - interval '6 days',
+                              date_trunc('day', now()), interval '1 day') AS d(day)
+         LEFT JOIN events e
+                ON e.card_id = ANY($1)
+               AND e.created_at >= d.day
+               AND e.created_at < d.day + interval '1 day'
+        GROUP BY d.day
+        ORDER BY d.day DESC`,
+      [cardIds],
+    ),
+    // Corrections and rewards together: one list is the whole picture of what
+    // was changed at the counter today, and two popups for it would be worse.
+    sql.query<CounterCorrection>(
+      `SELECT e.created_at AS at, e.type, p.short_code AS code
+         FROM events e LEFT JOIN passes p ON p.serial = e.serial
+        WHERE e.card_id = ANY($1) AND e.type IN ('undo', 'redeem') AND ${today}
+        ORDER BY e.created_at DESC
+        LIMIT 100`,
+      [cardIds],
+    ),
+    // Phones that have STAMPED in the window — there is no device registry, so a
+    // device first exists here when it does something. The window matches
+    // STAFF_DAYS (src/auth.ts): a device that has not stamped in that long has
+    // an expired session anyway, so listing it would overstate the counter.
+    sql.query<CounterDevice>(
+      `SELECT e.device_id,
+              min(e.created_at) AS first_seen,
+              max(e.created_at) AS last_seen,
+              count(*) FILTER (WHERE e.type = 'stamp')::int AS stamps
+         FROM events e
+        WHERE e.card_id = ANY($1) AND e.device_id <> ''
+          AND e.created_at > now() - interval '${DEVICE_WINDOW_DAYS} days'
+        GROUP BY e.device_id
+        ORDER BY max(e.created_at) DESC
+        LIMIT 50`,
+      [cardIds],
+    ),
+  ]);
+
+  const t = totals.rows[0];
+  return {
+    stamps: Number(t?.stamps ?? 0),
+    customers: Number(t?.customers ?? 0),
+    stampedAgain: Number(t?.stamped_again ?? 0),
+    rewards: Number(t?.rewards ?? 0),
+    takenBack: Number(t?.taken_back ?? 0),
+    phones: Number(t?.phones ?? 0),
+    lastStampAt: t?.last_stamp ?? null,
+    days: days.rows,
+    corrections: corrections.rows,
+    devices: devices.rows,
+  };
+}
+
 // --------------------------------------------------------- registrations ----
 
 /**

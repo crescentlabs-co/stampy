@@ -263,6 +263,45 @@ export const MODAL_JS = /* js */ `
     });
   }
 
+  /**
+   * The same box, read-only: something to look at, with one way out.
+   *
+   * modal() above asks a question and its Cancel means "don't do it". A list of
+   * what happened has nothing to cancel, and offering Cancel next to Confirm on
+   * a page that only shows facts invites the reader to think one of them
+   * commits something. So this has a single Close, and shares the dim backdrop,
+   * the Escape handler and the focus return with modal() rather than growing a
+   * second dialog to keep in step.
+   */
+  function sheet(title, bodyHtml) {
+    var last = document.activeElement;
+    var wrap = document.createElement("div");
+    wrap.className = "mdl";
+    wrap.innerHTML =
+      '<div class="mdlbox" role="dialog" aria-modal="true" aria-labelledby="mdls">' +
+        '<h3 id="mdls"></h3><div class="mdlbody"></div>' +
+        '<div class="mdlrow"><button type="button" class="btn btn-dark" data-close>Close</button></div>' +
+      "</div>";
+    wrap.querySelector("#mdls").textContent = title;
+    wrap.querySelector(".mdlbody").innerHTML = bodyHtml;
+    var closeBtn = wrap.querySelector("[data-close]");
+    function close() {
+      document.removeEventListener("keydown", onKey, true);
+      wrap.remove();
+      if (last && last.focus) last.focus();
+    }
+    function onKey(e) {
+      if (e.key === "Escape") { e.preventDefault(); close(); }
+      // One button, so the trap is simply: Tab goes nowhere else.
+      if (e.key === "Tab") { e.preventDefault(); closeBtn.focus(); }
+    }
+    closeBtn.onclick = close;
+    wrap.onclick = function (e) { if (e.target === wrap) close(); };
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(wrap);
+    closeBtn.focus();
+  }
+
   /** A tappable ⓘ and the one line it reveals. Returns markup, not an element. */
   function info(text) {
     return '<button type="button" class="ihint" data-info="' + mdlEsc(text) + '" aria-label="What is this?">i</button>';
@@ -2855,6 +2894,32 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
             border-radius: 10px; margin-top: 10px; font-size: .85rem; line-height: 1.5; }
     /* --- Card tab: Design / Rules section headings --- */
     .sec { font-size: 1.1rem; margin: 28px 0 2px; padding-top: 20px; border-top: 1px solid var(--line); }
+    /* --- counter activity: facts, and nothing that looks like a verdict --- */
+    /* Deliberately has no state styling at all. There is no red, no bold-on-
+       threshold, no chip: the moment one number can look different from
+       another, the screen starts telling the owner what to think, which is the
+       one thing it must not do. One weight, one colour, every row. */
+    .cact { border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+            margin: 10px 0 6px; background: var(--surface); }
+    .cact .crow { display: flex; align-items: center; gap: 10px; width: 100%;
+                  padding: 12px 14px; border: none; background: none; font: inherit;
+                  color: var(--ink); text-align: left; }
+    .cact .crow + .crow { border-top: 1px solid var(--line); }
+    .cact button.crow { cursor: pointer; }
+    .cact button.crow:hover { background: var(--ghost-bg); }
+    .cact .cl { flex: 1; }
+    .cact .cn { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .cact .cgo { color: var(--muted); font-size: .85rem; }
+    .cwhen { color: var(--muted); font-size: .82rem; margin: 0 0 2px; }
+    .cweek { width: 100%; border-collapse: collapse; font-size: .88rem; margin-top: 6px; }
+    .cweek td { padding: 9px 4px; border-bottom: 1px solid var(--line); }
+    .cweek td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cweek td.d { color: var(--muted); }
+    .clist { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    .clist th { text-align: left; color: var(--muted); font-size: .7rem; text-transform: uppercase;
+                letter-spacing: .06em; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); }
+    .clist td { padding: 9px 8px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .clist td.mono { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; }
     .sec.first { margin-top: 4px; padding-top: 0; border-top: none; }
     /* Design is a set-it-once job, so it folds away. Rules — the reward, the
        stamp count, the win-back — is what owners come back to, and stays open. */
@@ -3208,6 +3273,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Open the stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
         </div>
 
+        <!-- Counter activity. Filled in by loadCounter() below, because it is a
+             second request and the rest of this tab must not wait on it. -->
+        <h2 class="sec">At the counter\${info("What happened at your counter, and nothing more. Everyone shares one PIN, so none of this can say who did anything — it is here so you can see the day from wherever you are and decide for yourself whether to ask about any of it.")}</h2>
+        <div data-counter></div>
+
         <h2 class="sec">Share</h2>
         <!-- Both are /j/ links: the merchant ref survives a rename, a second
              card and a change of ownership, and every ref a shop has ever held
@@ -3234,6 +3304,97 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // No wireInfo here: renderPanel delegates from the panel this sits inside,
       // and a second listener on an ancestor would fire on the same click and
       // close what the first just opened.
+
+      // ---- At the counter ---------------------------------------------------
+      // Every line is a count. Nothing here computes a rate, compares two
+      // numbers, or styles one differently from another: the owner knows their
+      // own shop and we do not, so the screen states what happened and stops.
+      const cbox = div.querySelector("[data-counter]");
+      const hhmm = (d) => new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const dayName = (iso) => {
+        // Parsed as local midday, not midnight: a midnight UTC date shifts a day
+        // backwards west of Greenwich and the row would be labelled wrong.
+        const dt = new Date(iso + "T12:00:00");
+        return dt.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+      };
+      const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+      (async () => {
+        const { body } = await api("/counter");
+        if (!body.ok) { cbox.innerHTML = ""; return; }
+        const k = body.counter;
+        // A row is a button only when there is something behind it to open.
+        const row = (label, n, key) => {
+          const inner = '<span class="cl">' + label + '</span><span class="cn">' + n + "</span>";
+          return key && n > 0
+            ? '<button type="button" class="crow" data-open="' + key + '">' + inner +
+              '<span class="cgo">›</span></button>'
+            : '<div class="crow">' + inner + "</div>";
+        };
+        // The last stamp is deliberately NOT limited to today — on a quiet day
+        // it is the most useful line on the screen. Which means it has to carry
+        // its date when it isn't today, or "last stamp 4:12pm" reads as this
+        // afternoon when it was Tuesday.
+        const lastStamp = (at) => {
+          const d = new Date(at), now = new Date();
+          const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+            && d.getDate() === now.getDate();
+          return sameDay
+            ? "last stamp " + hhmm(at)
+            : "last stamp " + d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) +
+              ", " + hhmm(at);
+        };
+        cbox.innerHTML =
+          '<p class="cwhen">Today' +
+            (k.lastStampAt ? " · " + lastStamp(k.lastStampAt) : " · nothing stamped yet") + "</p>" +
+          '<div class="cact">' +
+            row("Stamps given", k.stamps) +
+            row("Customers stamped", k.customers) +
+            // The literal event, not a guess: staff confirmed a second stamp on
+            // the same card inside a minute. Named for what happened, because
+            // there are plenty of ordinary reasons for it.
+            row("Stamped again within a minute", k.stampedAgain) +
+            row("Rewards given", k.rewards, "corrections") +
+            row("Stamps taken back", k.takenBack, "corrections") +
+            row("Phones that stamped", k.phones, "devices") +
+          "</div>" +
+          (k.days.some((d) => d.stamps || d.rewards)
+            ? '<label style="margin-top:16px">Last 7 days</label><table class="cweek">' +
+              k.days.map((d) => '<tr><td class="d">' + dayName(d.day) + "</td>" +
+                '<td class="n">' + plural(d.stamps, "stamp", "stamps") + "</td>" +
+                '<td class="n">' + plural(d.customers, "customer", "customers") + "</td>" +
+                '<td class="n">' + plural(d.rewards, "reward", "rewards") + "</td></tr>").join("") +
+              "</table>"
+            : "");
+
+        cbox.querySelectorAll("[data-open]").forEach((b) => {
+          b.onclick = () => {
+            if (b.dataset.open === "corrections") {
+              sheet("Rewards and corrections today",
+                k.corrections.length
+                  ? '<table class="clist"><tr><th>Time</th><th>What</th><th>Card</th></tr>' +
+                    k.corrections.map((x) => "<tr><td>" + hhmm(x.at) + "</td><td>" +
+                      (x.type === "undo" ? "Stamp taken back" : "Reward given") + "</td>" +
+                      '<td class="mono">' + (x.code || "—") + "</td></tr>").join("") + "</table>"
+                  : "<p>Nothing today.</p>");
+              return;
+            }
+            sheet("Phones that stamped",
+              (k.devices.length
+                ? '<table class="clist"><tr><th>Phone</th><th>First seen</th><th>Last seen</th><th>Stamps</th></tr>' +
+                  k.devices.map((x) => '<tr><td class="mono">' + x.device_id.slice(0, 6) + "</td><td>" +
+                    dayName(String(x.first_seen).slice(0, 10)) + "</td><td>" +
+                    dayName(String(x.last_seen).slice(0, 10)) + '</td><td class="n">' + x.stamps +
+                    "</td></tr>").join("") + "</table>"
+                : "<p>Nothing in the last 14 days.</p>") +
+              // Both of these would mislead if left unsaid, and neither is a
+              // judgement — they are how the list is built.
+              '<p class="muted" style="margin-top:12px;font-size:.82rem">These are phones that have ' +
+              "stamped in the last 14 days, not phones signed in. A phone whose browser data is " +
+              "cleared comes back as a new one here. To sign every phone out, reset the staff PIN above.</p>");
+          };
+        });
+      })();
 
       // "Set" or "Reset" — an owner who already has a PIN is replacing one, and
       // the button saying "Set" made that look like a first-time action they had

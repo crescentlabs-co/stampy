@@ -1780,6 +1780,118 @@ async function main() {
   });
   expect((await nudgeState(wp.serial))!.removed === false, "re-adding the card clears the removed flag");
 
+  // --- At the counter: facts only, and each one counted the right way -------
+  // The screen this feeds is deliberately not a staff-performance tool — one
+  // PIN per owner, no staff identity — so every check here is about a COUNT
+  // being right, never about a judgement being made.
+  {
+    const counterNow = async (cookie = cookieNow) =>
+      JSON.parse((await get("/dashboard/api/counter", { headers: { cookie } })).body).counter;
+    const before = await counterNow();
+
+    // 1. Welcome stamps must never appear. A card is minted holding some
+    //    already (stampCount below), written straight to passes.stamp_count
+    //    with no event — so issuing one moves nothing on this screen.
+    const wp = await mk();
+    const afterIssue = await counterNow();
+    expect(
+      afterIssue.stamps === before.stamps,
+      `issuing a card with welcome stamps adds nothing to stamps given (${afterIssue.stamps})`,
+    );
+
+    // 2. A real stamp at the counter is +1 stamp and +1 customer.
+    await fetch(base + "/staff/api/stamp", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: wp.serial }),
+    });
+    const afterOne = await counterNow();
+    expect(afterOne.stamps === before.stamps + 1, "a counter stamp is one stamp given");
+    expect(afterOne.customers === before.customers + 1, "...and one customer stamped");
+
+    // 3. A forced stamp is the literal "stamped again within a minute" event.
+    //    It is still ONE stamp: it must not be double-counted in either column.
+    await fetch(base + "/staff/api/stamp", {
+      method: "POST", headers: staffHeaders,
+      body: JSON.stringify({ serial: wp.serial, force: true }),
+    });
+    const afterForced = await counterNow();
+    expect(afterForced.stamps === afterOne.stamps + 1, "a forced stamp counts once in stamps given");
+    expect(
+      afterForced.stampedAgain === before.stampedAgain + 1,
+      "...and once in stamped-again, never twice in either",
+    );
+
+    // 4. An undo is a correction, shown beside the stamps rather than netted
+    //    off them: both are facts, and hiding one inside the other is the kind
+    //    of interpretation this screen exists to avoid.
+    await fetch(base + "/staff/api/undo", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: wp.serial }),
+    });
+    const afterUndo = await counterNow();
+    expect(afterUndo.takenBack === before.takenBack + 1, "an undo shows as a stamp taken back");
+    expect(afterUndo.stamps === afterForced.stamps, "...and does not quietly reduce stamps given");
+
+    // 5. Customers are PEOPLE (invariant 5). One person holding an Apple and a
+    //    Google card, both stamped, is one customer stamped.
+    const merchant = await merchantOf("default");
+    const twoCards = await mkCustomer(merchant!.id);
+    const ap = await mk("apple", twoCards.id);
+    const gp = await mk("google", twoCards.id);
+    const beforePair = await counterNow();
+    for (const serial of [ap.serial, gp.serial]) {
+      await fetch(base + "/staff/api/stamp", {
+        method: "POST", headers: staffHeaders, body: JSON.stringify({ serial }),
+      });
+    }
+    const afterPair = await counterNow();
+    expect(afterPair.stamps === beforePair.stamps + 2, "two wallet cards stamped is two stamps");
+    expect(
+      afterPair.customers === beforePair.customers + 1,
+      `...but one customer stamped (${beforePair.customers} → ${afterPair.customers})`,
+    );
+
+    // 6. Corrections list what happened, with the printed code so the owner can
+    //    match it to a card. Nothing in it is labelled or ranked.
+    expect(
+      afterPair.corrections.some((x: any) => x.type === "undo" && x.code === wp.short_code),
+      "the drill-down names the card an undo was made on",
+    );
+
+    // 7. Devices are phones that STAMPED — there is no device registry, and the
+    //    window matches the staff cookie's own 14-day life.
+    expect(
+      afterPair.devices.every((d: any) => d.device_id && d.stamps >= 0),
+      "the device list is built from devices that stamped",
+    );
+    await getPool().query(
+      `UPDATE events SET created_at = now() - interval '30 days' WHERE device_id = $1`,
+      ["staleee"],
+    );
+    await logEvent("default", wp.serial, "stamp", { actor: "staff:staleee" });
+    await getPool().query(
+      `UPDATE events SET created_at = now() - interval '30 days'
+        WHERE device_id = 'staleee'`,
+    );
+    const afterStale = await counterNow();
+    expect(
+      !afterStale.devices.some((d: any) => d.device_id === "staleee"),
+      "a device that has not stamped in 14 days drops off — its session has expired anyway",
+    );
+    expect(afterStale.stamps === afterPair.stamps, "...and a 30-day-old stamp is not in today");
+
+    // 8. Owner-scoped. Another owner's counter shows none of this.
+    const theirs = await counterNow(cookieOutsider);
+    expect(theirs.stamps === 0 && theirs.devices.length === 0,
+      "another owner's counter shows nothing of this shop");
+
+    // 9. The week always has seven rows, including empty days: a missing
+    //    Sunday reads as a fault, a Sunday with nothing on it reads as Sunday.
+    expect(afterStale.days.length === 7, `the week is always seven rows (${afterStale.days.length})`);
+    expect(
+      afterStale.days[0]!.day > afterStale.days[6]!.day,
+      "...newest first",
+    );
+  }
+
   // --- Nudge limits are enforced by the server, not by a browser dialog ---
   const rl = await mk();
   await upsertRegistration("dev-rl", rl.serial, "tok-rl"); // a real customer, so they're nudgeable
