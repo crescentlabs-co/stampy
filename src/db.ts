@@ -2871,20 +2871,23 @@ export async function pruneAbandonedPasses(olderThanDays = 30): Promise<number> 
 /** How long a staff device stays in the list. See `counterActivity`. */
 const DEVICE_WINDOW_DAYS = 14;
 
-export interface CounterDay {
-  /** ISO date, in the server's timezone — the same day boundary staff work to. */
-  day: string;
-  stamps: number;
-  customers: number;
-  rewards: number;
-}
-
-export interface CounterCorrection {
+export interface CounterEvent {
   at: Date;
-  /** `undo` or `redeem`. Named, never interpreted. */
+  /** `stamp`, `undo` or `redeem`. Named, never interpreted. */
   type: string;
   /** The printed short code, so the owner can match it to a card if they want. */
   code: string | null;
+}
+
+/** Stamps that landed on one card in quick succession. See `counterActivity`. */
+export interface CounterBurst {
+  at: Date;
+  /** How many stamps, and over how many seconds. Two plain facts. */
+  stamps: number;
+  seconds: number;
+  code: string | null;
+  /** How many runs there are in total, if more than the returned page. */
+  total: number;
 }
 
 export interface CounterDevice {
@@ -2898,14 +2901,17 @@ export interface CounterDevice {
 export interface CounterActivity {
   stamps: number;
   customers: number;
-  /** Stamps staff confirmed past the 60s same-card cooldown. See below. */
+  /** Runs of stamps on one card inside a minute — the same thing `bursts`
+   *  lists, counted. Derived from the SAME query so the number on the screen
+   *  and the list behind it can never disagree. */
   stampedAgain: number;
   rewards: number;
   takenBack: number;
   phones: number;
   lastStampAt: Date | null;
-  days: CounterDay[];
-  corrections: CounterCorrection[];
+  /** Today's stamps, undos and redeems, newest first — the exact times. */
+  events: CounterEvent[];
+  bursts: CounterBurst[];
   devices: CounterDevice[];
 }
 
@@ -2915,7 +2921,8 @@ export interface CounterActivity {
  * The screen this feeds is deliberately not a staff-performance tool: there is
  * no per-staff identity in this system (one PIN per owner, any signed-in device
  * can stamp), so nothing here is attributed to a person and nothing is judged.
- * It returns counts; the owner decides whether any of them mean anything.
+ * It returns counts and the times behind them; the owner decides whether any of
+ * it means anything.
  *
  * Three things are true of this data that the UI must not get wrong:
  *
@@ -2924,9 +2931,9 @@ export interface CounterActivity {
  *    `passes.stamp_count` (`createPass`, `redeemPass`) and emit no event — so
  *    `type = 'stamp'` has only ever meant "somebody stamped at the counter".
  *    There is nothing to filter out, and nothing that could drift.
- * 2. **`forced` is the literal "stamped again in one interaction" event**, not
- *    an inference. The stamper refuses a second stamp on the same card inside
- *    60s (STAMP_COOLDOWN_MS, src/routes/staff.ts) unless staff confirm, and the
+ * 2. **`forced` is the literal "stamped again" event**, not an inference. The
+ *    stamper refuses a second stamp on the same card inside 60s
+ *    (STAMP_COOLDOWN_MS, src/routes/staff.ts) unless staff confirm, and the
  *    confirmation is what sets this column. A forced stamp is still one stamp:
  *    it counts once in `stamps` and once in `stampedAgain`, never twice in
  *    either.
@@ -2939,23 +2946,22 @@ export interface CounterActivity {
 export async function counterActivity(cardIds: string[]): Promise<CounterActivity> {
   const empty: CounterActivity = {
     stamps: 0, customers: 0, stampedAgain: 0, rewards: 0, takenBack: 0,
-    phones: 0, lastStampAt: null, days: [], corrections: [], devices: [],
+    phones: 0, lastStampAt: null, events: [], bursts: [], devices: [],
   };
   if (cardIds.length === 0) return empty;
 
   const sql = getPool();
   // "Today" is the server's day, which is the day boundary staff work to.
   const today = `e.created_at >= date_trunc('day', now())`;
-  const [totals, days, corrections, devices] = await Promise.all([
+  const [totals, events, bursts, devices] = await Promise.all([
     sql.query<{
-      stamps: string; customers: string; stamped_again: string; rewards: string;
+      stamps: string; customers: string; rewards: string;
       taken_back: string; phones: string; last_stamp: Date | null;
     }>(
       `SELECT count(*) FILTER (WHERE e.type = 'stamp' AND ${today})::text AS stamps,
               count(DISTINCT COALESCE(e.customer_id, e.serial))
                 FILTER (WHERE e.type = 'stamp' AND ${today})::text AS customers,
-              count(*) FILTER (WHERE e.type = 'stamp' AND e.forced AND ${today})::text AS stamped_again,
-              count(*) FILTER (WHERE e.type = 'redeem' AND ${today})::text AS rewards,
+                      count(*) FILTER (WHERE e.type = 'redeem' AND ${today})::text AS rewards,
               count(*) FILTER (WHERE e.type = 'undo' AND ${today})::text AS taken_back,
               count(DISTINCT e.device_id)
                 FILTER (WHERE e.type = 'stamp' AND e.device_id <> '' AND ${today})::text AS phones,
@@ -2963,31 +2969,57 @@ export async function counterActivity(cardIds: string[]): Promise<CounterActivit
          FROM events e WHERE e.card_id = ANY($1)`,
       [cardIds],
     ),
-    // One row per day for the last week, including days with nothing on them —
-    // a missing Sunday reads as an error, a Sunday with 0 reads as a Sunday.
-    sql.query<CounterDay>(
-      `SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
-              count(*) FILTER (WHERE e.type = 'stamp')::int AS stamps,
-              count(DISTINCT COALESCE(e.customer_id, e.serial))
-                FILTER (WHERE e.type = 'stamp')::int AS customers,
-              count(*) FILTER (WHERE e.type = 'redeem')::int AS rewards
-         FROM generate_series(date_trunc('day', now()) - interval '6 days',
-                              date_trunc('day', now()), interval '1 day') AS d(day)
-         LEFT JOIN events e
-                ON e.card_id = ANY($1)
-               AND e.created_at >= d.day
-               AND e.created_at < d.day + interval '1 day'
-        GROUP BY d.day
-        ORDER BY d.day DESC`,
-      [cardIds],
-    ),
-    // Corrections and rewards together: one list is the whole picture of what
-    // was changed at the counter today, and two popups for it would be worse.
-    sql.query<CounterCorrection>(
+    // Every counter action today with its exact time. The time is the point:
+    // a count tells you something happened, the clock tells you when.
+    sql.query<CounterEvent>(
       `SELECT e.created_at AS at, e.type, p.short_code AS code
          FROM events e LEFT JOIN passes p ON p.serial = e.serial
-        WHERE e.card_id = ANY($1) AND e.type IN ('undo', 'redeem') AND ${today}
+        WHERE e.card_id = ANY($1) AND e.type IN ('stamp', 'undo', 'redeem') AND ${today}
         ORDER BY e.created_at DESC
+        LIMIT 300`,
+      [cardIds],
+    ),
+    // Runs of stamps on ONE card with under a minute between them, collapsed to
+    // a single line: when it started, how many, over how long. That is what
+    // "stamped again within a minute" actually looked like, and a list of
+    // individual stamps a few seconds apart would make the reader do the
+    // grouping themselves. A run of one is not a run, hence HAVING count > 1.
+    //
+    // The COUNT ON THE SCREEN comes from this query too (`total`), not from
+    // `events.forced`. Both describe the same thing — the stamper refuses a
+    // second stamp inside 60s unless staff confirm, and that confirmation sets
+    // `forced` — but they can drift apart at a day boundary, where the first
+    // stamp of a run falls yesterday and only the confirmation lands today.
+    // A number whose drill-down is empty reads as broken, so there is one
+    // source for both.
+    sql.query<CounterBurst>(
+      `WITH stamps AS (
+         SELECT e.serial, e.created_at, p.short_code,
+                lag(e.created_at) OVER (PARTITION BY e.serial ORDER BY e.created_at) AS prev
+           FROM events e LEFT JOIN passes p ON p.serial = e.serial
+          WHERE e.card_id = ANY($1) AND e.type = 'stamp' AND ${today}
+       ),
+       marked AS (
+         SELECT *, CASE WHEN prev IS NULL OR created_at - prev > interval '60 seconds'
+                        THEN 1 ELSE 0 END AS starts
+           FROM stamps
+       ),
+       runs AS (
+         SELECT *, sum(starts) OVER (PARTITION BY serial ORDER BY created_at) AS run
+           FROM marked
+       ),
+       grouped AS (
+         SELECT min(created_at) AS at,
+                count(*)::int AS stamps,
+                GREATEST(0, round(extract(epoch FROM (max(created_at) - min(created_at)))))::int AS seconds,
+                max(short_code) AS code
+           FROM runs
+          GROUP BY serial, run
+         HAVING count(*) > 1
+       )
+       SELECT at, stamps, seconds, code, count(*) OVER ()::int AS total
+         FROM grouped
+        ORDER BY at DESC
         LIMIT 100`,
       [cardIds],
     ),
@@ -3014,13 +3046,13 @@ export async function counterActivity(cardIds: string[]): Promise<CounterActivit
   return {
     stamps: Number(t?.stamps ?? 0),
     customers: Number(t?.customers ?? 0),
-    stampedAgain: Number(t?.stamped_again ?? 0),
+    stampedAgain: bursts.rows[0]?.total ?? 0,
     rewards: Number(t?.rewards ?? 0),
     takenBack: Number(t?.taken_back ?? 0),
     phones: Number(t?.phones ?? 0),
     lastStampAt: t?.last_stamp ?? null,
-    days: days.rows,
-    corrections: corrections.rows,
+    events: events.rows,
+    bursts: bursts.rows,
     devices: devices.rows,
   };
 }

@@ -1819,6 +1819,17 @@ async function main() {
       afterForced.stampedAgain === before.stampedAgain + 1,
       "...and once in stamped-again, never twice in either",
     );
+    // The number and the list behind it come from one query, so they cannot
+    // disagree — a count with an empty drill-down reads as broken.
+    expect(
+      afterForced.bursts.length > 0 && afterForced.bursts.length === afterForced.stampedAgain,
+      `the stamped-again count is exactly what its drill-down lists (${afterForced.stampedAgain} vs ${afterForced.bursts.length})`,
+    );
+    const run = afterForced.bursts.find((b: any) => b.code === wp.short_code);
+    expect(
+      run && run.stamps === 2 && typeof run.seconds === "number",
+      "...and the run says how many stamps landed, and over how long",
+    );
 
     // 4. An undo is a correction, shown beside the stamps rather than netted
     //    off them: both are facts, and hiding one inside the other is the kind
@@ -1852,7 +1863,7 @@ async function main() {
     // 6. Corrections list what happened, with the printed code so the owner can
     //    match it to a card. Nothing in it is labelled or ranked.
     expect(
-      afterPair.corrections.some((x: any) => x.type === "undo" && x.code === wp.short_code),
+      afterPair.events.some((x: any) => x.type === "undo" && x.code === wp.short_code),
       "the drill-down names the card an undo was made on",
     );
 
@@ -1883,12 +1894,13 @@ async function main() {
     expect(theirs.stamps === 0 && theirs.devices.length === 0,
       "another owner's counter shows nothing of this shop");
 
-    // 9. The week always has seven rows, including empty days: a missing
-    //    Sunday reads as a fault, a Sunday with nothing on it reads as Sunday.
-    expect(afterStale.days.length === 7, `the week is always seven rows (${afterStale.days.length})`);
+    // 9. Every counter action today carries its exact time — the time is the
+    //    point of the drill-down, and a date alone would answer nothing.
+    const stampRow = afterStale.events.find((e: any) => e.type === "stamp" && e.code === wp.short_code);
+    expect(Boolean(stampRow), "today's stamps are listed with the card they landed on");
     expect(
-      afterStale.days[0]!.day > afterStale.days[6]!.day,
-      "...newest first",
+      stampRow && new Date(stampRow.at).getTime() > Date.now() - 10 * 60_000,
+      "...and an exact timestamp, not just a day",
     );
   }
 

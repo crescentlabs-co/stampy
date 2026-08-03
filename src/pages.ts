@@ -2899,22 +2899,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
        threshold, no chip: the moment one number can look different from
        another, the screen starts telling the owner what to think, which is the
        one thing it must not do. One weight, one colour, every row. */
-    .cact { border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
-            margin: 10px 0 6px; background: var(--surface); }
-    .cact .crow { display: flex; align-items: center; gap: 10px; width: 100%;
-                  padding: 12px 14px; border: none; background: none; font: inherit;
-                  color: var(--ink); text-align: left; }
-    .cact .crow + .crow { border-top: 1px solid var(--line); }
-    .cact button.crow { cursor: pointer; }
-    .cact button.crow:hover { background: var(--ghost-bg); }
-    .cact .cl { flex: 1; }
-    .cact .cn { font-weight: 700; font-variant-numeric: tabular-nums; }
-    .cact .cgo { color: var(--muted); font-size: .85rem; }
-    .cwhen { color: var(--muted); font-size: .82rem; margin: 0 0 2px; }
-    .cweek { width: 100%; border-collapse: collapse; font-size: .88rem; margin-top: 6px; }
-    .cweek td { padding: 9px 4px; border-bottom: 1px solid var(--line); }
-    .cweek td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .cweek td.d { color: var(--muted); }
+    /* Two rows of three, not six lines. Every cell is the same size and the
+       same weight whatever its number says — the moment one can look louder
+       than another, the screen starts having an opinion. */
+    .cact { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 4px 0 2px;
+            background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .cact .ccell { background: var(--surface); border: none; font: inherit; color: var(--ink);
+                   text-align: left; padding: 11px 12px; min-width: 0; }
+    .cact button.ccell { cursor: pointer; }
+    .cact button.ccell:hover { background: var(--ghost-bg); }
+    .cact .cn { display: block; font-family: var(--display); font-size: 1.35rem; line-height: 1.1;
+                letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+    .cact .cl { display: block; margin-top: 3px; font-size: .72rem; color: var(--muted); line-height: 1.3; }
+    .cact .cgo { color: var(--muted); font-size: .72rem; }
+    .cwhen { color: var(--muted); font-size: .8rem; margin: 8px 0 0; }
     .clist { width: 100%; border-collapse: collapse; font-size: .88rem; }
     .clist th { text-align: left; color: var(--muted); font-size: .7rem; text-transform: uppercase;
                 letter-spacing: .06em; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); }
@@ -3107,9 +3105,116 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <summary><span class="gt">Find a customer</span></summary>
           <input data-search placeholder="🔍 Card code" autocomplete="off" style="text-transform:uppercase;margin-top:10px">
           <div data-results style="margin-top:10px"></div>
+        </details>
+        <!-- Folded, and last. It is a thing to check when something feels off,
+             not a thing to read every day, and it must not push the message box
+             off the screen. Loaded only when opened. -->
+        <details class="grp" data-counter>
+          <summary><span class="gt">At the counter</span>\${info("What happened at your counter today, and nothing more. Everyone shares one PIN, so none of this can say who did anything — tap any number for the exact times.")}<span class="gh" data-clast></span></summary>
+          <div data-cbody style="margin-top:10px"></div>
         </details>\`;
       const q = (s) => div.querySelector(s);
       let all = [], ready = 0, cooling = 0;
+
+      // ---- At the counter ---------------------------------------------------
+      // Every cell is a count, and tapping one shows the times behind it. The
+      // times ARE the answer: a count says something happened, the clock says
+      // when, and "when" is the only thing an owner away from the shop can
+      // actually judge. Nothing here computes a rate, compares two numbers, or
+      // styles one differently from another — the owner knows their own shop.
+      const hhmmss = (d) => new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+      const hhmm = (d) => new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const dayOf = (d) => new Date(d).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+      // The sheet is titled with the same words as the cell that opened it, so
+      // there is never a moment of wondering whether you tapped the right one.
+      const named = { stamp: "Stamps given", undo: "Stamps taken back", redeem: "Rewards given" };
+
+      // Loaded when the fold is first opened, not with the tab: this is a
+      // second request and the message box above must never wait on it.
+      const cfold = q("[data-counter]");
+      let counterLoaded = false;
+      cfold.addEventListener("toggle", async () => {
+        if (!cfold.open || counterLoaded) return;
+        counterLoaded = true;
+        const { body } = await api("/counter");
+        if (!body.ok) { counterLoaded = false; return; }
+        const k = body.counter;
+
+        // The last stamp is deliberately NOT limited to today — on a quiet day
+        // it is the most useful fact there is. Which means it carries its date
+        // when it isn't today, or "4:12pm" reads as this afternoon when it was
+        // Tuesday. It sits on the closed fold, so it costs no row.
+        if (k.lastStampAt) {
+          const d = new Date(k.lastStampAt), now = new Date();
+          const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+            && d.getDate() === now.getDate();
+          q("[data-clast]").textContent = "last stamp " +
+            (sameDay ? hhmm(k.lastStampAt) : dayOf(k.lastStampAt) + ", " + hhmm(k.lastStampAt));
+        } else {
+          q("[data-clast]").textContent = "nothing stamped yet";
+        }
+
+        // A cell is a button only when there is something behind it to open.
+        const cell = (label, n, key) => {
+          const inner = '<span class="cn">' + n + '</span><span class="cl">' + label +
+            (key && n > 0 ? ' <span class="cgo">›</span>' : "") + "</span>";
+          return key && n > 0
+            ? '<button type="button" class="ccell" data-open="' + key + '">' + inner + "</button>"
+            : '<div class="ccell">' + inner + "</div>";
+        };
+        q("[data-cbody]").innerHTML =
+          '<div class="cact">' +
+            cell("Stamps given", k.stamps, "stamps") +
+            cell("Customers stamped", k.customers) +
+            cell("Rewards given", k.rewards, "rewards") +
+            // The literal event: staff confirmed a second stamp on the same card
+            // inside a minute. Named for what happened, because there are plenty
+            // of ordinary reasons for it — a paper card being transferred, most
+            // obviously.
+            cell("Stamped again within a minute", k.stampedAgain, "bursts") +
+            cell("Stamps taken back", k.takenBack, "undos") +
+            cell("Phones that stamped", k.phones, "devices") +
+          "</div>" +
+          '<p class="cwhen">Today. Tap a number for the times behind it.</p>';
+
+        const list = (rows, head, cells) =>
+          rows.length
+            ? '<table class="clist"><tr>' + head.map((h) => "<th>" + h + "</th>").join("") + "</tr>" +
+              rows.map((r) => "<tr>" + cells(r).map((c) => "<td>" + c + "</td>").join("") + "</tr>").join("") +
+              "</table>"
+            : "<p>Nothing today.</p>";
+
+        q("[data-cbody]").querySelectorAll("[data-open]").forEach((b) => {
+          b.onclick = () => {
+            const kind = b.dataset.open;
+            if (kind === "bursts") {
+              return sheet("Stamped again within a minute",
+                list(k.bursts, ["Time", "Stamps", "Over", "Card"], (r) =>
+                  [hhmmss(r.at), r.stamps, r.seconds + "s", '<span class="mono">' + (r.code || "—") + "</span>"]) +
+                // Otherwise "4 stamps over 66s" under a heading that says "within
+                // a minute" reads as a contradiction. The minute is the gap
+                // between stamps, not the length of the whole run.
+                '<p class="muted" style="margin-top:12px;font-size:.82rem">Each stamp landed under a ' +
+                "minute after the one before it, so a run of several can span longer than that.</p>");
+            }
+            if (kind === "devices") {
+              return sheet("Phones that stamped",
+                list(k.devices, ["Phone", "First seen", "Last seen", "Stamps"], (r) =>
+                  ['<span class="mono">' + r.device_id.slice(0, 6) + "</span>",
+                   dayOf(r.first_seen), dayOf(r.last_seen), r.stamps]) +
+                // Both of these would mislead if left unsaid, and neither is a
+                // judgement — they are how the list is built.
+                '<p class="muted" style="margin-top:12px;font-size:.82rem">Phones that have stamped in ' +
+                "the last 14 days, not phones signed in. A phone whose browser data is cleared comes " +
+                "back as a new one here. To sign every phone out, reset the staff PIN under Shop.</p>");
+            }
+            const want = kind === "stamps" ? "stamp" : kind === "rewards" ? "redeem" : "undo";
+            sheet(named[want],
+              list(k.events.filter((e) => e.type === want), ["Time", "Card"], (r) =>
+                [hhmmss(r.at), '<span class="mono">' + (r.code || "—") + "</span>"]));
+          };
+        });
+      });
 
       /** Send. The server decides who is actually eligible and reports back. */
       async function nudge(payload, expected) {
@@ -3273,11 +3378,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
           <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Open the stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
         </div>
 
-        <!-- Counter activity. Filled in by loadCounter() below, because it is a
-             second request and the rest of this tab must not wait on it. -->
-        <h2 class="sec">At the counter\${info("What happened at your counter, and nothing more. Everyone shares one PIN, so none of this can say who did anything — it is here so you can see the day from wherever you are and decide for yourself whether to ask about any of it.")}</h2>
-        <div data-counter></div>
-
         <h2 class="sec">Share</h2>
         <!-- Both are /j/ links: the merchant ref survives a rename, a second
              card and a change of ownership, and every ref a shop has ever held
@@ -3304,97 +3404,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       // No wireInfo here: renderPanel delegates from the panel this sits inside,
       // and a second listener on an ancestor would fire on the same click and
       // close what the first just opened.
-
-      // ---- At the counter ---------------------------------------------------
-      // Every line is a count. Nothing here computes a rate, compares two
-      // numbers, or styles one differently from another: the owner knows their
-      // own shop and we do not, so the screen states what happened and stops.
-      const cbox = div.querySelector("[data-counter]");
-      const hhmm = (d) => new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-      const dayName = (iso) => {
-        // Parsed as local midday, not midnight: a midnight UTC date shifts a day
-        // backwards west of Greenwich and the row would be labelled wrong.
-        const dt = new Date(iso + "T12:00:00");
-        return dt.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-      };
-      const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
-
-      (async () => {
-        const { body } = await api("/counter");
-        if (!body.ok) { cbox.innerHTML = ""; return; }
-        const k = body.counter;
-        // A row is a button only when there is something behind it to open.
-        const row = (label, n, key) => {
-          const inner = '<span class="cl">' + label + '</span><span class="cn">' + n + "</span>";
-          return key && n > 0
-            ? '<button type="button" class="crow" data-open="' + key + '">' + inner +
-              '<span class="cgo">›</span></button>'
-            : '<div class="crow">' + inner + "</div>";
-        };
-        // The last stamp is deliberately NOT limited to today — on a quiet day
-        // it is the most useful line on the screen. Which means it has to carry
-        // its date when it isn't today, or "last stamp 4:12pm" reads as this
-        // afternoon when it was Tuesday.
-        const lastStamp = (at) => {
-          const d = new Date(at), now = new Date();
-          const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
-            && d.getDate() === now.getDate();
-          return sameDay
-            ? "last stamp " + hhmm(at)
-            : "last stamp " + d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) +
-              ", " + hhmm(at);
-        };
-        cbox.innerHTML =
-          '<p class="cwhen">Today' +
-            (k.lastStampAt ? " · " + lastStamp(k.lastStampAt) : " · nothing stamped yet") + "</p>" +
-          '<div class="cact">' +
-            row("Stamps given", k.stamps) +
-            row("Customers stamped", k.customers) +
-            // The literal event, not a guess: staff confirmed a second stamp on
-            // the same card inside a minute. Named for what happened, because
-            // there are plenty of ordinary reasons for it.
-            row("Stamped again within a minute", k.stampedAgain) +
-            row("Rewards given", k.rewards, "corrections") +
-            row("Stamps taken back", k.takenBack, "corrections") +
-            row("Phones that stamped", k.phones, "devices") +
-          "</div>" +
-          (k.days.some((d) => d.stamps || d.rewards)
-            ? '<label style="margin-top:16px">Last 7 days</label><table class="cweek">' +
-              k.days.map((d) => '<tr><td class="d">' + dayName(d.day) + "</td>" +
-                '<td class="n">' + plural(d.stamps, "stamp", "stamps") + "</td>" +
-                '<td class="n">' + plural(d.customers, "customer", "customers") + "</td>" +
-                '<td class="n">' + plural(d.rewards, "reward", "rewards") + "</td></tr>").join("") +
-              "</table>"
-            : "");
-
-        cbox.querySelectorAll("[data-open]").forEach((b) => {
-          b.onclick = () => {
-            if (b.dataset.open === "corrections") {
-              sheet("Rewards and corrections today",
-                k.corrections.length
-                  ? '<table class="clist"><tr><th>Time</th><th>What</th><th>Card</th></tr>' +
-                    k.corrections.map((x) => "<tr><td>" + hhmm(x.at) + "</td><td>" +
-                      (x.type === "undo" ? "Stamp taken back" : "Reward given") + "</td>" +
-                      '<td class="mono">' + (x.code || "—") + "</td></tr>").join("") + "</table>"
-                  : "<p>Nothing today.</p>");
-              return;
-            }
-            sheet("Phones that stamped",
-              (k.devices.length
-                ? '<table class="clist"><tr><th>Phone</th><th>First seen</th><th>Last seen</th><th>Stamps</th></tr>' +
-                  k.devices.map((x) => '<tr><td class="mono">' + x.device_id.slice(0, 6) + "</td><td>" +
-                    dayName(String(x.first_seen).slice(0, 10)) + "</td><td>" +
-                    dayName(String(x.last_seen).slice(0, 10)) + '</td><td class="n">' + x.stamps +
-                    "</td></tr>").join("") + "</table>"
-                : "<p>Nothing in the last 14 days.</p>") +
-              // Both of these would mislead if left unsaid, and neither is a
-              // judgement — they are how the list is built.
-              '<p class="muted" style="margin-top:12px;font-size:.82rem">These are phones that have ' +
-              "stamped in the last 14 days, not phones signed in. A phone whose browser data is " +
-              "cleared comes back as a new one here. To sign every phone out, reset the staff PIN above.</p>");
-          };
-        });
-      })();
 
       // "Set" or "Reset" — an owner who already has a PIN is replacing one, and
       // the button saying "Set" made that look like a first-time action they had

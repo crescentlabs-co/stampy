@@ -431,12 +431,34 @@ describe("the console says things once", () => {
  */
 describe("the counter view judges nothing", () => {
   const html = dashboardPage(true, "");
-  const block = html.slice(html.indexOf("// ---- At the counter"), html.indexOf('// "Set" or "Reset"'));
+  // The block lives at the bottom of the Customers tab, folded away.
+  const block = html.slice(
+    html.indexOf("// ---- At the counter"),
+    html.indexOf("/** Send. The server decides"),
+  );
 
   it("is actually on the page", () => {
     expect(block.length).toBeGreaterThan(500);
     expect(html).toContain("At the counter");
-    expect(html).toContain('data-counter');
+    expect(html).toContain("data-counter");
+    // Folded and last: it must never push the message box off the screen.
+    expect(html.indexOf("data-counter")).toBeGreaterThan(html.indexOf("data-find"));
+  });
+
+  /**
+   * Six numbers in two rows of three, and nothing else. The first version was a
+   * six-row list plus a seven-day table, which is what "way too long" meant —
+   * so the shape is the requirement, not a preference, and a character count is
+   * a poor proxy for it. This counts what actually reaches the screen.
+   */
+  it("is six numbers in two rows, and no daily table", () => {
+    const cells = block.match(/^\s*cell\(/gm) || [];
+    expect(cells.length).toBe(6);
+    expect(block).toContain("cact"); // the three-column grid, not a list of rows
+    // The seven-day rollup is gone and must not creep back.
+    expect(block).not.toContain("Last 7 days");
+    expect(block).not.toMatch(/\bdays\b\s*[:.]/);
+    expect(block).not.toContain("cweek");
   });
 
   it("uses no word that implies something is wrong", () => {
@@ -484,7 +506,7 @@ describe("the counter view judges nothing", () => {
     expect(block).toContain("not phones signed in");
     expect(block).toContain("browser data is");
     // The only device control that exists is the PIN reset directly above it.
-    expect(block).toContain("reset the staff PIN above");
+    expect(block).toContain("reset the staff PIN under Shop");
   });
 
   it("opens its drill-downs in the read-only sheet, not a browser dialog", () => {
