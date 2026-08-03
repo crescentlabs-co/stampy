@@ -418,7 +418,7 @@ describe("the console says things once", () => {
 });
 
 /**
- * "At the counter" states facts and stops.
+ * "Today's Activity" states facts and stops.
  *
  * There is no per-staff identity in this product — one PIN per owner, any
  * signed-in device stamps — so nothing on this screen can say who did anything,
@@ -439,7 +439,7 @@ describe("the counter view judges nothing", () => {
 
   it("is actually on the page", () => {
     expect(block.length).toBeGreaterThan(500);
-    expect(html).toContain("At the counter");
+    expect(html).toContain("Today's Activity");
     expect(html).toContain("data-counter");
     // Folded and last: it must never push the message box off the screen.
     expect(html.indexOf("data-counter")).toBeGreaterThan(html.indexOf("data-find"));

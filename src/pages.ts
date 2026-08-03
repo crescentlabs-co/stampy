@@ -2912,7 +2912,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
                 letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
     .cact .cl { display: block; margin-top: 3px; font-size: .72rem; color: var(--muted); line-height: 1.3; }
     .cact .cgo { color: var(--muted); font-size: .72rem; }
-    .cwhen { color: var(--muted); font-size: .8rem; margin: 8px 0 0; }
     .clist { width: 100%; border-collapse: collapse; font-size: .88rem; }
     .clist th { text-align: left; color: var(--muted); font-size: .7rem; text-transform: uppercase;
                 letter-spacing: .06em; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); }
@@ -3110,7 +3109,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
              not a thing to read every day, and it must not push the message box
              off the screen. Loaded only when opened. -->
         <details class="grp" data-counter>
-          <summary><span class="gt">At the counter</span>\${info("What happened at your counter today, and nothing more. Everyone shares one PIN, so none of this can say who did anything — tap any number for the exact times.")}<span class="gh" data-clast></span></summary>
+          <summary><span class="gt">Today's Activity</span>\${info("What happened at your counter today, and nothing more. Everyone shares one PIN, so none of this can say who did anything — tap any number for the exact times.")}<span class="gh" data-clast></span></summary>
           <div data-cbody style="margin-top:10px"></div>
         </details>\`;
       const q = (s) => div.querySelector(s);
@@ -3174,8 +3173,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
             cell("Stamped again within a minute", k.stampedAgain, "bursts") +
             cell("Stamps taken back", k.takenBack, "undos") +
             cell("Phones that stamped", k.phones, "devices") +
-          "</div>" +
-          '<p class="cwhen">Today. Tap a number for the times behind it.</p>';
+          "</div>";
 
         const list = (rows, head, cells) =>
           rows.length
