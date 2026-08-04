@@ -1624,7 +1624,7 @@ export function marketingPage(): string {
        panel background so it can never sit above content) */
     .dotted-bg { background-image: radial-gradient(rgba(32,33,29,.07) 1px, transparent 1.4px); background-size: 26px 26px; }
     /* reveal */
-    .reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
+    .reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); }
     .reveal.in { opacity: 1; transform: none; }
     @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
     /* nav */
@@ -1708,8 +1708,8 @@ export function marketingPage(): string {
     .lcard .ldots { font-size: 1.5rem; margin: 14px 0 10px; color: var(--lime); letter-spacing: 0; }
     .lcard .ldots .hd { display: inline-block; margin-right: 5px; }
     .lcard .ldots .hd:not(.on) { color: rgba(244,242,236,.22); }
-    .lcard .ldots .hd.on { opacity: 0; animation: stampin .5s cubic-bezier(.2,1.5,.4,1) forwards; }
-    @keyframes stampin { from { opacity: 0; transform: scale(2.4); } to { opacity: 1; transform: none; } }
+    .lcard .ldots .hd.on { opacity: 0; animation: stampin .5s cubic-bezier(.16,1,.3,1) forwards; }
+    @keyframes stampin { from { opacity: 0; transform: scale(1.9); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { .lcard .ldots .hd.on { animation: none; opacity: 1; } }
     .lcard .lrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 4px; }
     .lcard .lrw { font-weight: 600; font-size: .95rem; }
@@ -1729,7 +1729,7 @@ export function marketingPage(): string {
     .paper .pc { aspect-ratio: 1; border: 1.5px dashed var(--paper-line); border-radius: 50%; display: grid; place-items: center; font-size: .72rem; }
     .paper .pc.in { border-style: solid; border-color: #8a7d5c; background: rgba(138,125,92,.14); }
     .tornwrap { position: absolute; top: 12px; left: 50%; width: 196px; height: 130px; transform: translateX(-50%) rotate(2deg); }
-    .tornwrap .half { position: absolute; inset: 0; transition: transform .9s cubic-bezier(.2,.7,.2,1) .15s; }
+    .tornwrap .half { position: absolute; inset: 0; transition: transform .9s cubic-bezier(.16,1,.3,1) .15s; }
     .tornwrap .half.l { clip-path: polygon(0 0, 56% 0, 46% 18%, 57% 36%, 45% 55%, 56% 74%, 46% 100%, 0 100%); }
     .tornwrap .half.r { clip-path: polygon(56% 0, 100% 0, 100% 100%, 46% 100%, 56% 74%, 45% 55%, 57% 36%, 46% 18%); }
     .reveal.in .tornwrap .half.l { transform: translate(-30px, 4px) rotate(-7deg); }
@@ -1742,7 +1742,7 @@ export function marketingPage(): string {
     .paper.p2 { left: 5%; bottom: 4%; transform: rotate(-8deg); opacity: .8; }
     .paper.p3 { right: 6%; top: 26%; transform: rotate(6deg); opacity: .55; }
     .paper .stain { position: absolute; width: 58px; height: 58px; border-radius: 50%; border: 8px solid rgba(122,84,40,.22); top: -14px; right: -12px; }
-    .gtag { position: absolute; font-family: var(--mono); font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; color: var(--cream); opacity: .38; white-space: nowrap; }
+    .gtag { position: absolute; font-family: var(--mono); font-size: .62rem; letter-spacing: .12em; text-transform: uppercase; color: var(--cream); opacity: .62; white-space: nowrap; }
     .gt1 { top: 8%; left: 2%; } .gt2 { top: 76%; right: 2%; } .gt3 { bottom: -4%; left: 34%; }
     @media (max-width: 700px) {
       .papers { height: 250px; }
@@ -1755,7 +1755,7 @@ export function marketingPage(): string {
     @media (min-width: 760px) { .painrow { grid-template-columns: repeat(3, 1fr); } }
     .pain { border: 1px solid var(--cream-line); background: rgba(244,242,236,.04); border-radius: 16px; padding: 20px; }
     .pain .pt { font-family: var(--mono); font-weight: 700; font-size: .62rem; letter-spacing: .14em; color: var(--lime); }
-    .pain p { color: var(--cream-soft); font-size: .93rem; margin-top: 9px; }
+    .pain p { color: var(--cream-soft); font-size: .93rem; margin-top: 9px; text-align: left; }
     /* --------------------------------------------------------- solution -- */
     .duo { position: relative; margin: clamp(34px, 5vw, 54px) auto 0; display: flex; justify-content: center; align-items: center; }
     .wcard { width: 264px; border-radius: 20px; padding: 18px; text-align: left; }
@@ -1805,7 +1805,7 @@ export function marketingPage(): string {
     .lock .date { opacity: .75; font-size: .8rem; margin-top: -2px; }
     .lock .noti { margin-top: auto; width: 100%; background: rgba(255,255,255,.16); backdrop-filter: blur(8px);
                   border-radius: 15px; padding: 12px; text-align: left; display: flex; gap: 10px;
-                  opacity: 0; transform: translateY(14px) scale(.97); transition: opacity .6s ease .5s, transform .6s cubic-bezier(.2,1.2,.3,1) .5s; }
+                  opacity: 0; transform: translateY(14px) scale(.97); transition: opacity .6s ease .5s, transform .6s cubic-bezier(.16,1,.3,1) .5s; }
     .reveal.in .lock .noti { opacity: 1; transform: none; }
     @media (prefers-reduced-motion: reduce) { .lock .noti { opacity: 1; transform: none; transition: none; } }
     .lock .noti .ic { width: 30px; height: 30px; border-radius: 8px; background: var(--sage); display: grid; place-items: center; font-size: .9rem; flex: none; }
@@ -1930,7 +1930,7 @@ export function marketingPage(): string {
       reveals.forEach(function (el) { io.observe(el); });
     })();
   `;
-  const tornPaper = paperCard("Kopi Corner &middot; buy 10 get 1", 9);
+  const tornPaper = paperCard("Kopi Corner", 9);
   const body = `
     <div class="nav"><div class="navbar">
       <a class="brand" href="/">Stampy &#9749;</a>
@@ -1947,7 +1947,7 @@ export function marketingPage(): string {
       <section class="panel cream dotted-bg"><div class="inner hero reveal">
         <span class="chip"><span class="ic">&#9749;</span>Loyalty, minus the paper</span>
         <h1>The only loyalty card <span class="accent">you need.</span></h1>
-        <p class="lead">A stamp card that lives in Apple &amp; Google Wallet &mdash; no app to download, nothing to print, nothing to lose. And it quietly brings your customers back.</p>
+        <p class="lead">A stamp card that lives in Apple &amp; Google Wallet, so there is nothing to download, nothing to print and nothing to lose. And it quietly brings your customers back.</p>
         <div class="row">
           <a class="cta dark" href="/dashboard">Get early access</a>
           <a class="cta ghost-l" href="#why">See how it works &darr;</a>
@@ -1980,7 +1980,7 @@ export function marketingPage(): string {
       <section class="panel dark" id="why"><div class="inner reveal stmt">
         <span class="brkt">[ The paper problem ]</span>
         <h2 class="h2">Paper cards don&rsquo;t fail because loyalty doesn&rsquo;t work. <span class="lime">They fail because they&rsquo;re paper.</span></h2>
-        <p class="h2sub">Thousands of caf&eacute;s have tried stamp cards. Most gave up &mdash; the cards, not the customers, kept disappearing.</p>
+        <p class="h2sub">Almost every shop has tried a paper card. Most quietly stopped. It was the cards that kept disappearing, not the customers.</p>
         <div class="papers">
           <span class="gtag gt1">&#9656; Lost in a drawer</span>
           <span class="gtag gt2">&#9656; Washed with the jeans</span>
@@ -1994,15 +1994,15 @@ export function marketingPage(): string {
         </div>
         <div class="painrow">
           <div class="pain"><div class="pt">&#9656; LOST</div><p>Nine stamps deep, then it vanishes into a drawer. The tenth visit never comes.</p></div>
-          <div class="pain"><div class="pt">&#9656; IGNORED</div><p>Nobody installs an app for one caf&eacute;. The sign-up dies right at the counter.</p></div>
-          <div class="pain"><div class="pt">&#9656; SILENT</div><p>Paper can&rsquo;t tell you who stopped coming &mdash; and it can&rsquo;t ask them back.</p></div>
+          <div class="pain"><div class="pt">&#9656; IGNORED</div><p>Nobody installs an app for one shop. The sign-up dies right at the counter.</p></div>
+          <div class="pain"><div class="pt">&#9656; SILENT</div><p>Paper can&rsquo;t tell you who stopped coming, and it can&rsquo;t ask them back.</p></div>
         </div>
       </div></section>
 
-      <section class="panel light"><div class="inner reveal stmt">
+      <section class="panel light"><div class="inner stmt">
         <span class="brkt">[ The fix ]</span>
         <h2 class="h2">Stampy makes sure that never happens again.</h2>
-        <p class="h2sub">One tap moves your stamp card into the wallet they already carry &mdash; as fast as paper at the counter, impossible to leave behind.</p>
+        <p class="h2sub">One tap moves your stamp card into the wallet they already carry, where it stays as fast as paper at the counter and impossible to leave behind.</p>
         <div class="duo">
           <div class="tbox tbx-l">&#9656; Added at the counter<b>ONE SCAN &middot; ~4 SECONDS</b></div>
           <span class="wtag a">Apple Wallet</span>
@@ -2028,8 +2028,8 @@ export function marketingPage(): string {
         <div class="fcopy">
           <span class="chip"><span class="ic">&#128276;</span>Win-back</span>
           <h2 class="h2">Paper can&rsquo;t bring them back. <span class="lime">Stampy can.</span></h2>
-          <p class="h2sub">When a regular goes quiet, Stampy sends a gentle lock-screen nudge &mdash; &ldquo;we miss you, here&rsquo;s a bonus stamp&rdquo; &mdash; straight from the card in their wallet. No numbers to collect, no email blasts to write.</p>
-          <span class="callout">&#9656; Runs itself &mdash; spots lapsing regulars and nudges them for you</span>
+          <p class="h2sub">When a regular goes quiet, Stampy sends a gentle lock-screen nudge, &ldquo;we miss you, here&rsquo;s a bonus stamp&rdquo;, straight from the card in their wallet. No numbers to collect, no email blasts to write.</p>
+          <span class="callout">&#9656; Runs itself: spots lapsing regulars and nudges them for you</span>
         </div>
         <div class="fart">
           <div class="trail">
@@ -2053,11 +2053,11 @@ export function marketingPage(): string {
         </div>
       </div></div></section>
 
-      <section class="panel light"><div class="inner"><div class="feat flip reveal">
+      <section class="panel light"><div class="inner"><div class="feat flip">
         <div class="fcopy">
           <span class="chip"><span class="ic">&#128200;</span>Know your customers</span>
-          <h2 class="h2">See who&rsquo;s coming back &mdash; <span class="accent">and who isn&rsquo;t.</span></h2>
-          <p class="h2sub">Every stamp is a visit you can actually see. New faces, solid regulars, people starting to drift &mdash; all on one screen, updated with every tap. Paper kept all of this a secret.</p>
+          <h2 class="h2">See who&rsquo;s coming back, <span class="accent">and who isn&rsquo;t.</span></h2>
+          <p class="h2sub">Every stamp is a visit you can actually see. New faces, solid regulars, people starting to drift, all on one screen, updated with every tap. Paper kept all of this a secret.</p>
           <span class="callout">&#9656; Live counts &middot; visit history &middot; lapsing alerts</span>
         </div>
         <div class="fart">
@@ -2076,16 +2076,16 @@ export function marketingPage(): string {
         </div>
       </div></div></section>
 
-      <section class="panel cream"><div class="inner reveal">
+      <section class="panel cream"><div class="inner">
         <div class="stats">
           <div class="stat"><b>0</b><i>Apps to download</i></div>
           <div class="stat"><b>1</b><i>QR at the counter</i></div>
-          <div class="stat"><b>2</b><i>Wallets covered &mdash; Apple &amp; Google</i></div>
+          <div class="stat"><b>2</b><i>Wallets: Apple &amp; Google</i></div>
           <div class="stat"><b>5<small>min</small></b><i>From sign-up to first stamp</i></div>
         </div>
       </div></section>
 
-      <section class="panel stone dotted-bg" id="setup"><div class="inner"><div class="feat reveal">
+      <section class="panel stone dotted-bg" id="setup"><div class="inner"><div class="feat">
         <div class="fcopy">
           <span class="chip"><span class="ic">&#9889;</span>From zero to live</span>
           <h2 class="h2">Set up in 5 minutes.</h2>
@@ -2100,7 +2100,7 @@ export function marketingPage(): string {
         <div class="fart">
           <div class="laptop">
             <div class="lscr">
-              <div class="lhd"><span>Stampy &mdash; Dashboard</span><span class="lv">&#9679; Live</span></div>
+              <div class="lhd"><span>Stampy Dashboard</span><span class="lv">&#9679; Live</span></div>
               <div class="ltiles">
                 <div class="ltile"><b>124</b><i>Customers</i></div>
                 <div class="ltile"><b>+41</b><i>This month</i></div>
@@ -2114,10 +2114,10 @@ export function marketingPage(): string {
         </div>
       </div></div></section>
 
-      <section class="panel dark"><div class="inner final reveal">
+      <section class="panel dark"><div class="inner final">
         <span class="brkt">[ Early access ]</span>
         <h2 class="h2">Be first through the door.</h2>
-        <p class="h2sub" style="text-align:center">Stampy is onboarding its first caf&eacute;s now. Free while in beta &mdash; no card details needed.</p>
+        <p class="h2sub" style="text-align:center">Stampy is onboarding its first shops now. Free while in beta, and no card details needed.</p>
         <div class="row"><a class="cta lime" href="/dashboard">Get early access</a></div>
         <div class="specs">
           <span>Free during beta</span><span>No card details</span><span>Live in minutes</span>
@@ -2125,13 +2125,13 @@ export function marketingPage(): string {
         <div class="fgrid">
           <div>
             <a class="fbrand" href="/">Stampy &#9749;</a>
-            <p class="fblurb">Loyalty stamp cards in Apple &amp; Google Wallet &mdash; no app, no paper, no lost cards.</p>
+            <p class="fblurb">Loyalty stamp cards that live in Apple &amp; Google Wallet, with no app for your customers to install.</p>
           </div>
           <div class="fcol"><h5>Product</h5><a href="#why">Why paper fails</a><a href="#features">Win-back</a><a href="#setup">Setup</a></div>
           <div class="fcol"><h5>Legal</h5><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
           <div class="fcol"><h5>Account</h5><a href="/dashboard">Log in</a><a href="/dashboard">Get early access</a></div>
         </div>
-        <div class="fine"><span>Made for caf&eacute;s in Malaysia</span><span>&copy; Stampy</span></div>
+        <div class="fine"><span>Made for small shops in Malaysia</span><span>&copy; Stampy</span></div>
       </div></section>
     </div>`;
   return page("Stampy — loyalty cards in Apple & Google Wallet, no app", body, css, script);

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Digital loyalty stamp cards in Apple Wallet for Malaysian caf\u00e9s \u2014 no customer app.",
+  "description": "Digital loyalty stamp cards in Apple & Google Wallet for small shops \u2014 no customer app.",
   "engines": {
     "node": ">=22"
   },
