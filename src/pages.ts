@@ -13,21 +13,21 @@ const baseCss = /* css */ `
      content change is never served stale behind an immutable cache. The woff2
      has a unique filename, so it caches safely. */
   @font-face {
-    font-family: "Space Grotesk";
+    font-family: "Bricolage Grotesque";
     font-style: normal;
     font-weight: 400 700;
     font-display: swap;
-    src: url("/assets/fonts/space-grotesk-latin.woff2") format("woff2");
+    src: url("/assets/fonts/bricolage-grotesque-latin.woff2") format("woff2");
   }
   :root {
-    /* Stone & Sage: cool light neutral + muted sage accent, paired with Space Grotesk. */
+    /* Stone & Sage: cool light neutral + muted sage accent, paired with Bricolage Grotesque. */
     --bg: #f0f1ed; --surface: #ffffff; --ink: #20211d; --ink2: #2f312b;
     --muted: #888d83; --line: #e3e5df; --field-border: #cdd0c8; --ghost-bg: #e7e9e3;
     --accent: #6f8567; --accent-dark: #5c7156;
     --r: 16px; --r-lg: 22px;
     --shadow: 0 10px 30px -14px rgba(32,33,29,.20), 0 2px 6px rgba(32,33,29,.07);
-    --display: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --body: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --body: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
@@ -1570,9 +1570,9 @@ export function notReadyPage(): string {
 // ----------------------------------------------------------- marketing ----
 
 /**
- * The product front door at `/` — a one-scroll, problem-first pitch for café
+ * The product front door at `/` — a one-scroll, problem-first pitch for shop
  * owners. Static (boots with zero secrets); themed with the same tokens +
- * Space Grotesk as the dashboard. Early-access framing (Apple/Google still
+ * Bricolage Grotesque as the dashboard. Early-access framing (Apple/Google still
  * finishing), so every CTA leads to the owner sign-up at /dashboard.
  */
 export function marketingPage(): string {

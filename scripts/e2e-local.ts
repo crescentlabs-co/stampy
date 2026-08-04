@@ -75,8 +75,8 @@ async function main() {
   expect(landing.status === 200 && landing.body.includes("Get early access"), "/ serves the marketing landing page");
   // Font face is inline in the page CSS (no separate cacheable stylesheet) and
   // points at the uniquely-named woff2, which is served statically.
-  expect(landing.body.includes("/assets/fonts/space-grotesk-latin.woff2"), "pages declare the Space Grotesk @font-face inline");
-  const woff = await get("/assets/fonts/space-grotesk-latin.woff2");
+  expect(landing.body.includes("/assets/fonts/bricolage-grotesque-latin.woff2"), "pages declare the Bricolage Grotesque @font-face inline");
+  const woff = await get("/assets/fonts/bricolage-grotesque-latin.woff2");
   expect(woff.status === 200, "GET /assets/fonts/*.woff2 serves the font file");
 
   // The default café's Add-to-Wallet page moved to /c/default; its QR points there.
