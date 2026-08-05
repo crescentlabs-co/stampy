@@ -4,7 +4,12 @@ These webfonts are used under the SIL Open Font License, Version 1.1.
   (https://github.com/ateliertriay/bricolage)
 - Space Mono — © 2016 Google Inc. (Colophon Foundry)
   (https://github.com/googlefonts/spacemono)
+- Instrument Serif — © 2022 The Instrument Serif Project Authors
+  (https://github.com/Instrument/instrument-serif)
+- Figtree — © 2022 The Figtree Project Authors
+  (https://github.com/erikdkennedy/figtree)
 
 Files here are latin-subset woff2 builds obtained via Google Fonts.
-Bricolage Grotesque is a variable font covering weights 400–700 in one file.
+Bricolage Grotesque is a variable font covering weights 400–700 in one file;
+Figtree is a variable font covering weights 400–900 in one file.
 Full OFL text: https://openfontlicense.org

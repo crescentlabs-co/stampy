@@ -19,14 +19,41 @@ const baseCss = /* css */ `
     font-display: swap;
     src: url("/assets/fonts/bricolage-grotesque-latin.woff2") format("woff2");
   }
+  /* Headlines only. The body stays on the grotesque, which is what the staff
+     stamper is read in at arm's length — a serif there would be a downgrade. */
+  @font-face {
+    font-family: "Instrument Serif";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/assets/fonts/instrument-serif-latin.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Instrument Serif";
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/assets/fonts/instrument-serif-latin-italic.woff2") format("woff2");
+  }
+  /* The marketing page only. It sets its own --display and --body from this,
+     because the landing is the one surface that has to look like an ad; the
+     dashboard and the stamper stay on the faces chosen for reading. */
+  @font-face {
+    font-family: "Figtree";
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url("/assets/fonts/figtree-latin.woff2") format("woff2");
+  }
   :root {
-    /* Stone & Sage: cool light neutral + muted sage accent, paired with Bricolage Grotesque. */
+    /* Stone & Sage: cool light neutral + muted sage accent. Instrument Serif
+       carries the headlines, Bricolage Grotesque everything you actually read. */
     --bg: #f0f1ed; --surface: #ffffff; --ink: #20211d; --ink2: #2f312b;
     --muted: #888d83; --line: #e3e5df; --field-border: #cdd0c8; --ghost-bg: #e7e9e3;
     --accent: #6f8567; --accent-dark: #5c7156;
     --r: 16px; --r-lg: 22px;
     --shadow: 0 10px 30px -14px rgba(32,33,29,.20), 0 2px 6px rgba(32,33,29,.07);
-    --display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --display: "Instrument Serif", Georgia, "Times New Roman", serif;
     --body: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
@@ -1570,571 +1597,692 @@ export function notReadyPage(): string {
 // ----------------------------------------------------------- marketing ----
 
 /**
- * The product front door at `/` — a one-scroll, problem-first pitch for shop
- * owners. Static (boots with zero secrets); themed with the same tokens +
- * Bricolage Grotesque as the dashboard. Early-access framing (Apple/Google still
- * finishing), so every CTA leads to the owner sign-up at /dashboard.
+ * The product front door at `/` — a one-scroll pitch for shop owners, modelled
+ * on the Lassie treatment: warm off-white ground, serif headlines, photography
+ * doing the colour work, and a great deal of air. No accent colour by design.
+ *
+ * Static and boots with zero secrets. Every CTA leads to the owner sign-up.
+ *
+ * PLACEHOLDERS the founder still has to supply are marked TODO(founder) below:
+ * the demo-pass link, the six example cards, the contact details, and the hero
+ * clip that will eventually replace the hero still.
  */
 export function marketingPage(): string {
   const css = /* css */ `
-    /* Space Mono carries every small label, tag and receipt on this page.
-       Same inline-declaration rationale as the base font: unique filenames
-       cache safely behind the immutable assets mount. */
-    @font-face {
-      font-family: "Space Mono";
-      font-style: normal;
-      font-weight: 400;
-      font-display: swap;
-      src: url("/assets/fonts/space-mono-latin-400.woff2") format("woff2");
-    }
-    @font-face {
-      font-family: "Space Mono";
-      font-style: normal;
-      font-weight: 700;
-      font-display: swap;
-      src: url("/assets/fonts/space-mono-latin-700.woff2") format("woff2");
-    }
     :root {
-      --canvas: #131109; --panel-d: #1d2316; --panel-d2: #2b341d;
-      --cream: #f4f2ec; --cream-soft: rgba(244,242,236,.64); --cream-line: rgba(244,242,236,.14);
-      --lime: #c9e792; --lime-soft: rgba(201,231,146,.13); --lime-line: rgba(201,231,146,.28);
-      --sage: #6f8567; --sage-dark: #5c7156; --sage-br: #a9c398; --ink-soft: #54574e;
-      --paper: #efe8d7; --paper-ink: #57503f; --paper-line: #c9bfa4;
-      --mono: "Space Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      --paper: #ffffff; --soft: #f2f4f1; --slab: #101312;
+      --ink: #0c0e0d; --ink-2: #5f6560; --hair: #e3e7e1;
+      --neon: #c9f73d; --neon-2: #b8e82c; --on-slab: #f4f6f2;
+      --r: 28px; --r-sm: 14px;
+      --display: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     html { scroll-behavior: smooth; }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-    body { display: block; padding: 0; align-items: stretch; background: var(--canvas); }
-    ::selection { background: var(--sage); color: #fff; }
-    /* registration ticks on the page edges, like a print sheet */
-    body::before, body::after {
-      content: ""; position: fixed; top: 0; bottom: 0; width: 12px; z-index: 1; pointer-events: none;
-      background: repeating-linear-gradient(to bottom, transparent 0 13px, rgba(244,242,236,.22) 13px 14px);
-    }
-    body::before { left: 6px; } body::after { right: 6px; }
-    @media (max-width: 1279px) { body::before, body::after { display: none; } }
-    .stack { max-width: 1180px; margin: 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 2; }
-    .panel { border-radius: 30px; overflow: hidden; position: relative; }
-    .panel.light { background: var(--surface); }
-    .panel.stone { background: var(--bg); }
-    .panel.cream { background: #f6f4ed; }
-    .panel.dark { background: radial-gradient(130% 130% at 78% -10%, var(--panel-d2), var(--panel-d) 58%); color: var(--cream); }
-    .inner { padding: clamp(34px, 5.5vw, 84px); }
-    /* faint technical dot-grid on pale panels (painted straight into the
-       panel background so it can never sit above content) */
-    .dotted-bg { background-image: radial-gradient(rgba(32,33,29,.07) 1px, transparent 1.4px); background-size: 26px 26px; }
-    /* reveal */
-    .reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); }
-    .reveal.in { opacity: 1; transform: none; }
-    @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
-    /* nav */
-    .nav { position: sticky; top: 12px; z-index: 60; display: flex; justify-content: center; padding: 4px 12px 0; }
-    .navbar { display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,.86);
-              backdrop-filter: saturate(1.5) blur(14px); border: 1px solid rgba(0,0,0,.06); border-radius: 999px;
-              padding: 6px; box-shadow: 0 14px 34px -14px rgba(0,0,0,.65); max-width: 100%; }
-    .navbar .brand { font-family: var(--display); font-weight: 700; font-size: 1.02rem; letter-spacing: -.01em;
-                     color: var(--ink); text-decoration: none; padding: 8px 14px; white-space: nowrap; }
-    .navlinks { display: none; }
-    @media (min-width: 760px) { .navlinks { display: flex; gap: 2px; } }
-    .navlinks a { color: var(--ink-soft); text-decoration: none; font-weight: 600; font-size: .9rem; padding: 9px 13px; border-radius: 999px; }
-    .navlinks a:hover { background: rgba(0,0,0,.05); color: var(--ink); }
-    .navcta { background: var(--ink); color: #fff; text-decoration: none; font-weight: 600; font-size: .9rem;
-              padding: 10px 16px; border-radius: 999px; white-space: nowrap; margin-left: 2px; transition: transform .09s, filter .15s; }
-    .navcta:hover { filter: brightness(1.15); } .navcta:active { transform: scale(.97); }
-    /* type helpers */
-    .brkt { font-family: var(--mono); font-weight: 700; font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; color: var(--sage-dark); }
-    .panel.dark .brkt { color: var(--lime); }
-    .chip { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-weight: 700;
-            font-size: .66rem; letter-spacing: .13em; text-transform: uppercase; color: var(--sage-dark); }
-    .chip .ic { width: 27px; height: 27px; border-radius: 8px; display: grid; place-items: center; font-size: .85rem;
-                background: rgba(111,133,103,.12); border: 1px solid rgba(111,133,103,.22); }
-    .panel.dark .chip { color: var(--cream-soft); }
-    .panel.dark .chip .ic { background: var(--lime-soft); border-color: var(--lime-line); }
-    .h2 { font-family: var(--display); font-weight: 700; font-size: clamp(1.85rem, 4.4vw, 2.9rem); line-height: 1.05;
-          letter-spacing: -.025em; text-wrap: balance; margin-top: 14px; }
-    .h2 .lime { color: var(--lime); }
-    .h2 .accent { color: var(--sage-dark); }
-    .h2sub { color: var(--ink-soft); margin-top: 14px; font-size: 1.06rem; max-width: 52ch; }
-    .panel.dark .h2sub { color: var(--cream-soft); }
-    .stmt { text-align: center; display: flex; flex-direction: column; align-items: center; }
-    .stmt .h2 { max-width: 24ch; }
-    .stmt .h2sub { text-align: center; }
-    /* ctas + mono spec chips */
-    .cta { display: inline-block; text-decoration: none; font-weight: 600; font-size: 1.02rem; padding: 15px 26px;
-           border-radius: 14px; transition: transform .09s ease, filter .15s ease; }
-    .cta:active { transform: scale(.985); } .cta:hover { filter: brightness(1.06); }
-    .cta.dark { background: var(--ink); color: #fff; }
-    .cta.lime { background: var(--lime); color: #26310f; }
-    .cta.ghost-l { background: rgba(32,33,29,.06); color: var(--ink); border: 1px solid rgba(32,33,29,.1); }
-    .cta.ghost-d { background: rgba(244,242,236,.08); color: var(--cream); border: 1px solid var(--cream-line); }
-    @media (prefers-reduced-motion: reduce) { .cta, .navcta { transition: none; } .cta:active { transform: none; } }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; align-items: center; justify-content: center; }
-    .specs { display: flex; flex-wrap: wrap; gap: 8px 10px; justify-content: center; margin-top: 26px;
-             font-family: var(--mono); font-weight: 700; font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; }
-    .specs span { padding: 8px 13px; border-radius: 999px; border: 1px dashed rgba(32,33,29,.28); color: var(--ink-soft); }
-    .panel.dark .specs span { border-color: var(--cream-line); color: var(--cream-soft); }
-    /* floating receipt cards */
-    .rcpt { background: #fff; color: var(--ink); border-radius: 13px; padding: 11px 14px; min-width: 178px;
-            box-shadow: 0 24px 48px -18px rgba(0,0,0,.5); font-family: var(--mono); font-size: .66rem; text-align: left; }
-    .rcpt .rrow { display: flex; align-items: center; gap: 9px; }
-    .rcpt .rlg { width: 26px; height: 26px; border-radius: 8px; background: var(--sage); color: #fff; display: grid; place-items: center; font-size: .8rem; flex: none; }
-    .rcpt .rname { font-family: var(--display); font-weight: 700; font-size: .86rem; flex: 1; letter-spacing: -.01em; }
-    .rcpt .ramt { font-weight: 700; white-space: nowrap; }
-    .rcpt .ramt.plus { color: var(--sage-dark); }
-    .rcpt .rmeta { color: var(--muted); margin-top: 7px; letter-spacing: .04em; }
-    /* dashed technical boxes */
-    .tbox { font-family: var(--mono); font-size: .6rem; font-weight: 400; letter-spacing: .07em; text-transform: uppercase;
-            line-height: 1.7; border: 1px dashed rgba(32,33,29,.32); border-radius: 9px; padding: 9px 12px;
-            color: var(--ink-soft); background: rgba(255,255,255,.55); text-align: left; }
-    .tbox b { display: block; font-weight: 700; color: var(--ink); }
-    .panel.dark .tbox { border-color: var(--cream-line); color: var(--cream-soft); background: rgba(244,242,236,.04); }
-    .panel.dark .tbox b { color: var(--cream); }
-    /* ------------------------------------------------------------- hero -- */
-    .hero { text-align: center; display: flex; flex-direction: column; align-items: center; }
-    .hero h1 { font-family: var(--display); font-weight: 700; font-size: clamp(2.5rem, 7vw, 4.5rem);
-               line-height: .99; letter-spacing: -.035em; text-wrap: balance; margin-top: 26px; max-width: 15ch; }
-    .hero h1 .accent { color: var(--sage-dark); }
-    .hero .lead { color: var(--ink-soft); font-size: clamp(1.04rem, 2.1vw, 1.22rem); margin-top: 20px; max-width: 46ch; }
-    .heroart { position: relative; margin-top: clamp(34px, 5vw, 56px); width: 100%; display: grid; place-items: center; }
-    .lcard { position: relative; z-index: 1; width: 340px; max-width: 86vw; background: var(--ink); color: var(--cream);
-             border-radius: 24px; padding: 22px; box-shadow: 0 48px 90px -30px rgba(32,33,29,.55);
-             transform: rotate(-2deg); text-align: left; }
-    @media (prefers-reduced-motion: reduce) { .lcard { transform: none; } }
-    .lcard .lt { display: flex; align-items: center; gap: 12px; }
-    .lcard .llogo { width: 42px; height: 42px; border-radius: 12px; background: var(--sage); color: #fff; display: grid; place-items: center; font-size: 1.2rem; }
-    .lcard .lname { font-family: var(--display); font-weight: 700; font-size: 1.12rem; flex: 1; }
-    .lcard .llbl { font-family: var(--mono); font-size: .56rem; letter-spacing: .14em; text-transform: uppercase; color: rgba(244,242,236,.55); }
-    .lcard .lnum { font-family: var(--mono); font-weight: 700; font-size: 1.05rem; text-align: right; }
-    .lcard .ldots { font-size: 1.5rem; margin: 14px 0 10px; color: var(--lime); letter-spacing: 0; }
-    .lcard .ldots .hd { display: inline-block; margin-right: 5px; }
-    .lcard .ldots .hd:not(.on) { color: rgba(244,242,236,.22); }
-    .lcard .ldots .hd.on { opacity: 0; animation: stampin .5s cubic-bezier(.16,1,.3,1) forwards; }
-    @keyframes stampin { from { opacity: 0; transform: scale(1.9); } to { opacity: 1; transform: none; } }
-    @media (prefers-reduced-motion: reduce) { .lcard .ldots .hd.on { animation: none; opacity: 1; } }
-    .lcard .lrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 4px; }
-    .lcard .lrw { font-weight: 600; font-size: .95rem; }
-    .lcard .lqr { margin: 16px auto 2px; width: 82px; height: 82px; border-radius: 12px; background: var(--cream); color: var(--ink); display: grid; place-items: center; }
-    .fl { position: absolute; z-index: 2; }
-    .fl1 { top: -6%; right: max(2%, calc(50% - 420px)); transform: rotate(3deg); }
-    .fl2 { bottom: 2%; left: max(1%, calc(50% - 430px)); transform: rotate(-4deg); }
-    .fl3 { top: 12%; left: max(2%, calc(50% - 400px)); }
-    .fl4 { bottom: 14%; right: max(1%, calc(50% - 400px)); }
-    @media (max-width: 899px) { .fl { display: none; } }
-    /* ---------------------------------------------------------- problem -- */
-    .papers { position: relative; margin: clamp(30px, 5vw, 52px) auto 0; width: min(760px, 100%); height: 300px; }
-    .paper { position: absolute; width: 196px; background: var(--paper); color: var(--paper-ink); border-radius: 10px;
-             padding: 14px 15px; box-shadow: 0 26px 50px -20px rgba(0,0,0,.55); }
-    .paper .ph { font-family: var(--mono); font-weight: 700; font-size: .56rem; letter-spacing: .12em; text-transform: uppercase; }
-    .paper .pg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 11px; }
-    .paper .pc { aspect-ratio: 1; border: 1.5px dashed var(--paper-line); border-radius: 50%; display: grid; place-items: center; font-size: .72rem; }
-    .paper .pc.in { border-style: solid; border-color: #8a7d5c; background: rgba(138,125,92,.14); }
-    .tornwrap { position: absolute; top: 12px; left: 50%; width: 196px; height: 130px; transform: translateX(-50%) rotate(2deg); }
-    .tornwrap .half { position: absolute; inset: 0; transition: transform .9s cubic-bezier(.16,1,.3,1) .15s; }
-    .tornwrap .half.l { clip-path: polygon(0 0, 56% 0, 46% 18%, 57% 36%, 45% 55%, 56% 74%, 46% 100%, 0 100%); }
-    .tornwrap .half.r { clip-path: polygon(56% 0, 100% 0, 100% 100%, 46% 100%, 56% 74%, 45% 55%, 57% 36%, 46% 18%); }
-    .reveal.in .tornwrap .half.l { transform: translate(-30px, 4px) rotate(-7deg); }
-    .reveal.in .tornwrap .half.r { transform: translate(30px, -3px) rotate(6deg); }
+    body { display: block; padding: 0; align-items: stretch;
+           background: var(--paper); color: var(--ink); font-family: var(--body); }
+    ::selection { background: var(--neon); color: var(--ink); }
+    img { max-width: 100%; display: block; }
+    .shell { max-width: 1180px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 40px); }
+    /* One family, two weights. The whole look rests on the display weight being
+       genuinely heavy rather than merely bold. */
+    h1, h2, h3, h4, .dsp { font-family: var(--display); font-weight: 800;
+                           letter-spacing: -.03em; line-height: 1.02; text-wrap: balance; }
+    a { color: inherit; }
+    /* Ink on the white page, neon on the black panels. A neon ring alone was
+       invisible against the neon buttons it most needed to mark. */
+    :where(a, button):focus-visible { outline: 3px solid var(--ink);
+                                      outline-offset: 3px; border-radius: 6px; }
+    :where(.panel.dark, .car, .close, .herobox) :where(a, button):focus-visible {
+      outline-color: var(--neon); }
+
+    /* ---------------------------------------------------------------- nav -- */
+    .nav { position: sticky; top: 0; z-index: 70; background: rgba(255,255,255,.9);
+           backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--hair); }
+    .navin { max-width: 1180px; margin: 0 auto; padding: 13px clamp(18px, 4vw, 40px);
+             display: flex; align-items: center; gap: 20px; }
+    .brand { font-family: var(--display); font-weight: 800; font-size: 1.16rem;
+             letter-spacing: -.035em; text-decoration: none; }
+    .navlinks { display: none; margin-left: auto; gap: 26px; }
+    @media (min-width: 760px) { .navlinks { display: flex; } }
+    .navlinks a { text-decoration: none; font-size: .92rem; font-weight: 500; color: var(--ink-2); }
+    .navlinks a:hover { color: var(--ink); }
+    .nav .pbtn { margin-left: auto; }
+    @media (min-width: 760px) { .nav .pbtn { margin-left: 0; } }
+
+    /* -------------------------------------------------------------- buttons -- */
+    .pbtn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+           font-family: var(--body); font-weight: 700; font-size: .95rem; text-decoration: none;
+           padding: 13px 22px; border-radius: 999px; border: 2px solid transparent;
+           white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
+    .pbtn-neon { background: var(--neon); color: var(--ink); }
+    .pbtn-neon:hover { background: var(--neon-2); }
+    .pbtn-line { background: transparent; color: var(--ink); border-color: var(--ink); }
+    .pbtn-line:hover { background: var(--ink); color: var(--paper); }
+    .pbtn-pale { background: var(--paper); color: var(--ink); }
+    .pbtn-pale:hover { background: var(--soft); }
+    @media (prefers-reduced-motion: reduce) { .pbtn { transition: none; } }
+
+    /* -------------------------------------------------------------- layout -- */
+    .band { padding: clamp(56px, 8vw, 108px) 0; }
+    .band.tight { padding: clamp(38px, 5vw, 68px) 0; }
+    /* The measure belongs on the heading, not the wrapper: ch resolves against
+       the element's own font-size, so 20ch here is 20 characters of display
+       type. On the wrapper it was 20 characters of body type, which squeezed
+       every section heading into two words a line. */
+    .lede { max-width: 820px; margin: 0 auto clamp(34px, 5vw, 58px); text-align: center; }
+    .lede h2 { font-size: clamp(2rem, 5vw, 3.2rem); max-width: 20ch; margin: 0 auto; }
+    .lede p { margin: 16px auto 0; max-width: 46ch; color: var(--ink-2); font-size: 1.02rem;
+              line-height: 1.55; }
+    .pill { display: inline-block; background: var(--neon); color: var(--ink);
+            font-weight: 700; font-size: .8rem; letter-spacing: .01em;
+            padding: 7px 14px; border-radius: 999px; }
+
+    /* ---------------------------------------------------------------- hero -- */
+    .hero { display: grid; gap: clamp(30px, 4vw, 54px); align-items: center;
+            padding: clamp(40px, 6vw, 86px) 0 clamp(46px, 6vw, 92px); }
+    @media (min-width: 940px) { .hero { grid-template-columns: 1.04fr .96fr; } }
+    .hero h1 { font-size: clamp(2.6rem, 6.5vw, 4.6rem); margin: 20px 0 0; }
+    .hero .sub { margin: 20px 0 0; max-width: 40ch; color: var(--ink-2);
+                 font-size: clamp(1.02rem, 2vw, 1.14rem); line-height: 1.55; }
+    .herobtns { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 28px; }
+    .herobox { background: var(--slab); border-radius: var(--r); padding: clamp(28px, 4vw, 52px);
+               display: grid; place-items: center; min-height: 340px; }
+
+    /* ------------------------------------------------- the drawn stamp card -- */
+    /* The product's own object, drawn rather than photographed: it is the one
+       thing on the page that cannot be mistaken for stock. */
+    .card { width: 100%; max-width: 340px; background: var(--paper); border-radius: 18px;
+            padding: 20px; box-shadow: 0 24px 60px -24px rgba(0,0,0,.6); }
+    .card .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .card .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--ink);
+                  color: var(--neon); display: grid; place-items: center;
+                  font-family: var(--display); font-weight: 800; font-size: 1rem; }
+    .card .shop { font-family: var(--display); font-weight: 800; font-size: 1.06rem;
+                  letter-spacing: -.02em; }
+    .card .meta { color: var(--ink-2); font-size: .76rem; font-weight: 500; }
+    .card .rowlbl { display: flex; align-items: baseline; justify-content: space-between;
+                    margin: 20px 0 9px; }
+    .card .rowlbl span { color: var(--ink-2); font-size: .72rem; font-weight: 700;
+                         letter-spacing: .09em; text-transform: uppercase; }
+    .card .rowlbl b { font-family: var(--display); font-weight: 800; font-size: .96rem; }
+    .dots { display: grid; grid-template-columns: repeat(5, 26px); gap: 8px; }
+    .dots i { width: 26px; height: 26px; border-radius: 50%; background: var(--soft);
+              border: 2px solid var(--hair); }
+    .dots i.on { background: var(--neon); border-color: var(--neon); }
+    .card .rw { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair);
+                display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .card .rw span { color: var(--ink-2); font-size: .78rem; font-weight: 600; }
+    .card .rw b { font-family: var(--display); font-weight: 800; font-size: .92rem; }
+
+    /* ------------------------------------------------------- two-up panels -- */
+    .duo { display: grid; gap: 18px; }
+    @media (min-width: 860px) { .duo { grid-template-columns: 1fr 1fr; } }
+    .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 42px); }
+    .panel.pale { background: var(--soft); }
+    .panel.dark { background: var(--slab); color: var(--on-slab); }
+    .panel .who { font-size: .78rem; font-weight: 700; letter-spacing: .1em;
+                  text-transform: uppercase; color: var(--ink-2); }
+    .panel.dark .who { color: #97a08f; }
+    .panel h3 { font-size: clamp(1.5rem, 2.6vw, 2rem); margin: 10px 0 26px; }
+    /* The journey reads downwards, with the arrow doing the joining. No images
+       here on purpose: the steps are the content. */
+    .flow { list-style: none; margin: 0; padding: 0; }
+    .flow li { display: flex; gap: 14px; align-items: flex-start; }
+    .flow .n { flex: none; width: 30px; height: 30px; border-radius: 50%;
+               background: var(--neon); color: var(--ink); display: grid; place-items: center;
+               font-family: var(--display); font-weight: 800; font-size: .85rem; }
+    .flow .tx { padding-top: 4px; font-size: 1rem; line-height: 1.45; font-weight: 500; }
+    .panel.dark .flow .tx { color: #dfe4d9; }
+    .flow .arw { height: 26px; margin: 4px 0 4px 14px; width: 2px; background: var(--hair);
+                 position: relative; }
+    .panel.dark .flow .arw { background: #2a2f28; }
+    .flow .arw::after { content: ""; position: absolute; left: 50%; bottom: -1px;
+                        width: 7px; height: 7px; transform: translateX(-50%) rotate(45deg);
+                        border-right: 2px solid var(--hair); border-bottom: 2px solid var(--hair); }
+    .panel.dark .flow .arw::after { border-color: #2a2f28; }
+
+    /* ------------------------------------------------------------- marquee -- */
+    .mq { overflow: hidden; padding: 6px 0 10px; mask-image: linear-gradient(90deg,
+          transparent, #000 6%, #000 94%, transparent); }
+    .mqtrack { display: flex; gap: 16px; width: max-content;
+               animation: slide 46s linear infinite; }
+    .mq:hover .mqtrack, .mq:focus-within .mqtrack { animation-play-state: paused; }
+    @keyframes slide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    /* With motion turned off it becomes an ordinary scroller, not a still frame
+       the visitor cannot get past. */
     @media (prefers-reduced-motion: reduce) {
-      .tornwrap .half { transition: none; }
-      .tornwrap .half.l { transform: translate(-30px, 4px) rotate(-7deg); }
-      .tornwrap .half.r { transform: translate(30px, -3px) rotate(6deg); }
+      .mq { overflow-x: auto; mask-image: none; }
+      .mqtrack { animation: none; }
     }
-    .paper.p2 { left: 5%; bottom: 4%; transform: rotate(-8deg); opacity: .8; }
-    .paper.p3 { right: 6%; top: 26%; transform: rotate(6deg); opacity: .55; }
-    .paper .stain { position: absolute; width: 58px; height: 58px; border-radius: 50%; border: 8px solid rgba(122,84,40,.22); top: -14px; right: -12px; }
-    .gtag { position: absolute; font-family: var(--mono); font-size: .62rem; letter-spacing: .12em; text-transform: uppercase; color: var(--cream); opacity: .62; white-space: nowrap; }
-    .gt1 { top: 8%; left: 2%; } .gt2 { top: 76%; right: 2%; } .gt3 { bottom: -4%; left: 34%; }
-    @media (max-width: 700px) {
-      .papers { height: 250px; }
-      .paper { width: 158px; } .tornwrap { width: 158px; height: 112px; }
-      .paper .pc { font-size: .6rem; } .gtag { display: none; }
-      .paper.p3 { display: none; }
-      .paper.p2 { left: 8%; bottom: 0; }
-    }
-    .painrow { display: grid; gap: 12px; margin-top: clamp(30px, 4.5vw, 46px); }
-    @media (min-width: 760px) { .painrow { grid-template-columns: repeat(3, 1fr); } }
-    .pain { border: 1px solid var(--cream-line); background: rgba(244,242,236,.04); border-radius: 16px; padding: 20px; }
-    .pain .pt { font-family: var(--mono); font-weight: 700; font-size: .62rem; letter-spacing: .14em; color: var(--lime); }
-    .pain p { color: var(--cream-soft); font-size: .93rem; margin-top: 9px; text-align: left; }
-    /* --------------------------------------------------------- solution -- */
-    .duo { position: relative; margin: clamp(34px, 5vw, 54px) auto 0; display: flex; justify-content: center; align-items: center; }
-    .wcard { width: 264px; border-radius: 20px; padding: 18px; text-align: left; }
-    .wcard .wt { display: flex; align-items: center; gap: 10px; }
-    .wcard .wlg { width: 32px; height: 32px; border-radius: 9px; background: var(--sage); color: #fff; display: grid; place-items: center; font-size: .95rem; }
-    .wcard .wnm { font-family: var(--display); font-weight: 700; font-size: .98rem; flex: 1; }
-    .wcard .wct { font-family: var(--mono); font-weight: 700; font-size: .82rem; }
-    .wcard .wdots { font-size: 1.06rem; letter-spacing: 4px; margin: 12px 0 4px; }
-    .wcard .wrw { font-family: var(--mono); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase; }
-    .wcard.apple { background: var(--ink); color: var(--cream); transform: rotate(-3.5deg) translate(6px, -10px); z-index: 1;
-                   box-shadow: 0 30px 60px -22px rgba(32,33,29,.5); }
-    .wcard.apple .wdots { color: var(--lime); } .wcard.apple .wdots .off { color: rgba(244,242,236,.24); }
-    .wcard.apple .wrw { color: rgba(244,242,236,.6); }
-    .wcard.gwal { background: #fff; color: var(--ink); border: 1px solid var(--line); transform: rotate(3deg) translate(-6px, 10px); z-index: 2;
-                  box-shadow: 0 30px 60px -24px rgba(32,33,29,.35); }
-    .wcard.gwal .wdots { color: var(--sage-dark); } .wcard.gwal .wdots .off { color: #d8d5cc; }
-    .wcard.gwal .wrw { color: var(--muted); }
-    .wtag { font-family: var(--mono); font-weight: 700; font-size: .56rem; letter-spacing: .14em; text-transform: uppercase;
-            padding: 6px 10px; border-radius: 999px; position: absolute; z-index: 3; box-shadow: 0 10px 24px -10px rgba(0,0,0,.35); }
-    .wtag.a { background: var(--ink); color: var(--cream); top: -12px; left: calc(50% - 218px); transform: rotate(-4deg); }
-    .wtag.g { background: #fff; color: var(--ink); border: 1px solid var(--line); bottom: -18px; right: calc(50% - 248px); transform: rotate(3deg); }
-    .duo .tbx-l { position: absolute; left: 0; top: 18%; } .duo .tbx-r { position: absolute; right: 0; bottom: 12%; }
-    @media (max-width: 899px) { .duo .tbx-l, .duo .tbx-r { display: none; } }
-    @media (max-width: 640px) {
-      .duo { flex-direction: column; gap: 18px; }
-      .wcard.apple { transform: rotate(-2deg); } .wcard.gwal { transform: rotate(2deg); }
-      .wtag { display: none; }
-    }
-    /* ----------------------------------------------------- feature rows -- */
-    .feat { display: grid; gap: 40px; align-items: center; }
-    @media (min-width: 900px) { .feat { grid-template-columns: 1fr 1fr; gap: clamp(40px, 5vw, 72px); } .feat.flip .fcopy { order: 2; } .feat.flip .fart { order: 1; } }
-    .feat .h2 { font-size: clamp(1.7rem, 3.6vw, 2.5rem); }
-    .callout { display: inline-block; font-family: var(--mono); font-weight: 700; font-size: .62rem; letter-spacing: .1em;
-               text-transform: uppercase; line-height: 1.8; border: 1px dashed var(--lime-line); background: var(--lime-soft);
-               color: var(--lime); border-radius: 10px; padding: 10px 14px; margin-top: 24px; }
-    .panel.light .callout, .panel.stone .callout { border-color: rgba(111,133,103,.4); background: rgba(111,133,103,.1); color: var(--sage-dark); }
-    .fart { display: flex; align-items: center; justify-content: center; gap: 24px; position: relative; }
-    /* phone + lock screen */
-    .phone { position: relative; width: 258px; aspect-ratio: 272 / 560; background: #0e0d0b; border-radius: 44px;
-             padding: 10px; box-shadow: 0 50px 90px -34px rgba(0,0,0,.75), 0 0 0 1px rgba(244,242,236,.08); }
-    .phone .notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 94px; height: 25px;
-                    background: #0e0d0b; border-radius: 0 0 15px 15px; z-index: 6; }
-    .lock { position: absolute; inset: 10px; border-radius: 34px; overflow: hidden;
-            background: linear-gradient(180deg, #2c3b2d, #171f16); color: #fff;
-            display: flex; flex-direction: column; align-items: center; padding: 22px 14px; }
-    .lock .clock { font-family: var(--display); font-weight: 700; font-size: 3.4rem; letter-spacing: -.03em; margin-top: 30px; }
-    .lock .date { opacity: .75; font-size: .8rem; margin-top: -2px; }
-    .lock .noti { margin-top: auto; width: 100%; background: rgba(255,255,255,.16); backdrop-filter: blur(8px);
-                  border-radius: 15px; padding: 12px; text-align: left; display: flex; gap: 10px;
-                  opacity: 0; transform: translateY(14px) scale(.97); transition: opacity .6s ease .5s, transform .6s cubic-bezier(.16,1,.3,1) .5s; }
-    .reveal.in .lock .noti { opacity: 1; transform: none; }
-    @media (prefers-reduced-motion: reduce) { .lock .noti { opacity: 1; transform: none; transition: none; } }
-    .lock .noti .ic { width: 30px; height: 30px; border-radius: 8px; background: var(--sage); display: grid; place-items: center; font-size: .9rem; flex: none; }
-    .lock .noti .mt { font-family: var(--mono); font-size: .52rem; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
-    .lock .noti .tt { font-weight: 700; font-size: .83rem; margin-top: 2px; }
-    .lock .noti .bd { font-size: .78rem; opacity: .92; margin-top: 2px; }
-    .trail { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; width: 178px; flex: none; }
-    .trail .arr { font-family: var(--mono); color: var(--cream-soft); opacity: .6; font-size: .75rem; margin-left: 18px; }
-    @media (max-width: 1060px) { .trail { display: none; } }
-    /* insights dashboard card */
-    .dashcard { width: min(470px, 100%); background: #fff; border: 1px solid var(--line); border-radius: 20px;
-                padding: 20px; box-shadow: var(--shadow); text-align: left; }
-    .dashcard .dh { display: flex; justify-content: space-between; align-items: center;
-                    font-family: var(--mono); font-weight: 700; font-size: .6rem; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
-    .dashcard .dh .live { color: var(--sage-dark); }
-    .dtiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
-    .dtile { background: var(--bg); border-radius: 12px; padding: 12px 11px; }
-    .dtile b { font-family: var(--display); font-weight: 700; font-size: 1.45rem; display: block; letter-spacing: -.02em; }
-    .dtile i { font-style: normal; font-family: var(--mono); font-size: .52rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-    .drow { display: flex; align-items: center; gap: 10px; padding: 11px 2px; border-top: 1px solid var(--line);
-            font-family: var(--mono); font-size: .66rem; }
-    .drow:first-of-type { margin-top: 14px; }
-    .drow .did { font-weight: 700; }
-    .drow .ddots { letter-spacing: 2px; color: var(--sage-dark); flex: 1; } .drow .ddots .off { color: #d8d5cc; }
-    .drow .dwhen { color: var(--muted); white-space: nowrap; }
-    .dbdg { font-weight: 700; font-size: .54rem; letter-spacing: .08em; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
-    .dbdg.ok { background: rgba(111,133,103,.14); color: var(--sage-dark); }
-    .dbdg.warn { background: rgba(197,141,56,.14); color: #9c6f1f; }
-    .dbdg.new { background: rgba(32,33,29,.08); color: var(--ink); }
-    .dfoot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px;
-             border-top: 1px solid var(--line); font-size: .82rem; color: var(--ink-soft); }
-    .dfoot b { color: var(--sage-dark); }
-    /* -------------------------------------------------------- stat strip -- */
-    .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 26px 18px; }
-    @media (min-width: 800px) { .stats { grid-template-columns: repeat(4, 1fr); } }
-    .stat { border-left: 1px dashed rgba(32,33,29,.3); padding-left: 18px; }
-    .stat b { font-family: var(--display); font-weight: 700; font-size: clamp(2.3rem, 4.5vw, 3.4rem); letter-spacing: -.03em; line-height: 1; display: block; }
-    .stat b small { font-size: .45em; letter-spacing: 0; }
-    .stat i { font-style: normal; font-family: var(--mono); font-size: .6rem; font-weight: 700; letter-spacing: .12em;
-              text-transform: uppercase; color: var(--ink-soft); display: block; margin-top: 10px; line-height: 1.7; }
-    /* ------------------------------------------------------------ setup -- */
-    .steplist { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-direction: column; }
-    .steplist li { display: flex; align-items: baseline; gap: 14px; padding: 13px 2px; border-top: 1px dashed rgba(32,33,29,.25);
-                   font-family: var(--mono); font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); }
-    .steplist li:last-child { border-bottom: 1px dashed rgba(32,33,29,.25); }
-    .steplist .n { font-weight: 700; color: var(--sage-dark); }
-    .steplist .s { flex: 1; font-weight: 700; color: var(--ink); }
-    .steplist .t { white-space: nowrap; }
-    /* laptop */
-    .laptop { width: min(540px, 100%); }
-    .lscr { background: #171c10; border: 9px solid #262b1e; border-bottom: none; border-radius: 16px 16px 0 0;
-            padding: 16px 16px 20px; color: var(--cream); text-align: left; box-shadow: 0 44px 80px -30px rgba(32,33,29,.5); }
-    .lbase { height: 15px; background: linear-gradient(180deg, #3d4433, #22261a); border-radius: 2px 2px 14px 14px; position: relative; }
-    .lbase::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 86px; height: 6px;
-                     background: rgba(0,0,0,.3); border-radius: 0 0 8px 8px; }
-    .lscr .lhd { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-weight: 700;
-                 font-size: .56rem; letter-spacing: .14em; text-transform: uppercase; color: rgba(244,242,236,.55); }
-    .lscr .lhd .lv { color: var(--lime); }
-    .ltiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
-    .ltile { background: rgba(244,242,236,.06); border: 1px solid rgba(244,242,236,.08); border-radius: 11px; padding: 11px; }
-    .ltile b { font-family: var(--display); font-weight: 700; font-size: 1.35rem; color: var(--lime); display: block; letter-spacing: -.02em; }
-    .ltile i { font-style: normal; font-family: var(--mono); font-size: .5rem; letter-spacing: .1em; text-transform: uppercase; color: rgba(244,242,236,.5); }
-    .lbars { display: flex; align-items: flex-end; gap: 5px; height: 64px; margin-top: 14px; padding: 0 2px; }
-    .lbars i { flex: 1; background: var(--lime); opacity: .32; border-radius: 3px 3px 0 0; }
-    .lbars i:nth-child(3n) { opacity: .55; } .lbars i:last-child { opacity: 1; }
-    .lrow2 { display: flex; justify-content: space-between; font-family: var(--mono); font-size: .58rem; letter-spacing: .08em;
-             text-transform: uppercase; color: rgba(244,242,236,.55); margin-top: 12px; border-top: 1px dashed rgba(244,242,236,.14); padding-top: 11px; }
-    .lrow2 b { color: var(--lime); }
-    /* ------------------------------------------------------------ final -- */
-    .final { text-align: center; display: flex; flex-direction: column; align-items: center; }
-    .final .h2 { font-size: clamp(2.2rem, 5.6vw, 3.7rem); max-width: 16ch; }
-    .fgrid { display: grid; gap: 28px; width: 100%; margin-top: clamp(48px, 7vw, 84px); padding-top: 34px;
-             border-top: 1px solid var(--cream-line); text-align: left; }
-    @media (min-width: 760px) { .fgrid { grid-template-columns: 2fr 1fr 1fr 1fr; } }
-    .fbrand { font-family: var(--display); font-weight: 700; font-size: 1.2rem; color: var(--cream); text-decoration: none; }
-    .fblurb { color: var(--cream-soft); font-size: .86rem; margin-top: 10px; max-width: 26ch; }
-    .fcol h5 { font-family: var(--mono); font-weight: 700; font-size: .58rem; letter-spacing: .16em; text-transform: uppercase;
-               color: rgba(244,242,236,.45); margin: 0 0 12px; }
-    .fcol a { display: block; color: var(--cream-soft); text-decoration: none; font-size: .9rem; padding: 5px 0; }
-    .fcol a:hover { color: var(--cream); }
-    .fine { font-family: var(--mono); font-size: .58rem; letter-spacing: .1em; text-transform: uppercase;
-            color: rgba(244,242,236,.4); margin-top: 40px; width: 100%; text-align: left; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+    .xc { flex: 0 0 auto; width: 250px; background: var(--paper); border: 2px solid var(--hair);
+          border-radius: 20px; padding: 20px; }
+    .xc .biz { font-family: var(--display); font-weight: 800; font-size: 1.1rem;
+               letter-spacing: -.02em; }
+    .xc .kind { color: var(--ink-2); font-size: .76rem; font-weight: 600; margin-top: 2px; }
+    .xc .dots { margin: 16px 0 14px; }
+    .xc dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0;
+             font-size: .82rem; }
+    .xc dt { color: var(--ink-2); font-weight: 500; }
+    .xc dd { margin: 0; text-align: right; font-weight: 700; }
+
+    /* ------------------------------------------------------------ carousel -- */
+    .car { background: var(--slab); color: var(--on-slab); border-radius: var(--r);
+           overflow: hidden; }
+    .slide { display: none; }
+    .slide[data-on] { display: grid; }
+    @media (min-width: 900px) { .slide[data-on] { grid-template-columns: 1fr 1fr; } }
+    .slidetx { padding: clamp(30px, 4vw, 60px); display: flex; flex-direction: column;
+               justify-content: center; }
+    .slidetx h3 { font-size: clamp(1.7rem, 3.2vw, 2.5rem); }
+    .slidetx p { margin: 18px 0 0; color: #b7bfb0; font-size: 1rem; line-height: 1.6;
+                 max-width: 40ch; }
+    .slideart { position: relative; min-height: 300px; background: #1a1f19;
+                display: grid; place-items: center; padding: 30px; overflow: hidden; }
+    .slideart > img { position: absolute; inset: 0; width: 100%; height: 100%;
+                      object-fit: cover; filter: grayscale(.92) contrast(1.06) brightness(.62); }
+    .slideart > :not(img) { position: relative; z-index: 1; }
+    .cardots { display: flex; gap: 8px; justify-content: center; margin-top: 22px; }
+    .cardots button { width: 34px; height: 5px; border-radius: 999px; border: none;
+                      background: var(--hair); cursor: pointer; padding: 0; }
+    .cardots button[aria-pressed="true"] { background: var(--ink); }
+
+    /* -------------------------------------------------- drawn lock screen -- */
+    .lock { width: 100%; max-width: 300px; }
+    .lock .clock { font-family: var(--display); font-weight: 800; color: #fff;
+                   text-align: center; font-size: 3.4rem; letter-spacing: -.04em; line-height: 1; }
+    .lock .date { text-align: center; color: rgba(255,255,255,.8); font-size: .82rem;
+                  font-weight: 600; margin-bottom: 14px; }
+    .notif { background: rgba(240,242,238,.94); backdrop-filter: blur(8px); border-radius: 16px;
+             padding: 12px 14px; display: flex; gap: 11px; align-items: flex-start;
+             color: var(--ink); text-align: left; }
+    .notif .ic { flex: none; width: 32px; height: 32px; border-radius: 8px; background: var(--ink);
+                 color: var(--neon); display: grid; place-items: center;
+                 font-family: var(--display); font-weight: 800; font-size: .82rem; }
+    .notif .hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .notif b { font-size: .84rem; font-weight: 700; }
+    .notif .tm { color: var(--ink-2); font-size: .72rem; font-weight: 600; }
+    .notif p { margin: 2px 0 0; font-size: .84rem; line-height: 1.35; color: #333832; }
+
+    /* ------------------------------------------------------- nudge composer -- */
+    .nudge { width: 100%; max-width: 320px; background: var(--paper); color: var(--ink);
+             border-radius: 18px; padding: 18px; box-shadow: 0 24px 60px -22px rgba(0,0,0,.7); }
+    .nudge h4 { font-size: 1rem; }
+    .nudge .grp { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                  padding: 11px 0; border-bottom: 1px solid var(--hair); font-size: .86rem; }
+    .nudge .grp:last-of-type { border-bottom: none; }
+    .nudge .grp b { font-weight: 700; }
+    .nudge .grp .cnt { color: var(--ink-2); font-weight: 600; font-size: .8rem; }
+    .nudge .pbtn { width: 100%; margin-top: 12px; font-size: .88rem; padding: 11px 16px; }
+    .nudge .rule { margin: 10px 0 0; color: var(--ink-2); font-size: .72rem; line-height: 1.4; }
+
+    /* -------------------------------------------------------- owner phone -- */
+    .own { display: grid; gap: clamp(24px, 3vw, 40px); align-items: center; }
+    @media (min-width: 1000px) { .own { grid-template-columns: 1fr auto 1fr; } }
+    .owncap h4 { font-size: 1.16rem; margin-bottom: 8px; }
+    .owncap p { color: var(--ink-2); font-size: .95rem; line-height: 1.55; margin: 0; }
+    .owncap + .owncap { margin-top: 30px; }
+    .owncap.hi { background: var(--soft); border-radius: var(--r-sm); padding: 18px 20px; }
+    .owntabs { display: flex; flex-wrap: wrap; gap: 9px; justify-content: center;
+               margin: 0 auto clamp(26px, 4vw, 40px); }
+    .owntabs button { font-family: var(--body); font-weight: 700; font-size: .9rem;
+                      padding: 11px 20px; border-radius: 999px; cursor: pointer;
+                      background: var(--soft); color: var(--ink-2); border: 2px solid transparent; }
+    .owntabs button:hover { color: var(--ink); }
+    .owntabs button[aria-pressed="true"] { background: var(--neon); color: var(--ink); }
+    .phone { width: 320px; max-width: 100%; margin: 0 auto; background: var(--ink);
+             border-radius: 42px; padding: 11px; box-shadow: 0 30px 70px -30px rgba(12,14,13,.5); }
+    .screen { background: var(--paper); border-radius: 32px; overflow: hidden;
+              min-height: 560px; display: flex; flex-direction: column; }
+    .sbar { display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px 6px; font-size: .74rem; font-weight: 700; color: var(--ink); }
+    .scr { display: none; padding: 8px 18px 20px; flex: 1; }
+    .scr[data-on] { display: block; }
+    .scr h5 { font-family: var(--display); font-weight: 800; font-size: 1.3rem;
+              letter-spacing: -.03em; margin-bottom: 3px; }
+    .scr .hint { color: var(--ink-2); font-size: .8rem; font-weight: 500; margin-bottom: 16px; }
+    .box { background: var(--soft); border-radius: 14px; padding: 13px 14px; margin-bottom: 10px; }
+    .box.line { background: transparent; border: 2px solid var(--hair); }
+    .box .t { font-size: .86rem; font-weight: 700; }
+    .box .s { color: var(--ink-2); font-size: .76rem; font-weight: 500; margin-top: 2px; }
+    .scan { aspect-ratio: 1.25; border-radius: 14px; background: var(--ink); position: relative;
+            display: grid; place-items: center; margin-bottom: 12px; }
+    .scan .frame { width: 54%; aspect-ratio: 1; border-radius: 10px;
+                   box-shadow: 0 0 0 3px var(--neon); }
+    .scan .cap { position: absolute; bottom: 12px; color: #cfd6c8; font-size: .74rem;
+                 font-weight: 600; }
+    .toast { background: var(--neon); color: var(--ink); border-radius: 12px; padding: 11px 13px;
+             font-size: .86rem; font-weight: 700; margin-bottom: 10px; }
+    .fld { margin-bottom: 10px; }
+    .fld label { display: block; color: var(--ink-2); font-size: .74rem; font-weight: 700;
+                 letter-spacing: .05em; text-transform: uppercase; margin-bottom: 5px; }
+    .fld .val { border: 2px solid var(--hair); border-radius: 12px; padding: 11px 13px;
+                font-size: .88rem; font-weight: 600; }
+    .tabbar { display: flex; border-top: 1px solid var(--hair); }
+    .tabbar span { flex: 1; text-align: center; padding: 11px 0 14px; color: var(--ink-2);
+                   font-size: .68rem; font-weight: 700; }
+    .tabbar span.on { color: var(--ink); }
+
+    /* --------------------------------------------------------------- price -- */
+    .price { max-width: 460px; margin: 0 auto; border: 2px solid var(--ink);
+             border-radius: var(--r); padding: clamp(28px, 4vw, 44px); text-align: center; }
+    .price .amt { font-family: var(--display); font-weight: 800; font-size: clamp(3rem, 8vw, 4.4rem);
+                  letter-spacing: -.045em; line-height: 1; }
+    .price .per { color: var(--ink-2); font-weight: 600; font-size: 1rem; margin-top: 8px; }
+    .price ul { list-style: none; margin: 26px 0; padding: 0; text-align: left;
+                display: flex; flex-direction: column; gap: 11px; }
+    .price li { display: flex; gap: 11px; align-items: flex-start; font-size: .96rem;
+                font-weight: 500; line-height: 1.4; }
+    /* A real tick. Two crossed gradients read as a slash, which on a price list
+       looks like the feature is excluded. */
+    .price li::before { content: ""; flex: none; width: 20px; height: 20px; margin-top: 2px;
+                        border-radius: 50%;
+                        background: var(--neon) center/11px 11px no-repeat;
+                        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+    .price .pbtn { width: 100%; }
+    .price .fine { color: var(--ink-2); font-size: .82rem; margin-top: 14px; }
+
+    /* ------------------------------------------------------------------ us -- */
+    .us { max-width: 720px; margin: 0 auto; }
+    .us h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: 18px; }
+    .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 14px; }
+    .us p:last-child { margin-bottom: 0; }
+
+    /* --------------------------------------------------------------- close -- */
+    .close { position: relative; border-radius: var(--r); overflow: hidden; isolation: isolate;
+             padding: clamp(46px, 7vw, 96px) clamp(22px, 4vw, 56px); text-align: center;
+             color: var(--on-slab); }
+    .close > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+                   object-position: 50% 62%; z-index: 0;
+                   filter: grayscale(.94) contrast(1.05) brightness(.5); }
+    .close::after { content: ""; position: absolute; inset: 0; z-index: 1;
+                    background: linear-gradient(180deg, rgba(16,19,18,.62), rgba(16,19,18,.86)); }
+    .close > :not(img) { position: relative; z-index: 2; }
+    .close h2 { font-size: clamp(2rem, 5vw, 3.2rem); }
+    .close p.sup { margin: 18px auto 0; max-width: 42ch; color: #ccd3c6; font-size: 1.02rem;
+                   line-height: 1.55; }
+    .closebtns { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+                 margin-top: 30px; }
+    .tel { margin-top: 22px; font-family: var(--display); font-weight: 800; font-size: 1.24rem;
+           letter-spacing: -.02em; }
+    .tel a { text-decoration: none; }
+
+    /* ---------------------------------------------------------------- foot -- */
+    .foot { border-top: 1px solid var(--hair); padding: 26px 0 44px; display: flex;
+            flex-wrap: wrap; gap: 10px 24px; align-items: center;
+            justify-content: space-between; color: var(--ink-2); font-size: .86rem; }
+    .foot a { text-decoration: none; }
+    .foot a:hover { color: var(--ink); }
+    .foot nav { display: flex; gap: 20px; }
   `;
-  const qr = `<svg width="60" height="60" viewBox="0 0 72 72" aria-hidden="true"><g fill="currentColor">
-    <rect x="6" y="6" width="18" height="18"/><rect x="9" y="9" width="12" height="12" fill="#fff"/><rect x="12" y="12" width="6" height="6"/>
-    <rect x="48" y="6" width="18" height="18"/><rect x="51" y="9" width="12" height="12" fill="#fff"/><rect x="54" y="12" width="6" height="6"/>
-    <rect x="6" y="48" width="18" height="18"/><rect x="9" y="51" width="12" height="12" fill="#fff"/><rect x="12" y="54" width="6" height="6"/>
-    <rect x="30" y="10" width="5" height="5"/><rect x="38" y="10" width="5" height="5"/><rect x="30" y="18" width="5" height="5"/>
-    <rect x="42" y="30" width="5" height="5"/><rect x="30" y="30" width="5" height="5"/><rect x="52" y="30" width="5" height="5"/>
-    <rect x="60" y="38" width="5" height="5"/><rect x="30" y="42" width="5" height="5"/><rect x="44" y="46" width="5" height="5"/>
-    <rect x="52" y="52" width="5" height="5"/><rect x="34" y="56" width="5" height="5"/></g></svg>`;
-  const dotsHtml = (on: number, total: number, offClass = "off") =>
-    "●".repeat(on) + `<span class="${offClass}">` + "○".repeat(total - on) + "</span>";
-  // Hero dots are individual spans so each stamp can pop in with its own delay.
-  const heroDots = (on: number, total: number) => {
-    let out = "";
-    for (let i = 0; i < total; i++) {
-      out += i < on
-        ? `<span class="hd on" style="animation-delay:${(0.4 + i * 0.15).toFixed(2)}s">●</span>`
-        : `<span class="hd">○</span>`;
-    }
-    return out;
+
+  // Placeholder example cards. TODO(founder): confirm the six trades and rewards.
+  const EXAMPLES: [string, string, number, number, string][] = [
+    ["Kopi Corner", "Cafe or kopitiam", 10, 7, "Free drink"],
+    ["Roti Bakar Co", "Bakery", 10, 4, "Free item"],
+    ["Teh Tarik Lane", "Bubble tea", 10, 9, "Free drink"],
+    ["Gaya Barber", "Barber or salon", 5, 3, "Free cut"],
+    ["Kilat Wash", "Car wash", 5, 2, "Free upgrade"],
+    ["Paws & Co", "Pet grooming", 5, 4, "Free add on"],
+  ];
+  const cardHtml = ([biz, kind, slots, filled, reward]: [string, string, number, number, string]) => {
+    let dots = "";
+    for (let i = 0; i < slots; i++) dots += `<i class="${i < filled ? "on" : ""}"></i>`;
+    return `<article class="xc">
+              <p class="biz">${biz}</p>
+              <p class="kind">${kind}</p>
+              <div class="dots">${dots}</div>
+              <dl>
+                <dt>Stamps</dt><dd>${slots}</dd>
+                <dt>Reward</dt><dd>${reward}</dd>
+              </dl>
+            </article>`;
   };
-  // A paper punch-card; rendered twice inside .tornwrap so the two clipped
-  // halves can drift apart on reveal.
-  const paperCard = (title: string, stamped: number, cls = "", extra = "") => {
-    let cells = "";
-    for (let i = 0; i < 10; i++) cells += `<span class="pc${i < stamped ? " in" : ""}">${i < stamped ? "&#9749;" : ""}</span>`;
-    return `<div class="paper${cls ? ` ${cls}` : ""}">${extra}<div class="ph">${title}</div><div class="pg">${cells}</div></div>`;
-  };
+  // The track is doubled so the translate can loop at exactly -50% with no seam.
+  const oneSet = EXAMPLES.map(cardHtml).join("");
+  const marquee = oneSet + oneSet;
+
   const script = /* js */ `
     (function () {
       var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-      var reveals = [].slice.call(document.querySelectorAll('.reveal'));
-      if (reduce || !('IntersectionObserver' in window)) {
-        reveals.forEach(function (el) { el.classList.add('in'); });
-        return;
+
+      // ---- feature carousel -------------------------------------------------
+      var car = document.querySelector('[data-car]');
+      if (car) {
+        var slides = [].slice.call(car.querySelectorAll('[data-slide]'));
+        var dots = [].slice.call(document.querySelectorAll('[data-dot]'));
+        var at = 0, timer = null;
+        function show(i) {
+          at = (i + slides.length) % slides.length;
+          slides.forEach(function (s, n) {
+            if (n === at) s.setAttribute('data-on', '');
+            else s.removeAttribute('data-on');
+          });
+          dots.forEach(function (d, n) { d.setAttribute('aria-pressed', String(n === at)); });
+        }
+        function stop() { if (timer) { clearInterval(timer); timer = null; } }
+        // Autoplay is a convenience, never the only way through: the dots stay
+        // authoritative, and a visitor who is reading is never interrupted.
+        function play() { if (reduce) return; stop(); timer = setInterval(function () { show(at + 1); }, 5500); }
+        dots.forEach(function (d, n) {
+          d.addEventListener('click', function () { show(n); play(); });
+        });
+        car.addEventListener('mouseenter', stop);
+        car.addEventListener('mouseleave', play);
+        car.addEventListener('focusin', stop);
+        car.addEventListener('focusout', play);
+        show(0);
+        play();
       }
-      var io = new IntersectionObserver(function (es) {
-        es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
-      }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
-      reveals.forEach(function (el) { io.observe(el); });
+
+      // ---- owner phone screens ---------------------------------------------
+      var tabs = [].slice.call(document.querySelectorAll('[data-scr]'));
+      var screens = [].slice.call(document.querySelectorAll('[data-screen]'));
+      tabs.forEach(function (t) {
+        t.addEventListener('click', function () {
+          var want = t.getAttribute('data-scr');
+          tabs.forEach(function (o) { o.setAttribute('aria-pressed', String(o === t)); });
+          screens.forEach(function (s) {
+            if (s.getAttribute('data-screen') === want) s.setAttribute('data-on', '');
+            else s.removeAttribute('data-on');
+          });
+        });
+      });
     })();
   `;
-  const tornPaper = paperCard("Kopi Corner", 9);
+
   const body = `
-    <div class="nav"><div class="navbar">
-      <a class="brand" href="/">Stampy &#9749;</a>
-      <div class="navlinks">
-        <a href="#why">Why</a>
-        <a href="#features">Features</a>
-        <a href="#setup">Setup</a>
-      </div>
-      <a class="navcta" href="/dashboard">Get early access</a>
-    </div></div>
+    <header class="nav"><div class="navin">
+      <a class="brand" href="/">PunchMe</a>
+      <nav class="navlinks">
+        <a href="#how">How it works</a>
+        <a href="#owner">For owners</a>
+        <a href="#price">Price</a>
+      </nav>
+      <a class="pbtn pbtn-neon" href="/dashboard">Get started</a>
+    </div></header>
 
-    <div class="stack">
-
-      <section class="panel cream dotted-bg"><div class="inner hero reveal">
-        <span class="chip"><span class="ic">&#9749;</span>Loyalty, minus the paper</span>
-        <h1>The only loyalty card <span class="accent">you need.</span></h1>
-        <p class="lead">A stamp card that lives in Apple &amp; Google Wallet, so there is nothing to download, nothing to print and nothing to lose. And it quietly brings your customers back.</p>
-        <div class="row">
-          <a class="cta dark" href="/dashboard">Get early access</a>
-          <a class="cta ghost-l" href="#why">See how it works &darr;</a>
+    <main>
+      <!-- 1 · HERO -->
+      <section class="shell"><div class="hero">
+        <div>
+          <span class="pill">PunchMe</span>
+          <h1>The stamp card that lives in your customer's phone</h1>
+          <p class="sub">No app to download, for them or for you. It sits in Apple Wallet and
+            Google Wallet next to their boarding passes, and it cannot be left at home.</p>
+          <div class="herobtns">
+            <!-- TODO(founder): point at the live demo pass once it is wired. -->
+            <a class="pbtn pbtn-neon" href="/dashboard">Add a sample card to your phone</a>
+            <a class="pbtn pbtn-line" href="#how">See how it works</a>
+          </div>
         </div>
-        <div class="heroart">
-          <div class="fl fl1"><div class="rcpt">
-            <div class="rrow"><span class="rlg">&#9749;</span><span class="rname">Kopi Corner</span><span class="ramt plus">+1 &#9679;</span></div>
-            <div class="rmeta">09:41 &middot; STAMP ADDED</div>
-          </div></div>
-          <div class="fl fl2"><div class="rcpt">
-            <div class="rrow"><span class="rlg">&#127881;</span><span class="rname">Reward unlocked</span><span class="ramt">10/10</span></div>
-            <div class="rmeta">FREE COFFEE &middot; REDEEM AT COUNTER</div>
-          </div></div>
-          <div class="fl fl3"><div class="tbox">&#9656; Customer<b>CARD #7F3A</b>&#9656; Last visit<b>2 DAYS AGO</b></div></div>
-          <div class="fl fl4"><div class="tbox">&#9656; Platform<b>APPLE + GOOGLE WALLET</b>&#9656; App required<b>NONE</b></div></div>
-          <div class="lcard">
-            <div class="lt">
-              <div class="llogo">&#9749;</div>
-              <div class="lname">Kopi Corner</div>
-              <div><div class="llbl">Stamps</div><div class="lnum">7/10</div></div>
+        <div class="herobox">
+          <div class="card">
+            <div class="top">
+              <div>
+                <p class="shop">Kopi Corner</p>
+                <p class="meta">Apple Wallet</p>
+              </div>
+              <span class="mark">P</span>
             </div>
-            <div class="llbl" style="margin-top:18px">Your stamps</div>
-            <div class="ldots">${heroDots(7, 10)}</div>
-            <div class="lrow"><span class="llbl">Reward</span><span class="lrw">Free coffee</span></div>
-            <div class="lqr">${qr}</div>
+            <div class="rowlbl"><span>Progress</span><b>7 of 10</b></div>
+            <div class="dots">
+              <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i>
+              <i class="on"></i><i class="on"></i><i></i><i></i><i></i>
+            </div>
+            <div class="rw"><span>Reward</span><b>Free drink</b></div>
           </div>
         </div>
       </div></section>
 
-      <section class="panel dark" id="why"><div class="inner reveal stmt">
-        <span class="brkt">[ The paper problem ]</span>
-        <h2 class="h2">Paper cards don&rsquo;t fail because loyalty doesn&rsquo;t work. <span class="lime">They fail because they&rsquo;re paper.</span></h2>
-        <p class="h2sub">Almost every shop has tried a paper card. Most quietly stopped. It was the cards that kept disappearing, not the customers.</p>
-        <div class="papers">
-          <span class="gtag gt1">&#9656; Lost in a drawer</span>
-          <span class="gtag gt2">&#9656; Washed with the jeans</span>
-          <span class="gtag gt3">&#9656; Never hit stamp 10</span>
-          <div class="tornwrap">
-            <div class="half l">${tornPaper}</div>
-            <div class="half r">${tornPaper}</div>
-          </div>
-          ${paperCard("Bean There &middot; loyalty", 4, "p2", `<span class="stain"></span>`)}
-          ${paperCard("Daily Grind &middot; card", 2, "p3")}
+      <!-- 2 · NOTHING TO INSTALL -->
+      <section class="band" id="how"><div class="shell">
+        <div class="lede">
+          <h2>Nothing to install. On either side.</h2>
+          <p>No app for your customers, and no new hardware on your counter.</p>
         </div>
-        <div class="painrow">
-          <div class="pain"><div class="pt">&#9656; LOST</div><p>Nine stamps deep, then it vanishes into a drawer. The tenth visit never comes.</p></div>
-          <div class="pain"><div class="pt">&#9656; IGNORED</div><p>Nobody installs an app for one shop. The sign-up dies right at the counter.</p></div>
-          <div class="pain"><div class="pt">&#9656; SILENT</div><p>Paper can&rsquo;t tell you who stopped coming, and it can&rsquo;t ask them back.</p></div>
-        </div>
-      </div></section>
-
-      <section class="panel light"><div class="inner stmt">
-        <span class="brkt">[ The fix ]</span>
-        <h2 class="h2">Stampy makes sure that never happens again.</h2>
-        <p class="h2sub">One tap moves your stamp card into the wallet they already carry, where it stays as fast as paper at the counter and impossible to leave behind.</p>
         <div class="duo">
-          <div class="tbox tbx-l">&#9656; Added at the counter<b>ONE SCAN &middot; ~4 SECONDS</b></div>
-          <span class="wtag a">Apple Wallet</span>
-          <div class="wcard apple">
-            <div class="wt"><span class="wlg">&#9749;</span><span class="wnm">Kopi Corner</span><span class="wct">7/10</span></div>
-            <div class="wdots">${dotsHtml(7, 10)}</div>
-            <div class="wrw">Reward &middot; Free coffee</div>
+          <div class="panel pale">
+            <p class="who">For your customer</p>
+            <h3>Three taps, then never again</h3>
+            <ul class="flow">
+              <li><span class="n">1</span><span class="tx">Scans the QR on your counter</span></li>
+              <li aria-hidden="true"><span class="arw"></span></li>
+              <li><span class="n">2</span><span class="tx">The card saves straight into their wallet</span></li>
+              <li aria-hidden="true"><span class="arw"></span></li>
+              <li><span class="n">3</span><span class="tx">Gets a stamp on every visit, and sees how close the reward is</span></li>
+            </ul>
           </div>
-          <div class="wcard gwal">
-            <div class="wt"><span class="wlg">&#9749;</span><span class="wnm">Kopi Corner</span><span class="wct">7/10</span></div>
-            <div class="wdots">${dotsHtml(7, 10)}</div>
-            <div class="wrw">Reward &middot; Free coffee</div>
+          <div class="panel dark">
+            <p class="who">For you</p>
+            <h3>Four seconds at the counter</h3>
+            <ul class="flow">
+              <li><span class="n">1</span><span class="tx">Open the stamper on any phone</span></li>
+              <li aria-hidden="true"><span class="arw"></span></li>
+              <li><span class="n">2</span><span class="tx">Scan their card, or type the six-character code</span></li>
+              <li aria-hidden="true"><span class="arw"></span></li>
+              <li><span class="n">3</span><span class="tx">Enter your PIN once a shift. Stamped, and their phone updates itself</span></li>
+            </ul>
           </div>
-          <span class="wtag g">Google Wallet</span>
-          <div class="tbox tbx-r">&#9656; One QR &middot; both wallets<b>SAME SCANNER, SAME SPEED</b></div>
-        </div>
-        <div class="specs">
-          <span>One tap to add</span><span>No app</span><span>Updates itself</span><span>iPhone &amp; Android</span>
         </div>
       </div></section>
 
-      <section class="panel dark" id="features"><div class="inner"><div class="feat reveal">
-        <div class="fcopy">
-          <span class="chip"><span class="ic">&#128276;</span>Win-back</span>
-          <h2 class="h2">Paper can&rsquo;t bring them back. <span class="lime">Stampy can.</span></h2>
-          <p class="h2sub">When a regular goes quiet, Stampy sends a gentle lock-screen nudge, &ldquo;we miss you, here&rsquo;s a bonus stamp&rdquo;, straight from the card in their wallet. No numbers to collect, no email blasts to write.</p>
-          <span class="callout">&#9656; Runs itself: spots lapsing regulars and nudges them for you</span>
+      <!-- 3 · EXAMPLES, auto-scrolling -->
+      <section class="band tight"><div class="shell">
+        <div class="lede">
+          <h2>A car wash shouldn't run the same card as a cafe</h2>
+          <p>You set the number of stamps and what the reward is. Change it later and
+            everyone who is part way through keeps the deal they were promised.</p>
         </div>
-        <div class="fart">
-          <div class="trail">
-            <div class="tbox">&#9656; Last visit<b>21 DAYS AGO</b></div>
-            <span class="arr">&darr;</span>
-            <div class="tbox">&#9656; Auto win-back<b>NUDGE SENT &#10003;</b></div>
-            <span class="arr">&darr;</span>
-            <div class="tbox">&#9656; Next morning<b>BACK AT THE COUNTER &#9749;</b></div>
+      </div>
+      <div class="mq"><div class="mqtrack">${marquee}</div></div>
+      </section>
+
+      <!-- 4 · FEATURE CAROUSEL -->
+      <section class="band"><div class="shell">
+        <div class="lede">
+          <h2>The bit paper can't do</h2>
+        </div>
+        <div class="car" data-car>
+          <div class="slide" data-slide>
+            <div class="slidetx">
+              <h3>Their card updates before they leave the counter</h3>
+              <p>The stamp is saved the moment you tap it, and the phone in their pocket
+                catches up on its own. No refresh, no reopening anything.</p>
+            </div>
+            <div class="slideart">
+              <div class="lock">
+                <p class="clock">9:41</p>
+                <p class="date">Tuesday 12 August</p>
+                <div class="notif">
+                  <span class="ic">P</span>
+                  <div>
+                    <div class="hd"><b>Kopi Corner</b><span class="tm">now</span></div>
+                    <p>7 of 10 stamps. Three more and the next one is free.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="slide" data-slide>
+            <div class="slidetx">
+              <h3>It lives in the wallet they already have</h3>
+              <p>Apple Wallet and Google Wallet, one QR for both. Nothing to download,
+                no account to make, and no name, email or phone number collected.</p>
+            </div>
+            <div class="slideart">
+              <div class="card">
+                <div class="top">
+                  <div>
+                    <p class="shop">Kopi Corner</p>
+                    <p class="meta">Google Wallet</p>
+                  </div>
+                  <span class="mark">P</span>
+                </div>
+                <div class="rowlbl"><span>Progress</span><b>9 of 10</b></div>
+                <div class="dots">
+                  <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i>
+                  <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i>
+                </div>
+                <div class="rw"><span>Reward</span><b>Free drink</b></div>
+              </div>
+            </div>
+          </div>
+          <div class="slide" data-slide>
+            <div class="slidetx">
+              <h3>Bring back the ones who stopped coming</h3>
+              <p>You can see who has gone quiet, and reach all of them with one press.
+                Nothing is ever sent on a timer, and nobody hears from you more than
+                once a week.</p>
+            </div>
+            <div class="slideart">
+              <img src="/assets/img/quiet-table-v1.jpg" alt="" width="1200" height="780" loading="lazy">
+              <div class="nudge">
+                <h4>Who has gone quiet</h4>
+                <div class="grp"><b>Slipping away</b><span class="cnt">14 people</span></div>
+                <div class="grp"><b>Nearly gone</b><span class="cnt">31 people</span></div>
+                <div class="grp"><b>Regulars</b><span class="cnt">88 people</span></div>
+                <button class="pbtn pbtn-neon" type="button">Send a nudge</button>
+                <p class="rule">One message per person per week, and never on a schedule.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cardots">
+          <button type="button" data-dot aria-label="Card updates" aria-pressed="true"></button>
+          <button type="button" data-dot aria-label="Lives in the wallet" aria-pressed="false"></button>
+          <button type="button" data-dot aria-label="Bringing customers back" aria-pressed="false"></button>
+        </div>
+      </div></section>
+
+      <!-- 5 · FOR THE OWNER -->
+      <section class="band" id="owner"><div class="shell">
+        <div class="lede">
+          <h2>Everything you run it from</h2>
+          <p>Three screens. That is the whole product.</p>
+        </div>
+        <div class="owntabs">
+          <button type="button" data-scr="stamp" aria-pressed="true">Stamping</button>
+          <button type="button" data-scr="notify" aria-pressed="false">Notifications</button>
+          <button type="button" data-scr="settings" aria-pressed="false">Settings</button>
+        </div>
+        <div class="own">
+          <div>
+            <div class="owncap">
+              <h4>Any phone is the till</h4>
+              <p>The stamper is a web page behind one PIN. Staff share it, and it works on
+                whatever handset is already on the counter.</p>
+            </div>
+            <div class="owncap">
+              <h4>No numbers to collect</h4>
+              <p>You never hold a customer's name, email or phone. There is no list to keep
+                safe and nothing to leak.</p>
+            </div>
           </div>
           <div class="phone">
-            <div class="notch"></div>
-            <div class="lock">
-              <div class="clock">9:41</div>
-              <div class="date">Friday, 25 July</div>
-              <div class="noti">
-                <div class="ic">&#9749;</div>
-                <div><div class="mt">Wallet &middot; now</div><div class="tt">Kopi Corner</div><div class="bd">We miss you! Here&rsquo;s a bonus stamp on us &#9749;</div></div>
+            <div class="screen">
+              <div class="sbar"><span>9:41</span><span>PunchMe</span></div>
+
+              <div class="scr" data-screen="stamp" data-on>
+                <h5>Stamper</h5>
+                <p class="hint">Kopi Corner &middot; signed in</p>
+                <div class="scan"><span class="frame"></span><span class="cap">Point at their card</span></div>
+                <div class="toast">Stamp added &middot; 7 of 10</div>
+                <div class="box line"><p class="t">Or type the code</p><p class="s">6 characters, on their card</p></div>
+                <div class="box"><p class="t">Recent</p><p class="s">4 stamps in the last hour</p></div>
+              </div>
+
+              <div class="scr" data-screen="notify">
+                <h5>Notifications</h5>
+                <p class="hint">Who to bring back, and when you can</p>
+                <div class="box"><p class="t">Slipping away &middot; 14</p><p class="s">Last visit 2 to 4 weeks ago</p></div>
+                <div class="box"><p class="t">Nearly gone &middot; 31</p><p class="s">Last visit over 6 weeks ago</p></div>
+                <div class="box line"><p class="t">12 skipped</p><p class="s">Messaged in the last 7 days</p></div>
+                <div class="toast">Sent to 45 people</div>
+              </div>
+
+              <div class="scr" data-screen="settings">
+                <h5>Your card</h5>
+                <p class="hint">Change it any time</p>
+                <div class="fld"><label>Shop name</label><div class="val">Kopi Corner</div></div>
+                <div class="fld"><label>Stamps to a reward</label><div class="val">10</div></div>
+                <div class="fld"><label>Reward</label><div class="val">Free drink</div></div>
+                <div class="box"><p class="t">Staff PIN</p><p class="s">Shown once, then replaced</p></div>
+              </div>
+
+              <div class="tabbar">
+                <span class="on">Home</span><span>Customers</span><span>Card</span><span>Settings</span>
               </div>
             </div>
           </div>
-        </div>
-      </div></div></section>
-
-      <section class="panel light"><div class="inner"><div class="feat flip">
-        <div class="fcopy">
-          <span class="chip"><span class="ic">&#128200;</span>Know your customers</span>
-          <h2 class="h2">See who&rsquo;s coming back, <span class="accent">and who isn&rsquo;t.</span></h2>
-          <p class="h2sub">Every stamp is a visit you can actually see. New faces, solid regulars, people starting to drift, all on one screen, updated with every tap. Paper kept all of this a secret.</p>
-          <span class="callout">&#9656; Live counts &middot; visit history &middot; lapsing alerts</span>
-        </div>
-        <div class="fart">
-          <div class="dashcard">
-            <div class="dh"><span>Customers</span><span class="live">&#9679; Live</span></div>
-            <div class="dtiles">
-              <div class="dtile"><b>124</b><i>Customers</i></div>
-              <div class="dtile"><b>940</b><i>Stamps</i></div>
-              <div class="dtile"><b>32</b><i>Rewards</i></div>
-            </div>
-            <div class="drow"><span class="did">#A47F</span><span class="ddots">${dotsHtml(7, 10)}</span><span class="dwhen">2h ago</span><span class="dbdg ok">Regular</span></div>
-            <div class="drow"><span class="did">#2B91</span><span class="ddots">${dotsHtml(3, 10)}</span><span class="dwhen">3w ago</span><span class="dbdg warn">Lapsing</span></div>
-            <div class="drow"><span class="did">#C7D3</span><span class="ddots">${dotsHtml(1, 10)}</span><span class="dwhen">just now</span><span class="dbdg new">New</span></div>
-            <div class="dfoot"><span>3 lapsing this week</span><b>Nudge all &rarr;</b></div>
-          </div>
-        </div>
-      </div></div></section>
-
-      <section class="panel cream"><div class="inner">
-        <div class="stats">
-          <div class="stat"><b>0</b><i>Apps to download</i></div>
-          <div class="stat"><b>1</b><i>QR at the counter</i></div>
-          <div class="stat"><b>2</b><i>Wallets: Apple &amp; Google</i></div>
-          <div class="stat"><b>5<small>min</small></b><i>From sign-up to first stamp</i></div>
-        </div>
-      </div></section>
-
-      <section class="panel stone dotted-bg" id="setup"><div class="inner"><div class="feat">
-        <div class="fcopy">
-          <span class="chip"><span class="ic">&#9889;</span>From zero to live</span>
-          <h2 class="h2">Set up in 5 minutes.</h2>
-          <p class="h2sub">No hardware to buy, no app to build, no training day. If you can post to Instagram, you can launch a loyalty program.</p>
-          <ul class="steplist">
-            <li><span class="n">01</span><span class="s">Create your account</span><span class="t">1 min</span></li>
-            <li><span class="n">02</span><span class="s">Design your card</span><span class="t">2 min</span></li>
-            <li><span class="n">03</span><span class="s">Print the counter QR</span><span class="t">1 min</span></li>
-            <li><span class="n">04</span><span class="s">First customer, first stamp</span><span class="t">instant</span></li>
-          </ul>
-        </div>
-        <div class="fart">
-          <div class="laptop">
-            <div class="lscr">
-              <div class="lhd"><span>Stampy Dashboard</span><span class="lv">&#9679; Live</span></div>
-              <div class="ltiles">
-                <div class="ltile"><b>124</b><i>Customers</i></div>
-                <div class="ltile"><b>+41</b><i>This month</i></div>
-                <div class="ltile"><b>86%</b><i>Come back</i></div>
-              </div>
-              <div class="lbars"><i style="height:26%"></i><i style="height:34%"></i><i style="height:30%"></i><i style="height:44%"></i><i style="height:38%"></i><i style="height:52%"></i><i style="height:47%"></i><i style="height:60%"></i><i style="height:55%"></i><i style="height:71%"></i><i style="height:66%"></i><i style="height:84%"></i></div>
-              <div class="lrow2"><span>Stamps this week</span><b>+188</b></div>
-            </div>
-            <div class="lbase"></div>
-          </div>
-        </div>
-      </div></div></section>
-
-      <section class="panel dark"><div class="inner final">
-        <span class="brkt">[ Early access ]</span>
-        <h2 class="h2">Be first through the door.</h2>
-        <p class="h2sub" style="text-align:center">Stampy is onboarding its first shops now. Free while in beta, and no card details needed.</p>
-        <div class="row"><a class="cta lime" href="/dashboard">Get early access</a></div>
-        <div class="specs">
-          <span>Free during beta</span><span>No card details</span><span>Live in minutes</span>
-        </div>
-        <div class="fgrid">
           <div>
-            <a class="fbrand" href="/">Stampy &#9749;</a>
-            <p class="fblurb">Loyalty stamp cards that live in Apple &amp; Google Wallet, with no app for your customers to install.</p>
+            <div class="owncap">
+              <h4>See it while you can still fix it</h4>
+              <p>Paper tells you nothing until a regular has already gone. This tells you
+                the week they start slipping.</p>
+            </div>
+            <div class="owncap hi">
+              <h4>One PIN, one counter</h4>
+              <p>Every card you run shares the same stamper and the same PIN. Change it and
+                every phone signs out at once.</p>
+            </div>
           </div>
-          <div class="fcol"><h5>Product</h5><a href="#why">Why paper fails</a><a href="#features">Win-back</a><a href="#setup">Setup</a></div>
-          <div class="fcol"><h5>Legal</h5><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
-          <div class="fcol"><h5>Account</h5><a href="/dashboard">Log in</a><a href="/dashboard">Get early access</a></div>
         </div>
-        <div class="fine"><span>Made for small shops in Malaysia</span><span>&copy; Stampy</span></div>
       </div></section>
-    </div>`;
-  return page("Stampy — loyalty cards in Apple & Google Wallet, no app", body, css, script);
+
+      <!-- 6 · PRICE -->
+      <section class="band tight" id="price"><div class="shell">
+        <div class="lede"><h2>One price</h2></div>
+        <div class="price">
+          <p class="amt">RM79</p>
+          <p class="per">a month &middot; first month free</p>
+          <ul>
+            <li>Apple Wallet and Google Wallet, one QR for both</li>
+            <li>Unlimited customers and unlimited stamps</li>
+            <li>Bring-back messages, whenever you decide to send them</li>
+            <li>We set your shop up ourselves</li>
+          </ul>
+          <a class="pbtn pbtn-neon" href="/dashboard">Start free</a>
+          <p class="fine">No card details to start. Cancel whenever.</p>
+        </div>
+      </div></section>
+
+      <!-- 7 · WHO WE ARE -->
+      <section class="band tight"><div class="shell"><div class="us">
+        <h2>Two people in KL</h2>
+        <p>We are not a startup and we are not funded. One of us spent four years doing
+          data analytics in e-commerce, the other five years in product management in
+          fintech, and we build this around those jobs.</p>
+        <p>There is no sales team, which is the honest reason we set up every shop
+          ourselves. You will be talking to one of the two people who made it.</p>
+      </div></div></section>
+
+      <!-- 8 · CLOSE. TODO(founder): real WhatsApp / Instagram / email / phone. -->
+      <section class="band tight"><div class="shell">
+        <div class="close">
+          <img src="/assets/img/shopfront-v1.jpg" alt="" width="1800" height="1170" loading="lazy">
+          <h2>Want it on your counter?</h2>
+          <p class="sup">Send us a message and we will set the whole thing up for you,
+            card design included.</p>
+          <div class="closebtns">
+            <a class="pbtn pbtn-neon" href="#contact">WhatsApp</a>
+            <a class="pbtn pbtn-pale" href="#contact">Instagram</a>
+            <a class="pbtn pbtn-pale" href="#contact">Email</a>
+          </div>
+          <p class="tel"><a href="#contact">+60 12&ndash;345 6789</a></p>
+        </div>
+      </div></section>
+
+      <div class="shell"><div class="foot">
+        <span>PunchMe &middot; made in Kuala Lumpur</span>
+        <nav>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/dashboard">Log in</a>
+        </nav>
+      </div></div>
+    </main>`;
+  return page("PunchMe — the stamp card that lives in your customer's phone", body, css, script);
 }
 
 // -------------------------------------------------------------- legal ----

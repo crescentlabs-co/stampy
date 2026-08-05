@@ -72,12 +72,24 @@ async function main() {
 
   // `/` is now the product marketing landing page.
   const landing = await get("/");
-  expect(landing.status === 200 && landing.body.includes("Get early access"), "/ serves the marketing landing page");
-  // Font face is inline in the page CSS (no separate cacheable stylesheet) and
-  // points at the uniquely-named woff2, which is served statically.
-  expect(landing.body.includes("/assets/fonts/bricolage-grotesque-latin.woff2"), "pages declare the Bricolage Grotesque @font-face inline");
-  const woff = await get("/assets/fonts/bricolage-grotesque-latin.woff2");
+  expect(landing.status === 200 && landing.body.includes("lives in your customer"), "/ serves the marketing landing page");
+  // Font faces are inline in the page CSS (no separate cacheable stylesheet) and
+  // point at uniquely-named woff2 files, which are served statically. The app
+  // reads in Bricolage and Instrument Serif; the landing sets its own display
+  // and body to Figtree, so both have to resolve.
+  expect(landing.body.includes("/assets/fonts/instrument-serif-latin.woff2"), "pages declare the Instrument Serif @font-face inline");
+  const woff = await get("/assets/fonts/instrument-serif-latin.woff2");
   expect(woff.status === 200, "GET /assets/fonts/*.woff2 serves the font file");
+  expect(landing.body.includes("/assets/fonts/figtree-latin.woff2"), "pages declare the Figtree @font-face inline");
+  const figtree = await get("/assets/fonts/figtree-latin.woff2");
+  expect(figtree.status === 200, "GET /assets/fonts/figtree-latin.woff2 serves the landing display face");
+  // Two photographs survive the rework, in the carousel and the closing band. A
+  // broken one is a visible hole, so the bytes are checked the same way the
+  // font is.
+  expect(landing.body.includes("/assets/img/quiet-table-v1.jpg"), "landing page references its carousel photograph");
+  expect(landing.body.includes("/assets/img/shopfront-v1.jpg"), "landing page references its closing photograph");
+  const shot = await get("/assets/img/shopfront-v1.jpg");
+  expect(shot.status === 200, "GET /assets/img/*.jpg serves the landing photography");
 
   // The default café's Add-to-Wallet page moved to /c/default; its QR points there.
   const cafeLanding = await get("/c/default");
