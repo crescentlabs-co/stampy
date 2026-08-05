@@ -1674,9 +1674,6 @@ export function marketingPage(): string {
     .lede h2 { font-size: clamp(2rem, 5vw, 3.2rem); max-width: 20ch; margin: 0 auto; }
     .lede p { margin: 16px auto 0; max-width: 46ch; color: var(--ink-2); font-size: 1.02rem;
               line-height: 1.55; }
-    .pill { display: inline-block; background: var(--neon); color: var(--ink);
-            font-weight: 700; font-size: .8rem; letter-spacing: .01em;
-            padding: 7px 14px; border-radius: 999px; }
 
     /* ---------------------------------------------------------------- hero -- */
     .hero { display: grid; gap: clamp(30px, 4vw, 54px); align-items: center;
@@ -1685,7 +1682,9 @@ export function marketingPage(): string {
     .hero h1 { font-size: clamp(2.6rem, 6.5vw, 4.6rem); margin: 20px 0 0; }
     .hero .sub { margin: 20px 0 0; max-width: 40ch; color: var(--ink-2);
                  font-size: clamp(1.02rem, 2vw, 1.14rem); line-height: 1.55; }
-    .herobtns { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 28px; }
+    .herobtns { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 12px; }
+    .trylbl { margin: 30px 0 0; font-size: .78rem; font-weight: 700; letter-spacing: .1em;
+              text-transform: uppercase; color: var(--ink-2); }
     .herobox { background: var(--slab); border-radius: var(--r); padding: clamp(28px, 4vw, 52px);
                display: grid; place-items: center; min-height: 340px; }
 
@@ -1768,10 +1767,14 @@ export function marketingPage(): string {
 
     /* ------------------------------------------------------------ carousel -- */
     .car { background: var(--slab); color: var(--on-slab); border-radius: var(--r);
-           overflow: hidden; }
-    .slide { display: none; }
-    .slide[data-on] { display: grid; }
-    @media (min-width: 900px) { .slide[data-on] { grid-template-columns: 1fr 1fr; } }
+           overflow: hidden; touch-action: pan-y; }
+    /* One track that slides, rather than slides that appear and disappear. The
+       flex items stay full width so the transform maps 1:1 to slide index. */
+    .cartrack { display: flex; align-items: stretch;
+                transition: transform .52s cubic-bezier(.32, .72, 0, 1); }
+    .slide { flex: 0 0 100%; display: grid; }
+    @media (min-width: 900px) { .slide { grid-template-columns: 1fr 1fr; } }
+    @media (prefers-reduced-motion: reduce) { .cartrack { transition: none; } }
     .slidetx { padding: clamp(30px, 4vw, 60px); display: flex; flex-direction: column;
                justify-content: center; }
     .slidetx h3 { font-size: clamp(1.7rem, 3.2vw, 2.5rem); }
@@ -1819,17 +1822,20 @@ export function marketingPage(): string {
     /* -------------------------------------------------------- owner phone -- */
     .own { display: grid; gap: clamp(24px, 3vw, 40px); align-items: center; }
     @media (min-width: 1000px) { .own { grid-template-columns: 1fr auto 1fr; } }
-    .owncap h4 { font-size: 1.16rem; margin-bottom: 8px; }
-    .owncap p { color: var(--ink-2); font-size: .95rem; line-height: 1.55; margin: 0; }
-    .owncap + .owncap { margin-top: 30px; }
-    .owncap.hi { background: var(--soft); border-radius: var(--r-sm); padding: 18px 20px; }
-    .owntabs { display: flex; flex-wrap: wrap; gap: 9px; justify-content: center;
-               margin: 0 auto clamp(26px, 4vw, 40px); }
-    .owntabs button { font-family: var(--body); font-weight: 700; font-size: .9rem;
-                      padding: 11px 20px; border-radius: 999px; cursor: pointer;
-                      background: var(--soft); color: var(--ink-2); border: 2px solid transparent; }
-    .owntabs button:hover { color: var(--ink); }
-    .owntabs button[aria-pressed="true"] { background: var(--neon); color: var(--ink); }
+    /* The four points ARE the controls: a caption you can press beats a caption
+       beside a row of pills that say the same thing twice. */
+    .owncap { display: block; width: 100%; text-align: left; cursor: pointer;
+              font-family: var(--body); background: transparent; color: inherit;
+              border: 2px solid transparent; border-left: 3px solid var(--hair);
+              border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 14px 18px;
+              transition: border-color .2s ease, background .2s ease; }
+    .owncap h4 { font-size: 1.1rem; margin-bottom: 6px; }
+    .owncap p { color: var(--ink-2); font-size: .93rem; line-height: 1.5; margin: 0; }
+    .owncap + .owncap { margin-top: 14px; }
+    .owncap:hover { background: var(--soft); border-left-color: var(--ink-2); }
+    .owncap[aria-pressed="true"] { background: var(--soft); border-left-color: var(--neon); }
+    .owncap[aria-pressed="true"] p { color: var(--ink); }
+    @media (prefers-reduced-motion: reduce) { .owncap { transition: none; } }
     .phone { width: 320px; max-width: 100%; margin: 0 auto; background: var(--ink);
              border-radius: 42px; padding: 11px; box-shadow: 0 30px 70px -30px rgba(12,14,13,.5); }
     .screen { background: var(--paper); border-radius: 32px; overflow: hidden;
@@ -1837,7 +1843,12 @@ export function marketingPage(): string {
     .sbar { display: flex; align-items: center; justify-content: space-between;
             padding: 14px 20px 6px; font-size: .74rem; font-weight: 700; color: var(--ink); }
     .scr { display: none; padding: 8px 18px 20px; flex: 1; }
-    .scr[data-on] { display: block; }
+    /* No fill-mode and no to-frame: the resting state is the element's own, so a
+       screen that never gets to animate is simply visible. With "both" it was
+       pinned at opacity 0, and the phone rendered empty. */
+    .scr[data-on] { display: block; animation: scrin .34s cubic-bezier(.32, .72, 0, 1); }
+    @keyframes scrin { from { opacity: 0; transform: translateX(14px); } }
+    @media (prefers-reduced-motion: reduce) { .scr[data-on] { animation: none; } }
     .scr h5 { font-family: var(--display); font-weight: 800; font-size: 1.3rem;
               letter-spacing: -.03em; margin-bottom: 3px; }
     .scr .hint { color: var(--ink-2); font-size: .8rem; font-weight: 500; margin-bottom: 16px; }
@@ -1948,16 +1959,15 @@ export function marketingPage(): string {
 
       // ---- feature carousel -------------------------------------------------
       var car = document.querySelector('[data-car]');
-      if (car) {
-        var slides = [].slice.call(car.querySelectorAll('[data-slide]'));
+      var track = document.querySelector('[data-cartrack]');
+      if (car && track) {
+        var slides = [].slice.call(track.querySelectorAll('[data-slide]'));
         var dots = [].slice.call(document.querySelectorAll('[data-dot]'));
         var at = 0, timer = null;
         function show(i) {
           at = (i + slides.length) % slides.length;
-          slides.forEach(function (s, n) {
-            if (n === at) s.setAttribute('data-on', '');
-            else s.removeAttribute('data-on');
-          });
+          track.style.transform = 'translateX(' + (at * -100) + '%)';
+          slides.forEach(function (s, n) { s.setAttribute('aria-hidden', String(n !== at)); });
           dots.forEach(function (d, n) { d.setAttribute('aria-pressed', String(n === at)); });
         }
         function stop() { if (timer) { clearInterval(timer); timer = null; } }
@@ -1971,11 +1981,26 @@ export function marketingPage(): string {
         car.addEventListener('mouseleave', play);
         car.addEventListener('focusin', stop);
         car.addEventListener('focusout', play);
+        // Thumb swipe. Only acts on a mostly-horizontal drag, so a vertical
+        // flick still scrolls the page instead of changing slide.
+        var x0 = null, y0 = null;
+        car.addEventListener('touchstart', function (e) {
+          x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; stop();
+        }, { passive: true });
+        car.addEventListener('touchend', function (e) {
+          if (x0 === null) return;
+          var dx = e.changedTouches[0].clientX - x0;
+          var dy = e.changedTouches[0].clientY - y0;
+          if (Math.abs(dx) > 44 && Math.abs(dx) > Math.abs(dy)) show(at + (dx < 0 ? 1 : -1));
+          x0 = null; y0 = null; play();
+        }, { passive: true });
         show(0);
         play();
       }
 
       // ---- owner phone screens ---------------------------------------------
+      // The captions are the controls, so the screen follows whichever point
+      // the visitor pressed.
       var tabs = [].slice.call(document.querySelectorAll('[data-scr]'));
       var screens = [].slice.call(document.querySelectorAll('[data-screen]'));
       tabs.forEach(function (t) {
@@ -1999,21 +2024,20 @@ export function marketingPage(): string {
         <a href="#owner">For owners</a>
         <a href="#price">Price</a>
       </nav>
-      <a class="pbtn pbtn-neon" href="/dashboard">Get started</a>
+      <a class="pbtn pbtn-neon" href="#contact">Get started</a>
     </div></header>
 
     <main>
       <!-- 1 · HERO -->
       <section class="shell"><div class="hero">
         <div>
-          <span class="pill">PunchMe</span>
           <h1>The stamp card that lives in your customer's phone</h1>
-          <p class="sub">No app to download, for them or for you. It sits in Apple Wallet and
-            Google Wallet next to their boarding passes, and it cannot be left at home.</p>
+          <p class="sub">No app, for them or for you. And it can't be left at home.</p>
+          <p class="trylbl">Try a sample card</p>
           <div class="herobtns">
-            <!-- TODO(founder): point at the live demo pass once it is wired. -->
-            <a class="pbtn pbtn-neon" href="/dashboard">Add a sample card to your phone</a>
-            <a class="pbtn pbtn-line" href="#how">See how it works</a>
+            <!-- TODO(founder): both point at the live demo pass once it is wired. -->
+            <a class="pbtn pbtn-neon" href="/dashboard">Apple Wallet</a>
+            <a class="pbtn pbtn-line" href="/dashboard">Google Wallet</a>
           </div>
         </div>
         <div class="herobox">
@@ -2050,7 +2074,7 @@ export function marketingPage(): string {
               <li aria-hidden="true"><span class="arw"></span></li>
               <li><span class="n">2</span><span class="tx">The card saves straight into their wallet</span></li>
               <li aria-hidden="true"><span class="arw"></span></li>
-              <li><span class="n">3</span><span class="tx">Gets a stamp on every visit, and sees how close the reward is</span></li>
+              <li><span class="n">3</span><span class="tx">Gets a stamp every visit</span></li>
             </ul>
           </div>
           <div class="panel dark">
@@ -2059,9 +2083,9 @@ export function marketingPage(): string {
             <ul class="flow">
               <li><span class="n">1</span><span class="tx">Open the stamper on any phone</span></li>
               <li aria-hidden="true"><span class="arw"></span></li>
-              <li><span class="n">2</span><span class="tx">Scan their card, or type the six-character code</span></li>
+              <li><span class="n">2</span><span class="tx">Scan their card</span></li>
               <li aria-hidden="true"><span class="arw"></span></li>
-              <li><span class="n">3</span><span class="tx">Enter your PIN once a shift. Stamped, and their phone updates itself</span></li>
+              <li><span class="n">3</span><span class="tx">Stamped. Their phone updates itself</span></li>
             </ul>
           </div>
         </div>
@@ -2070,9 +2094,8 @@ export function marketingPage(): string {
       <!-- 3 · EXAMPLES, auto-scrolling -->
       <section class="band tight"><div class="shell">
         <div class="lede">
-          <h2>A car wash shouldn't run the same card as a cafe</h2>
-          <p>You set the number of stamps and what the reward is. Change it later and
-            everyone who is part way through keeps the deal they were promised.</p>
+          <h2>Built for your business</h2>
+          <p>Every trade counts differently. Yours is set up to match.</p>
         </div>
       </div>
       <div class="mq"><div class="mqtrack">${marquee}</div></div>
@@ -2081,14 +2104,13 @@ export function marketingPage(): string {
       <!-- 4 · FEATURE CAROUSEL -->
       <section class="band"><div class="shell">
         <div class="lede">
-          <h2>The bit paper can't do</h2>
+          <h2>Why us</h2>
         </div>
-        <div class="car" data-car>
+        <div class="car" data-car><div class="cartrack" data-cartrack>
           <div class="slide" data-slide>
             <div class="slidetx">
               <h3>Their card updates before they leave the counter</h3>
-              <p>The stamp is saved the moment you tap it, and the phone in their pocket
-                catches up on its own. No refresh, no reopening anything.</p>
+              <p>Tap once. The phone in their pocket catches up on its own.</p>
             </div>
             <div class="slideart">
               <div class="lock">
@@ -2107,8 +2129,8 @@ export function marketingPage(): string {
           <div class="slide" data-slide>
             <div class="slidetx">
               <h3>It lives in the wallet they already have</h3>
-              <p>Apple Wallet and Google Wallet, one QR for both. Nothing to download,
-                no account to make, and no name, email or phone number collected.</p>
+              <p>Apple Wallet and Google Wallet, one QR for both. No download, no sign-up,
+                no personal details.</p>
             </div>
             <div class="slideart">
               <div class="card">
@@ -2131,9 +2153,8 @@ export function marketingPage(): string {
           <div class="slide" data-slide>
             <div class="slidetx">
               <h3>Bring back the ones who stopped coming</h3>
-              <p>You can see who has gone quiet, and reach all of them with one press.
-                Nothing is ever sent on a timer, and nobody hears from you more than
-                once a week.</p>
+              <p>See who has gone quiet and reach them with one press. Never on a timer,
+                never more than once a week.</p>
             </div>
             <div class="slideart">
               <img src="/assets/img/quiet-table-v1.jpg" alt="" width="1200" height="780" loading="lazy">
@@ -2147,7 +2168,7 @@ export function marketingPage(): string {
               </div>
             </div>
           </div>
-        </div>
+        </div></div>
         <div class="cardots">
           <button type="button" data-dot aria-label="Card updates" aria-pressed="true"></button>
           <button type="button" data-dot aria-label="Lives in the wallet" aria-pressed="false"></button>
@@ -2159,25 +2180,18 @@ export function marketingPage(): string {
       <section class="band" id="owner"><div class="shell">
         <div class="lede">
           <h2>Everything you run it from</h2>
-          <p>Three screens. That is the whole product.</p>
-        </div>
-        <div class="owntabs">
-          <button type="button" data-scr="stamp" aria-pressed="true">Stamping</button>
-          <button type="button" data-scr="notify" aria-pressed="false">Notifications</button>
-          <button type="button" data-scr="settings" aria-pressed="false">Settings</button>
+          <p>Tap a point to see the screen.</p>
         </div>
         <div class="own">
           <div>
-            <div class="owncap">
-              <h4>Any phone is the till</h4>
-              <p>The stamper is a web page behind one PIN. Staff share it, and it works on
-                whatever handset is already on the counter.</p>
-            </div>
-            <div class="owncap">
-              <h4>No numbers to collect</h4>
-              <p>You never hold a customer's name, email or phone. There is no list to keep
-                safe and nothing to leak.</p>
-            </div>
+            <button class="owncap" type="button" data-scr="stamp" aria-pressed="true">
+              <h4>Stamping</h4>
+              <p>Any phone on the counter, behind one PIN.</p>
+            </button>
+            <button class="owncap" type="button" data-scr="notify" aria-pressed="false">
+              <h4>Bringing people back</h4>
+              <p>See who has gone quiet, and reach them.</p>
+            </button>
           </div>
           <div class="phone">
             <div class="screen">
@@ -2188,17 +2202,24 @@ export function marketingPage(): string {
                 <p class="hint">Kopi Corner &middot; signed in</p>
                 <div class="scan"><span class="frame"></span><span class="cap">Point at their card</span></div>
                 <div class="toast">Stamp added &middot; 7 of 10</div>
-                <div class="box line"><p class="t">Or type the code</p><p class="s">6 characters, on their card</p></div>
                 <div class="box"><p class="t">Recent</p><p class="s">4 stamps in the last hour</p></div>
               </div>
 
               <div class="scr" data-screen="notify">
                 <h5>Notifications</h5>
-                <p class="hint">Who to bring back, and when you can</p>
+                <p class="hint">Who to bring back</p>
                 <div class="box"><p class="t">Slipping away &middot; 14</p><p class="s">Last visit 2 to 4 weeks ago</p></div>
                 <div class="box"><p class="t">Nearly gone &middot; 31</p><p class="s">Last visit over 6 weeks ago</p></div>
                 <div class="box line"><p class="t">12 skipped</p><p class="s">Messaged in the last 7 days</p></div>
                 <div class="toast">Sent to 45 people</div>
+              </div>
+
+              <div class="scr" data-screen="customers">
+                <h5>Customers</h5>
+                <p class="hint">Everyone who holds a card</p>
+                <div class="box"><p class="t">Regulars &middot; 88</p><p class="s">Visited in the last fortnight</p></div>
+                <div class="box"><p class="t">133 in total</p><p class="s">No names, no numbers</p></div>
+                <div class="box line"><p class="t">Today</p><p class="s">21 stamps &middot; 3 rewards given</p></div>
               </div>
 
               <div class="scr" data-screen="settings">
@@ -2216,16 +2237,14 @@ export function marketingPage(): string {
             </div>
           </div>
           <div>
-            <div class="owncap">
-              <h4>See it while you can still fix it</h4>
-              <p>Paper tells you nothing until a regular has already gone. This tells you
-                the week they start slipping.</p>
-            </div>
-            <div class="owncap hi">
-              <h4>One PIN, one counter</h4>
-              <p>Every card you run shares the same stamper and the same PIN. Change it and
-                every phone signs out at once.</p>
-            </div>
+            <button class="owncap" type="button" data-scr="customers" aria-pressed="false">
+              <h4>Your customers</h4>
+              <p>Counted once each, and never asked for a name.</p>
+            </button>
+            <button class="owncap" type="button" data-scr="settings" aria-pressed="false">
+              <h4>Your card</h4>
+              <p>Stamps, reward and staff PIN, changed any time.</p>
+            </button>
           </div>
         </div>
       </div></section>
@@ -2249,27 +2268,26 @@ export function marketingPage(): string {
 
       <!-- 7 · WHO WE ARE -->
       <section class="band tight"><div class="shell"><div class="us">
-        <h2>Two people in KL</h2>
-        <p>We are not a startup and we are not funded. One of us spent four years doing
-          data analytics in e-commerce, the other five years in product management in
-          fintech, and we build this around those jobs.</p>
-        <p>There is no sales team, which is the honest reason we set up every shop
-          ourselves. You will be talking to one of the two people who made it.</p>
+        <h2>Who are we?</h2>
+        <p>Two of us, in Kuala Lumpur. Four years in e-commerce data analytics between
+          one of us, five in fintech product for the other.</p>
+        <p>We set up every shop ourselves, so you will always be talking to the people
+          who built it.</p>
       </div></div></section>
 
       <!-- 8 · CLOSE. TODO(founder): real WhatsApp / Instagram / email / phone. -->
-      <section class="band tight"><div class="shell">
+      <section class="band tight" id="contact"><div class="shell">
         <div class="close">
           <img src="/assets/img/shopfront-v1.jpg" alt="" width="1800" height="1170" loading="lazy">
           <h2>Want it on your counter?</h2>
-          <p class="sup">Send us a message and we will set the whole thing up for you,
-            card design included.</p>
+          <p class="sup">Message us and we will set the whole thing up for you, card
+            design included.</p>
           <div class="closebtns">
             <a class="pbtn pbtn-neon" href="#contact">WhatsApp</a>
             <a class="pbtn pbtn-pale" href="#contact">Instagram</a>
             <a class="pbtn pbtn-pale" href="#contact">Email</a>
           </div>
-          <p class="tel"><a href="#contact">+60 12&ndash;345 6789</a></p>
+          <p class="tel">We reply the same day</p>
         </div>
       </div></section>
 
