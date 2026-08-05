@@ -46,15 +46,20 @@ const baseCss = /* css */ `
     src: url("/assets/fonts/figtree-latin.woff2") format("woff2");
   }
   :root {
-    /* Stone & Sage: cool light neutral + muted sage accent. Instrument Serif
-       carries the headlines, Bricolage Grotesque everything you actually read. */
-    --bg: #f0f1ed; --surface: #ffffff; --ink: #20211d; --ink2: #2f312b;
-    --muted: #888d83; --line: #e3e5df; --field-border: #cdd0c8; --ghost-bg: #e7e9e3;
-    --accent: #6f8567; --accent-dark: #5c7156;
-    --r: 16px; --r-lg: 22px;
-    --shadow: 0 10px 30px -14px rgba(32,33,29,.20), 0 2px 6px rgba(32,33,29,.07);
-    --display: "Instrument Serif", Georgia, "Times New Roman", serif;
-    --body: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* See DESIGN.md. White page, near-black panels for weight, and one neon that
+       only ever marks the next thing to press. Neutrals carry a green bias so
+       they sit under the accent instead of fighting it. */
+    --bg: #ffffff; --surface: #f2f4f1; --slab: #101312;
+    --ink: #0c0e0d; --ink2: #3b403a;
+    --muted: #5f6560; --line: #e3e7e1; --field-border: #cdd2cb; --ghost-bg: #eceee9;
+    /* --accent is a FILL or a BORDER, never text: neon on white cannot be read.
+       That is what --on-accent and --accent-dark are for. */
+    --accent: #c9f73d; --accent-2: #b8e82c; --on-accent: #0c0e0d;
+    --accent-dark: #2f3630; --on-slab: #f4f6f2;
+    --r: 14px; --r-lg: 22px;
+    --shadow: 0 10px 30px -16px rgba(12,14,13,.18), 0 2px 6px rgba(12,14,13,.06);
+    --display: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
@@ -65,20 +70,26 @@ const baseCss = /* css */ `
     padding: 28px 16px 56px;
   }
   .card {
-    background: var(--surface); border-radius: var(--r-lg); padding: 28px 26px;
-    box-shadow: var(--shadow); width: 100%; max-width: 440px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 28px 26px; box-shadow: var(--shadow); width: 100%; max-width: 440px;
   }
-  h1 { font-family: var(--display); font-weight: 700; font-size: 1.7rem; letter-spacing: -.015em; margin-bottom: 10px; text-wrap: balance; }
-  h2 { font-family: var(--display); font-weight: 700; font-size: 1.15rem; letter-spacing: -.01em; margin: 24px 0 8px; }
+  h1 { font-family: var(--display); font-weight: 800; font-size: 1.75rem; letter-spacing: -.03em; margin-bottom: 10px; text-wrap: balance; }
+  h2 { font-family: var(--display); font-weight: 800; font-size: 1.18rem; letter-spacing: -.02em; margin: 24px 0 8px; }
   p.sub { color: var(--muted); margin-bottom: 22px; }
   .btn {
     display: block; width: 100%; text-align: center; padding: 15px 20px;
     border-radius: 14px; border: none; font-size: 1.02rem; font-weight: 600;
     cursor: pointer; text-decoration: none;
   }
-  .btn-dark { background: var(--ink); color: #fff; }
-  .btn-stamp { background: var(--ink); color: #fff; }
+  .btn { border-radius: 999px; font-weight: 700; }
+  /* The primary. Only one of these on a screen. */
+  .btn-neon { background: var(--accent); color: var(--on-accent); }
+  .btn-neon:hover { background: var(--accent-2); }
+  .btn-dark { background: var(--ink); color: var(--on-slab); }
+  /* The counter's own button. Neon, and deliberately the loudest thing there. */
+  .btn-stamp { background: var(--accent); color: var(--on-accent); }
   .btn-ghost { background: var(--ghost-bg); color: var(--ink); }
+  .btn-ghost:hover { background: var(--line); }
   .btn { transition: transform .09s ease, filter .15s ease; }
   .btn:active { transform: scale(.985); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -86,10 +97,13 @@ const baseCss = /* css */ `
   .muted { color: var(--muted); font-size: .85rem; }
   input, textarea, select {
     width: 100%; padding: 13px 14px; border: 1px solid var(--field-border); border-radius: 12px;
-    font-size: 1rem; font-family: inherit; background: var(--surface); color: var(--ink);
+    font-size: 1rem; font-family: inherit; background: var(--bg); color: var(--ink);
   }
-  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
-  label { font-size: .8rem; color: var(--muted); display: block; margin: 14px 0 6px; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--ink); outline-offset: 1px; border-color: transparent; }
+  :where(a, button, summary, [tabindex]):focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  :where(.onslab, .btn-dark, .btn-stamp):focus-visible { outline-color: var(--accent); }
+  label { font-size: .74rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+          color: var(--muted); display: block; margin: 14px 0 6px; }
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 999px;
@@ -1610,12 +1624,10 @@ export function notReadyPage(): string {
 export function marketingPage(): string {
   const css = /* css */ `
     :root {
-      --paper: #ffffff; --soft: #f2f4f1; --slab: #101312;
-      --ink: #0c0e0d; --ink-2: #5f6560; --hair: #e3e7e1;
-      --neon: #c9f73d; --neon-2: #b8e82c; --on-slab: #f4f6f2;
+      --paper: var(--bg); --soft: var(--surface);
+      --ink-2: var(--muted); --hair: var(--line);
+      --neon: var(--accent); --neon-2: var(--accent-2);
       --r: 28px; --r-sm: 14px;
-      --display: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     html { scroll-behavior: smooth; }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -1691,8 +1703,9 @@ export function marketingPage(): string {
     /* ------------------------------------------------- the drawn stamp card -- */
     /* The product's own object, drawn rather than photographed: it is the one
        thing on the page that cannot be mistaken for stock. */
-    .card { width: 100%; max-width: 340px; background: var(--paper); border-radius: 18px;
-            padding: 20px; box-shadow: 0 24px 60px -24px rgba(0,0,0,.6); }
+    .card { width: 100%; max-width: 340px; background: var(--paper); border: none;
+            border-radius: 18px; padding: 20px;
+            box-shadow: 0 24px 60px -24px rgba(0,0,0,.6); }
     .card .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .card .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--ink);
                   color: var(--neon); display: grid; place-items: center;
@@ -2552,7 +2565,11 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
     .pass { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
     .pass .dots { font-size: 1.15rem; letter-spacing: 2px; margin: 6px 0; }
     .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-    .row .btn { padding: 10px 12px; font-size: .95rem; }
+    .row .btn { padding: 16px 18px; font-size: 1.05rem; min-height: 54px; }
+    /* Read one-handed, at arm's length, with a queue waiting. */
+    .toast { font-family: var(--display); font-weight: 800; font-size: 1.2rem;
+             letter-spacing: -.02em; padding: 18px 28px; border-radius: var(--r);
+             background: var(--accent); color: var(--on-accent); bottom: 32px; }
     .ready { color: #1a7f37; font-weight: 700; }
     .signout { background: none; border: none; color: var(--muted); font: inherit; font-size: .85rem;
                cursor: pointer; padding: 4px 0; text-decoration: underline; }
@@ -2951,13 +2968,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
       } and we’ll set a new password for you.</p>`;
   const css = /* css */ `
     .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
-    .metric { background: var(--surface); border-radius: var(--r); padding: 16px 16px 13px;
-              box-shadow: var(--shadow); text-align: left; }
-    .metric b { font-family: var(--display); font-weight: 700; font-size: 1.9rem; line-height: 1;
-                display: block; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
+    .metric { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+              padding: 16px 16px 13px; text-align: left; }
+    .metric b { font-family: var(--display); font-weight: 800; font-size: 2rem; line-height: 1;
+                display: block; letter-spacing: -.035em; font-variant-numeric: tabular-nums; color: var(--ink); }
     .metric span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
                    letter-spacing: .05em; color: var(--muted); }
-    .card { border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 14px; }
+    .card { border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin-top: 14px; }
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
     ${DESIGN_PANEL_CSS}
     .account { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 20px; }
@@ -2972,9 +2989,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     .seg button { position: relative; z-index: 1; flex: 1; border: none; background: none; font: inherit;
                   font-weight: 600; font-size: .9rem; color: var(--muted); padding: 10px 12px; cursor: pointer;
                   border-radius: 999px; white-space: nowrap; transition: color .2s; }
-    .seg button.on { color: var(--accent-dark); }
-    .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .seg .thumb { position: absolute; z-index: 0; top: 5px; bottom: 5px; left: 0; width: 0; background: var(--surface);
+    .seg button.on { color: var(--on-accent); font-weight: 700; }
+    .seg button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .seg .thumb { position: absolute; z-index: 0; top: 5px; bottom: 5px; left: 0; width: 0; background: var(--accent);
                   border-radius: 999px; box-shadow: 0 2px 6px rgba(32,33,29,.14);
                   transition: transform .28s cubic-bezier(.34,1.1,.4,1), width .28s cubic-bezier(.34,1.1,.4,1); }
     /* Five tabs don't fit a 375px phone at the default size. Tighten them enough

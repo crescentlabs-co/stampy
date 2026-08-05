@@ -1,7 +1,9 @@
 # Stampy — rules for any AI model working on this repo
 
 Stampy = loyalty stamp cards in Apple Wallet + Google Wallet, no customer app.
-Read README.md for the system overview. The founder is **non-technical**: give
+Read README.md for the system overview and **DESIGN.md before touching any
+UI** — it holds the palette, the type and the rules, and there is exactly one of
+each. Do not invent a second palette. The founder is **non-technical**: give
 click-by-click browser instructions for anything manual, run all commands for
 them, and prefer browser UIs over files for anything they configure.
 
