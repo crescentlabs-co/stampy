@@ -94,6 +94,16 @@ const baseCss = /* css */ `
   .btn-stamp { background: var(--accent); color: var(--on-accent); }
   .btn-ghost { background: var(--ghost-bg); color: var(--ink); }
   .btn-ghost:hover { background: var(--line); }
+  /* A quiet control inside a tinted box goes white. --ghost-bg on --surface is
+     one shade of difference, so an opened fold read as a single grey slab with
+     its buttons dissolved into it. The tint marks the region; the things you
+     press sit on the page colour with a hairline. An inset shadow rather than a
+     border, so adding it moves nothing by 2px. This is the rule the console's
+     .dpanel already followed on its own — it is written down here instead. */
+  :is(.fold, .grp, .bucket, .mdetail) .btn-ghost {
+    background: var(--bg); box-shadow: inset 0 0 0 1px var(--field-border);
+  }
+  :is(.fold, .grp, .bucket, .mdetail) .btn-ghost:hover { background: var(--surface); }
   .btn { transition: transform .09s ease, filter .15s ease; }
   .btn:active { transform: scale(.985); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -465,6 +475,30 @@ export const DESIGN_PANEL_CSS = /* css */ `
        every control below it stretch, and the two stop looking alike. A
        no-op on the dashboard, which already sits inside a 480px .card. */
     .designhost { max-width: 480px; }
+    /* The fold the designer sits in. Declared HERE, not in the dashboard's
+       stylesheet, for the same reason the markup is shared: the panel emits
+       this class and the console renders the panel, so a copy kept in one
+       stylesheet left every fold on the console with no border, no tint and no
+       caret — a bare <details> with a browser triangle. */
+    .fold { border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; margin-top: 14px;
+            background: var(--surface); }
+    .fold summary { cursor: pointer; padding: 14px 0; font-weight: 600; list-style: none;
+                    display: flex; gap: 8px; align-items: center; }
+    .fold summary::-webkit-details-marker { display: none; }
+    .fold summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
+    .fold[open] summary::before { transform: rotate(90deg); }
+    .fold[open] { padding-bottom: 18px; }
+    /* Opened, the fold is a tinted region — so the boxes inside it step up to
+       the page colour rather than repeating the tint. --surface on --surface is
+       no step at all, which is what made an open Design read as one grey slab
+       with the controls dissolved into it. */
+    .fold .crlist { background: var(--bg); }
+    .fold .crow2.open { background: var(--surface); }
+    .fold .swatches { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
+    .fold .chipcustom input[type=color] { background: var(--bg); }
+    /* A fold nested in a tinted region (the console's merchant drill-down) has
+       the same problem one level up: it flips to white and keeps its border. */
+    .mdetail .fold { background: var(--bg); }
     .row2 { display: flex; gap: 8px; }
     .row2 > div { flex: 1; }
     /* Three number fields across a 375px phone. Smaller, tighter labels so
@@ -3187,8 +3221,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .grp summary::-webkit-details-marker { display: none; }
     .grp summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
     .grp[open] summary::before { transform: rotate(90deg); }
-    .grp .gc { background: var(--ghost-bg); border-radius: 999px; padding: 2px 10px; font-size: .8rem;
-               font-variant-numeric: tabular-nums; }
+    .grp .gc { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); border-radius: 999px;
+               padding: 2px 10px; font-size: .8rem; font-variant-numeric: tabular-nums; }
     .grp .gh { color: var(--muted); font-weight: 400; font-size: .8rem; }
     .grp .gnudge { width: auto; padding: 8px 14px; font-size: .85rem; margin-bottom: 4px; }
     /* Rows sit inside a group box already, so they're separated by a rule rather
@@ -3220,12 +3254,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        than another, the screen starts having an opinion. */
     .cact { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 4px 0 2px;
             background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-    .cact .ccell { background: var(--surface); border: none; font: inherit; color: var(--ink);
+    /* White cells, because the grid opens inside a tinted fold and --surface on
+       --surface left six invisible boxes. The 1px gaps ARE the --line grid
+       showing through, so the cells have to be a colour that differs from it. */
+    .cact .ccell { background: var(--bg); border: none; font: inherit; color: var(--ink);
                    text-align: left; padding: 11px 12px; min-width: 0; }
     .cact button.ccell { cursor: pointer; }
-    .cact button.ccell:hover { background: var(--ghost-bg); }
-    .cact .cn { display: block; font-family: var(--display); font-size: 1.35rem; line-height: 1.1;
-                letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+    .cact button.ccell:hover { background: var(--surface); }
+    /* Display 800, tabular — the same treatment as the hero metrics, because
+       these are metrics. Every cell gets it equally: the weight says "this is a
+       number", never "this number is the interesting one". */
+    .cact .cn { display: block; font-family: var(--display); font-weight: 800; font-size: 1.5rem;
+                line-height: 1.1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
     .cact .cl { display: block; margin-top: 3px; font-size: .72rem; color: var(--muted); line-height: 1.3; }
     .cact .cgo { color: var(--muted); font-size: .72rem; }
     .clist { width: 100%; border-collapse: collapse; font-size: .88rem; }
@@ -3234,16 +3274,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .clist td { padding: 9px 8px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
     .clist td.mono { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; }
     .sec.first { margin-top: 4px; padding-top: 0; border-top: none; }
-    /* Design is a set-it-once job, so it folds away. Rules — the reward, the
+    /* Design is a set-it-once job, so it folds away (.fold lives in
+       DESIGN_PANEL_CSS, with the panel that emits it). Rules — the reward, the
        stamp count, the win-back — is what owners come back to, and stays open. */
-    .fold { border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; margin-top: 14px;
-            background: var(--surface); }
-    .fold summary { cursor: pointer; padding: 14px 0; font-weight: 600; list-style: none;
-                    display: flex; gap: 8px; align-items: center; }
-    .fold summary::-webkit-details-marker { display: none; }
-    .fold summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
-    .fold[open] summary::before { transform: rotate(90deg); }
-    .fold[open] { padding-bottom: 18px; }
     /* --- show-password toggle --- */
     .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
@@ -4114,6 +4147,9 @@ export function adminPage(): string {
     .rst select { width: auto; }
     .rst .btn { width: auto; padding: 10px 14px; }
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
+    /* A value shown exactly once, inside the tinted drill-down: white, or the
+       one thing on the row that must be read is the one that blends in. */
+    .mdetail .temp { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
     .nfc { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
     .cbtn, .dbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
     .arch { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;

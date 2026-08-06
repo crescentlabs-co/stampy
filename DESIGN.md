@@ -78,6 +78,11 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    is simply visible. `both` once pinned a panel at `opacity: 0` and rendered it
    blank.
 8. Everything respects `prefers-reduced-motion`.
+9. **The tint does not nest.** A box inside a `--surface` box goes back to
+   `--bg` with a `--line` hairline, and a `.btn-ghost` inside one does the same.
+   `--surface` on `--surface` is no step at all and `--ghost-bg` is one shade
+   off it, which is how an opened fold came to read as a single grey slab with
+   its controls dissolved into it. Alternate; never repeat.
 
 ## Components
 
@@ -87,7 +92,9 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
 - **Panels** are `--surface` on `--bg` with a `--line` border, or `--slab` when
   they need to carry.
 - **Metric numbers** are `--display` at 800, tabular, with an uppercase
-  `--muted` label under them at `.68rem` and `.05em` tracking.
+  `--muted` label under them at `.68rem` and `.05em` tracking. `--display` is a
+  variable face covering 400–900, so a number that sets the family and forgets
+  the weight renders at 400 and reads as body text.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
 

@@ -289,7 +289,31 @@ describe("one designer, two pages", () => {
     for (const html of [dash, admin]) {
       expect(html.match(/function drawStampStrip/g)!.length).toBe(1);
       expect(html.match(/function paintBand/g)!.length).toBe(1);
-      expect(html.match(/\.crlist \{/g)!.length).toBe(1);
+      // Anchored to the start of a line so it counts the base rule and not the
+      // descendant overrides ("  .fold .crlist { ... }") declared beside it.
+      expect(html.match(/\n\s*\.crlist \{/g)!.length).toBe(1);
+    }
+  });
+
+  // The designer emits class="fold", so the styling for it has to travel with
+  // the panel. It used to live only in the dashboard's stylesheet, which left
+  // every fold on the console as a bare <details>: no border, no tint, no
+  // caret. Both pages, or neither.
+  it("styles the fold it emits, on both pages", () => {
+    for (const html of [dash, admin]) {
+      expect(html).toMatch(/\n\s*\.fold \{/);
+      expect(html).toContain(".fold[open] summary::before");
+    }
+  });
+
+  // The tint does not nest (DESIGN.md rule 9). An open fold is --surface, so
+  // the boxes inside it step back to --bg; when they did not, the whole panel
+  // read as one grey slab with the controls dissolved into it.
+  it("puts the fold's own boxes back on the page colour", () => {
+    for (const html of [dash, admin]) {
+      expect(html).toContain(".fold .crlist { background: var(--bg); }");
+      expect(html).toMatch(/\.fold \.swatches \{ background: var\(--bg\)/);
+      expect(html).toMatch(/:is\(\.fold, \.grp, \.bucket, \.mdetail\) \.btn-ghost \{/);
     }
   });
 
@@ -459,6 +483,18 @@ describe("the counter view judges nothing", () => {
     expect(block).not.toContain("Last 7 days");
     expect(block).not.toMatch(/\bdays\b\s*[:.]/);
     expect(block).not.toContain("cweek");
+  });
+
+  it("gives every cell one weight, at metric size, on the page colour", () => {
+    // --display is a 400–900 variable face, so a number that sets the family
+    // and forgets the weight renders at 400 and reads as body text. These are
+    // metrics: 800, like the hero numbers. One rule for all six — the styling
+    // says "this is a number", never "this number is the interesting one".
+    expect(html).toMatch(/\.cact \.cn \{[^}]*font-weight: 800/);
+    // The grid opens inside a tinted fold, so the cells step back to --bg
+    // (DESIGN.md rule 9). On --surface they were six invisible boxes.
+    expect(html).toMatch(/\.cact \.ccell \{ background: var\(--bg\)/);
+    expect((html.match(/\n\s*\.cact \.ccell \{/g) || []).length).toBe(1);
   });
 
   it("uses no word that implies something is wrong", () => {
