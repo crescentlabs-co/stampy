@@ -58,6 +58,7 @@ import {
   landingPage,
   marketingPage,
   notReadyPage,
+  shopNotOpenPage,
   posterPage,
   privacyPage,
   privacyPageBm,
@@ -106,6 +107,29 @@ function viewMeta(req: import("express").Request): { ua: string; bot: boolean } 
  * poster URL would become one, and the customer list is a real thing people
  * look at.
  */
+/**
+ * Is this shop open to customers?
+ *
+ * A merchant exists in full — card, colours, /j/ QR — from the moment we build
+ * it in admin, which is BEFORE anybody has claimed it. Without this gate a
+ * poster printed early could issue cards that nobody can ever stamp: the staff
+ * PIN belongs to the owner, and an unclaimed shop has no owner (see
+ * `cardAndOwner`, src/routes/staff.ts). An archived shop is closed for the same
+ * reason from the other end.
+ *
+ * The env-seeded default card has no merchant at all and stays open — it is the
+ * bootstrap card, and nothing has been promised to anyone about it.
+ */
+async function shopOpen(card: CardRow): Promise<{ open: boolean; business: string; logoVersion: number }> {
+  const merchant = await merchantForCard(card.id).catch(() => null);
+  const [business, logoVersion] = await Promise.all([
+    businessNameForCard(card),
+    cafeLogoVersion(card.id).catch(() => 0),
+  ]);
+  const open = !merchant || (Boolean(merchant.owner_id) && !merchant.archived_at);
+  return { open, business, logoVersion };
+}
+
 async function landing(
   cardId: string,
   req: import("express").Request,
@@ -130,10 +154,14 @@ async function landing(
   // The shop's own name and mark. Both are read fresh on every request, so an
   // owner who uploads a logo sees it on this page (and on the poster) straight
   // away — there is nothing to regenerate.
-  const [business, logoVersion] = await Promise.all([
-    businessNameForCard(card),
-    cafeLogoVersion(card.id).catch(() => 0),
-  ]);
+  const { open, business, logoVersion } = await shopOpen(card);
+  // Not open yet, or closed: their name and their mark, and no way to be issued
+  // a card. The scan is still logged above — a poster that went up before the
+  // shop was claimed is worth knowing about, and the funnel would otherwise
+  // lose it silently.
+  if (!open) {
+    return void res.type("html").send(shopNotOpenPage(business, logoVersion, card.id));
+  }
   res.type("html").send(
     landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId, business, logoVersion),
   );
@@ -262,6 +290,15 @@ async function enroll(
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
   await logWalletClick(req, card, "apple");
+  // The gate is here as well as on the landing page: this URL can be reached
+  // directly, and a pass minted for an unclaimed shop is a card nobody can
+  // stamp. The tap is logged first either way — it is real demand.
+  const gateApple = await shopOpen(card);
+  if (!gateApple.open) {
+    return void res.status(403).type("html").send(
+      shopNotOpenPage(gateApple.business, gateApple.logoVersion, card.id),
+    );
+  }
   if (!setupStatus().canSignPasses) {
     return void res.status(503).type("html").send(notReadyPage());
   }
@@ -301,6 +338,15 @@ async function enrollGoogle(
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
   await logWalletClick(req, card, "google");
+  // The gate is here as well as on the landing page: this URL can be reached
+  // directly, and a pass minted for an unclaimed shop is a card nobody can
+  // stamp. The tap is logged first either way — it is real demand.
+  const gateGoogle = await shopOpen(card);
+  if (!gateGoogle.open) {
+    return void res.status(403).type("html").send(
+      shopNotOpenPage(gateGoogle.business, gateGoogle.logoVersion, card.id),
+    );
+  }
   if (!setupStatus().canGoogleWallet) {
     return void res.status(503).type("html").send(notReadyPage());
   }

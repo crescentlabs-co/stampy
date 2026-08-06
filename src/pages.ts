@@ -1606,13 +1606,136 @@ export function cardPickerPage(
   );
 }
 
-export function notReadyPage(): string {
+export function notReadyPage(reason?: string): string {
   return page(
     "Not ready yet",
     `<div class="card" style="text-align:center">
       <h1>Hang tight ☕️</h1>
-      <p class="sub">This card isn’t ready to issue yet. Apple certificates are still being set up — check <a href="/setup">/setup</a>.</p>
+      <p class="sub">${
+        reason
+          ? esc(reason)
+          : `This card isn’t ready to issue yet. Apple certificates are still being set up — check <a href="/setup">/setup</a>.`
+      }</p>
     </div>`,
+  );
+}
+
+/**
+ * The page a shop's sign-up link shows before anyone has claimed it, and after
+ * it has been archived.
+ *
+ * A shop exists in full — card, colours, /j/ QR — from the moment we build it,
+ * which means a poster could be printed and scanned before the merchant has an
+ * account. Without this, a customer could be issued a card that NOBODY can
+ * stamp: the staff PIN belongs to the owner, and there is no owner yet. So the
+ * Add-to-Wallet buttons are simply not offered until the shop is live.
+ */
+export function shopNotOpenPage(business: string, logoVersion = 0, cardId = ""): string {
+  const logo = logoVersion && cardId
+    ? `<img src="${cardId === "default" ? "" : `/c/${cardId}`}/art/logo.png?v=${logoVersion}" alt=""
+           style="width:72px;height:72px;border-radius:18px;object-fit:contain;margin:0 auto 14px;display:block">`
+    : "";
+  return page(
+    `${business} — coming soon`,
+    `<div class="card" style="text-align:center">
+      ${logo}
+      <h1>${esc(business)}</h1>
+      <p class="sub">Their loyalty card isn’t open yet. Check back soon.</p>
+    </div>`,
+  );
+}
+
+/**
+ * Claim your shop: the card we built for you, then the login to run it.
+ *
+ * Two jobs in one page, in that order on purpose. The merchant agreed to this
+ * over a DM and may not remember exactly what they agreed to, so the first
+ * thing they see is their own name and their own card — not a signup form.
+ *
+ * The token is in the URL, which is the authorisation. Everything else here is
+ * the same shape as the reset page: set a password, get a session, land inside.
+ */
+export function claimPage(
+  token: string,
+  business: string,
+  card: Pick<CardRow, "id" | "reward" | "stamps_target"> | null,
+  logoVersion: number,
+): string {
+  const base = !card || card.id === "default" ? "" : `/c/${card.id}`;
+  const logo = logoVersion
+    ? `<img class="cl-logo" src="${base}/art/logo.png?v=${logoVersion}" alt="">`
+    : "";
+  const css = /* css */ `
+    .cl-shop { text-align: center; margin-bottom: 6px; }
+    .cl-logo { width: 76px; height: 76px; border-radius: 18px; object-fit: contain;
+               margin: 0 auto 12px; display: block; box-shadow: var(--shadow); }
+    .cl-name { font-family: var(--display); font-size: 1.7rem; line-height: 1.1;
+               letter-spacing: -.02em; margin: 0; }
+    .cl-reward { color: var(--muted); margin: 8px 0 0; }
+    .cl-done { text-align: center; }
+    .cl-pin { font-family: ui-monospace, Menlo, monospace; font-size: 2rem; font-weight: 700;
+              letter-spacing: .12em; background: var(--ghost-bg); border-radius: 12px;
+              padding: 14px; margin: 12px 0 4px; }
+    ${MODAL_CSS}
+  `;
+  const js = /* js */ `
+    ${MODAL_JS}
+    const $ = (s) => document.querySelector(s);
+    const TOKEN = ${JSON.stringify(token)};
+    function toast(msg) { const t = $(".toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2800); }
+    $("#eye").onchange = () => { $("#pw").type = $("#eye").checked ? "text" : "password"; };
+    $("#go").onclick = async () => {
+      const email = $("#email").value.trim(), password = $("#pw").value;
+      if (!email.includes("@")) return toast("Enter your email");
+      if (!password || password.length < 8) return toast("Password needs at least 8 characters");
+      $("#go").disabled = true;
+      const r = await fetch("/claim/" + encodeURIComponent(TOKEN) + "/finish", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = await r.json().catch(() => ({}));
+      $("#go").disabled = false;
+      if (!body.ok) {
+        return toast(
+          body.error === "email-taken" ? "That email already has an account — log in instead."
+          : body.error === "invalid-or-expired-link" || body.error === "already-claimed"
+            ? "This link has already been used. Ask us for a new one."
+          : body.error === "too-many-attempts" ? "Too many tries — wait a few minutes."
+          : "Couldn’t finish. Try again.");
+      }
+      // The PIN can be read exactly once. It is shown on its own screen rather
+      // than toasted away, because the counter cannot work without it and there
+      // is no way to look it up later — only to replace it.
+      $("#app").innerHTML =
+        '<div class="cl-done"><h1>You’re in ✅</h1>' +
+        '<p class="sub">Your staff PIN — write it down now. It can’t be shown again, only replaced.</p>' +
+        '<div class="cl-pin">' + body.staffPin + "</div>" +
+        '<p class="muted" style="font-size:.82rem">Staff type this once on the stamper, on each phone.</p>' +
+        '<button class="btn btn-dark" style="margin-top:16px" id="dash">Go to my dashboard</button></div>';
+      $("#dash").onclick = () => { location.href = "/dashboard"; };
+    };
+  `;
+  return page(
+    `Claim ${business}`,
+    `<div class="card" id="app">
+      <div class="cl-shop">
+        ${logo}
+        <p class="cl-name">${esc(business)}</p>
+        ${card ? `<p class="cl-reward">${signupLine(card as CardRow)}</p>` : ""}
+      </div>
+      <h2 style="margin-top:22px">Set up your login</h2>
+      <p class="sub">Your card is already built. This is the account you’ll use to run it.</p>
+      <label>Email</label><input id="email" type="email" autocomplete="username">
+      <label style="margin-top:10px">Password (min 8 characters)</label>
+      <input id="pw" type="password" autocomplete="new-password">
+      <label class="eye"><input type="checkbox" id="eye"> Show password</label>
+      <button class="btn btn-dark" style="margin-top:16px" id="go">Claim my shop</button>
+      <p class="muted" style="margin-top:12px;font-size:.8rem">By claiming you accept our
+        <a href="/terms" target="_blank">Terms</a> and
+        <a href="/privacy" target="_blank">Privacy Policy</a>.</p>
+    </div><div class="toast"></div>`,
+    css,
+    js,
   );
 }
 
@@ -2964,7 +3087,7 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
  * a lie, and the owner would sit waiting for mail that never arrives. The honest
  * alternative is rendered server-side so the wrong promise never reaches the page.
  */
-export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
+export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup = false): string {
   // Strict allowlist: this value is an env var that ends up inside an inline
   // script, and a stray backtick or ${ would break the whole page.
   const contact = contactEmail.replace(/[^A-Za-z0-9._%+@-]/g, "");
@@ -3132,6 +3255,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
     const $ = (s, el=document) => el.querySelector(s);
     // Decided by the server from whether an email service is configured.
     const RESET_BY_EMAIL = ${canEmail ? "true" : "false"};
+    // Shops are built for merchants and handed over with a claim link, so there
+    // is nothing to sign up FOR here. Offering the form would only produce
+    // empty shops nobody asked for.
+    const ALLOW_SIGNUP = ${allowSignup ? "true" : "false"};
     const RESET_BOX = ${JSON.stringify(resetBox)};
     async function api(path, opts = {}) {
       const res = await fetch("/dashboard/api" + path, {
@@ -3175,13 +3302,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
         \${mode === "signup" ? '<label class="eye" style="margin-top:12px"><input type="checkbox" id="agree"> I agree to the <a href="/terms" target="_blank">Terms</a>&nbsp;&amp;&nbsp;<a href="/privacy" target="_blank">Privacy Policy</a></label>' : ""}
         <button class="btn btn-dark" style="margin-top:14px" id="go"\${mode === "signup" ? " disabled" : ""}>\${mode === "signup" ? "Create account" : "Log in"}</button>
         \${mode === "login" ? '<p class="muted" style="margin-top:12px;text-align:center"><a href="#" id="forgot">Forgot password?</a></p><div id="forgotbox" style="display:none">' + RESET_BOX + '</div>' : ""}
-        <p class="muted" style="margin-top:14px;text-align:center">
-          \${mode === "signup"
-            ? 'Already have an account? <a href="#" id="switch">Log in</a>'
-            : 'New here? <a href="#" id="switch">Create an account</a>'}
-        </p>\`;
+        \${ALLOW_SIGNUP
+          ? '<p class="muted" style="margin-top:14px;text-align:center">' + (mode === "signup"
+              ? 'Already have an account? <a href="#" id="switch">Log in</a>'
+              : 'New here? <a href="#" id="switch">Create an account</a>') + "</p>"
+          : ""}\`;
       wireEyes(document);
-      $("#switch").onclick = (e) => { e.preventDefault(); authForm(mode === "signup" ? "login" : "signup"); };
+      const sw = $("#switch");
+      if (sw) sw.onclick = (e) => { e.preventDefault(); authForm(mode === "signup" ? "login" : "signup"); };
       if (mode === "signup") {
         // Consent gates account creation.
         const ag = $("#agree");
@@ -4359,7 +4487,10 @@ export function adminPage(): string {
             <span class="mname">\${esc(m.name)}</span>\${m.archived_at ? ' <span class="arch">archived</span>' : ""}
             <br><span class="flags">\${esc(m.owners || "no owner")}</span>
           </td>
-          <td class="\${left < 0 ? "bad" : ""}">\${left < 0 ? "ended " + Math.abs(left) + "d ago" : "day " + m.trial_day + "/${TRIAL_DAYS}"}</td>
+          <td>\${m.stage === "unclaimed" ? '<span class="chipf info">not claimed</span>'
+            : !m.first_stamp_at ? '<span class="flags">not started</span>'
+            : left < 0 ? '<span class="bad">ended ' + Math.abs(left) + "d ago</span>"
+            : "day " + m.trial_day + "/${TRIAL_DAYS}"}</td>
           <td class="\${m.first_stamp_at ? "" : "bad"}">
             \${m.first_stamp_at ? ago(m.first_stamp_at) : "not yet"}
             \${m.first_stamp_at ? "" : '<br><span class="flags">' + m.trial_day + "d waiting</span>"}
@@ -4499,6 +4630,20 @@ export function adminPage(): string {
           <summary>Every change they have made (\${m.card_edits})</summary>
           <div data-edits="\${m.id}" class="flags">Loading…</div>
         </details>
+
+        \${m.stage === "unclaimed" ? \`<div class="dpanel" style="margin-top:14px">
+          <h4>Claim link\${info("Sending this hands the shop over: whoever opens it makes the login. It works once, lasts 7 days, and is shown here only when it is minted — we store a hash, so it can never be read back. Sending a new one replaces the old, which is also how you withdraw one that went to the wrong person.")}</h4>
+          <div class="flags">Nobody has claimed this shop. Until they do there is no login, no
+            staff PIN, and their sign-up page stays closed — so no customer can be given a card
+            that nobody could stamp.</div>
+          <div class="rst" style="margin-top:8px">
+            <button class="btn btn-dark cbtn" data-claimlink="\${m.id}">Make a claim link</button>
+            \${m.claim_expires ? '<button class="btn btn-ghost dbtn" data-claimdrop="' + m.id + '">Withdraw the current one</button>' : ""}
+          </div>
+          \${m.claim_expires ? '<div class="flags" style="margin-top:6px">A link is out, good until ' +
+            new Date(m.claim_expires).toLocaleDateString([], { day: "numeric", month: "short" }) + ".</div>" : ""}
+          <div data-claimout="\${m.id}"></div>
+        </div>\` : ""}
 
         <div class="dpanel" style="margin-top:14px">
           <h4>Contact &amp; actions</h4>
@@ -4649,11 +4794,10 @@ export function adminPage(): string {
           <div class="dspush" id="ds-push"></div>
         </div>
 
-        <h2 style="margin-top:34px">Set a shop up\${info("Creates the owner account and a plain card. They get a temp password and a staff PIN, both shown once — the PIN is only ever stored scrambled and can never be looked up again. The designer above then opens on their new card.")}</h2>
+        <h2 style="margin-top:34px">Build a shop\${info("Creates the business and a plain card with NO login — that is the point. Design it above, then send them a claim link from their row, and they make their own account. Nothing they get is reachable by a customer until they claim it.")}</h2>
         <div id="dfy">
           <label>Shop name</label><input id="dfy-name" placeholder="e.g. Nasi Lemak House">
-          <label>Owner email</label><input id="dfy-email" type="email" placeholder="owner@card.my">
-          <button class="btn btn-dark" id="dfy-create">Create shop + account</button>
+          <button class="btn btn-dark" id="dfy-create">Build it</button>
         </div>
         <div id="dfy-out"></div>
 
@@ -4719,6 +4863,25 @@ export function adminPage(): string {
         };
         // Two taps, same as archiving a card: it takes a business out of the
         // working list, and a mis-click on the wrong row is easy to make.
+        const mk = scope.querySelector("[data-claimlink]");
+        if (mk) mk.onclick = async () => {
+          const { body: r } = await api("/merchant/" + id + "/claim-link", { method: "POST" });
+          const out = scope.querySelector('[data-claimout="' + id + '"]');
+          if (!r.ok) { out.textContent = r.error === "already-claimed" ? "Already claimed." : (r.error || "Failed"); return; }
+          // Shown once. The hash is what is stored, so re-reading it later is
+          // not something the server could do even if the page asked.
+          out.innerHTML = '<div class="temp" style="margin-top:8px">' + esc(r.url) +
+            '<br><button class="btn btn-ghost cbtn" data-nfc="' + esc(r.url) + '">Copy it</button>' +
+            " Send this in the DM. It works once.</div>";
+          out.querySelector("[data-nfc]").onclick = (e) => {
+            navigator.clipboard.writeText(r.url); e.target.textContent = "Copied ✓";
+          };
+        };
+        const drop = scope.querySelector("[data-claimdrop]");
+        if (drop) armBtn(drop, "Tap again to withdraw", async () => {
+          await api("/merchant/" + id + "/claim-link", { method: "DELETE" });
+          load();
+        });
         const arch = scope.querySelector("[data-marchive]");
         if (arch) armBtn(arch, "Tap again to archive", async () => {
           await api("/merchant/" + id + "/archive", { method: "POST" });
@@ -4769,24 +4932,23 @@ export function adminPage(): string {
       // a signup form; now it creates a plain card and the real designer above
       // opens on it.
       $("#dfy-create").onclick = async () => {
-        const cafeName = $("#dfy-name").value.trim(), ownerEmail = $("#dfy-email").value.trim();
+        const cafeName = $("#dfy-name").value.trim();
         if (!cafeName) return void ($("#dfy-out").textContent = "Enter a shop name.");
-        if (!ownerEmail.includes("@")) return void ($("#dfy-out").textContent = "Enter a valid owner email.");
-        $("#dfy-create").disabled = true; $("#dfy-out").textContent = "Creating…";
-        const { body: r } = await api("/card", { method: "POST",
-          body: JSON.stringify({ cafeName, ownerEmail }) });
+        $("#dfy-create").disabled = true; $("#dfy-out").textContent = "Building…";
+        const { body: r } = await api("/card", { method: "POST", body: JSON.stringify({ cafeName }) });
         $("#dfy-create").disabled = false;
         if (r.ok) {
-          // The PIN is only ever stored hashed, so this is the one time it can be
-          // read — after this it can only be replaced from the owner's dashboard.
-          $("#dfy-out").innerHTML = '<div class="temp">Created <strong>' + esc(cafeName) + '</strong> for <strong>' + esc(r.ownerEmail) + '</strong>.<br>Temp password: <strong>' + r.tempPassword + '</strong> — they log in at /dashboard and can change it.<br>Staff PIN: <strong>' + r.staffPin + '</strong> — write this down now, it can’t be looked up later.</div>';
-          $("#dfy-name").value = ""; $("#dfy-email").value = "";
-          // Hand them straight to the designer, pointed at the card just made.
+          // No email, no password, no PIN — there is no account yet, and that is
+          // deliberate. They make their own when they claim it.
+          $("#dfy-out").innerHTML = '<div class="temp">Built <strong>' + esc(cafeName) + "</strong>. " +
+            "Design their card above, then send them a claim link from their row below.</div>";
+          $("#dfy-name").value = "";
+          // Hand straight to the designer, pointed at the card just made.
           selCard = r.cardId;
           dsMode = "card";
           setTimeout(load, 1200);
         } else {
-          $("#dfy-out").textContent = r.error === "email-taken" ? "That email already has an account." : (r.error || "Failed");
+          $("#dfy-out").textContent = r.error || "Failed";
         }
       };
       $("#reset").onclick = async () => {

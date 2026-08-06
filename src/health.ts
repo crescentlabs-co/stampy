@@ -45,8 +45,11 @@ export const FLAG_GUIDE: { key: string; label: string; rule: string; why: string
   { key: "messages-failing", label: "Messages not arriving",
     rule: "Any nudge recorded as undelivered",
     why: "They think they are reaching customers and are not." },
+  { key: "unclaimed", label: "Never claimed",
+    rule: "Built 3+ days ago and the claim link has not been used",
+    why: "Nothing else can happen until they claim it — no login, no staff PIN, and their sign-up page stays closed so no customer can be issued a card nobody could stamp." },
   { key: "never-activated", label: "Never set up / No stamps yet",
-    rule: "Zero stamps ever, and signed up 3+ days ago",
+    rule: "Zero stamps ever, claimed, and 3+ days old",
     why: "Reads 'Never set up' when they have never opened their poster — nothing is on the counter — and 'No stamps yet' when they have." },
   { key: "went-quiet", label: "Went quiet",
     rule: "Has stamped before, but nothing in the last 7 days",
@@ -73,11 +76,11 @@ export const FLAG_GUIDE: { key: string; label: string; rule: string; why: string
     rule: "3+ customers sitting at their target un-redeemed",
     why: "Staff are missing the reward banner. These customers did everything asked and got nothing, so they are the likeliest of all to give up." },
   { key: "trial-ending", label: "Nd of trial left",
-    rule: "7 or fewer days left of the 30",
+    rule: "7 or fewer days left of the 30, counted from their FIRST STAMP",
     why: "The advice differs by whether they are actually stamping: one is a sale, the other is a decision." },
   { key: "trial-expired", label: "Trial ended Nd ago",
-    rule: "Past 30 days from signup",
-    why: "Signup is taken as the earlier of the merchant row and the owner account — merchants backfilled in v1.3 carry the migration's date, not theirs." },
+    rule: "Past 30 days from their first stamp",
+    why: "The clock starts when they first serve a customer, not when they sign up — a shop that has never stamped has not begun, and raises 'Never set up' instead." },
 ];
 
 function daysSince(d: Date | string | null, now: number): number | null {
@@ -162,7 +165,7 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
 
   // --- never got going ------------------------------------------------------
 
-  if (m.stamps === 0 && m.trial_day >= 3) {
+  if (m.stamps === 0 && m.days_since_signup >= 3 && m.has_owner) {
     // Distinguish "no poster on the counter" from "poster up, nobody scanning".
     // Same symptom, completely different conversation.
     const noPoster = m.poster_views === 0;
@@ -171,8 +174,8 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
       severity: "critical",
       label: noPoster ? "Never set up" : "No stamps yet",
       detail: noPoster
-        ? `Day ${m.trial_day} and they have never even opened their poster.`
-        : `Day ${m.trial_day}, poster opened, still not one stamp.`,
+        ? `${m.days_since_signup} days in and they have never even opened their poster.`
+        : `${m.days_since_signup} days in, poster opened, still not one stamp.`,
       action: noPoster
         ? "Nothing is on their counter. Print it and take it to them."
         : "The poster is up but nobody is stamping — walk the staff through it.",
@@ -280,7 +283,24 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
 
   // --- the clock ------------------------------------------------------------
 
-  if (left < 0) {
+  // No first stamp, no trial — there is nothing to run out. Without this gate
+  // an unstarted shop would read as "trial ended 0d ago" on the day it was
+  // built, which is the opposite of true.
+  if (!m.first_stamp_at) {
+    // Built, sent, and never opened. The one thing that stalls before any of
+    // the usage flags can apply.
+    if (!m.has_owner && m.days_since_signup >= 3) {
+      add({
+        key: "unclaimed",
+        severity: "warn",
+        label: "Never claimed",
+        detail: `Built ${m.days_since_signup} days ago and the claim link has not been used.`,
+        action: m.claim_expires && new Date(m.claim_expires).getTime() < now
+          ? "Their link has expired. Issue a new one and send it again."
+          : "Chase the DM — nothing can happen until they claim it.",
+      });
+    }
+  } else if (left < 0) {
     add({
       key: "trial-expired",
       severity: "info",
@@ -299,6 +319,30 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
   }
 
   return out.sort((a, b) => RANK[a.severity] - RANK[b.severity]);
+}
+
+/**
+ * Where this shop is in the funnel, derived rather than stored.
+ *
+ * Every one of these except `paid` is already a fact in the database — no
+ * owner, an owner, a first stamp, an archived_at — so a status column would be
+ * a second source of truth that drifts the moment one write is missed. That is
+ * the failure this codebase already has scar tissue from: a stored aggregate
+ * disagreeing with the log it was meant to summarise.
+ *
+ * `paid` is stored (`merchants.paid_at`) because nothing else implies it. There
+ * is no billing here yet, so it is an operator's assertion.
+ */
+export type Stage = "unclaimed" | "claimed" | "active" | "paid" | "closed";
+
+export function stageOf(m: MerchantHealthRow): Stage {
+  if (m.archived_at) return "closed";
+  if (m.paid_at) return "paid";
+  if (m.first_stamp_at) return "active";
+  // Owner presence, not claimed_at: an account made by signup or by the
+  // first-owner bootstrap never used a claim link, and is not unclaimed.
+  if (m.has_owner) return "claimed";
+  return "unclaimed";
 }
 
 /** Sort key for the table: worst first, then the loudest, then quietest merchant. */

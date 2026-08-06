@@ -601,6 +601,35 @@ export async function migrate(): Promise<void> {
     -- person to ring when their counter has been dark for a week.
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS contact_phone text NOT NULL DEFAULT '';
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS contact_note text NOT NULL DEFAULT '';
+    -- v2.0: a shop can exist before anybody can log into it.
+    --
+    -- Merchants are onboarded done-for-you: we agree over DM, build their card
+    -- here, and send a claim link. Until they claim it there is no login, so
+    -- owner_id cannot be NOT NULL any more. The uniqueness it carried is kept
+    -- as a PARTIAL index below — one merchant per login still holds for every
+    -- claimed shop, and unclaimed ones simply are not in it.
+    --
+    -- This is the first non-additive change to a live column in this schema.
+    -- It only ever WIDENS what the column accepts, so an existing row cannot be
+    -- invalidated by it and a rollback needs no data repair. pnpm test:migration
+    -- builds a real pre-v2.0 database and upgrades it.
+    ALTER TABLE merchants ALTER COLUMN owner_id DROP NOT NULL;
+    DROP INDEX IF EXISTS idx_merchants_owner;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_merchants_owner
+      ON merchants(owner_id) WHERE owner_id IS NOT NULL;
+    -- The claim link. Same shape as the password-reset token on owners: the
+    -- token is stored only as a sha256 hash, expires, and is cleared the moment
+    -- it is used, so a link that has been sent cannot be replayed or read back
+    -- out of a database dump. It lives on the MERCHANT because there is no owner
+    -- to hang it off yet, and no email is collected before the claim page.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS claim_token_hash text;
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS claim_expires timestamptz;
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
+    -- The one lifecycle fact no data implies. Everything else the console shows
+    -- as a stage — unclaimed, claimed, first stamp, archived — is derived from
+    -- rows that already exist, because a stored status is a second source of
+    -- truth that drifts the first time a write is missed.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS paid_at timestamptz;
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -876,7 +905,13 @@ async function backfillCustomers(): Promise<void> {
 
 export interface MerchantRow {
   id: string;
-  owner_id: string;
+  /**
+   * The login that runs this shop. **Null until they claim it** — we build a
+   * merchant done-for-you before anybody has an account. A null owner is what
+   * makes the staff page unreachable (no owner, no PIN) and what the console
+   * reads as "unclaimed".
+   */
+  owner_id: string | null;
   /** The BUSINESS name — this is what customers see as the pass issuer. */
   name: string;
   /** Which card a bare /j/ link issues. Null = the merchant's only card. */
@@ -884,6 +919,11 @@ export interface MerchantRow {
   average_spend_cents: number;
   currency: string;
   created_at: Date;
+  archived_at: Date | null;
+  /** Set when the claim link is used. The token itself is never readable. */
+  claimed_at: Date | null;
+  claim_expires: Date | null;
+  paid_at: Date | null;
 }
 
 export interface CustomerRecord {
@@ -1010,6 +1050,95 @@ export async function ensureMerchantForOwner(ownerId: string, name: string): Pro
   );
   await claimSlug(id, clean);
   return res.rows[0]!;
+}
+
+/**
+ * A shop with no login yet — the done-for-you path.
+ *
+ * We agree over DM, build the card here, and send a claim link. Everything
+ * about the business exists from this moment: its id (which the /j/ poster QR
+ * encodes and can never change), its slug, its card. The only thing missing is
+ * somebody to log in, and that is what the claim link adds.
+ */
+export async function createUnclaimedMerchant(name: string): Promise<MerchantRow> {
+  const id = generateShortCode(8).toLowerCase();
+  const clean = name.trim().slice(0, 60) || "My shop";
+  const res = await getPool().query<MerchantRow>(
+    `INSERT INTO merchants (id, owner_id, name) VALUES ($1, NULL, $2) RETURNING *`,
+    [id, clean],
+  );
+  await claimSlug(id, clean);
+  return res.rows[0]!;
+}
+
+/**
+ * Attach a login to a shop we already built. The other half of the claim.
+ *
+ * Conditional on the merchant still being unclaimed, so two people opening the
+ * same link cannot both win: the second UPDATE matches no row and the caller
+ * sees null. That check has to be in the statement rather than around it —
+ * read-then-write would let both pass.
+ */
+export async function attachOwnerToMerchant(
+  merchantId: string,
+  ownerId: string,
+): Promise<MerchantRow | null> {
+  const res = await getPool().query<MerchantRow>(
+    `UPDATE merchants
+        SET owner_id = $2, claimed_at = now(), claim_token_hash = NULL, claim_expires = NULL
+      WHERE id = $1 AND owner_id IS NULL
+      RETURNING *`,
+    [merchantId, ownerId],
+  );
+  return res.rows[0] ?? null;
+}
+
+/**
+ * Store a claim link's token, hashed.
+ *
+ * Same contract as the password-reset token on `owners`: only the sha256 hash
+ * is stored, so a link that has been sent can never be read back out of the
+ * database (or a backup dump, which holds these rows). Issuing a new one
+ * replaces the old, which is what makes "revoke" a re-issue.
+ */
+export async function setClaimToken(
+  merchantId: string,
+  tokenHash: string,
+  expires: Date,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE merchants SET claim_token_hash = $2, claim_expires = $3
+      WHERE id = $1 AND owner_id IS NULL`,
+    [merchantId, tokenHash, expires],
+  );
+}
+
+/** The unclaimed shop this token opens, or null if it is spent, stale or wrong. */
+export async function merchantByClaimToken(tokenHash: string): Promise<MerchantRow | null> {
+  const res = await getPool().query<MerchantRow>(
+    `SELECT * FROM merchants
+      WHERE claim_token_hash = $1 AND claim_expires > now()
+        AND owner_id IS NULL AND archived_at IS NULL`,
+    [tokenHash],
+  );
+  return res.rows[0] ?? null;
+}
+
+/** Withdraw a link that has been sent but not used. */
+export async function clearClaimToken(merchantId: string): Promise<void> {
+  await getPool().query(
+    `UPDATE merchants SET claim_token_hash = NULL, claim_expires = NULL WHERE id = $1`,
+    [merchantId],
+  );
+}
+
+/** Record that a shop is paying, or has stopped. The one lifecycle fact no
+ *  other row implies — every other stage is derived. */
+export async function setMerchantPaid(id: string, paid: boolean): Promise<void> {
+  await getPool().query(
+    `UPDATE merchants SET paid_at = $2 WHERE id = $1`,
+    [id, paid ? new Date() : null],
+  );
 }
 
 export async function updateMerchant(
@@ -1777,8 +1906,39 @@ export interface MerchantHealthRow {
    */
   signed_up_at: Date;
   archived_at: Date | null;
-  /** Days since signup. `TRIAL_DAYS - trial_day` is what is left. */
+  /**
+   * Can anyone log into this shop? The real claimed/unclaimed state.
+   *
+   * NOT `claimed_at`, which only records when a claim LINK was used — an owner
+   * created by signup or by the bootstrap has one without the other, and would
+   * otherwise read as unclaimed forever.
+   */
+  has_owner: boolean;
+  /** When the claim link was used, if it was. History, not state. */
+  claimed_at: Date | null;
+  /** A live claim link is outstanding, and when it lapses. */
+  claim_expires: Date | null;
+  /** The one lifecycle fact nothing else implies. */
+  paid_at: Date | null;
+  /**
+   * Days since the trial STARTED, which is the first stamp at a real counter —
+   * not signup, and not the claim.
+   *
+   * A shop we built but nobody has stamped at has not started anything, so
+   * there is nothing to count down: `trial_day` is 0 and `first_stamp_at` is
+   * null, and the console says "never stamped" rather than running a clock they
+   * are losing. `triage` gates both trial flags on activation for the same
+   * reason — otherwise the merchants most at risk would be the only ones a
+   * trial warning never reached.
+   */
   trial_day: number;
+  /**
+   * Days since the shop existed at all. This is what `trial_day` used to mean,
+   * and the flags about NOT starting hang off it — a merchant who has never
+   * stamped has no trial clock, so without this the "never set up" warning
+   * would be the one warning they could never trigger.
+   */
+  days_since_signup: number;
   /** Cards they run. One, for every merchant created since the V1 cap. */
   cards: number;
   /** Their card ids, so the console can filter the existing per-card panels
@@ -1875,9 +2035,19 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             LEAST(m.created_at, COALESCE(
               (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
             )) AS signed_up_at,
+            (m.owner_id IS NOT NULL) AS has_owner,
+            m.claimed_at, m.claim_expires, m.paid_at,
             floor(extract(epoch FROM (now() - LEAST(m.created_at, COALESCE(
               (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
-            )))) / 86400.0)::int AS trial_day,
+            )))) / 86400.0)::int AS days_since_signup,
+            -- The trial runs from the FIRST STAMP, not from signup: a shop that
+            -- has never served a customer has not begun. Derived rather than
+            -- stored, like every other metric here, so it cannot drift from the
+            -- event that defines it. Zero until then.
+            COALESCE(floor(extract(epoch FROM (now() -
+              (SELECT min(e.created_at) FROM events e
+                WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                  AND e.type = 'stamp'))) / 86400.0), 0)::int AS trial_day,
             (SELECT count(*)::int FROM cards WHERE merchant_id = m.id) AS cards,
             COALESCE((SELECT array_agg(id ORDER BY created_at) FROM cards WHERE merchant_id = m.id),
                      ARRAY[]::text[]) AS card_ids,
@@ -2002,11 +2172,45 @@ export async function merchantEdits(merchantId: string, limit = 20): Promise<Mer
 /** Merchant-level archive: retires the business, not one programme. Nothing is
  *  deleted and every pass already in a wallet keeps working, exactly as with a
  *  card — this only takes them out of the operator's working list. */
+/**
+ * Retire a business, or bring it back.
+ *
+ * Archiving REVOKES, it does not just hide. Until v2.0 this only set a
+ * timestamp the admin console filtered on — the owner could still log in, their
+ * staff could still stamp, and their sign-up page still issued cards. "Soft
+ * delete" that leaves every door open is a label, not a state.
+ *
+ * What it does now: the owner's dashboard refuses, every counter phone is
+ * signed out (the epoch bump, same mechanism as changing the PIN), and the
+ * sign-up page stops offering a card. What it deliberately does NOT do is touch
+ * a single pass, stamp or event — cards already in wallets keep their stamps,
+ * the history stays queryable, and unarchiving restores all three doors at once.
+ */
 export async function setMerchantArchived(id: string, archived: boolean): Promise<void> {
   await getPool().query(`UPDATE merchants SET archived_at = $2 WHERE id = $1`, [
     id,
     archived ? new Date() : null,
   ]);
+  // Sign the counter out. Bumping the epoch invalidates every staff cookie this
+  // owner has issued; it is the same lever setStaffPin pulls, and it is
+  // deliberately NOT reversed on unarchive — staff type the PIN again, which is
+  // a fair price for a shop coming back from closed.
+  if (archived) {
+    await getPool().query(
+      `UPDATE owners SET staff_session_epoch = staff_session_epoch + 1
+        WHERE id = (SELECT owner_id FROM merchants WHERE id = $1)`,
+      [id],
+    );
+  }
+}
+
+/** Is this owner's shop archived? The dashboard gate. */
+export async function ownerIsArchived(ownerId: string): Promise<boolean> {
+  const res = await getPool().query(
+    `SELECT 1 FROM merchants WHERE owner_id = $1 AND archived_at IS NOT NULL`,
+    [ownerId],
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 /** Operator-kept contact details. `owners.email` is a login, not someone to ring. */

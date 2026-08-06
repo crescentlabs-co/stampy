@@ -316,6 +316,46 @@ async function main(): Promise<void> {
   const custCount = (await sql.query<{ n: string }>(`SELECT count(*) AS n FROM customers`)).rows[0]!.n;
   expect(Number(custCount) === 4, `running migrate twice does not duplicate customers (got ${custCount})`);
 
+  // --- v2.0: a shop can exist before anybody can log into it ----------------
+  // owner_id going nullable is the FIRST non-additive change to a live column in
+  // this schema, so this is the only cover for the path a deploy actually takes.
+  // It only ever widens what the column accepts, which is why an existing row
+  // cannot be invalidated — and that is what these three assert.
+  const ownerCol = (await sql.query<{ is_nullable: string }>(
+    `SELECT is_nullable FROM information_schema.columns
+      WHERE table_name = 'merchants' AND column_name = 'owner_id'`,
+  )).rows[0]!;
+  expect(ownerCol.is_nullable === "YES", "owner_id accepts NULL after the upgrade");
+  const stillOwned = (await sql.query<{ n: string }>(
+    `SELECT count(*) AS n FROM merchants WHERE owner_id IS NULL`,
+  )).rows[0]!.n;
+  expect(Number(stillOwned) === 0, "every merchant that HAD an owner still has one");
+
+  // The uniqueness it used to carry survives as a partial index: one merchant
+  // per login still holds, and unclaimed shops are simply not in it.
+  await sql.query(`INSERT INTO merchants (id, owner_id, name) VALUES ('unclaimed-a', NULL, 'Unclaimed A')`);
+  await sql.query(`INSERT INTO merchants (id, owner_id, name) VALUES ('unclaimed-b', NULL, 'Unclaimed B')`);
+  expect(true, "two unclaimed shops can coexist — NULL is not a duplicate");
+  let refusedSecond = false;
+  try {
+    await sql.query(`INSERT INTO merchants (id, owner_id, name) VALUES ('dupe', 'own-1', 'Second Shop')`);
+  } catch {
+    refusedSecond = true;
+  }
+  expect(refusedSecond, "...but one login still cannot hold two shops");
+
+  // The claim columns exist and are empty for everything that predates them.
+  const claimCols = (await sql.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'merchants'
+        AND column_name IN ('claim_token_hash', 'claim_expires', 'claimed_at', 'paid_at')`,
+  )).rows.map((r) => r.column_name).sort();
+  expect(claimCols.length === 4, `the claim columns are present (${claimCols.join(", ")})`);
+  const preClaimed = (await sql.query<{ n: string }>(
+    `SELECT count(*) AS n FROM merchants WHERE claimed_at IS NOT NULL OR claim_token_hash IS NOT NULL`,
+  )).rows[0]!.n;
+  expect(Number(preClaimed) === 0, "an upgraded merchant carries no invented claim history");
+
   console.log(failures === 0 ? "\nMIGRATION OK ✅" : `\n${failures} FAILURE(S) ❌`);
 
   // Close the pool BEFORE stopping Postgres. Otherwise the server terminates

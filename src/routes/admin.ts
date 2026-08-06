@@ -8,34 +8,42 @@
  *   GET    /admin/api/overview             every café + owner email(s) + metrics
  *   POST   /admin/api/card/:id/archive     retire a card (reversible; nothing deleted)
  *   POST   /admin/api/card/:id/unarchive   put it back
+ *   POST   /admin/api/card                 build a shop with NO login attached
+ *   POST   /admin/api/merchant/:id/claim-link  mint the link that hands it over
  *   POST   /admin/api/owner/:id/reset-password  set a NEW temp password (never reveals the old)
+ *
+ * Accounts are NOT created here. Merchants are onboarded done-for-you: we build
+ * the shop, send a claim link, and they make their own login (src/routes/claim.ts).
  *
  * Security: passwords are scrypt-hashed one-way — there is nothing to "view".
  * Reset = replace the hash with a fresh temp password, returned once.
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { hashPassword, sessionOwnerId } from "../auth.js";
 import { hexToRgb } from "../color.js";
+import { CLAIM_TTL_MS, hashClaimToken } from "../claim.js";
 import { config } from "../config.js";
 import {
   allCardsWithStats,
   allOwners,
   createCard,
-  createOwner,
   adminRetention,
   adminStaffAudit,
   businessNameForCard,
   cardCounts,
   archiveCard,
   createDesignTemplate,
+  createUnclaimedMerchant,
+  clearClaimToken,
+  getMerchant,
+  setClaimToken,
+  setMerchantPaid,
   deleteDesignTemplate,
   setDesignTemplateArt,
   updateDesignTemplate,
   unarchiveCard,
   deleteStampStrips,
-  ensureMerchantForOwner,
-  generateStaffPin,
   getCard,
   getDesignTemplate,
   listDesignTemplates,
@@ -44,10 +52,7 @@ import {
   platformRetention,
   setMerchantArchived,
   setMerchantContact,
-  setStaffPin,
   getOwner,
-  getOwnerByEmail,
-  linkOwnerCard,
   deleteCardBanner,
   deleteCardLogo,
   merchantForCard,
@@ -61,7 +66,7 @@ import {
 } from "../db.js";
 import { BAND_TEXTURES, cardFieldsFromBody, designerCard } from "../cardView.js";
 import { ensureClass } from "../googleWallet.js";
-import { triage, trialDaysLeft, value } from "../health.js";
+import { stageOf, triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng, validateLogoPng } from "../imageValidate.js";
 import { adminPage, counterSheetPage } from "../pages.js";
 
@@ -126,6 +131,9 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     flags: triage(m),
     value: value(m),
     trialLeft: trialDaysLeft(m),
+    // Derived, never stored — see stageOf. The only stored lifecycle fact is
+    // paid_at, because nothing else in the database implies it.
+    stage: stageOf(m),
   }));
   res.json({ merchants: withFlags, cards, owners, retention, platform, staff });
 });
@@ -168,20 +176,19 @@ adminRouter.post("/api/merchant/:id/contact", requireAdmin, async (req, res) => 
  * this creates — the routes below — so there is one way to design a card.
  */
 adminRouter.post("/api/card", requireAdmin, async (req, res) => {
-  const b = (req.body ?? {}) as { cafeName?: string; ownerEmail?: string; reward?: string };
+  const b = (req.body ?? {}) as { cafeName?: string; reward?: string };
   const cafeName = (b.cafeName ?? "").trim();
-  const ownerEmail = (b.ownerEmail ?? "").trim().toLowerCase();
   if (!cafeName) return void res.status(400).json({ error: "missing-card-name" });
-  if (!ownerEmail.includes("@")) return void res.status(400).json({ error: "bad-email" });
-  if (await getOwnerByEmail(ownerEmail)) return void res.status(409).json({ error: "email-taken" });
 
   const reward = (b.reward ?? "Free reward").trim().slice(0, 60) || "Free reward";
-  // Owner → merchant → card, in that order: a card belongs to a business, and a
-  // business belongs to a login. (This used to create the card first, back when
-  // one row was all three things.)
-  const tempPassword = "Stampy-" + randomBytes(4).toString("hex");
-  const owner = await createOwner(randomUUID(), ownerEmail, hashPassword(tempPassword));
-  const merchant = await ensureMerchantForOwner(owner.id, cafeName);
+  // Merchant → card, and NO owner. The shop exists in full — its id (which the
+  // /j/ poster QR encodes and can never change), its slug, its card — before
+  // anybody can log into it. A claim link adds the login later.
+  //
+  // This used to create an owner here with a temp password, which meant we
+  // invented an account for a merchant who had not given us an email yet, and
+  // handed over a password nobody chose. The claim link replaces both.
+  const merchant = await createUnclaimedMerchant(cafeName);
   const card = await createCard({
     merchantId: merchant.id,
     name: cafeName.slice(0, 60),
@@ -189,16 +196,45 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
     stampsTarget: 10,
     stampsStart: 2,
   });
-  await linkOwnerCard(owner.id, card.id);
-  // One staff PIN per owner, never the shared "1234". Only its hash is stored,
-  // so this response is the one chance to hand it over — the console shows it
-  // beside the temp password.
-  const staffPin = generateStaffPin();
-  await setStaffPin(owner.id, staffPin);
   void ensureClass(card).then((r) => {
     if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
   });
-  res.json({ ok: true, cardId: card.id, ownerEmail: owner.email, tempPassword, staffPin });
+  res.json({ ok: true, cardId: card.id, merchantId: merchant.id });
+});
+
+/**
+ * Mint a claim link for an unclaimed shop, and hand it over ONCE.
+ *
+ * The token is returned here and stored only as a hash, so this response is the
+ * only time it can be read — exactly like the staff PIN. Issuing again replaces
+ * the old link, which is also how you revoke one that went to the wrong person.
+ *
+ * It is a credential in a DM: single-use, short-lived, and not derivable from
+ * the merchant id, so knowing a shop exists tells you nothing about how to
+ * claim it.
+ */
+adminRouter.post("/api/merchant/:id/claim-link", requireAdmin, async (req, res) => {
+  const merchant = await getMerchant(req.params.id!);
+  if (!merchant) return void res.status(404).json({ error: "no-such-merchant" });
+  if (merchant.owner_id) return void res.status(409).json({ error: "already-claimed" });
+  const token = randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + CLAIM_TTL_MS);
+  await setClaimToken(merchant.id, hashClaimToken(token), expires);
+  const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+  res.json({ ok: true, url: `${base}/claim/${token}`, expires });
+});
+
+/** Withdraw a link that was sent to the wrong person and not yet used. */
+adminRouter.delete("/api/merchant/:id/claim-link", requireAdmin, async (req, res) => {
+  await clearClaimToken(req.params.id!);
+  res.json({ ok: true });
+});
+
+/** Whether this shop is paying. The one lifecycle fact nothing else implies. */
+adminRouter.post("/api/merchant/:id/paid", requireAdmin, async (req, res) => {
+  const { paid } = (req.body ?? {}) as { paid?: boolean };
+  await setMerchantPaid(req.params.id!, paid === true);
+  res.json({ ok: true });
 });
 
 // ------------------------------------ the designer, on a merchant's own card ----

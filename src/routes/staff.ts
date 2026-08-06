@@ -38,6 +38,7 @@ import {
   getOwner,
   merchantForOwner,
   ownerForCard,
+  ownerIsArchived,
   type OwnerRow,
   getPass,
   getPassByShortCodeForMerchant,
@@ -163,6 +164,9 @@ async function requireStaff(req: StaffRequest, res: Response, next: NextFunction
   // A PIN change bumps the owner's epoch, which strands every older cookie —
   // that's how the owner revokes a phone or a leaked stamper link, across all
   // of their cards at once.
+  if (await ownerIsArchived(found.owner.id)) {
+    return void res.status(403).json({ error: "account-closed" });
+  }
   if (session.epoch !== found.owner.staff_session_epoch) {
     return void res.status(401).json({ error: "session-revoked" });
   }
@@ -182,6 +186,13 @@ staffRouter.post("/api/login", async (req, res) => {
   if (!found) return void res.status(404).json({ error: "no-such-card" });
   // Keyed on the OWNER: the PIN being guessed is theirs, whichever of their cards
   // the phone happens to be pointed at.
+  // A closed shop's PIN still verifies — the hash is untouched by archiving —
+  // so the epoch bump that signs every phone out would otherwise be undone by
+  // one re-entry. Checked before the rate limiter so a closed shop's counter
+  // cannot burn an owner's attempt budget either.
+  if (await ownerIsArchived(found.owner.id)) {
+    return void res.status(403).json({ error: "account-closed" });
+  }
   const rlKey = `pin:${found.owner.id}:${req.ip}`;
   const peeked = peek(rlKey, PIN_TRIES, PIN_WINDOW_MS);
   if (!peeked.ok) {

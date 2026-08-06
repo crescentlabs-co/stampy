@@ -51,6 +51,7 @@ import {
   linkOwnerCard,
   logOwnerLogin,
   ownerHasCard,
+  ownerIsArchived,
   setCardBanner,
   setCardLogo,
   setMessage,
@@ -67,7 +68,7 @@ import {
 } from "../db.js";
 import { applyAndPush } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
-import { config, setupStatus } from "../config.js";
+import { config, setupStatus, signupOpen } from "../config.js";
 import { rgbToHex } from "../color.js";
 import { cardFieldsFromBody, designerCard } from "../cardView.js";
 import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
@@ -86,6 +87,14 @@ async function requireOwner(req: OwnerRequest, res: Response, next: NextFunction
   const ownerId = sessionOwnerId(req);
   const owner = ownerId ? await getOwner(ownerId) : null;
   if (!owner) return void res.status(401).json({ error: "not-logged-in" });
+  // An archived shop is closed. Archiving used to be a flag the admin console
+  // filtered on while every door stayed open — the owner could still log in and
+  // their staff could still stamp. Nothing is deleted and unarchiving restores
+  // this instantly, so the refusal is 403, not a 404 pretending they never
+  // existed.
+  if (await ownerIsArchived(owner.id)) {
+    return void res.status(403).json({ error: "account-closed" });
+  }
   req.owner = owner;
   next();
 }
@@ -93,7 +102,7 @@ async function requireOwner(req: OwnerRequest, res: Response, next: NextFunction
 dashboardRouter.get("/", (_req, res) => {
   // The page needs to know whether email works, so it can offer a reset link or
   // point the owner at a human instead of promising mail that won't arrive.
-  res.type("html").send(dashboardPage(setupStatus().canEmail, config.contactEmail));
+  res.type("html").send(dashboardPage(setupStatus().canEmail, config.contactEmail, signupOpen()));
 });
 
 /** Tells the page whether a session is already active. */
@@ -103,6 +112,13 @@ dashboardRouter.get("/api/state", async (req, res) => {
 });
 
 dashboardRouter.post("/api/signup", async (req, res) => {
+  // Closed unless a deployment opens it. Shops are built in admin and handed
+  // over with a claim link; the only reason this route still exists is the
+  // first-owner bootstrap that claims the env-seeded card, which is why it
+  // stays reachable when there are no owners at all.
+  if (!signupOpen() && (await countOwners()) > 0) {
+    return void res.status(403).json({ error: "signup-closed" });
+  }
   const { email, password, cafeName } = (req.body ?? {}) as {
     email?: string;
     password?: string;

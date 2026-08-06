@@ -25,6 +25,10 @@ async function main() {
   process.env.DATABASE_URL = "postgresql://stampy:stampy@localhost:5499/stampy";
   process.env.BASE_URL = "http://localhost:3000";
   process.env.ADMIN_EMAIL = "owner@test.my, second@card.my"; // comma-listed: BOTH are admins
+  // Merchants are onboarded done-for-you and signup is closed in production.
+  // The suite needs several owners as fixtures, so it opens it here and closes
+  // it again where the closed behaviour is what is being asserted.
+  process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
   const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
@@ -845,9 +849,50 @@ async function main() {
     .merchants.find((x: any) => x.id === quietMerchant.id);
   expect(afterArch.archived_at !== null, "the merchant is marked archived, not deleted");
   expect(afterArch.flags.length === 0, "an archived merchant raises nothing — it is closed, not broken");
-  await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/unarchive", {
-    method: "POST", headers: { cookie: cookieNow },
-  });
+  expect(afterArch.stage === "closed", "...and reads as closed");
+
+  // Archiving REVOKES. Until v2.0 it only set a flag the console filtered on:
+  // the owner could still log in, their staff could still stamp, and their
+  // sign-up page still issued cards. A soft delete that leaves every door open
+  // is a label, not a state.
+  {
+    // This fixture's password was never a real hash, so take the session the way
+    // the admin console would hand one over.
+    const rst = JSON.parse(await (await fetch(
+      base + "/admin/api/owner/" + quietOwner.id + "/reset-password",
+      { method: "POST", headers: { cookie: cookieNow } },
+    )).text());
+    const back = await fetch(base + "/dashboard/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "quiet@shop.my", password: rst.tempPassword }),
+    });
+    const quietCookie = back.headers.get("set-cookie")?.split(";")[0] ?? "";
+    expect(
+      (await get("/dashboard/api/overview", { headers: { cookie: quietCookie } })).status === 403,
+      "an archived shop's owner cannot use the dashboard",
+    );
+    const closedStaff = await fetch(base + "/staff/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-card-id": quietCard.id },
+      body: JSON.stringify({ pin: "123456" }),
+    });
+    expect(closedStaff.status === 403, "...and a correct PIN cannot reopen the counter");
+    expect(
+      (await get("/c/" + quietCard.id)).body.includes("isn’t open yet"),
+      "...and their sign-up page stops offering a card",
+    );
+    // Nothing was destroyed, and putting it back opens all three doors again.
+    await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/unarchive", {
+      method: "POST", headers: { cookie: cookieNow },
+    });
+    expect(
+      (await get("/dashboard/api/overview", { headers: { cookie: quietCookie } })).status === 200,
+      "unarchiving restores the dashboard",
+    );
+    expect(
+      !(await get("/c/" + quietCard.id)).body.includes("isn’t open yet"),
+      "...and the sign-up page",
+    );
+  }
   const contact = await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/contact", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
     body: JSON.stringify({ phone: "+60 12-345 6789", note: "Prefers WhatsApp" }),
@@ -870,34 +915,148 @@ async function main() {
   });
   expect(loginTemp.status === 200, "the reset temp password logs the owner in");
 
-  // --- Done-for-you: admin creates a fully-designed café + owner account ---
+  // --- Done-for-you onboarding: build the shop, THEN hand over a claim link ---
+  // The flow is: agree over DM → build the card here → send one link → they
+  // make their own login. So the shop exists in full with no account attached,
+  // and nothing about it is reachable by a customer until it is claimed.
   const dfyForbidden = await fetch(base + "/admin/api/card", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieOutsider },
-    body: JSON.stringify({ cafeName: "Sneaky", ownerEmail: "x@y.my" }),
+    body: JSON.stringify({ cafeName: "Sneaky" }),
   });
-  expect(dfyForbidden.status === 403, "a non-admin can't create a café via the admin console");
-  // No design in the payload: setting a shop up creates the account and a plain
-  // card, and the console's real designer takes it from there. It used to build
-  // the card from one of six hard-coded business-type presets — a second, worse
-  // designer hiding inside a signup form.
+  expect(dfyForbidden.status === 403, "a non-admin can't build a shop via the admin console");
   const dfy = await fetch(base + "/admin/api/card", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({
-      cafeName: "Nasi Lemak House", ownerEmail: "nasi@lemak.my", reward: "Free plate",
-    }),
+    body: JSON.stringify({ cafeName: "Nasi Lemak House", reward: "Free plate" }),
   });
   const dfyOut = JSON.parse(await dfy.text());
-  expect(dfy.status === 200 && dfyOut.cardId && dfyOut.tempPassword, "admin creates a café + owner in one step");
-  const dfyLogin = await fetch(base + "/dashboard/api/login", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "nasi@lemak.my", password: dfyOut.tempPassword }),
+  expect(dfy.status === 200 && dfyOut.cardId && dfyOut.merchantId,
+    "admin builds a shop with no login attached");
+  expect(
+    !JSON.stringify(dfyOut).toLowerCase().includes("password"),
+    "...and invents no account, so there is no password to leak",
+  );
+  {
+    const unclaimed = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+      .merchants.find((x: any) => x.id === dfyOut.merchantId);
+    expect(unclaimed.stage === "unclaimed" && unclaimed.has_owner === false,
+      `a shop nobody has claimed reads as unclaimed (${unclaimed.stage})`);
+  }
+
+  // Nothing a customer can reach. Without this a poster printed early would
+  // issue cards that NOBODY could stamp — the staff PIN belongs to the owner,
+  // and there is no owner yet.
+  const preLanding = await get("/c/" + dfyOut.cardId);
+  expect(preLanding.status === 200 && !preLanding.body.includes("/enroll"),
+    "pre-claim, the sign-up page offers no way to add a card");
+  expect(preLanding.body.includes("isn’t open yet"), "...and says so plainly");
+  const preApple = await get("/c/" + dfyOut.cardId + "/enroll");
+  expect(preApple.status === 403, "pre-claim, the Apple add route refuses");
+  expect(
+    (await getPool().query("SELECT 1 FROM passes WHERE card_id = $1", [dfyOut.cardId])).rowCount === 0,
+    "...and no pass was minted by trying",
+  );
+  const preStaff = await fetch(base + "/staff/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-card-id": dfyOut.cardId },
+    body: JSON.stringify({ pin: "123456" }),
   });
-  expect(dfyLogin.status === 200, "the new owner logs in with their temp password");
-  const dfyDup = await fetch(base + "/admin/api/card", {
+  expect(preStaff.status === 404, "pre-claim, the staff counter does not resolve at all");
+
+  // The claim link. Minted once, shown once, and it is what hands the shop over.
+  const linkRes = await fetch(base + "/admin/api/merchant/" + dfyOut.merchantId + "/claim-link", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  const link = JSON.parse(await linkRes.text());
+  expect(linkRes.status === 200 && String(link.url).includes("/claim/"), "admin mints a claim link");
+  const claimToken = String(link.url).split("/claim/")[1]!;
+  expect(
+    (await getPool().query(
+      "SELECT 1 FROM merchants WHERE id = $1 AND claim_token_hash = $2",
+      [dfyOut.merchantId, claimToken],
+    )).rowCount === 0,
+    "the raw token is never stored — only its hash",
+  );
+  expect(
+    (await get("/admin/api/merchant/" + dfyOut.merchantId + "/claim-link", { headers: { cookie: cookieOutsider } })).status !== 200,
+    "a non-admin can't mint a claim link",
+  );
+  const claimPageRes = await get("/claim/" + claimToken);
+  expect(claimPageRes.status === 200 && claimPageRes.body.includes("Nasi Lemak House"),
+    "the claim page shows the shop we built");
+  expect((await get("/claim/" + "f".repeat(64))).status === 404, "a forged token opens nothing");
+
+  const finish = async (token: string, email: string, password = "password123") =>
+    await fetch(base + "/claim/" + token + "/finish", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+  const taken = await finish(claimToken, "second@card.my");
+  expect(taken.status === 409, "claiming with an email that already has an account is refused");
+  const claimed = await finish(claimToken, "nasi@lemak.my");
+  const claimOut = JSON.parse(await claimed.text());
+  expect(claimed.status === 200 && claimOut.staffPin, "the claim creates the login and mints a staff PIN");
+  const claimCookie = claimed.headers.get("set-cookie")?.split(";")[0] ?? "";
+  expect(claimCookie.startsWith("stampy_session="), "...and signs them straight in");
+  // Single use. A forwarded DM must not hand the shop over twice.
+  expect((await finish(claimToken, "someone@else.my")).status === 400,
+    "the same link cannot be used a second time");
+  expect((await get("/claim/" + claimToken)).status === 404, "...and the page stops opening");
+
+  // They land on a dashboard that is already set up.
+  const claimedOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: claimCookie } })).body);
+  expect(claimedOv.cards.length === 1 && claimedOv.cards[0].id === dfyOut.cardId,
+    "the claimed dashboard already holds the card we built");
+  expect(claimedOv.hasStaffPin === true, "...with a staff PIN already set");
+  expect(claimedOv.cards[0].reward === "Free plate", "...and the reward we configured");
+  expect(Boolean(claimedOv.joinRef), "...and a join link ready for the poster");
+
+  // And now the shop is open to customers.
+  const postLanding = await get("/c/" + dfyOut.cardId);
+  expect(!postLanding.body.includes("isn’t open yet"), "once claimed, the sign-up page opens");
+  {
+    const nowClaimed = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+      .merchants.find((x: any) => x.id === dfyOut.merchantId);
+    expect(nowClaimed.stage === "claimed" && nowClaimed.has_owner === true,
+      `a claimed shop that has not stamped reads as claimed (${nowClaimed.stage})`);
+  }
+
+  // A withdrawn link stops working before it is used.
+  const wdShop = await fetch(base + "/admin/api/card", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ cafeName: "Dup", ownerEmail: "nasi@lemak.my" }),
+    body: JSON.stringify({ cafeName: "Withdrawn Shop" }),
   });
-  expect(dfyDup.status === 409, "creating a café for an existing email → 409 email-taken");
+  const wdOut = JSON.parse(await wdShop.text());
+  const wdLink = JSON.parse(await (await fetch(
+    base + "/admin/api/merchant/" + wdOut.merchantId + "/claim-link",
+    { method: "POST", headers: { cookie: cookieNow } },
+  )).text());
+  const wdToken = String(wdLink.url).split("/claim/")[1]!;
+  await fetch(base + "/admin/api/merchant/" + wdOut.merchantId + "/claim-link", {
+    method: "DELETE", headers: { cookie: cookieNow },
+  });
+  expect((await get("/claim/" + wdToken)).status === 404, "a withdrawn claim link stops opening");
+  expect((await finish(wdToken, "nobody@home.my")).status === 400, "...and cannot be finished");
+  // Re-issuing replaces the old one rather than adding a second key to the door.
+  const wdReissued = JSON.parse(await (await fetch(
+    base + "/admin/api/merchant/" + wdOut.merchantId + "/claim-link",
+    { method: "POST", headers: { cookie: cookieNow } },
+  )).text());
+  const wdReissuedToken = String(wdReissued.url).split("/claim/")[1]!;
+  expect(wdReissuedToken !== wdToken, "a re-issued link is a different token");
+  expect((await get("/claim/" + wdReissuedToken)).status === 200, "...and the new one opens");
+
+  // Public signup is closed in production; the claim link is the only way in.
+  process.env.ALLOW_PUBLIC_SIGNUP = "";
+  const closedSignup = await fetch(base + "/dashboard/api/signup", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "walkin@stranger.my", password: "password123", cafeName: "Walk In" }),
+  });
+  expect(closedSignup.status === 403, "with signup closed, nobody can mint themselves a shop");
+  // The switch is built from this flag, so assert the flag: the string itself
+  // is in the page's script either way, guarded by it.
+  expect((await get("/dashboard")).body.includes("const ALLOW_SIGNUP = false"),
+    "...and the login page stops offering it");
+  process.env.ALLOW_PUBLIC_SIGNUP = "1";
+
 
   // --- The designer, pointed at a merchant's LIVE card ---------------------
   // The console renders the owner dashboard's designer against any card. These

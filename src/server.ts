@@ -17,6 +17,7 @@ import {
 } from "./db.js";
 import { setupPage } from "./pages.js";
 import { adminRouter } from "./routes/admin.js";
+import { claimRouter } from "./routes/claim.js";
 import { dashboardRouter } from "./routes/dashboard.js";
 import { googleCallbackRouter } from "./routes/googleCallback.js";
 import { publicRouter } from "./routes/public.js";
@@ -50,6 +51,8 @@ app.use("/google", googleCallbackRouter);
 app.use("/staff", staffRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/admin", adminRouter);
+// Public on purpose: the merchant opens it. The token is the authorisation.
+app.use("/claim", claimRouter);
 app.use("/", publicRouter);
 
 // Log-and-500 fallback so one bad request never kills the demo.

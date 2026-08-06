@@ -17,7 +17,9 @@ function healthy(over: Partial<MerchantHealthRow> = {}): MerchantHealthRow {
   return {
     id: "m1", name: "Kopi Corner", owners: "a@shop.my",
     contact_phone: "", contact_note: "",
-    created_at: daysAgo(10), signed_up_at: daysAgo(10), archived_at: null, trial_day: 10,
+    created_at: daysAgo(10), signed_up_at: daysAgo(10), archived_at: null,
+    has_owner: true, claimed_at: daysAgo(10), claim_expires: null, paid_at: null,
+    trial_day: 9, days_since_signup: 10,
     cards: 1, card_ids: ["c1"], basket_cents: 450, currency: "RM", stamps_target: 10,
     first_stamp_at: daysAgo(9), first_redeem_at: daysAgo(2), poster_views: 3,
     last_stamp_at: daysAgo(0), last_owner_login: daysAgo(1), logins_30d: 6,
@@ -53,7 +55,7 @@ describe("a healthy merchant is left alone", () => {
   // A merchant that signed up yesterday has not failed at anything yet.
   it("gives a brand-new merchant time before calling it dead", () => {
     expect(keys(healthy({
-      trial_day: 1, stamps: 0, stamps_7d: 0, stamps_30d: 0, stamps_prev_7d: 0,
+      trial_day: 0, days_since_signup: 1, stamps: 0, stamps_7d: 0, stamps_30d: 0, stamps_prev_7d: 0,
       poster_views: 0, last_stamp_at: null, first_stamp_at: null,
       customers: 0, redemptions: 0, unclaimed_rewards: 0,
       scanned: 0, clicked: 0, made: 0, landed: 0, removed: 0, staff_devices: 0,
@@ -187,7 +189,12 @@ describe("every flag is documented", () => {
     const cases: Partial<MerchantHealthRow>[] = [
       { pin_failed_24h: 9, last_stamp_at: daysAgo(4) },
       { messages_failed: 3 },
-      { stamps: 0, stamps_7d: 0, stamps_prev_7d: 0, trial_day: 9, poster_views: 0 },
+      { stamps: 0, stamps_7d: 0, stamps_prev_7d: 0, days_since_signup: 9, poster_views: 0,
+        first_stamp_at: null, trial_day: 0 },
+      // Built, sent, never claimed — the stall that happens before any usage
+      // rule can apply.
+      { has_owner: false, claimed_at: null, first_stamp_at: null, trial_day: 0, days_since_signup: 9,
+        stamps: 0, stamps_7d: 0, stamps_prev_7d: 0 },
       { stamps_7d: 0, last_stamp_at: daysAgo(11) },
       { stamps_7d: 3, stamps_prev_7d: 40 },
       { staff_devices: 1 },
@@ -196,8 +203,8 @@ describe("every flag is documented", () => {
       { made: 90, landed: 3 },
       { landed: 30, removed: 20, dropped: 4 },
       { unclaimed_rewards: 12 },
-      { trial_day: 27 },
-      { trial_day: 44 },
+      { trial_day: 27, first_stamp_at: daysAgo(27) },
+      { trial_day: 44, first_stamp_at: daysAgo(44) },
     ];
     for (const c of cases) for (const f of triage(healthy(c), NOW)) raised.add(f.key);
     for (const key of raised) expect(documented, `${key} is undocumented`).toContain(key);

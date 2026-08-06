@@ -125,3 +125,19 @@ export function setupStatus(): SetupStatus {
     canEmail: Boolean(config.resendApiKey && config.emailFrom),
   };
 }
+
+/**
+ * Is the public "create an account" form open?
+ *
+ * Closed by default. Merchants are onboarded done-for-you — we build the shop
+ * in admin and send them a claim link — so an open signup form would only ever
+ * mint shops nobody asked for. Set ALLOW_PUBLIC_SIGNUP=1 to reopen it.
+ *
+ * A function rather than a field on `config`, for the same reason
+ * `setupStatus()` is: it is read per request, so a deployment can be opened or
+ * closed without a rebuild, and the tests can exercise both sides in one
+ * process.
+ */
+export function signupOpen(): boolean {
+  return (process.env.ALLOW_PUBLIC_SIGNUP ?? "").trim() === "1";
+}
