@@ -12,3 +12,9 @@ apple_certs/
 *.certSigningRequest
 *-pw.txt
 # The public Apple WWDR cert (certs/wwdr.pem) IS committed on purpose.
+# Screenshots and screen recordings kept alongside the project. Not source, and
+# a single .mov is bigger than the whole repo — one nearly went in at 91 MB
+# because `git add -A` sweeps whatever is sitting there.
+sreenshots/
+screenshots/
+*.mov
