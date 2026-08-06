@@ -317,9 +317,56 @@ describe("one designer, two pages", () => {
     }
   });
 
-  it("points the owner's copy at their card and the console's at a design", () => {
+  it("points both copies at a real card, from either side", () => {
     expect(dash).toContain('path: (suffix) => "/card/" + card.id + suffix');
-    expect(admin).toContain('path: (suffix) => "/design/" + d.id + suffix');
+    expect(admin).toContain('path: (suffix) => "/card/" + card.id + "/design" + suffix');
+  });
+
+  /**
+   * The console's second target — a saved design, mocked up before a shop
+   * existed and pushed onto its card later — is gone. It was the whole reason
+   * the section had a switcher and a second panel, and the shop is built first
+   * now, so there is always a real card to design straight onto.
+   */
+  it("has no saved-design library left", () => {
+    for (const gone of [
+      'data-mode="design"', 'data-mode="card"', "Start a design", "apply-template",
+      "ds-push", "ds-target", "drawDesignSection", "pushStrip", "A saved design",
+    ]) {
+      expect(admin).not.toContain(gone);
+    }
+  });
+
+  /**
+   * One button in the console, two on the dashboard. The owner's split is real
+   * — their look reaches every card already in a wallet and their rules do not,
+   * and those are two different sentences. The console sets no rules at all
+   * (showDetails is false), so there the second button could only rename the
+   * shop: two buttons for one job.
+   */
+  it("merges the two saves only where there are no rules to save", () => {
+    expect(admin).toContain("singleSave: true");
+    expect(admin).toContain('rulesSaveLabel: "Save card"');
+    expect(dash).not.toContain("singleSave: true");
+    expect(dash).toContain('rulesSaveLabel: "Save rules"');
+    // The panel itself keeps both buttons; only one of them is removed at mount.
+    for (const html of [dash, admin]) {
+      expect(html).toContain('data-a="savedesign"');
+      expect(html).toContain('if (env.singleSave) q("[data-a=savedesign]").remove()');
+    }
+  });
+
+  /**
+   * The rail is appended to the panel's OWN root before the preview moves into
+   * it. Every lookup inside designPanel is div.querySelector, so a preview
+   * parked outside the panel would break renderPreview in the browser — the
+   * same shape as the `base` bug: silent to tsc, fatal on the page.
+   */
+  it("keeps the moved preview inside the panel that queries it", () => {
+    const i = admin.indexOf("panel.appendChild(aside)");
+    const j = admin.indexOf('aside.appendChild(panel.querySelector(".pv"))');
+    expect(i).toBeGreaterThan(-1);
+    expect(j).toBeGreaterThan(i);
   });
 
   /**
@@ -347,11 +394,11 @@ describe("one designer, two pages", () => {
     }
   });
 
-  it("asks about live customers only where there are any", () => {
-    // A saved design is in nobody's wallet, so the "this reaches N customers"
-    // confirmation has no number to name and must not invent one.
+  it("counts the same live customers from both sides", () => {
+    // Both now edit a real card with real holders, so the "this reaches N
+    // customers" confirmation has a number to name on either page.
     expect(dash).toContain("customersPath: \"/customers?cardId=\"");
-    expect(admin).toContain("customersPath: null");
+    expect(admin).toContain('customersPath: "/card/" + card.id + "/counts"');
   });
 });
 
@@ -399,12 +446,53 @@ describe("the console says things once", () => {
    */
   it("puts the whole designer on screen, open", () => {
     expect(html).toContain("designOpen: true");
-    expect(html).toContain('wrap.className = "designhost"');
-    // Both targets are reachable without creating anything first.
-    expect(html).toContain('data-mode="design"');
-    expect(html).toContain('data-mode="card"');
-    expect(html).toContain("Start a design");
     expect(html).not.toContain("Name a design on the left");
+  });
+
+  /**
+   * Two panes, because the console does two unrelated jobs: a book you read and
+   * a sequence you walk. Setting a shop up used to mean visiting four sections
+   * at four heights of one page, in an order nothing on screen told you.
+   */
+  it("splits the book you read from the sequence you walk", () => {
+    expect(html).toContain('data-pane="shops"');
+    expect(html).toContain('data-pane="new"');
+    // Shops is what you land on: the console is opened to check, not to build.
+    expect(html).toMatch(/data-pane="shops" class="on"/);
+    expect(html).toContain('id="pane-new" hidden');
+  });
+
+  it("walks New shop in the only order that works", () => {
+    // The numbers are not decoration: you cannot design a card for a shop that
+    // does not exist, or hand over one you have not designed.
+    const order = ["Name it", "Design their card", "Hand it over"];
+    let at = html.indexOf('id="pane-new"');
+    expect(at).toBeGreaterThan(-1);
+    for (const step of order) {
+      const i = html.indexOf(step, at);
+      expect(i, `${step} is missing or out of order`).toBeGreaterThan(at);
+      at = i;
+    }
+    // All three live in the one pane; none of them is a page section any more.
+    for (const h2 of ["Reset a password", "Build a shop", "Card designs"]) {
+      expect(html).not.toContain("<h2>" + h2);
+      expect(html).not.toContain('<h2 style="margin-top:34px">' + h2);
+    }
+  });
+
+  /**
+   * A shop's row carries everything about that shop. Posters and counter sheets
+   * were built from every card it had EVER held, unnamed — so an archived
+   * programme left a dead poster and a dead counter sheet looking exactly like
+   * the working pair beside them. That is what "why are there two?" was.
+   */
+  it("builds a row's links from live cards only", () => {
+    expect(html).toContain("const liveCards = cards.filter((c) => !c.archived_at)");
+    expect(html).toMatch(/liveCards\.map\(\(c\) => \{/);
+    expect(html).not.toMatch(/cards\.map\(\(c\) => '<a class="btn btn-ghost cbtn" target="_blank" href="\/c\/'/);
+    // And resetting a password happens on the shop you already have open.
+    expect(html).toContain("data-resetpw=");
+    expect(html).not.toContain('<select id="who">');
   });
 
   it("has no trace of the preset card builder", () => {
@@ -415,7 +503,6 @@ describe("the console says things once", () => {
 
   it("edits a card's look but never its terms", () => {
     expect(html).toContain("showDetails: false");
-    expect(html).toContain('rulesSaveLabel: "Save name"');
     // The shop name is the one detail the console does set.
     expect(html).toContain('data-f="shopName"');
   });

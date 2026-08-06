@@ -1914,6 +1914,14 @@ export interface MerchantHealthRow {
    * otherwise read as unclaimed forever.
    */
   has_owner: boolean;
+  /**
+   * Who to reset a password for, straight from this row. The console used to
+   * carry a separate "Reset a password" section with a dropdown of every owner
+   * on the platform, which meant picking a shop out of the table and then
+   * picking its owner out of a second list to act on the shop you were already
+   * looking at. NULL for an unclaimed shop, which has no login to reset.
+   */
+  owner_id: string | null;
   /** When the claim link was used, if it was. History, not state. */
   claimed_at: Date | null;
   /** A live claim link is outstanding, and when it lapses. */
@@ -2036,6 +2044,7 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
               (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
             )) AS signed_up_at,
             (m.owner_id IS NOT NULL) AS has_owner,
+            m.owner_id,
             m.claimed_at, m.claim_expires, m.paid_at,
             floor(extract(epoch FROM (now() - LEAST(m.created_at, COALESCE(
               (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
@@ -2227,109 +2236,14 @@ export async function setMerchantContact(
   );
 }
 
-// ------------------------------------------------------- design templates ----
-
-export interface DesignTemplateRow {
-  id: string;
-  name: string;
-  reward: string;
-  bg: string;
-  fg: string;
-  label_color: string;
-  accent_color: string;
-  band_color: string;
-  band_texture: string;
-  stamp_style: string;
-  /** Preview-only. A push never writes these onto a real card. */
-  stamps_target: number;
-  stamps_start: number;
-  signup_message: string;
-  art_version: number;
-  created_at: Date;
-  has_logo: boolean;
-  has_banner: boolean;
-}
-
-/** Every column except the image bytes, which stream separately. */
-const TEMPLATE_COLUMNS_SQL = `id, name, reward, bg, fg, label_color, accent_color,
-            band_color, band_texture, stamp_style, stamps_target, stamps_start,
-            signup_message, art_version, created_at,
-            logo IS NOT NULL AS has_logo, banner IS NOT NULL AS has_banner`;
-
-/** Templates, newest first. Never selects the image bytes — those stream separately. */
-export async function listDesignTemplates(): Promise<DesignTemplateRow[]> {
-  const res = await getPool().query<DesignTemplateRow>(
-    `SELECT ${TEMPLATE_COLUMNS_SQL} FROM design_templates ORDER BY created_at DESC`,
-  );
-  return res.rows;
-}
-
-/**
- * A new design, with nothing set but a name.
- *
- * Created empty on purpose: the shared designer edits a row that already exists,
- * exactly as it edits a card, and saves each change as it is made. Building a
- * whole design in the browser and posting it once would be a second save path
- * that has to stay in step with the owner's — which is the duplication this
- * whole change is removing.
- */
-export async function createDesignTemplate(name: string): Promise<DesignTemplateRow> {
-  const id = generateShortCode(8).toLowerCase();
-  const res = await getPool().query<DesignTemplateRow>(
-    `INSERT INTO design_templates (id, name) VALUES ($1, $2)
-     RETURNING ${TEMPLATE_COLUMNS_SQL}`,
-    [id, name],
-  );
-  return res.rows[0]!;
-}
-
-/** Column allowlist for `updateDesignTemplate` — never interpolate a caller's key. */
-const TEMPLATE_WRITABLE = new Set([
-  "name", "reward", "bg", "fg", "label_color", "accent_color",
-  "band_color", "band_texture", "stamp_style", "stamps_target",
-  "stamps_start", "signup_message",
-]);
-
-/** Patch a design. Mirrors `updateCard`, so the shared designer drives both. */
-export async function updateDesignTemplate(
-  id: string,
-  fields: Record<string, string | number>,
-): Promise<DesignTemplateRow | null> {
-  const keys = Object.keys(fields).filter((k) => TEMPLATE_WRITABLE.has(k));
-  if (keys.length === 0) return getDesignTemplate(id);
-  const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
-  const res = await getPool().query<DesignTemplateRow>(
-    `UPDATE design_templates SET ${sets} WHERE id = $1 RETURNING ${TEMPLATE_COLUMNS_SQL}`,
-    [id, ...keys.map((k) => fields[k]!)],
-  );
-  return res.rows[0] ?? null;
-}
-
-/** Store a design's logo or band. Bumps `art_version` so the preview refetches. */
-export async function setDesignTemplateArt(
-  id: string,
-  kind: "logo" | "banner",
-  png: Buffer | null,
-): Promise<void> {
-  await getPool().query(
-    `UPDATE design_templates SET ${kind} = $2, art_version = art_version + 1 WHERE id = $1`,
-    [id, png],
-  );
-}
-
-export async function getDesignTemplate(id: string): Promise<
-  (DesignTemplateRow & { logo: Buffer | null; banner: Buffer | null }) | null
-> {
-  const res = await getPool().query(
-    `SELECT ${TEMPLATE_COLUMNS_SQL}, logo, banner FROM design_templates WHERE id = $1`,
-    [id],
-  );
-  return res.rows[0] ?? null;
-}
-
-export async function deleteDesignTemplate(id: string): Promise<void> {
-  await getPool().query(`DELETE FROM design_templates WHERE id = $1`, [id]);
-}
+// ------------------------------------------------ design templates, gone ----
+// The design_templates table is still in the schema and NOTHING reads it.
+// Saved designs -- a card look mocked up before a shop existed, then pushed
+// onto its card once it did -- went with the console rework: you build the
+// shop first now, so there is always a real card to design straight onto.
+// The TABLE stays because migrations here are additive only and dropping one
+// is not. src/backup.ts discovers tables rather than listing them, so it
+// keeps round-tripping.
 
 /** Record an owner sign-in. Best-effort — never block a login on analytics. */
 export async function logOwnerLogin(ownerId: string): Promise<void> {
