@@ -481,6 +481,54 @@ describe("the console says things once", () => {
   });
 
   /**
+   * One claim panel, rendered by the shop's row and by step 3 of New shop.
+   * They were two implementations of one thing, which is why they disagreed:
+   * the row knew a link was out and the pane did not, and neither said that
+   * minting again kills the link already sitting in the merchant's DM.
+   */
+  it("writes the claim link once and reads it in both places", () => {
+    expect(html.match(/function claimPanelHtml\(m\)/g)!.length).toBe(1);
+    expect(html.match(/function wireClaim\(scope, m, done\)/g)!.length).toBe(1);
+    // Step 3 and the row both go through it.
+    expect(html).toContain("cl.innerHTML = claimPanelHtml(building.merchant)");
+    expect(html).toContain("wireClaim(scope, byMerchant.get(id))");
+    // And nothing mints outside it.
+    expect(html.match(/\/claim-link", \{ method: "POST" \}/g)!.length).toBe(1);
+  });
+
+  /**
+   * Minting replaces the link already sent, which is invisible and lands on
+   * somebody else — they find out by clicking a dead link. So it goes behind
+   * the two-tap arm, never a browser dialog (invariant 8: a suppressed
+   * confirm() returns false and the button silently stops working).
+   */
+  it("warns before it kills a link that is already out", () => {
+    expect(html).toContain("Replace the link that’s out");
+    expect(html).toContain('armBtn(mk, "Tap again — the sent one dies", mint)');
+    expect(html).toContain("The link you sent before no longer works.");
+    // Readable, so a link already sent can be found rather than replaced.
+    expect(html).toContain("esc(m.claim_token");
+    // And the promise the founder asked about, said out loud.
+    expect(html).toContain("You can keep changing the card after you send");
+    // Sliced to the claim code and stripped of comments, because the prose
+    // around it names confirm() precisely to say it is never called.
+    const claim = html
+      .slice(html.indexOf("function claimPanelHtml"), html.indexOf("// ---- New shop"))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    for (const dialog of ["confirm(", "alert("]) expect(claim).not.toContain(dialog);
+  });
+
+  /** The way back from a link that reached the wrong person. */
+  it("can hand a claimed shop to somebody else", () => {
+    expect(html).toContain("data-unclaim=");
+    expect(html).toContain('armBtn(hand, "Tap again — they lose it"');
+    expect(html).toContain('/unclaim", { method: "POST" }');
+    // Offered only where there is an owner to take it off.
+    expect(html).toMatch(/m\.has_owner[\s\S]{0,600}data-unclaim=/);
+  });
+
+  /**
    * A shop's row carries everything about that shop. Posters and counter sheets
    * were built from every card it had EVER held, unnamed — so an archived
    * programme left a dead poster and a dead counter sheet looking exactly like

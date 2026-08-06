@@ -170,3 +170,32 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     shopName: shopName || card.name,
   };
 }
+
+/**
+ * Did this save change what is DRAWN on a card already in a wallet?
+ *
+ * Only some of what the designer writes reaches an issued pass. The colours and
+ * the band do, and so does the shop's name (it is the pass's organizationName
+ * and logoText). The reward and the stamp count do NOT: a pass carries the
+ * ruleset it was issued with, so `row.reward` and `row.stamps_target` in
+ * passModel come off the PASS, not the card — which is exactly why editing a
+ * card never rewrites a promise somebody is already holding.
+ *
+ * Used to decide whether a save is worth waking every phone for. Getting it
+ * wrong in the generous direction is not dangerous (the push is silent), but it
+ * is pointless traffic; getting it wrong the other way leaves iPhones showing
+ * an old design until their next stamp.
+ */
+export function touchesLook(
+  fields: Parameters<typeof updateCard>[1],
+  body: Record<string, unknown> = {},
+): boolean {
+  const drawn = [
+    "background_color", "foreground_color", "label_color",
+    "accent_color", "band_color", "band_texture", "stamp_style", "name",
+  ] as const;
+  if (drawn.some((k) => fields[k] !== undefined)) return true;
+  // The shop name is stored on the MERCHANT, so it never appears in `fields` —
+  // but it is printed on every pass, so a rename has to reach them.
+  return typeof body.shopName === "string" && body.shopName.trim() !== "";
+}

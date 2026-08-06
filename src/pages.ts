@@ -3903,6 +3903,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "customers";
       S.hasStaffPin = !!body.hasStaffPin;
       S.joinRef = body.joinRef || "";
+      // An account that holds no shop. It happens when a shop is handed to
+      // somebody else: the login survives — deleting it would take an account
+      // away over a mis-click — but it owns nothing, and every tab below reads
+      // S.cards[0]. Say so plainly rather than render three empty tabs.
+      if (!S.cards.length) {
+        $("#app").innerHTML =
+          '<div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">' +
+          esc(S.email) + "</p></div>" +
+          '<p class="muted">This account does not have a shop. If that is a surprise, ' +
+          "message whoever set your Stampy up — they can hand it back.</p>" +
+          '<button class="btn btn-ghost" style="margin-top:16px;width:auto;padding:10px 16px" data-out>Log out</button>';
+        $("[data-out]").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
+        return;
+      }
       // Three tabs, each one job: who your customers are and how it's going ·
       // what the card is · everything you set once. Home and Customers used to
       // be separate, which left a headline row on one page and the people it
@@ -4561,19 +4575,9 @@ export function adminPage(): string {
           <div data-edits="\${m.id}" class="flags">Loading…</div>
         </details>
 
-        \${m.stage === "unclaimed" ? \`<div class="dpanel" style="margin-top:14px">
-          <h4>Claim link\${info("Sending this hands the shop over: whoever opens it makes the login. It works once, lasts 7 days, and is shown here only when it is minted — we store a hash, so it can never be read back. Sending a new one replaces the old, which is also how you withdraw one that went to the wrong person.")}</h4>
-          <div class="flags">Nobody has claimed this shop. Until they do there is no login, no
-            staff PIN, and their sign-up page stays closed — so no customer can be given a card
-            that nobody could stamp.</div>
-          <div class="rst" style="margin-top:8px">
-            <button class="btn btn-dark cbtn" data-claimlink="\${m.id}">Make a claim link</button>
-            \${m.claim_expires ? '<button class="btn btn-ghost dbtn" data-claimdrop="' + m.id + '">Withdraw the current one</button>' : ""}
-          </div>
-          \${m.claim_expires ? '<div class="flags" style="margin-top:6px">A link is out, good until ' +
-            new Date(m.claim_expires).toLocaleDateString([], { day: "numeric", month: "short" }) + ".</div>" : ""}
-          <div data-claimout="\${m.id}"></div>
-        </div>\` : ""}
+        \${m.stage === "unclaimed"
+          ? '<div class="dpanel" style="margin-top:14px">' + claimPanelHtml(m) + "</div>"
+          : ""}
 
         \${liveCards.length ? \`<details class="fold" style="margin-top:10px" data-designfold="\${m.id}">
           <summary>Design their card\${info("The same designer the owner gets. It sets how the card LOOKS and the shop's name — never the reward or the stamp count, which are the shop's own to set. A saved change reaches every card already in a wallet.")}</summary>
@@ -4599,7 +4603,13 @@ export function adminPage(): string {
               }).join("")
             }
             \${m.has_owner
-              ? '<button class="btn btn-ghost cbtn" data-resetpw="' + m.owner_id + '">Reset their password</button>'
+              ? '<button class="btn btn-ghost cbtn" data-resetpw="' + m.owner_id + '">Reset their password</button>' +
+                // The way back from a link that reached the wrong person. The
+                // shop returns to unclaimed keeping its card id, its slug and
+                // its /j/ QR — rebuilding it would mint a new card id, and a
+                // card id is printed on posters and baked into every Android
+                // card ever issued from it.
+                '<button class="btn btn-ghost dbtn" data-unclaim="' + m.id + '">Hand it to someone else</button>'
               : ""}
             \${m.archived_at
               ? '<button class="btn btn-ghost dbtn" data-munarchive="' + m.id + '">Restore shop</button>'
@@ -4759,6 +4769,8 @@ export function adminPage(): string {
             </li>
             <li class="step" data-step="2">
               <h3><span class="sn">2</span>Design their card\${info("The same designer the owner gets — upload their logo and we read the colours out of it. It never sets the reward or the stamp count; only the shop does that, from their own dashboard.")}</h3>
+              <p class="dnote" style="margin:0 0 10px">Press <strong>Save card</strong> before you hand it over,
+                or they open a card with no design on it. You can keep changing it afterwards either way.</p>
               <div id="ds-editor"><div class="dsempty">Build a shop above, or pick one up, and the designer opens here.</div></div>
             </li>
             <li class="step" data-step="3">
@@ -4834,14 +4846,14 @@ export function adminPage(): string {
           })});
           save.textContent = "Saved ✓";
         };
-        // Two taps, same as archiving a card: it takes a business out of the
-        // working list, and a mis-click on the wrong row is easy to make.
-        const mk = scope.querySelector("[data-claimlink]");
-        if (mk) mk.onclick = () => mintClaim(id, scope.querySelector('[data-claimout="' + id + '"]'), mk);
-        const drop = scope.querySelector("[data-claimdrop]");
-        if (drop) armBtn(drop, "Tap again to withdraw", async () => {
-          await api("/merchant/" + id + "/claim-link", { method: "DELETE" });
-          load();
+        wireClaim(scope, byMerchant.get(id));
+        // Taking a shop back off an owner. Two taps, like archiving: the cost
+        // lands on somebody else, who loses their dashboard mid-sentence.
+        const hand = scope.querySelector("[data-unclaim]");
+        if (hand) armBtn(hand, "Tap again — they lose it", async () => {
+          const { body: r } = await api("/merchant/" + id + "/unclaim", { method: "POST" });
+          if (r.ok) return void load();
+          hand.textContent = r.error === "not-claimed" ? "Nobody holds it" : "Failed";
         });
         const arch = scope.querySelector("[data-marchive]");
         if (arch) armBtn(arch, "Tap again to archive", async () => {
@@ -4905,6 +4917,85 @@ export function adminPage(): string {
         });
       }
 
+      // ---- the claim link, in the one place it is written ---------------------
+      // Rendered by the shop's row on Shops AND by step 3 of New shop. It was two
+      // implementations of one thing, which is exactly why they disagreed: the
+      // row knew a link was out and the pane did not, and neither said that
+      // minting again kills the link already sitting in the merchant's DM.
+      //
+      // The link is readable here because it is stored readable — see
+      // src/claim.ts for that trade and what bounds it.
+      const dayMonth = (d) => new Date(d).toLocaleDateString([], { day: "numeric", month: "short" });
+
+      function claimPanelHtml(m) {
+        const out = Boolean(m.claim_expires);
+        return '<h4>Claim link' + info(
+          "Sending this hands the shop over: whoever opens it makes the login. It works once and lasts 7 days. " +
+          "Making a new one REPLACES the one already sent, so anything you have DM'd stops working — that is also how you withdraw a link that went to the wrong person."
+        ) + "</h4>" +
+          '<div class="flags">Nobody has claimed this shop. Until they do there is no login, no ' +
+          "staff PIN, and their sign-up page stays closed — so no customer can be given a card " +
+          "that nobody could stamp.</div>" +
+          (out
+            ? '<div class="temp" style="margin-top:8px">' + esc(m.claim_token || "(link withdrawn)") +
+              (m.claim_token
+                ? '<br><button class="btn btn-ghost cbtn" data-nfc="' + esc(m.claim_token) + '">Copy it</button> '
+                : " ") +
+              "Out now, good until " + dayMonth(m.claim_expires) + ".</div>"
+            : "") +
+          '<div class="rst" style="margin-top:8px">' +
+            '<button class="btn btn-dark cbtn" data-claimlink="' + m.id + '">' +
+              (out ? "Replace the link that’s out" : "Make a claim link") + "</button>" +
+            (out ? '<button class="btn btn-ghost dbtn" data-claimdrop="' + m.id + '">Withdraw it</button>' : "") +
+          "</div>" +
+          '<div class="flags" style="margin-top:6px">You can keep changing the card after you send ' +
+          "this — they see the latest version whenever they open it.</div>" +
+          '<div data-claimout="' + m.id + '"></div>';
+      }
+
+      /**
+       * Wire a claim panel wherever it was rendered.
+       *
+       * Minting when a link is already out goes behind the two-tap arm — the
+       * same guard archiving uses — because the cost is invisible and lands on
+       * somebody else: their link dies and they find out by clicking a dead one.
+       * Never a browser dialog (invariant 8): a suppressed confirm() returns
+       * false and the button silently stops working.
+       */
+      function wireClaim(scope, m, done) {
+        scope.querySelectorAll("[data-nfc]").forEach((b) => {
+          b.onclick = () => { navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; };
+        });
+        const out = scope.querySelector('[data-claimout="' + m.id + '"]');
+        const mk = scope.querySelector("[data-claimlink]");
+        const mint = async () => {
+          mk.disabled = true;
+          const { body: r } = await api("/merchant/" + m.id + "/claim-link", { method: "POST" });
+          mk.disabled = false;
+          if (!r.ok) {
+            out.textContent = r.error === "already-claimed" ? "Already claimed." : (r.error || "Failed");
+            return;
+          }
+          out.innerHTML = '<div class="temp" style="margin-top:8px">' + esc(r.url) +
+            '<br><button class="btn btn-ghost cbtn" data-nfc="' + esc(r.url) + '">Copy it</button> ' +
+            "Send this in the DM. It works once, and lasts 7 days." +
+            (r.replaced ? " The link you sent before no longer works." : "") + "</div>";
+          out.querySelector("[data-nfc]").onclick = (e) => {
+            navigator.clipboard.writeText(r.url); e.target.textContent = "Copied ✓";
+          };
+          if (done) done();
+        };
+        if (mk) {
+          if (m.claim_expires) armBtn(mk, "Tap again — the sent one dies", mint);
+          else mk.onclick = mint;
+        }
+        const drop = scope.querySelector("[data-claimdrop]");
+        if (drop) armBtn(drop, "Tap again to withdraw", async () => {
+          await api("/merchant/" + m.id + "/claim-link", { method: "DELETE" });
+          load();
+        });
+      }
+
       // ---- New shop: name it, design it, hand it over -------------------------
       // One sequence in one place. It used to be three sections at three heights
       // of a long page — Build a shop at the bottom, the designer above it, and
@@ -4914,7 +5005,11 @@ export function adminPage(): string {
       // No design choices here. Building used to pick from six hard-coded
       // business-type presets, which was a second, worse designer hiding inside
       // a signup form. It makes a plain card and step 2 opens the real one on it.
-      let building = null;   // { merchantId, cardId, name } — the shop in hand
+      // { merchantId, cardId, name, merchant } — the shop in hand. It carries
+      // the merchant ROW, not just a name, because step 3 renders the same
+      // claim panel the shop own row does and that panel reads the link state
+      // off the row. A shop just built has no link out, hence the stub below.
+      let building = null;
 
       /** Draw steps 2 and 3 for whatever shop is in hand, or reset them. */
       async function drawSteps() {
@@ -4924,32 +5019,12 @@ export function adminPage(): string {
           cl.innerHTML = '<div class="dsempty">The claim link appears once there is a shop to hand over.</div>';
           return;
         }
-        cl.innerHTML =
-          '<button class="btn btn-dark cbtn" id="mkclaim">Make a claim link for ' + esc(building.name) + "</button>" +
-          '<div id="claimout"></div>';
-        $("#mkclaim").onclick = () => mintClaim(building.merchantId, $("#claimout"), $("#mkclaim"));
+        // The same panel the shop's own row renders, against the same merchant
+        // row — so the two can never know different things about one link.
+        cl.innerHTML = claimPanelHtml(building.merchant);
+        wireInfo(cl);
+        wireClaim(cl, building.merchant);
         await mountDesigner(ed, building.cardId, cardLinks({ id: building.cardId }, building.merchantId, origin));
-      }
-
-      /**
-       * Mint a claim link and show it ONCE. The token is stored only as a hash,
-       * so re-reading it later is not something the server could do even if the
-       * page asked — which is also why issuing a new one is how you withdraw.
-       */
-      async function mintClaim(merchantId, out, btn) {
-        btn.disabled = true;
-        const { body: r } = await api("/merchant/" + merchantId + "/claim-link", { method: "POST" });
-        btn.disabled = false;
-        if (!r.ok) {
-          out.textContent = r.error === "already-claimed" ? "Already claimed." : (r.error || "Failed");
-          return;
-        }
-        out.innerHTML = '<div class="temp" style="margin-top:8px">' + esc(r.url) +
-          '<br><button class="btn btn-ghost cbtn" data-nfc="' + esc(r.url) + '">Copy it</button>' +
-          " Send this in the DM. It works once, and lasts 7 days.</div>";
-        out.querySelector("[data-nfc]").onclick = (e) => {
-          navigator.clipboard.writeText(r.url); e.target.textContent = "Copied ✓";
-        };
       }
 
       $("#dfy-create").onclick = async () => {
@@ -4963,7 +5038,11 @@ export function adminPage(): string {
         // deliberate. They make their own when they claim it.
         $("#dfy-out").innerHTML = '<div class="temp">Built <strong>' + esc(cafeName) + "</strong>.</div>";
         $("#dfy-name").value = "";
-        building = { merchantId: r.merchantId, cardId: r.cardId, name: cafeName };
+        building = {
+          merchantId: r.merchantId, cardId: r.cardId, name: cafeName,
+          // Freshly built: no link has ever been out for it.
+          merchant: { id: r.merchantId, name: cafeName, claim_expires: null, claim_token: null },
+        };
         drawSteps();
       };
 
@@ -4975,7 +5054,7 @@ export function adminPage(): string {
           const m = byMerchant.get(b.dataset.resume);
           const card = (body.cards || []).find((c) => m.card_ids.includes(c.id) && !c.archived_at);
           if (!card) return void toast("That shop has no live card");
-          building = { merchantId: m.id, cardId: card.id, name: m.name };
+          building = { merchantId: m.id, cardId: card.id, name: m.name, merchant: m };
           drawSteps();
         };
       });

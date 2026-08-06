@@ -345,12 +345,24 @@ async function main(): Promise<void> {
   expect(refusedSecond, "...but one login still cannot hold two shops");
 
   // The claim columns exist and are empty for everything that predates them.
+  // claim_token (the readable copy) and unclaimed_at (a hand-back) arrived
+  // later than the rest, so they are listed here rather than assumed: a column
+  // that only exists on a freshly-created schema is exactly the shape of bug
+  // this suite is for, and src/backup.ts refuses a dump whose columns do not
+  // match the target — so missing one turns a restore into a second outage.
   const claimCols = (await sql.query<{ column_name: string }>(
     `SELECT column_name FROM information_schema.columns
       WHERE table_name = 'merchants'
-        AND column_name IN ('claim_token_hash', 'claim_expires', 'claimed_at', 'paid_at')`,
+        AND column_name IN ('claim_token_hash', 'claim_token', 'claim_expires',
+                            'claimed_at', 'unclaimed_at', 'paid_at')`,
   )).rows.map((r) => r.column_name).sort();
-  expect(claimCols.length === 4, `the claim columns are present (${claimCols.join(", ")})`);
+  expect(claimCols.length === 6, `the claim columns are present (${claimCols.join(", ")})`);
+  // Nothing that predates the hand-back can have been handed back, and no
+  // upgraded row may arrive holding a readable token it never had.
+  const invented = (await sql.query<{ n: string }>(
+    `SELECT count(*) AS n FROM merchants WHERE claim_token IS NOT NULL OR unclaimed_at IS NOT NULL`,
+  )).rows[0]!.n;
+  expect(invented === "0", "an upgraded merchant carries no invented link and no invented hand-back");
   const preClaimed = (await sql.query<{ n: string }>(
     `SELECT count(*) AS n FROM merchants WHERE claimed_at IS NOT NULL OR claim_token_hash IS NOT NULL`,
   )).rows[0]!.n;

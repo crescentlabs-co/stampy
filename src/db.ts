@@ -617,14 +617,27 @@ export async function migrate(): Promise<void> {
     DROP INDEX IF EXISTS idx_merchants_owner;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_merchants_owner
       ON merchants(owner_id) WHERE owner_id IS NOT NULL;
-    -- The claim link. Same shape as the password-reset token on owners: the
-    -- token is stored only as a sha256 hash, expires, and is cleared the moment
-    -- it is used, so a link that has been sent cannot be replayed or read back
-    -- out of a database dump. It lives on the MERCHANT because there is no owner
-    -- to hang it off yet, and no email is collected before the claim page.
+    -- The claim link. It lives on the MERCHANT because there is no owner to
+    -- hang it off yet, and no email is collected before the claim page.
+    -- claim_token_hash is what a presented token is compared against; the link
+    -- expires and is cleared the moment it is used.
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS claim_token_hash text;
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS claim_expires timestamptz;
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
+    -- v2.1: the token in PLAIN TEXT, so an operator can find a link they already
+    -- sent instead of minting a replacement and killing the one in the DM.
+    --
+    -- This was hash-only on purpose and the trade is deliberate, so it is
+    -- written down here rather than discovered later: while a link is out, this
+    -- column holds a live credential for an unclaimed shop, and it is inside
+    -- every backup dump taken in that window. Cleared the instant the link is
+    -- claimed or withdrawn, so only outstanding links are ever readable, and
+    -- the exposure is capped by CLAIM_TTL_MS (7 days). See src/claim.ts.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS claim_token text;
+    -- When a shop was taken back off an owner (a wrong claim, handed on). Paired
+    -- with claimed_at rather than erasing it: both are history, and "claimed the
+    -- 7th, handed back the 8th" is the answer to a dispute.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS unclaimed_at timestamptz;
     -- The one lifecycle fact no data implies. Everything else the console shows
     -- as a stage — unclaimed, claimed, first stamp, archived — is derived from
     -- rows that already exist, because a stored status is a second source of
@@ -920,9 +933,16 @@ export interface MerchantRow {
   currency: string;
   created_at: Date;
   archived_at: Date | null;
-  /** Set when the claim link is used. The token itself is never readable. */
+  /** Set when the claim link is used. Left standing after a hand-back. */
   claimed_at: Date | null;
+  /** When the shop was last taken back off an owner. Beside claimed_at, not instead. */
+  unclaimed_at: Date | null;
   claim_expires: Date | null;
+  /** What a presented token is checked against. Present = a link is outstanding. */
+  claim_token_hash: string | null;
+  /** The outstanding link, readable so one already sent can be found again.
+   *  Cleared on claim and on withdrawal — see src/claim.ts for the trade. */
+  claim_token: string | null;
   paid_at: Date | null;
 }
 
@@ -1085,7 +1105,8 @@ export async function attachOwnerToMerchant(
 ): Promise<MerchantRow | null> {
   const res = await getPool().query<MerchantRow>(
     `UPDATE merchants
-        SET owner_id = $2, claimed_at = now(), claim_token_hash = NULL, claim_expires = NULL
+        SET owner_id = $2, claimed_at = now(),
+            claim_token = NULL, claim_token_hash = NULL, claim_expires = NULL
       WHERE id = $1 AND owner_id IS NULL
       RETURNING *`,
     [merchantId, ownerId],
@@ -1094,22 +1115,93 @@ export async function attachOwnerToMerchant(
 }
 
 /**
- * Store a claim link's token, hashed.
+ * Take a shop back off its owner — a link that reached the wrong person, or a
+ * handover to someone else. The shop returns to unclaimed keeping its id, its
+ * slug and its /j/ poster QR, which is the whole point: rebuilding it would mint
+ * a new card id, and a card id is printed on posters and baked into every
+ * Android card ever issued from it.
  *
- * Same contract as the password-reset token on `owners`: only the sha256 hash
- * is stored, so a link that has been sent can never be read back out of the
- * database (or a backup dump, which holds these rows). Issuing a new one
- * replaces the old, which is what makes "revoke" a re-issue.
+ * Three things have to move together or the ex-owner keeps a way in:
+ *   - owner_id, so nothing resolves the shop to them;
+ *   - their owner_cards rows, which are what `ownerHasCard` gates the dashboard
+ *     on — leaving these is the difference between "handed back" and "still has
+ *     the keys";
+ *   - staff_session_epoch, which signs every staff phone out at once, the same
+ *     lever setStaffPin and archiving already pull.
+ *
+ * The OWNER ROW SURVIVES. Deleting it would cascade their logins away, and a
+ * mis-click on a real merchant must not destroy an account — they are left
+ * owning nothing, which is recoverable, rather than gone, which is not.
+ *
+ * claimed_at is deliberately left standing beside unclaimed_at: both are
+ * history, `stageOf` keys on has_owner, and "claimed the 7th, handed back the
+ * 8th" is the answer to a dispute.
+ */
+export async function detachOwnerFromMerchant(merchantId: string): Promise<MerchantRow | null> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    // Who it belongs to, locked, BEFORE the update — a subselect inside
+    // RETURNING would read the statement's own snapshot and is too subtle to
+    // rest three revocations on.
+    const before = await client.query<{ owner_id: string | null }>(
+      `SELECT owner_id FROM merchants WHERE id = $1 FOR UPDATE`,
+      [merchantId],
+    );
+    const previous = before.rows[0]?.owner_id ?? null;
+    if (!previous) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const res = await client.query<MerchantRow>(
+      `UPDATE merchants
+          SET owner_id = NULL, unclaimed_at = now(),
+              claim_token = NULL, claim_token_hash = NULL, claim_expires = NULL
+        WHERE id = $1
+        RETURNING *`,
+      [merchantId],
+    );
+    await client.query(
+      `DELETE FROM owner_cards
+        WHERE owner_id = $1
+          AND card_id IN (SELECT id FROM cards WHERE merchant_id = $2)`,
+      [previous, merchantId],
+    );
+    await client.query(
+      `UPDATE owners SET staff_session_epoch = staff_session_epoch + 1 WHERE id = $1`,
+      [previous],
+    );
+    await client.query("COMMIT");
+    return res.rows[0] ?? null;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Store a claim link's token — the hash it is checked against, and the token
+ * itself so the operator can find a link they have already sent.
+ *
+ * Keeping the plaintext is a deliberate trade, not an oversight: see the
+ * migration note on `claim_token` and src/claim.ts. It is cleared the moment
+ * the link is claimed or withdrawn, so only an outstanding link is readable.
+ *
+ * Issuing a new one replaces the old — which is what makes "revoke" a re-issue,
+ * and also why the console has to warn before doing it.
  */
 export async function setClaimToken(
   merchantId: string,
+  token: string,
   tokenHash: string,
   expires: Date,
 ): Promise<void> {
   await getPool().query(
-    `UPDATE merchants SET claim_token_hash = $2, claim_expires = $3
+    `UPDATE merchants SET claim_token = $2, claim_token_hash = $3, claim_expires = $4
       WHERE id = $1 AND owner_id IS NULL`,
-    [merchantId, tokenHash, expires],
+    [merchantId, token, tokenHash, expires],
   );
 }
 
@@ -1124,10 +1216,13 @@ export async function merchantByClaimToken(tokenHash: string): Promise<MerchantR
   return res.rows[0] ?? null;
 }
 
-/** Withdraw a link that has been sent but not used. */
+/** Withdraw a link that has been sent but not used. Takes the readable copy
+ *  with it: a withdrawn link must not stay legible in a dump. */
 export async function clearClaimToken(merchantId: string): Promise<void> {
   await getPool().query(
-    `UPDATE merchants SET claim_token_hash = NULL, claim_expires = NULL WHERE id = $1`,
+    `UPDATE merchants
+        SET claim_token = NULL, claim_token_hash = NULL, claim_expires = NULL
+      WHERE id = $1`,
     [merchantId],
   );
 }
@@ -1926,6 +2021,14 @@ export interface MerchantHealthRow {
   claimed_at: Date | null;
   /** A live claim link is outstanding, and when it lapses. */
   claim_expires: Date | null;
+  /**
+   * The outstanding link itself, so the console can show one already sent
+   * instead of making you mint a replacement and kill it. NULL unless a link is
+   * out — claiming or withdrawing clears it. See the migration note.
+   */
+  claim_token: string | null;
+  /** When the shop was last taken back off an owner. History, beside claimed_at. */
+  unclaimed_at: Date | null;
   /** The one lifecycle fact nothing else implies. */
   paid_at: Date | null;
   /**
@@ -2045,7 +2148,7 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             )) AS signed_up_at,
             (m.owner_id IS NOT NULL) AS has_owner,
             m.owner_id,
-            m.claimed_at, m.claim_expires, m.paid_at,
+            m.claimed_at, m.claim_expires, m.claim_token, m.unclaimed_at, m.paid_at,
             floor(extract(epoch FROM (now() - LEAST(m.created_at, COALESCE(
               (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
             )))) / 86400.0)::int AS days_since_signup,
@@ -3282,6 +3385,27 @@ export async function dropDeadRegistration(pushToken: string): Promise<void> {
       metadata: { platform_source: "apns", status: 410, reason: "Unregistered" },
     });
   }
+}
+
+/**
+ * Every device holding any pass of this card.
+ *
+ * An Apple pass is a downloaded file: changing the card's art changes what the
+ * web service would hand back, but nothing tells the phone to come and ask.
+ * Without this, a redesign reached Android in seconds (the Google class is
+ * patched in place) and an iPhone only at that customer's next stamp — which on
+ * a quiet card is a week later, with the two platforms visibly disagreeing in
+ * the meantime. See refreshCardArt in src/cardActions.ts.
+ */
+export async function pushTokensForCard(cardId: string): Promise<string[]> {
+  const res = await getPool().query<{ push_token: string }>(
+    `SELECT DISTINCT r.push_token
+       FROM registrations r
+       JOIN passes p ON p.serial = r.serial
+      WHERE p.card_id = $1`,
+    [cardId],
+  );
+  return res.rows.map((r) => r.push_token);
 }
 
 /** Push tokens registered for a pass (usually one device, can be several). */

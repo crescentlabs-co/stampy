@@ -11,13 +11,14 @@
  * Every mutation logs an `events` row (dashboard metrics + win-back depend on it).
  */
 import { pushPassUpdate } from "./apns.js";
-import { addMessage, patchBalance } from "./googleWallet.js";
+import { addMessage, ensureClass, patchBalance } from "./googleWallet.js";
 import {
   dropDeadRegistration,
   getCard,
   getPass,
   logEvent,
   logMessage,
+  pushTokensForCard,
   pushTokensForSerial,
   type CardRow,
   type EventMeta,
@@ -202,6 +203,54 @@ async function deliver(
   const pushResults = await pushPassUpdate(await pushTokensForSerial(serial));
   // 410 Unregistered: Apple is telling us the card is off that device.
   // Free churn evidence that used to be read once and thrown away.
+  for (const dead of pushResults.filter((r) => r.status === 410)) {
+    await dropDeadRegistration(dead.token).catch((err) =>
+      console.error("[pass_dropped] not recorded:", err),
+    );
+  }
+  return {
+    sent: pushResults.filter((r) => r.ok).length,
+    failed: pushResults.filter((r) => !r.ok).length,
+    registeredDevices: pushResults.length,
+    detail: pushResults.map((r) => ({ status: r.status, reason: r.reason })),
+    ms: Date.now() - started,
+  };
+}
+
+/**
+ * A card's LOOK changed — colours, logo, band, stamp grid — so tell both
+ * platforms to come and get it.
+ *
+ * This is not `applyAndPush`. Nothing about a pass has changed here: no stamp,
+ * no event, no audit row, and nobody's progress moved. It is a re-fetch, not a
+ * mutation, which is why it lives beside that function rather than inside it.
+ *
+ *   google → PATCH the LoyaltyClass, which every object of this card inherits,
+ *            so Android updates in place.
+ *   apple  → an EMPTY APNs push to every device holding a pass of this card;
+ *            the phone comes back and downloads the new .pkpass.
+ *
+ * **No notification appears on anybody's phone.** iOS raises a banner only when
+ * a field carrying `changeMessage` changes value, and exactly two do — progress
+ * and message (invariant 3, with a test holding it). A colour is neither. So
+ * this is a silent refresh, which is the distinction invariant 3 exists to
+ * protect: one *notification* per event, not one push.
+ *
+ * Fire-and-forget from a route: it must never make an owner wait, and a wallet
+ * that cannot be reached is not a reason to fail a save that already succeeded.
+ */
+export async function refreshCardArt(card: CardRow): Promise<PushSummary> {
+  const started = Date.now();
+  const [, pushResults] = await Promise.all([
+    ensureClass(card).then((r) => {
+      if (!r.ok && r.reason !== "google-not-configured") {
+        console.error("[refreshCardArt] google class sync failed:", r);
+      }
+    }),
+    pushTokensForCard(card.id).then(pushPassUpdate),
+  ]);
+  // 410 Unregistered: the same free churn evidence a stamp push collects, and
+  // it must not be thrown away just because this push carried no stamp.
   for (const dead of pushResults.filter((r) => r.status === 410)) {
     await dropDeadRegistration(dead.token).catch((err) =>
       console.error("[pass_dropped] not recorded:", err),

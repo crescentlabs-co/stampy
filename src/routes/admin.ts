@@ -33,6 +33,7 @@ import {
   cardCounts,
   archiveCard,
   createUnclaimedMerchant,
+  detachOwnerFromMerchant,
   clearClaimToken,
   getMerchant,
   setClaimToken,
@@ -57,6 +58,7 @@ import {
   type OwnerRow,
 } from "../db.js";
 import { BAND_TEXTURES, cardFieldsFromBody, designerCard } from "../cardView.js";
+import { refreshCardArt } from "../cardActions.js";
 import { ensureClass } from "../googleWallet.js";
 import { stageOf, triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng, validateLogoPng } from "../imageValidate.js";
@@ -195,30 +197,53 @@ adminRouter.post("/api/card", requireAdmin, async (req, res) => {
 });
 
 /**
- * Mint a claim link for an unclaimed shop, and hand it over ONCE.
+ * Mint a claim link for an unclaimed shop.
  *
- * The token is returned here and stored only as a hash, so this response is the
- * only time it can be read — exactly like the staff PIN. Issuing again replaces
- * the old link, which is also how you revoke one that went to the wrong person.
+ * Issuing REPLACES any link already out — that is what makes "revoke" simply
+ * "issue another", and it is also why `replaced` comes back: the console has to
+ * be able to warn before doing it, because the link already sitting in the
+ * merchant's DM stops working the moment this runs.
  *
  * It is a credential in a DM: single-use, short-lived, and not derivable from
  * the merchant id, so knowing a shop exists tells you nothing about how to
- * claim it.
+ * claim it. It is stored readable as well as hashed — see src/claim.ts for what
+ * that buys and what it costs.
  */
 adminRouter.post("/api/merchant/:id/claim-link", requireAdmin, async (req, res) => {
   const merchant = await getMerchant(req.params.id!);
   if (!merchant) return void res.status(404).json({ error: "no-such-merchant" });
   if (merchant.owner_id) return void res.status(409).json({ error: "already-claimed" });
+  const replaced = Boolean(merchant.claim_token_hash);
   const token = randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + CLAIM_TTL_MS);
-  await setClaimToken(merchant.id, hashClaimToken(token), expires);
+  await setClaimToken(merchant.id, token, hashClaimToken(token), expires);
   const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
-  res.json({ ok: true, url: `${base}/claim/${token}`, expires });
+  res.json({ ok: true, url: `${base}/claim/${token}`, expires, replaced });
 });
 
 /** Withdraw a link that was sent to the wrong person and not yet used. */
 adminRouter.delete("/api/merchant/:id/claim-link", requireAdmin, async (req, res) => {
   await clearClaimToken(req.params.id!);
+  res.json({ ok: true });
+});
+
+/**
+ * Take a shop back off its owner — a link that reached the wrong person, or a
+ * handover. The shop returns to unclaimed keeping its card id, its slug and its
+ * /j/ poster QR, so a fresh link makes it somebody else's without any of the
+ * printed things pointing at a shop that no longer exists.
+ *
+ * Not a delete. The owner's account survives owning nothing (see
+ * detachOwnerFromMerchant) — a mis-click here must be recoverable.
+ */
+adminRouter.post("/api/merchant/:id/unclaim", requireAdmin, async (req, res) => {
+  const merchant = await getMerchant(req.params.id!);
+  if (!merchant) return void res.status(404).json({ error: "no-such-merchant" });
+  // Nobody holds it, so there is nothing to take back. A clean refusal rather
+  // than a silent no-op that looks like it worked.
+  if (!merchant.owner_id) return void res.status(409).json({ error: "not-claimed" });
+  const row = await detachOwnerFromMerchant(merchant.id);
+  if (!row) return void res.status(409).json({ error: "not-claimed" });
   res.json({ ok: true });
 });
 
@@ -266,9 +291,9 @@ adminRouter.post("/api/card/:id/design", requireAdmin, async (req, res) => {
     const merchant = await merchantForCard(card.id);
     if (merchant) await updateMerchant(merchant.id, { name: body.shopName.trim().slice(0, 60) });
   }
-  void ensureClass(card).then((r) => {
-    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
-  });
+  // Both platforms, not just Google: an iPhone has to be told to come back for
+  // the new art, or it keeps the old look until that customer's next stamp.
+  void refreshCardArt(card);
   res.json({ ok: true });
 });
 
@@ -284,9 +309,9 @@ adminRouter.post("/api/card/:id/design/:kind(logo|banner)", requireAdmin, async 
   if (!card) return void res.status(404).json({ error: "no-such-card" });
   if (kind === "logo") await setCardLogo(card.id, bytes);
   else await setCardBanner(card.id, bytes);
-  void ensureClass(card).then((r) => {
-    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
-  });
+  // Both platforms, not just Google: an iPhone has to be told to come back for
+  // the new art, or it keeps the old look until that customer's next stamp.
+  void refreshCardArt(card);
   res.json({ ok: true });
 });
 
@@ -295,9 +320,9 @@ adminRouter.delete("/api/card/:id/design/:kind(logo|banner)", requireAdmin, asyn
   if (!card) return void res.status(404).json({ error: "no-such-card" });
   if (req.params.kind === "logo") await deleteCardLogo(card.id);
   else await deleteCardBanner(card.id);
-  void ensureClass(card).then((r) => {
-    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
-  });
+  // Both platforms, not just Google: an iPhone has to be told to come back for
+  // the new art, or it keeps the old look until that customer's next stamp.
+  void refreshCardArt(card);
   res.json({ ok: true });
 });
 
@@ -329,9 +354,9 @@ adminRouter.post("/api/card/:id/design/stamps", requireAdmin, async (req, res) =
   await setStampStrips(req.params.id!, decoded);
   const card = await updateCard(req.params.id!, { stamp_style: (style ?? "").slice(0, 40) });
   if (!card) return void res.status(404).json({ error: "no-such-card" });
-  void ensureClass(card).then((r) => {
-    if (!r.ok && r.reason !== "google-not-configured") console.error("[admin] google sync failed:", r);
-  });
+  // Both platforms, not just Google: an iPhone has to be told to come back for
+  // the new art, or it keeps the old look until that customer's next stamp.
+  void refreshCardArt(card);
   res.json({ ok: true });
 });
 

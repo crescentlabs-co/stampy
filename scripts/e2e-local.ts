@@ -970,14 +970,57 @@ async function main() {
   });
   const link = JSON.parse(await linkRes.text());
   expect(linkRes.status === 200 && String(link.url).includes("/claim/"), "admin mints a claim link");
-  const claimToken = String(link.url).split("/claim/")[1]!;
+  let claimToken = String(link.url).split("/claim/")[1]!;
+  // The token is now stored readable as well as hashed, so an operator can find
+  // a link they already sent instead of minting a replacement and killing it.
+  // What that buys is bounded by what follows: it is cleared on claim and on
+  // withdrawal, so only an OUTSTANDING link is ever legible. See src/claim.ts.
   expect(
     (await getPool().query(
       "SELECT 1 FROM merchants WHERE id = $1 AND claim_token_hash = $2",
       [dfyOut.merchantId, claimToken],
     )).rowCount === 0,
-    "the raw token is never stored — only its hash",
+    "the hash column holds a hash, not the token",
   );
+  expect(
+    (await getPool().query(
+      "SELECT 1 FROM merchants WHERE id = $1 AND claim_token = $2",
+      [dfyOut.merchantId, claimToken],
+    )).rowCount === 1,
+    "...and the outstanding link is readable, so it can be found again",
+  );
+  {
+    const seen = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+      .merchants.find((x: any) => x.id === dfyOut.merchantId);
+    expect(seen.claim_token === claimToken, "the console can show the link it already sent");
+  }
+  // Minting again REPLACES it. The console warns before doing this; the point
+  // here is that the old link really does stop working, so the warning is true.
+  {
+    const second = await fetch(base + "/admin/api/merchant/" + dfyOut.merchantId + "/claim-link", {
+      method: "POST", headers: { cookie: cookieNow },
+    });
+    const two = JSON.parse(await second.text());
+    expect(two.replaced === true, "re-minting says it replaced a link that was out");
+    const secondToken = String(two.url).split("/claim/")[1]!;
+    expect((await get("/claim/" + claimToken)).status === 404, "...the link already sent is dead");
+    expect((await get("/claim/" + secondToken)).status === 200, "...and the new one opens");
+    // Put the original back so the rest of this block reads as written.
+    await fetch(base + "/admin/api/merchant/" + dfyOut.merchantId + "/claim-link", {
+      method: "DELETE", headers: { cookie: cookieNow },
+    });
+    expect(
+      (await getPool().query(
+        "SELECT claim_token FROM merchants WHERE id = $1", [dfyOut.merchantId],
+      )).rows[0].claim_token === null,
+      "a withdrawn link is not left legible in the database",
+    );
+  }
+  const remint = JSON.parse(await (await fetch(
+    base + "/admin/api/merchant/" + dfyOut.merchantId + "/claim-link",
+    { method: "POST", headers: { cookie: cookieNow } },
+  )).text());
+  claimToken = String(remint.url).split("/claim/")[1]!;
   expect(
     (await get("/admin/api/merchant/" + dfyOut.merchantId + "/claim-link", { headers: { cookie: cookieOutsider } })).status !== 200,
     "a non-admin can't mint a claim link",
@@ -997,12 +1040,18 @@ async function main() {
   const claimed = await finish(claimToken, "nasi@lemak.my");
   const claimOut = JSON.parse(await claimed.text());
   expect(claimed.status === 200 && claimOut.staffPin, "the claim creates the login and mints a staff PIN");
-  const claimCookie = claimed.headers.get("set-cookie")?.split(";")[0] ?? "";
+  let claimCookie = claimed.headers.get("set-cookie")?.split(";")[0] ?? "";
   expect(claimCookie.startsWith("stampy_session="), "...and signs them straight in");
   // Single use. A forwarded DM must not hand the shop over twice.
   expect((await finish(claimToken, "someone@else.my")).status === 400,
     "the same link cannot be used a second time");
   expect((await get("/claim/" + claimToken)).status === 404, "...and the page stops opening");
+  expect(
+    (await getPool().query(
+      "SELECT claim_token, claim_token_hash FROM merchants WHERE id = $1", [dfyOut.merchantId],
+    )).rows[0].claim_token === null,
+    "a spent link leaves no readable token behind",
+  );
 
   // They land on a dashboard that is already set up.
   const claimedOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: claimCookie } })).body);
@@ -1032,6 +1081,93 @@ async function main() {
     const pwOut = JSON.parse(await pwReset.text());
     expect(pwReset.status === 200 && String(pwOut.tempPassword || "").length > 8,
       "...and that owner_id is one the reset route accepts");
+  }
+
+  // --- Handing a shop to somebody else -------------------------------------
+  // The way back from a claim link that reached the wrong person. Nothing else
+  // in this codebase ever set owner_id back to NULL, so before this the only
+  // recourse was building a NEW shop — which mints a new card id, and a card id
+  // is printed on posters and baked into every Android card issued from it.
+  {
+    const before = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+      .merchants.find((x: any) => x.id === dfyOut.merchantId);
+    const exOwner = before.owner_id;
+    // Their staff phone is signed in and stamping right now.
+    const staffIn = await fetch(base + "/staff/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-card-id": dfyOut.cardId },
+      body: JSON.stringify({ pin: claimOut.staffPin }),
+    });
+    const staffCookie = staffIn.headers.get("set-cookie")?.split(";")[0] ?? "";
+    expect(staffIn.status === 200 && staffCookie.length > 0, "the wrong owner's counter is signed in");
+
+    expect(
+      (await fetch(base + "/admin/api/merchant/" + dfyOut.merchantId + "/unclaim", {
+        method: "POST", headers: { cookie: cookieOutsider },
+      })).status === 403,
+      "handing a shop on is admin-only",
+    );
+    const handed = await fetch(base + "/admin/api/merchant/" + dfyOut.merchantId + "/unclaim", {
+      method: "POST", headers: { cookie: cookieNow },
+    });
+    expect(handed.status === 200, "the shop is taken back off its owner");
+    // Doing it twice is a clean refusal, not a 500 and not a silent success.
+    expect(
+      (await fetch(base + "/admin/api/merchant/" + dfyOut.merchantId + "/unclaim", {
+        method: "POST", headers: { cookie: cookieNow },
+      })).status === 409,
+      "...and a shop nobody holds cannot be taken back again",
+    );
+
+    const after = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+      .merchants.find((x: any) => x.id === dfyOut.merchantId);
+    expect(after.stage === "unclaimed" && after.has_owner === false && after.owner_id === null,
+      `the shop reads as unclaimed again (${after.stage})`);
+    expect(after.card_ids.includes(dfyOut.cardId),
+      "...keeping the SAME card id, so posters and issued cards still point at it");
+    // History, not erasure: both dates stand, which is the answer to a dispute.
+    expect(Boolean(after.claimed_at) && Boolean(after.unclaimed_at),
+      "...and records that it was claimed and then handed back");
+
+    // Three doors, all of which stayed open before this existed.
+    const exDash = await get("/dashboard/api/overview", { headers: { cookie: claimCookie } });
+    expect(exDash.status !== 200 || JSON.parse(exDash.body).cards.length === 0,
+      "the ex-owner's dashboard holds no card");
+    // 404, not 401: deleting the owner_cards link means the card resolves to no
+    // owner at all, so the counter stops existing rather than merely refusing —
+    // exactly the state it was in before anybody claimed the shop.
+    expect(
+      (await fetch(base + "/staff/api/stamp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-card-id": dfyOut.cardId, cookie: staffCookie },
+        body: JSON.stringify({ code: "ABC123" }),
+      })).status === 404,
+      "...their counter stops resolving mid-shift",
+    );
+    expect(
+      (await getPool().query(
+        "SELECT 1 FROM owner_cards WHERE owner_id = $1 AND card_id = $2", [exOwner, dfyOut.cardId],
+      )).rowCount === 0,
+      "...and the card is not linked to them any more",
+    );
+    // The account survives owning nothing — a mis-click here must not delete
+    // somebody's login.
+    expect(
+      (await getPool().query("SELECT 1 FROM owners WHERE id = $1", [exOwner])).rowCount === 1,
+      "...but their account still exists, because this is not a delete",
+    );
+    // And the shop can be given to the right person, on the same card.
+    const reLink = JSON.parse(await (await fetch(
+      base + "/admin/api/merchant/" + dfyOut.merchantId + "/claim-link",
+      { method: "POST", headers: { cookie: cookieNow } },
+    )).text());
+    const reClaimed = await finish(String(reLink.url).split("/claim/")[1]!, "right@person.my");
+    expect(reClaimed.status === 200, "a fresh link hands the same shop to the right person");
+    const reCookie = reClaimed.headers.get("set-cookie")?.split(";")[0] ?? "";
+    const reOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: reCookie } })).body);
+    expect(reOv.cards.length === 1 && reOv.cards[0].id === dfyOut.cardId,
+      "...and they get the card we built, not a new one");
+    claimCookie = reCookie;
   }
 
   // A withdrawn link stops working before it is used.
@@ -1862,6 +1998,22 @@ async function main() {
   });
   expect(reg1.status === 201, "iOS registering a pass → 201 created");
   expect((await typeOf(wp.serial)).includes("pass_added"), "a real wallet add is logged as pass_added");
+
+  // A redesign has to reach iPhones, not just Android. An Apple pass is a
+  // downloaded file: patching the Google class updates Android in place, but
+  // nothing tells a phone to come back for new art unless we push. This is the
+  // query refreshCardArt pushes to — APNs itself is unconfigured here and
+  // returns not-configured without throwing (invariant 1), so the token lookup
+  // is the part worth pinning.
+  {
+    const { pushTokensForCard } = await import("../src/db.js");
+    const wpCard = (await getPool().query<{ card_id: string }>(
+      "SELECT card_id FROM passes WHERE serial = $1", [wp.serial],
+    )).rows[0]!.card_id;
+    const tokens = await pushTokensForCard(wpCard);
+    expect(tokens.includes("tok-1"),
+      `a design change finds every device holding the card (${tokens.length} registered)`);
+  }
 
   const reg2 = await fetch(base + regUrl("dev-http-2", wp.serial), {
     method: "POST", headers: { "Content-Type": "application/json", ...passAuth },

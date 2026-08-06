@@ -66,11 +66,11 @@ import {
   type CardRow,
   type OwnerRow,
 } from "../db.js";
-import { applyAndPush } from "../cardActions.js";
+import { applyAndPush, refreshCardArt } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
 import { config, setupStatus, signupOpen } from "../config.js";
 import { rgbToHex } from "../color.js";
-import { cardFieldsFromBody, designerCard } from "../cardView.js";
+import { cardFieldsFromBody, designerCard, touchesLook } from "../cardView.js";
 import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
 import { validateArtPng, validateLogoPng } from "../imageValidate.js";
@@ -376,13 +376,20 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
     const merchant = await merchantForOwner(req.owner!.id);
     if (merchant) await updateMerchant(merchant.id, { name: body.shopName.trim().slice(0, 60) });
   }
-  // Mirror branding/name changes into the Google-hosted card class (no-op
-  // result until Google credentials are configured).
-  void ensureClass(card).then((r) => {
-    if (!r.ok && r.reason !== "google-not-configured") {
-      console.error("[dashboard] google class sync failed:", r);
-    }
-  });
+  // This route takes BOTH saves the designer makes — the look and the rules —
+  // so what happens next depends on which one arrived. A look change is drawn
+  // on cards already in wallets, so every phone is told to come and refetch. A
+  // rules change is not: a pass carries the ruleset it was issued with, so
+  // waking anyone for it would be pure noise. touchesLook draws that line once,
+  // where it can be read, instead of at each call site.
+  if (touchesLook(fields, body)) void refreshCardArt(card);
+  else {
+    void ensureClass(card).then((r) => {
+      if (!r.ok && r.reason !== "google-not-configured") {
+        console.error("[dashboard] google class sync failed:", r);
+      }
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -409,14 +416,7 @@ dashboardRouter.post("/api/card/:id/logo", requireOwner, async (req: OwnerReques
   const reject = validateLogoPng(bytes);
   if (reject) return void res.status(400).json({ error: reject });
   await setCardLogo(cardId, bytes);
-  const card = await updateCard(cardId, {}); // fetch fresh row
-  if (card) {
-    void ensureClass(card).then((r) => {
-      if (!r.ok && r.reason !== "google-not-configured") {
-        console.error("[dashboard] google logo sync failed:", r);
-      }
-    });
-  }
+  await syncArt(cardId);
   res.json({ ok: true });
 });
 
@@ -426,7 +426,7 @@ dashboardRouter.delete("/api/card/:id/logo", requireOwner, async (req: OwnerRequ
     return void res.status(403).json({ error: "not-your-card" });
   }
   await deleteCardLogo(cardId);
-  await syncGoogle(cardId);
+  await syncArt(cardId);
   res.json({ ok: true });
 });
 
@@ -443,7 +443,7 @@ dashboardRouter.post("/api/card/:id/banner", requireOwner, async (req: OwnerRequ
   const reject = validateArtPng(bytes);
   if (reject) return void res.status(400).json({ error: reject });
   await setCardBanner(cardId, bytes);
-  await syncGoogle(cardId);
+  await syncArt(cardId);
   res.json({ ok: true });
 });
 
@@ -453,7 +453,7 @@ dashboardRouter.delete("/api/card/:id/banner", requireOwner, async (req: OwnerRe
     return void res.status(403).json({ error: "not-your-card" });
   }
   await deleteCardBanner(cardId);
-  await syncGoogle(cardId);
+  await syncArt(cardId);
   res.json({ ok: true });
 });
 
@@ -490,7 +490,7 @@ dashboardRouter.post("/api/card/:id/stamps", requireOwner, async (req: OwnerRequ
   }
   await setStampStrips(cardId, decoded);
   await updateCard(cardId, { stamp_style: (style ?? "").slice(0, 40) });
-  await syncGoogle(cardId); // refresh the Google hero image (version-stamped)
+  await syncArt(cardId); // refresh the Google hero image (version-stamped)
   res.json({ ok: true });
 });
 
@@ -501,7 +501,7 @@ dashboardRouter.delete("/api/card/:id/stamps", requireOwner, async (req: OwnerRe
   }
   await deleteStampStrips(cardId);
   await updateCard(cardId, { stamp_style: "" });
-  await syncGoogle(cardId);
+  await syncArt(cardId);
   res.json({ ok: true });
 });
 
@@ -772,15 +772,18 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   res.json({ ok: true, total: serials.length, sent, failed, skipped });
 });
 
-/** Re-sync a café's Google-hosted class after a branding/art change (graceful no-op unconfigured). */
-async function syncGoogle(cardId: string): Promise<void> {
+/**
+ * Re-sync a card's art to BOTH wallets after a branding change.
+ *
+ * Named syncGoogle when it only patched the Google class, which is what left an
+ * iPhone showing yesterday's colours until that customer's next stamp. Now it
+ * also wakes every Apple device holding the card; silently, since no field with
+ * a changeMessage moved. Graceful no-op on either platform when unconfigured.
+ */
+async function syncArt(cardId: string): Promise<void> {
   const card = await updateCard(cardId, {}); // fetch fresh row
   if (!card) return;
-  void ensureClass(card).then((r) => {
-    if (!r.ok && r.reason !== "google-not-configured") {
-      console.error("[dashboard] google class sync failed:", r);
-    }
-  });
+  void refreshCardArt(card);
 }
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
