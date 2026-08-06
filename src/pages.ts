@@ -73,6 +73,10 @@ const baseCss = /* css */ `
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
     padding: 28px 26px; box-shadow: var(--shadow); width: 100%; max-width: 440px;
   }
+  /* The shell is the page, so it is white and the boxes on it are what carry the
+     tint. Higher specificity than a bare .card on purpose: every page's own CSS
+     is declared after this one, and one of them kept turning the shell grey. */
+  body > .card { background: var(--bg); }
   h1 { font-family: var(--display); font-weight: 800; font-size: 1.75rem; letter-spacing: -.03em; margin-bottom: 10px; text-wrap: balance; }
   h2 { font-family: var(--display); font-weight: 800; font-size: 1.18rem; letter-spacing: -.02em; margin: 24px 0 8px; }
   p.sub { color: var(--muted); margin-bottom: 22px; }
@@ -102,7 +106,11 @@ const baseCss = /* css */ `
   input:focus, textarea:focus, select:focus { outline: 2px solid var(--ink); outline-offset: 1px; border-color: transparent; }
   :where(a, button, summary, [tabindex]):focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   :where(.onslab, .btn-dark, .btn-stamp):focus-visible { outline-color: var(--accent); }
-  label { font-size: .74rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  /* Uppercase with tracking is a good deal wider than sentence case at the same
+     size. At .74rem/.05em "Welcome stamps" plus its info dot no longer fitted a
+     three-across column and the dot dropped to a second line, so the size and
+     the tracking are set to what actually fits the narrowest column we use. */
+  label { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
           color: var(--muted); display: block; margin: 14px 0 6px; }
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -463,7 +471,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        "Stamps to reward" wraps to two lines instead of shoving the columns
        apart, and min-width:0 so flex actually lets them shrink. */
     .row3 > div { min-width: 0; }
-    .row3 label { font-size: .78rem; line-height: 1.25; }
+    .row3 label { font-size: .64rem; letter-spacing: .03em; line-height: 1.3; }
     /* --- live wallet-card preview --- */
     .pv { border-radius: 14px; padding: 16px; margin: 10px 0 4px; box-shadow: 0 4px 16px rgba(43,29,21,.18); }
     .pv-top { display: flex; align-items: center; gap: 10px; }
@@ -665,7 +673,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         <label style="margin-top:14px">Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2 row3">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
-          <div><label>Welcome stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
+          <div><label>Free stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
           <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers. Optional — leave at 0 to hide it.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
         </div>
 
@@ -2562,7 +2570,8 @@ export function termsPage(contactEmail = ""): string {
  */
 export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
   const css = /* css */ `
-    .pass { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
+    .pass { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+            padding: 14px; margin-top: 12px; }
     .pass .dots { font-size: 1.15rem; letter-spacing: 2px; margin: 6px 0; }
     .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .row .btn { padding: 16px 18px; font-size: 1.05rem; min-height: 54px; }
@@ -2974,7 +2983,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = ""): string {
                 display: block; letter-spacing: -.035em; font-variant-numeric: tabular-nums; color: var(--ink); }
     .metric span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
                    letter-spacing: .05em; color: var(--muted); }
-    .card { border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin-top: 14px; }
+    .card { border: 1px solid var(--line); border-radius: var(--r);
+            padding: 16px; margin-top: 14px; }
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
     ${DESIGN_PANEL_CSS}
     .account { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 20px; }
