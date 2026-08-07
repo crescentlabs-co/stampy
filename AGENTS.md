@@ -1,4 +1,4 @@
-# Stampy — rules for any AI model working on this repo
+# PunchMe — rules for any AI model working on this repo
 
 **The rules live in [CLAUDE.md](./CLAUDE.md). Read that file before changing
 anything.** This one is a pointer, not a second copy: it used to be a copy, it

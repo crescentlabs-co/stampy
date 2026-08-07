@@ -1,6 +1,6 @@
-# Stampy — rules for any AI model working on this repo
+# PunchMe — rules for any AI model working on this repo
 
-Stampy = loyalty stamp cards in Apple Wallet + Google Wallet, no customer app.
+PunchMe = loyalty stamp cards in Apple Wallet + Google Wallet, no customer app.
 Read README.md for the system overview and **DESIGN.md before touching any
 UI** — it holds the palette, the type and the rules, and there is exactly one of
 each. Do not invent a second palette. The founder is **non-technical**: give
@@ -152,6 +152,24 @@ target nobody holds any more. Never key card art by a number a card can change.
    compiles every inline `<script>` instead, so keep new pages listed there.
    **Never put a backtick in a comment inside those template strings** — it ends
    the literal. Run `pnpm typecheck` after editing src/pages.ts.
+13. **The product's NAME is `PRODUCT_NAME` in src/pages.ts and nowhere else.**
+   The product was called Stampy and is now **PunchMe**. Three lowercase
+   `stampy` strings survived that rename on purpose, and renaming any of them
+   breaks something no deploy can repair:
+   - **`stampy_session`, `stampy_cust_*`, `stampy_card_*`, `stampy_staff_*`**
+     (src/auth.ts) are cookie names sitting in people's browsers now. The
+     customer one lasts 400 days and is the only record that a browser already
+     holds a card — rename it and every customer is minted a duplicate.
+   - **`<issuer>.stampy-<cardId>`** (src/googleModel.ts) is the Google Wallet
+     class id, re-sent on every stamp. Rename it and every Android card ever
+     issued stops updating, forever, with no way to tell the phone.
+   - **`pass.com.stampy.*`** is Apple's Pass Type ID, registered with Apple and
+     baked into every issued .pkpass. It comes from `PASS_TYPE_ID` in Railway.
+
+   Same rule, different shape: **`BASE_URL` is baked into issued passes** —
+   Apple's `webServiceURL` and the art URLs inside every Android card. Changing
+   the domain does not migrate them. Point a new domain at the service and
+   **keep the old one resolving**, or every pass already in a wallet goes dark.
 
 ## The event log is the source of truth
 

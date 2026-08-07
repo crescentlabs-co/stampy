@@ -82,7 +82,7 @@ the customer installs nothing and hands over nothing.
 
 ## Brand Commitments
 
-- Name: **Stampy**.
+- Name: **PunchMe**.
 - Currency is RM and is not an owner-facing choice.
 - The privacy promise is a product commitment, not marketing copy: the card and
   the privacy page both state that no name, phone or email is collected.

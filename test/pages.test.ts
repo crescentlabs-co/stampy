@@ -240,7 +240,7 @@ describe("forgot-password offer matches what the deployment can do", () => {
 
   it("still explains what to do when no contact address is set", () => {
     const html = dashboardPage(false, "");
-    expect(html).toContain("message whoever set up your Stampy account");
+    expect(html).toContain("message whoever set up your PunchMe account");
     expect(html).not.toContain("mailto:");
   });
 
@@ -1033,5 +1033,62 @@ describe("palette maths", () => {
     expect(P.firstGrapheme("🍩🍪🍫")).toBe("🍩");
     expect(P.firstGrapheme("  ⭐  ")).toBe("⭐");
     expect(P.firstGrapheme("")).toBe("");
+  });
+});
+
+/**
+ * The rebrand from Stampy to PunchMe, and the three things it must never touch.
+ *
+ * A name is a label. Cookie names, the Google Wallet class id and Apple's Pass
+ * Type ID are IDENTIFIERS that happen to contain the old label, and each one is
+ * held by something outside this codebase — a browser, Google, an issued
+ * .pkpass. Renaming one is not a rename, it is an orphaning, and no deploy
+ * repairs it. So it is a test rather than a paragraph.
+ */
+describe("the rebrand renamed the label, not the identifiers", () => {
+  const surfaces = [
+    marketingPage(),
+    dashboardPage(true, "hello@punchme.test"),
+    adminPage(),
+    staffPage(true),
+    resetPage(),
+  ];
+
+  it("shows the new name and nowhere shows the old one", () => {
+    for (const html of surfaces) {
+      expect(html).toContain("PunchMe");
+      // Capital-S only: the lowercase identifiers are checked separately below,
+      // and they are supposed to still be there.
+      expect(/Stampy/.test(html), "an old brand string survived").toBe(false);
+    }
+  });
+
+  it("signs every dashboard tab, quietly, at the foot", () => {
+    const dash = dashboardPage(true, "");
+    expect(dash).toContain("Powered by PunchMe");
+    expect(dash).toContain(".pby { text-align: center");
+    // Appended after whatever the tab rendered, so Customers, Card and Shop
+    // each get it without three copies of the markup. The markup reaches the
+    // browser JSON-escaped, which is why this asserts the call and not the tag.
+    expect(dash).toContain('panel.insertAdjacentHTML("beforeend"');
+    expect(adminPage()).toContain("Powered by PunchMe");
+    // It is a footnote, not a header: the shop's own brand is the point.
+    expect(dash).not.toContain("<h1>PunchMe");
+  });
+
+  it("keeps the cookie names customers and staff are already carrying", async () => {
+    const auth = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("../src/auth.ts", import.meta.url), "utf8"),
+    );
+    for (const cookie of ["stampy_session", "stampy_cust_", "stampy_card_", "stampy_staff_"]) {
+      expect(auth.includes(cookie), `${cookie} was renamed — every holder is logged out`).toBe(true);
+    }
+  });
+
+  it("keeps the Google Wallet class id every Android card is bound to", async () => {
+    const model = await import("../src/googleModel.js");
+    // Re-sent on every stamp. Change the prefix and Google treats it as a new
+    // class, leaving every issued card pointed at one nothing updates.
+    expect(model.classId({ id: "abc123" })).toContain(".stampy-abc123");
   });
 });

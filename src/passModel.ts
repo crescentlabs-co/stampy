@@ -62,7 +62,7 @@ export function stampGrid(total: number): { rows: number; cols: number } {
 export function rewardTerms(business: string): string {
   return [
     "One stamp per visit.",
-    `${business} decides what earns a stamp and provides the reward — Stampy only runs the card.`,
+    `${business} decides what earns a stamp and provides the reward — PunchMe only runs the card.`,
     "Stamps may expire after 12 months without a visit.",
     `${business} may substitute a reward of similar value or end the programme at any time.`,
     "Stamps have no cash value and cannot be exchanged, sold or transferred.",

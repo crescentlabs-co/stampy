@@ -3,7 +3,7 @@
  * Add-to-Wallet landing/enroll/QR under /c/:cardId (the default café lives at
  * /c/default); the bare /enroll and /qr still target the default café.
  *
- *   GET /            Stampy marketing landing page
+ *   GET /            PunchMe marketing landing page
  *   GET /c/:cardId   Add-to-Wallet landing page for a café (default = /c/default)
  *   GET /enroll      issues a brand-new card and streams the signed .pkpass
  *   GET /qr          PNG QR code of the default café's Add-to-Wallet page

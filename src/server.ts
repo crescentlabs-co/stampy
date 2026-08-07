@@ -1,5 +1,5 @@
 /**
- * Stampy — digital loyalty stamp cards in Apple Wallet.
+ * PunchMe — digital loyalty stamp cards in Apple Wallet.
  * Boots with or without Apple secrets; /setup shows what's still missing.
  */
 import express from "express";
@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     console.warn("DATABASE_URL not set — running without a database (setup mode).");
   }
   app.listen(config.port, () => {
-    console.log(`Stampy listening on :${config.port}`);
+    console.log(`PunchMe listening on :${config.port}`);
     console.log("Setup status:", setupStatus());
   });
 }

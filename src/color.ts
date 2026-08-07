@@ -4,7 +4,7 @@
  * The DB stores café colours as "rgb(r, g, b)" because Apple's pass.json wants
  * that literal string. Google wants hex, and so do the dashboard's
  * <input type="color"> pickers — so both directions live here, tolerant of
- * junk input (bad values fall back to the Stampy brand brown rather than
+ * junk input (bad values fall back to the PunchMe brand brown rather than
  * crashing a card build or a save).
  */
 

@@ -1,4 +1,4 @@
-# Stampy ☕️
+# PunchMe ☕️
 
 Digital loyalty stamp cards that live in Apple Wallet **and Google Wallet** —
 no customer app. Staff stamp from a web page; the card updates on the
@@ -53,7 +53,7 @@ card in the recent list.
 
 ## Key URLs (once deployed)
 
-- `/` — Stampy marketing landing page (CTAs → `/dashboard`)
+- `/` — PunchMe marketing landing page (CTAs → `/dashboard`)
 - `/j/<merchant>` — **the join link to print**; survives a rename and a 2nd card
 - `/c/<cardId>` — one card's Add-to-Wallet page (permanent; never retire these)
 - `/qr` — printable counter QR (points at `/c/default`)

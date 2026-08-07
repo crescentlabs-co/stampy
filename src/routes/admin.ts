@@ -1,5 +1,5 @@
 /**
- * Platform-admin console — for the person who RUNS Stampy (not café owners).
+ * Platform-admin console — for the person who RUNS PunchMe (not café owners).
  * Gated by the owner session AND `owner.email` being in `config.adminEmails`
  * (ADMIN_EMAIL may list several, comma-separated). When ADMIN_EMAIL is unset the
  * whole console is closed (403).
@@ -391,7 +391,7 @@ adminRouter.post("/api/owner/:id/reset-password", requireAdmin, async (req, res)
   const owner = await getOwner(req.params.id!);
   if (!owner) return void res.status(404).json({ error: "no-such-owner" });
   // A readable temp password; the owner logs in and changes it in the dashboard.
-  const tempPassword = "Stampy-" + randomBytes(4).toString("hex");
+  const tempPassword = "PunchMe-" + randomBytes(4).toString("hex");
   await updateOwnerPassword(owner.id, hashPassword(tempPassword));
   res.json({ ok: true, email: owner.email, tempPassword });
 });

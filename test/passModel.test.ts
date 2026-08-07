@@ -196,7 +196,7 @@ describe("buildPassJson", () => {
     // code expires a stamp, so the card must not claim that it does.
     expect(back.terms.value).toContain("may expire");
     expect(back.terms.value).toContain("One stamp per visit");
-    expect(back.terms.value).toContain("Kopi Corner"); // the shop honours it, not Stampy
+    expect(back.terms.value).toContain("Kopi Corner"); // the shop honours it, not PunchMe
 
     expect(back.legal.value).toContain("https://stampy.example.test/terms");
     expect(back.legal.value).toContain("https://stampy.example.test/privacy");

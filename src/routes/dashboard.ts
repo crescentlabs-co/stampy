@@ -176,7 +176,7 @@ dashboardRouter.post("/api/signup", async (req, res) => {
   setSessionCookie(res, owner.id);
   // Best-effort welcome email (no-op until Resend is configured; never blocks).
   const dashUrl = (config.baseUrl || `${req.protocol}://${req.get("host")}`) + "/dashboard";
-  void sendEmail({ to: email, subject: "Welcome to Stampy", html: welcomeEmailHtml(dashUrl) });
+  void sendEmail({ to: email, subject: "Welcome to PunchMe", html: welcomeEmailHtml(dashUrl) });
   res.json({ ok: true });
 });
 
@@ -248,7 +248,7 @@ dashboardRouter.post("/api/forgot", async (req, res) => {
     const link = `${base}/dashboard/reset?token=${token}`;
     const r = await sendEmail({
       to: owner.email,
-      subject: "Reset your Stampy password",
+      subject: "Reset your PunchMe password",
       html: resetEmailHtml(link),
     });
     if (!r.ok && r.reason !== "email-not-configured") {

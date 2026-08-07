@@ -8,6 +8,36 @@ import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
 import { DEFAULT_CARD_ID, FUNNEL_SINCE, FUNNEL_SINCE_LABEL, TRIAL_DAYS } from "./db.js";
 
+/**
+ * What the product is called. Renaming lives here, once.
+ *
+ * **Three things that look like the name are NOT the name, and renaming them
+ * breaks something that cannot be repaired from this side:**
+ *
+ *   - `stampy_session`, `stampy_cust_*`, `stampy_card_*`, `stampy_staff_*`
+ *     (src/auth.ts) are COOKIE NAMES sitting in people's browsers right now.
+ *     The customer one lasts 400 days and is the only thing that says "this
+ *     browser already has a card" — rename it and every customer is minted a
+ *     duplicate card on their next visit.
+ *   - `<issuer>.stampy-<cardId>` (src/googleModel.ts) is the Google Wallet
+ *     class id, re-sent on every stamp. Rename it and every Android card ever
+ *     issued stops updating, permanently, with no way to tell the phone.
+ *   - `pass.com.stampy.*` is the Apple Pass Type ID, registered with Apple and
+ *     baked into every issued .pkpass. It comes from PASS_TYPE_ID in Railway
+ *     and is Apple's to change, not ours.
+ *
+ * A name is a label; those three are identifiers that happen to contain it.
+ */
+export const PRODUCT_NAME = "PunchMe";
+
+/**
+ * The footer that carries the name inside an owner's dashboard and the console.
+ * One line, centred, at the bottom of whichever tab you are on — the merchant's
+ * own brand is what a dashboard should feel like, so ours signs it rather than
+ * heading it.
+ */
+export const POWERED_BY = `<p class="pby">Powered by ${PRODUCT_NAME}</p>`;
+
 const baseCss = /* css */ `
   /* Font face is declared INLINE (not a separate cacheable stylesheet) so a
      content change is never served stale behind an immutable cache. The woff2
@@ -122,6 +152,11 @@ const baseCss = /* css */ `
      the tracking are set to what actually fits the narrowest column we use. */
   label { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
           color: var(--muted); display: block; margin: 14px 0 6px; }
+  /* The one place our own name appears inside a merchant's dashboard, and the
+     quietest thing on the page on purpose: what they are looking at is their
+     shop, and we are the footnote under it. Same treatment on the console. */
+  .pby { text-align: center; color: var(--muted); font-size: .72rem; letter-spacing: .04em;
+         margin: 38px 0 2px; }
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 999px;
@@ -2620,11 +2655,11 @@ function langToggle(current: "en" | "bm"): string {
 
 export function privacyPage(contactEmail = ""): string {
   const body = `<article class="legal">
-    <a class="back" href="/">&larr; Back to Stampy</a>
+    <a class="back" href="/">&larr; Back to PunchMe</a>
     <h1>Privacy Policy</h1>
     <p class="upd">Last updated ${UPDATED}</p>
     ${langToggle("en")}
-    <p>Stampy provides digital loyalty stamp cards that live in Apple Wallet and Google Wallet. This policy explains what we collect and why, in plain language. It is written to meet Malaysia&rsquo;s Personal Data Protection Act 2010 (PDPA).</p>
+    <p>PunchMe provides digital loyalty stamp cards that live in Apple Wallet and Google Wallet. This policy explains what we collect and why, in plain language. It is written to meet Malaysia&rsquo;s Personal Data Protection Act 2010 (PDPA).</p>
 
     <h2>The short version, for customers</h2>
     <p>We never ask you for your name, phone number or email address, and there is no account to create. Your loyalty card is a card in your phone&rsquo;s wallet — nothing more. <strong>If you want to stop, delete the card from your wallet.</strong> That is the whole opt-out: no form, no email, nothing to cancel.</p>
@@ -2655,7 +2690,7 @@ export function privacyPage(contactEmail = ""): string {
     <p>We do <strong>not</strong> sell your data, we do <strong>not</strong> use it for advertising, and we do <strong>not</strong> combine what one café knows about you with any other café.</p>
 
     <h2>Who is responsible for your data</h2>
-    <p>The café whose card you hold decides how your loyalty data is used — under the PDPA they are the data user. Stampy runs the system on their behalf as their data processor. <strong>A café can see only its own cards, stamps and messages</strong>, never another café&rsquo;s and never anything about you beyond what is listed above.</p>
+    <p>The café whose card you hold decides how your loyalty data is used — under the PDPA they are the data user. PunchMe runs the system on their behalf as their data processor. <strong>A café can see only its own cards, stamps and messages</strong>, never another café&rsquo;s and never anything about you beyond what is listed above.</p>
 
     <h2>Who else receives it</h2>
     <ul>
@@ -2679,9 +2714,9 @@ export function privacyPage(contactEmail = ""): string {
     <h2>Changes</h2>
     <p>We may update this policy as the product grows. We&rsquo;ll change the date above when we do.</p>
 
-    <div class="note">Stampy is in beta. This policy is a plain-language starting point, not legal advice — please have it reviewed by a professional before relying on it at scale.</div>
+    <div class="note">PunchMe is in beta. This policy is a plain-language starting point, not legal advice — please have it reviewed by a professional before relying on it at scale.</div>
   </article>`;
-  return page("Stampy — Privacy Policy", body, legalCss);
+  return page("PunchMe — Privacy Policy", body, legalCss);
 }
 
 /**
@@ -2694,11 +2729,11 @@ export function privacyPageBm(contactEmail = ""): string {
     ? `e-mel kami di <a href="mailto:${contactEmail}">${contactEmail}</a>`
     : `hubungi kami melalui akaun yang anda daftar di <a href="/dashboard">papan pemuka</a> anda`;
   const body = `<article class="legal">
-    <a class="back" href="/">&larr; Kembali ke Stampy</a>
+    <a class="back" href="/">&larr; Kembali ke PunchMe</a>
     <h1>Dasar Privasi</h1>
     <p class="upd">Dikemas kini ${UPDATED}</p>
     ${langToggle("bm")}
-    <p>Stampy menyediakan kad setia digital yang disimpan di dalam Apple Wallet dan Google Wallet. Dasar ini menerangkan apa yang kami kumpul dan sebabnya, dalam bahasa yang mudah. Ia ditulis untuk memenuhi Akta Perlindungan Data Peribadi 2010 (PDPA) Malaysia.</p>
+    <p>PunchMe menyediakan kad setia digital yang disimpan di dalam Apple Wallet dan Google Wallet. Dasar ini menerangkan apa yang kami kumpul dan sebabnya, dalam bahasa yang mudah. Ia ditulis untuk memenuhi Akta Perlindungan Data Peribadi 2010 (PDPA) Malaysia.</p>
 
     <h2>Ringkasnya, untuk pelanggan</h2>
     <p>Kami tidak pernah meminta nama, nombor telefon atau alamat e-mel anda, dan tiada akaun yang perlu dibuka. Kad setia anda hanyalah sekeping kad di dalam dompet telefon anda. <strong>Jika anda mahu berhenti, padamkan kad itu daripada dompet anda.</strong> Itu sahaja caranya: tiada borang, tiada e-mel, tiada apa-apa untuk dibatalkan.</p>
@@ -2729,7 +2764,7 @@ export function privacyPageBm(contactEmail = ""): string {
     <p>Kami <strong>tidak</strong> menjual data anda, <strong>tidak</strong> menggunakannya untuk pengiklanan, dan <strong>tidak</strong> menggabungkan apa yang diketahui oleh satu kafe tentang anda dengan mana-mana kafe lain.</p>
 
     <h2>Siapa yang bertanggungjawab ke atas data anda</h2>
-    <p>Kafe yang kadnya anda pegang menentukan bagaimana data setia anda digunakan — di bawah PDPA merekalah pengguna data. Stampy mengendalikan sistem bagi pihak mereka sebagai pemproses data. <strong>Sesebuah kafe hanya dapat melihat kad, setem dan mesejnya sendiri</strong>, tidak sekali-kali milik kafe lain dan tidak apa-apa tentang anda selain yang disenaraikan di atas.</p>
+    <p>Kafe yang kadnya anda pegang menentukan bagaimana data setia anda digunakan — di bawah PDPA merekalah pengguna data. PunchMe mengendalikan sistem bagi pihak mereka sebagai pemproses data. <strong>Sesebuah kafe hanya dapat melihat kad, setem dan mesejnya sendiri</strong>, tidak sekali-kali milik kafe lain dan tidak apa-apa tentang anda selain yang disenaraikan di atas.</p>
 
     <h2>Siapa lagi yang menerimanya</h2>
     <ul>
@@ -2753,20 +2788,20 @@ export function privacyPageBm(contactEmail = ""): string {
     <h2>Perubahan</h2>
     <p>Kami mungkin mengemas kini dasar ini apabila produk berkembang. Kami akan menukar tarikh di atas apabila berbuat demikian.</p>
 
-    <div class="note">Stampy masih dalam beta. Dasar ini ialah titik permulaan dalam bahasa mudah, bukan nasihat guaman — sila minta seorang profesional menyemaknya sebelum bergantung padanya secara meluas.</div>
+    <div class="note">PunchMe masih dalam beta. Dasar ini ialah titik permulaan dalam bahasa mudah, bukan nasihat guaman — sila minta seorang profesional menyemaknya sebelum bergantung padanya secara meluas.</div>
   </article>`;
-  return page("Stampy — Dasar Privasi", body, legalCss);
+  return page("PunchMe — Dasar Privasi", body, legalCss);
 }
 
 export function termsPage(contactEmail = ""): string {
   const body = `<article class="legal">
-    <a class="back" href="/">&larr; Back to Stampy</a>
+    <a class="back" href="/">&larr; Back to PunchMe</a>
     <h1>Terms of Service</h1>
     <p class="upd">Last updated ${UPDATED}</p>
-    <p>These terms cover your use of Stampy. By creating an account you agree to them.</p>
+    <p>These terms cover your use of PunchMe. By creating an account you agree to them.</p>
 
     <h2>Beta service</h2>
-    <p>Stampy is currently in beta and free to use. It&rsquo;s provided &ldquo;as is,&rdquo; without warranties of uptime or availability, while we finish building and testing. Features may change or pause during this period.</p>
+    <p>PunchMe is currently in beta and free to use. It&rsquo;s provided &ldquo;as is,&rdquo; without warranties of uptime or availability, while we finish building and testing. Features may change or pause during this period.</p>
 
     <h2>Your account</h2>
     <ul>
@@ -2776,13 +2811,13 @@ export function termsPage(contactEmail = ""): string {
 
     <h2>Acceptable use</h2>
     <ul>
-      <li>Use Stampy only for a genuine loyalty program for your own café.</li>
+      <li>Use PunchMe only for a genuine loyalty program for your own café.</li>
       <li>Don&rsquo;t misuse customer notifications to spam or mislead people.</li>
       <li>Follow the laws that apply to you, including consumer and data-protection law.</li>
     </ul>
 
     <h2>Your customers, your relationship</h2>
-    <p>The customers who join your card are yours. Stampy processes their card data on your behalf to run the program; we don&rsquo;t market to them or take them elsewhere.</p>
+    <p>The customers who join your card are yours. PunchMe processes their card data on your behalf to run the program; we don&rsquo;t market to them or take them elsewhere.</p>
 
     <h2>Reward terms</h2>
     <p>These are the terms shown on the back of every card, and they apply between you and your customer. You run the programme; we run the software.</p>
@@ -2790,12 +2825,12 @@ export function termsPage(contactEmail = ""): string {
       <li>One stamp per visit. You decide what earns a stamp.</li>
       <li>Stamps may expire after 12 months without a visit.</li>
       <li>You may substitute a reward of similar value, or withdraw the programme, at any time.</li>
-      <li>The reward is yours to honour, not Stampy&rsquo;s. Stamps have no cash value and cannot be exchanged, sold or transferred between customers.</li>
+      <li>The reward is yours to honour, not PunchMe&rsquo;s. Stamps have no cash value and cannot be exchanged, sold or transferred between customers.</li>
       <li>Stamps added by mistake can be reversed by your staff, and the correction is recorded.</li>
     </ul>
 
     <h2>Data protection</h2>
-    <p>Under Malaysia&rsquo;s Personal Data Protection Act, <strong>you are the data user</strong> for your customers&rsquo; loyalty data and <strong>Stampy is your data processor</strong>. This section is the written agreement the Act asks for between the two. We undertake to:</p>
+    <p>Under Malaysia&rsquo;s Personal Data Protection Act, <strong>you are the data user</strong> for your customers&rsquo; loyalty data and <strong>PunchMe is your data processor</strong>. This section is the written agreement the Act asks for between the two. We undertake to:</p>
     <ul>
       <li>Process customer data only to run your loyalty programme, on your instructions, and never for our own purposes.</li>
       <li>Never sell it, use it for advertising, market to your customers, or combine one café&rsquo;s data with another&rsquo;s.</li>
@@ -2808,17 +2843,17 @@ export function termsPage(contactEmail = ""): string {
     <p>In return, you agree to display or link the <a href="/privacy">Privacy Policy</a> where you invite customers to join — the join page and posters we generate already do this — and not to enter personal data about a customer (a name, phone number or anything similar) into a card message, since those fields are not built to hold it.</p>
 
     <h2>Liability</h2>
-    <p>To the extent permitted by law, Stampy isn&rsquo;t liable for indirect or consequential losses arising from use of a beta service. Nothing here limits rights that can&rsquo;t be limited under Malaysian law.</p>
+    <p>To the extent permitted by law, PunchMe isn&rsquo;t liable for indirect or consequential losses arising from use of a beta service. Nothing here limits rights that can&rsquo;t be limited under Malaysian law.</p>
 
     <h2>Ending it</h2>
-    <p>You can stop using Stampy and ask us to delete your account at any time. We may suspend accounts that break these terms.</p>
+    <p>You can stop using PunchMe and ask us to delete your account at any time. We may suspend accounts that break these terms.</p>
 
     <h2>Contact</h2>
     <p>Questions about these terms? ${contactLine(contactEmail)}.</p>
 
-    <div class="note">Stampy is in beta. These terms are a plain-language starting point, not legal advice — please have them reviewed by a professional before relying on them at scale.</div>
+    <div class="note">PunchMe is in beta. These terms are a plain-language starting point, not legal advice — please have them reviewed by a professional before relying on them at scale.</div>
   </article>`;
-  return page("Stampy — Terms of Service", body, legalCss);
+  return page("PunchMe — Terms of Service", body, legalCss);
 }
 
 // ---------------------------------------------------------------- staff ----
@@ -3206,7 +3241,7 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
        <script src="/staff/jsqr.js"></script>`
     : "";
   return page(
-    "Stampy — Staff",
+    "PunchMe — Staff",
     `<div class="card" id="app"></div>
      ${scanner}
      <div class="toast"></div>
@@ -3232,7 +3267,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     : `<p class="muted" style="margin:0">Password resets by email aren’t set up yet — ${
         contact
           ? `<a href="mailto:${contact}">email us at ${contact}</a>`
-          : "message whoever set up your Stampy account"
+          : "message whoever set up your PunchMe account"
       } and we’ll set a new password for you.</p>`;
   const css = /* css */ `
     .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
@@ -3912,8 +3947,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">' +
           esc(S.email) + "</p></div>" +
           '<p class="muted">This account does not have a shop. If that is a surprise, ' +
-          "message whoever set your Stampy up — they can hand it back.</p>" +
-          '<button class="btn btn-ghost" style="margin-top:16px;width:auto;padding:10px 16px" data-out>Log out</button>';
+          "message whoever set your PunchMe up — they can hand it back.</p>" +
+          '<button class="btn btn-ghost" style="margin-top:16px;width:auto;padding:10px 16px" data-out>Log out</button>' +
+          ${JSON.stringify(POWERED_BY)};
         $("[data-out]").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
         return;
       }
@@ -3955,6 +3991,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         panel.appendChild(customersPanel());
       }
       wireInfo(panel);
+      // Every tab, at the foot of whatever it rendered — Customers, Card and
+      // Shop each get it, because each is a whole screen to the owner.
+      panel.insertAdjacentHTML("beforeend", ${JSON.stringify(POWERED_BY)});
     }
 
     (async () => {
@@ -3964,7 +4003,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     })();
   `;
   return page(
-    "Stampy — Dashboard",
+    "PunchMe — Dashboard",
     `<div class="card" id="app"><p class="sub">Loading…</p></div><div class="toast"></div>`,
     css,
     js,
@@ -3972,9 +4011,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 }
 
 // --------------------------------------------------------------- poster ----
-
-/** What the poster says it is powered by. Renaming lives here, once. */
-const PRODUCT_NAME = "PunchMe";
 
 /**
  * The owner's own printable sign-up poster, in their card's colours.
@@ -4778,7 +4814,8 @@ export function adminPage(): string {
               <div id="dfy-claim"><div class="dsempty">The claim link appears once there is a shop to hand over.</div></div>
             </li>
           </ol>
-        </div>\`;
+        </div>
+        ${POWERED_BY}\`;
 
       // ---- panes ------------------------------------------------------------
       $("#atabs").querySelectorAll("button").forEach((b) => {
@@ -5062,7 +5099,7 @@ export function adminPage(): string {
     load();
   `;
   return page(
-    "Stampy — Admin",
+    "PunchMe — Admin",
     `<div class="card awrap" id="app"><p class="sub">Loading…</p></div><div class="toast"></div>`,
     css,
     js,
@@ -5078,7 +5115,7 @@ export function setupPage(s: SetupStatus, baseUrl: string): string {
        ${ok ? "" : `<div class="muted" style="margin-left:28px">${hint}</div>`}
      </li>`;
   return page(
-    "Stampy — Setup status",
+    "PunchMe — Setup status",
     `<div class="card">
       <h1>Setup status</h1>
       <p class="sub">Green across the board = ready to demo.</p>
@@ -5122,7 +5159,7 @@ export function resetPage(): string {
     } else {
       $("#app").innerHTML = \`
         <h1>Set a new password</h1>
-        <p class="sub">Choose a new password for your Stampy account.</p>
+        <p class="sub">Choose a new password for your PunchMe account.</p>
         <label>New password (min 8 characters)</label>
         <input id="pw" type="password" autocomplete="new-password">
         <label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);margin-top:6px"><input id="eye" type="checkbox" style="width:auto"> Show password</label>
@@ -5139,7 +5176,7 @@ export function resetPage(): string {
     }
   `;
   return page(
-    "Stampy — Reset password",
+    "PunchMe — Reset password",
     `<div class="card" id="app"><p class="sub">Loading…</p></div><div class="toast"></div>`,
     "",
     js,
