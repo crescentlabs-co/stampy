@@ -9,14 +9,22 @@ import { describe, expect, it } from "vitest";
 import { FLAG_GUIDE } from "../src/health.js";
 import {
   adminPage,
+  cardPickerPage,
+  claimPage,
+  counterSheetPage,
   dashboardPage,
   landingPage,
   marketingPage,
   MODAL_JS,
+  notReadyPage,
   PALETTE_JS,
   posterPage,
+  privacyPage,
+  privacyPageBm,
   resetPage,
+  shopNotOpenPage,
   staffPage,
+  termsPage,
 } from "../src/pages.js";
 
 /** Every <script>…</script> body in a page (skipping src-only tags). */
@@ -1063,17 +1071,59 @@ describe("the rebrand renamed the label, not the identifiers", () => {
     }
   });
 
-  it("signs every dashboard tab, quietly, at the foot", () => {
-    const dash = dashboardPage(true, "");
-    expect(dash).toContain("Powered by PunchMe");
-    expect(dash).toContain(".pby { text-align: center");
-    // Appended after whatever the tab rendered, so Customers, Card and Shop
-    // each get it without three copies of the markup. The markup reaches the
-    // browser JSON-escaped, which is why this asserts the call and not the tag.
-    expect(dash).toContain('panel.insertAdjacentHTML("beforeend"');
-    expect(adminPage()).toContain("Powered by PunchMe");
-    // It is a footnote, not a header: the shop's own brand is the point.
-    expect(dash).not.toContain("<h1>PunchMe");
+  /**
+   * The footer belongs to the page SHELL, not to pages.
+   *
+   * The first pass at this signed the dashboard tabs and the console by hand
+   * and silently missed seven others — the customer sign-up page, the login
+   * form, the claim page, the stamper, the counter sheet, setup and reset. A
+   * per-page footer is a thing every future page has to remember; a shell
+   * footer is a thing a future page has to deliberately turn off.
+   */
+  it("signs every page it serves, from the shell", () => {
+    const seen = (html: string) =>
+      html
+        .replace(/<head>[\s\S]*?<\/head>/i, "")
+        .replace(/<style>[\s\S]*?<\/style>/gi, "")
+        .replace(/<script>[\s\S]*?<\/script>/gi, "");
+    // EVERY page, not the subset that happens to carry an inline script — the
+    // ones missed the first time were mostly the script-less ones.
+    // POSTER_CARD has no `name` — the poster takes the business separately —
+    // and the pages below print the card's own name, so they get a whole one.
+    const named = { ...POSTER_CARD, name: "Kopi Corner" } as never;
+    const everything: [string, string][] = [
+      ["sign-up /c/:id", landingPage(named, true, true, "default")],
+      ["card picker /j/:ref", cardPickerPage({ name: "Kopi Corner" }, [
+        { id: "a", name: "Coffee", reward: "Free coffee", stamps_target: 10 },
+      ])],
+      ["not ready", notReadyPage()],
+      ["shop not open yet", shopNotOpenPage("Kopi Corner", 0, "default")],
+      ["claim (hand-over)", claimPage("tok", "Kopi Corner", named, 0)],
+      ["privacy", privacyPage("hi@x.com")],
+      ["privacy (BM)", privacyPageBm("hi@x.com")],
+      ["terms", termsPage("hi@x.com")],
+      ["staff signed out", staffPage(false)],
+      ["staff signed in", staffPage(true)],
+      ["login + dashboard", dashboardPage(true, "hi@x.com")],
+      ["counter sheet", counterSheetPage(named, "Kopi Corner")],
+      ["admin console", adminPage()],
+      ["reset password", resetPage()],
+    ];
+    for (const [name, html] of everything) {
+      expect(seen(html), `${name} carries no Powered by line`).toContain("Powered by PunchMe");
+    }
+    expect(dashboardPage(true, "").includes(".pby { text-align: center")).toBe(true);
+    // A footnote, not a masthead: what an owner is looking at is their shop.
+    expect(dashboardPage(true, "")).not.toContain("<h1>PunchMe");
+  });
+
+  it("keeps it out of the two pages that carry their own", () => {
+    // Both opt out explicitly. The poster's own footer is INSIDE the printed
+    // area, which is the only place it would survive onto paper.
+    expect(marketingPage().match(/Powered by PunchMe/g)).toBeNull();
+    const poster = posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 0);
+    expect(poster.match(/Powered by PunchMe/g)!.length).toBe(1);
+    expect(poster).toContain('class="pfoot"');
   });
 
   it("keeps the cookie names customers and staff are already carrying", async () => {

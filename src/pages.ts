@@ -1614,8 +1614,20 @@ export const MODAL_CSS = /* css */ `
  * page someone adds. It had been forgotten already: a shop named
  * `</title><script>…` reached the title of a page every one of their customers
  * loads.
+ *
+ * `brand` puts the Powered by line at the foot, and defaults to ON for exactly
+ * the same reason the escape lives here: the first pass at this signed the
+ * dashboard tabs and the console and missed the sign-up page, the login form,
+ * the claim page, the stamper and four others. Opt OUT by name — a page with no
+ * footer should be a decision someone made, not one they forgot.
  */
-function page(title: string, body: string, extraCss = "", script = ""): string {
+function page(
+  title: string,
+  body: string,
+  extraCss = "",
+  script = "",
+  brand = true,
+): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -1624,7 +1636,7 @@ function page(title: string, body: string, extraCss = "", script = ""): string {
 <title>${esc(title)}</title>
 <style>${baseCss}${extraCss}</style>
 </head>
-<body>${body}${script ? `<script>${script}</script>` : ""}</body>
+<body>${body}${brand ? POWERED_BY : ""}${script ? `<script>${script}</script>` : ""}</body>
 </html>`;
 }
 
@@ -2615,7 +2627,8 @@ export function marketingPage(): string {
         </nav>
       </div></div>
     </main>`;
-  return page("PunchMe — the stamp card that lives in your customer's phone", body, css, script);
+  // No footer: this page IS the brand, and it signs off in its own footer.
+  return page("PunchMe — the stamp card that lives in your customer's phone", body, css, script, false);
 }
 
 // -------------------------------------------------------------- legal ----
@@ -3948,8 +3961,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           esc(S.email) + "</p></div>" +
           '<p class="muted">This account does not have a shop. If that is a surprise, ' +
           "message whoever set your PunchMe up — they can hand it back.</p>" +
-          '<button class="btn btn-ghost" style="margin-top:16px;width:auto;padding:10px 16px" data-out>Log out</button>' +
-          ${JSON.stringify(POWERED_BY)};
+          '<button class="btn btn-ghost" style="margin-top:16px;width:auto;padding:10px 16px" data-out>Log out</button>';
         $("[data-out]").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
         return;
       }
@@ -3991,9 +4003,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         panel.appendChild(customersPanel());
       }
       wireInfo(panel);
-      // Every tab, at the foot of whatever it rendered — Customers, Card and
-      // Shop each get it, because each is a whole screen to the owner.
-      panel.insertAdjacentHTML("beforeend", ${JSON.stringify(POWERED_BY)});
     }
 
     (async () => {
@@ -4095,7 +4104,9 @@ export function posterPage(
     <div class="noprint">
       <button class="btn btn-dark" onclick="window.print()">Print this poster</button>
     </div>`;
-  return page(`${business} — sign-up poster`, body, css);
+  // No shell footer: the poster carries its own, inside the printed area, where
+  // it will actually appear on paper.
+  return page(`${business} — sign-up poster`, body, css, "", false);
 }
 
 // ---------------------------------------------------------------- admin ----
@@ -4814,8 +4825,7 @@ export function adminPage(): string {
               <div id="dfy-claim"><div class="dsempty">The claim link appears once there is a shop to hand over.</div></div>
             </li>
           </ol>
-        </div>
-        ${POWERED_BY}\`;
+        </div>\`;
 
       // ---- panes ------------------------------------------------------------
       $("#atabs").querySelectorAll("button").forEach((b) => {
