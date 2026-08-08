@@ -217,11 +217,29 @@ export const PALETTE_JS = /* js */ `
     var c = toRgb(hex), t = amount > 0 ? 255 : 0, k = Math.abs(amount);
     return toHex(c[0] + (t - c[0]) * k, c[1] + (t - c[1]) * k, c[2] + (t - c[2]) * k);
   }
-  /** Away from a surface, so the two never read as the same colour. */
+  /**
+   * Away from a surface, so the two never read as the same colour.
+   *
+   * The direction cannot be read off the surface alone. Black on a dark card has
+   * nowhere to go DOWN, and stepping up drags it THROUGH the card colour on the
+   * way — losing contrast before it gains any. That is how a black stamp came
+   * out mid-grey: the old rule picked "toward white" from the surface, then took
+   * six steps of it. So try both ways and keep whichever clears the bar in the
+   * fewest steps, or if neither can, whichever gets furthest.
+   */
   function separate(hex, from, minRatio) {
-    var out = hex, step = relLuminance(from) > 0.4 ? -0.12 : 0.12;
-    for (var i = 0; i < 6 && contrastRatio(out, from) < minRatio; i++) out = shiftColor(out, step);
-    return out;
+    if (contrastRatio(hex, from) >= minRatio) return hex;
+    var best = null;
+    for (var d = 0; d < 2; d++) {
+      var out = hex, n = 0;
+      while (n < 6 && contrastRatio(out, from) < minRatio) { out = shiftColor(out, d ? 0.12 : -0.12); n++; }
+      var ratio = contrastRatio(out, from);
+      var cand = { hex: out, ok: ratio >= minRatio, n: n, ratio: ratio };
+      var better = !best || (cand.ok && !best.ok) ||
+        (cand.ok === best.ok && (cand.ok ? cand.n < best.n : cand.ratio > best.ratio));
+      if (better) best = cand;
+    }
+    return best.hex;
   }
 
   /**
@@ -280,7 +298,13 @@ export const PALETTE_JS = /* js */ `
     // leave the stamps visible on top of it.
     var second = list.length > 1 ? list[1].hex : shiftColor(bg, 0.18);
     var band = separate(second, bg, 1.35);
-    accent = separate(accent, band, 2.2);
+    // Measured against the CARD, not the band. The stamps do sit on the band,
+    // but the band is a near neighbour of the card by construction (1.35 above),
+    // so holding stamps 2.2:1 off the band was really holding them off the card
+    // twice over — and it put a floor under how dark a stamp could be. A shop
+    // that wants black stamps on a dark card can have them now; only a stamp
+    // that would vanish into the card itself still gets moved.
+    accent = separate(accent, bg, 1.6);
 
     var label = separate(list.length > 2 ? list[2].hex : accent, bg, 2.6);
     return { bg: bg, band: band, accent: accent, label: label, fg: pickTextColor(bg) };
@@ -1171,6 +1195,66 @@ export const DESIGN_PANEL_JS = /* js */ `
         out.getContext("2d").drawImage(cv, x0, y0, tw, th, 0, 0, tw, th);
         return out;
       }
+      // The logo as it stands, for the legibility check below. Seeded from the
+      // hosted copy so the check still works on a page that was reloaded rather
+      // than freshly uploaded to; that URL is same-origin, so reading its pixels
+      // back off a canvas is allowed.
+      let lastLogoUrl = c.logoVersion ? env.artUrl("logo", c.logoVersion) : "";
+
+      /**
+       * The average colour of what is actually DRAWN, alpha-weighted — so the
+       * transparent margin liftBackdrop just created counts for nothing, and a
+       * mark that is 90% empty space still reports its ink rather than a wash.
+       */
+      function artworkColor(img) {
+        const cv = document.createElement("canvas");
+        const w = cv.width = Math.max(1, Math.min(64, img.naturalWidth || img.width));
+        const h = cv.height = Math.max(1, Math.min(64, img.naturalHeight || img.height));
+        const cx = cv.getContext("2d", { willReadFrequently: true });
+        cx.drawImage(img, 0, 0, w, h);
+        const d = cx.getImageData(0, 0, w, h).data;
+        let r = 0, g = 0, b = 0, a = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const k = d[i + 3] / 255;
+          r += d[i] * k; g += d[i + 1] * k; b += d[i + 2] * k; a += k;
+        }
+        return a < 1 ? null : toHex(r / a, g / a, b / a);
+      }
+
+      /**
+       * Taking the white plate off a logo is right on a coloured card — it is
+       * what stops the mark looking like a sticker. It is wrong in exactly one
+       * case: when the artwork under the plate is as dark as the card, and that
+       * plate was the only thing making it visible. Stripping it then hands back
+       * an invisible logo and no explanation.
+       *
+       * So move the card rather than the logo. The owner chose a colour, not a
+       * contrast ratio, and the nearest shade that shows their mark is much
+       * closer to what they asked for than a blank card is.
+       */
+      async function ensureLogoReadable(dataUrl) {
+        const img = await new Promise((res) => {
+          const i = new Image();
+          i.onload = () => res(i); i.onerror = () => res(null); i.src = dataUrl;
+        });
+        if (!img) return;
+        const ink = artworkColor(img);
+        if (!ink) return;
+        const bg = f("bg").value;
+        if (contrastRatio(ink, bg) >= 2) return;
+        // Away from the ink, on the side the card is already on.
+        const up = relLuminance(bg) >= relLuminance(ink);
+        let out = bg;
+        for (let i = 0; i < 8 && contrastRatio(ink, out) < 2; i++) out = shiftColor(out, up ? 0.1 : -0.1);
+        if (out === bg || contrastRatio(ink, out) < 2) return; // nothing gained; leave it alone
+        f("bg").value = out;
+        f("fg").value = pickTextColor(out);
+        renderPreview(); drawTextureRow(); drawRoles();
+        await save({ bg: out, fg: f("fg").value }, "Card colour");
+        toast("That logo was almost invisible on your card colour, so the card was made "
+          + (up ? "lighter" : "darker") + " to suit. Change it below if you'd rather.");
+      }
+
       // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
       // fit "contain" letterboxes the whole image in; "cover" (the default) fills
       // the frame and crops the overflow. A logo MUST contain — cropping a
@@ -1234,7 +1318,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").style.display = "";
+        lastLogoUrl = url;
         readPalette(url); // the logo is where the colours come from
+        // After the plate is gone, not before: the check is about what is left.
+        void ensureLogoReadable(url);
       }, "keep");
       // Removing the logo hides it here too, because the pass drops the image
       // entirely with no upload and shows the shop name alone — the preview has
@@ -1332,6 +1419,10 @@ export const DESIGN_PANEL_JS = /* js */ `
             accent: found.accent, bandColor: found.band,
           }, "Colours");
           await saveBanner(bandPng(bandTexture, 750, 246));
+          // The extracted card colour can land on top of the logo's own ink —
+          // it was sampled FROM the logo, so of course it can. Same check as on
+          // upload; without it, "Use these colours" can hide the mark it came from.
+          if (lastLogoUrl) await ensureLogoReadable(lastLogoUrl);
         };
       }
 

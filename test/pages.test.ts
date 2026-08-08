@@ -426,6 +426,22 @@ describe("one designer, two pages", () => {
     }
   });
 
+  // Taking the plate off is only safe if something notices when it leaves the
+  // mark invisible. Both entry points have to run the check: an upload, and
+  // "Use these colours" — which sets a card colour sampled FROM the logo, so it
+  // can land right on top of the logo's own ink.
+  it("checks a stripped logo still reads, on upload AND on Use these colours", () => {
+    for (const html of [dash, admin]) {
+      expect(html.match(/async function ensureLogoReadable/g)!.length).toBe(1);
+      expect(html.match(/function artworkColor/g)!.length).toBe(1);
+      expect(html).toContain("void ensureLogoReadable(url);");
+      expect(html).toContain("if (lastLogoUrl) await ensureLogoReadable(lastLogoUrl);");
+      // Alpha-weighted, or the transparent margin liftBackdrop just made would
+      // drag the measured ink toward nothing and the check would never fire.
+      expect(html).toContain("const k = d[i + 3] / 255;");
+    }
+  });
+
   // The progress field is hard right on a wallet card. In the preview it was
   // held there by the shop name's flex:1 — so hiding the name for a logo that
   // already carries it silently un-aligned it.
@@ -1115,9 +1131,55 @@ describe("palette maths", () => {
     const pal = P.paletteFrom(pixels(["#14402c", 900], ["#d4af37", 120], ["#8a6f2a", 40]))!;
     expect(pal).not.toBeNull();
     expect(P.contrastRatio(pal.fg, pal.bg)).toBeGreaterThanOrEqual(4.5);
-    // Stamps are drawn ON the band, so that is the pair that has to separate.
-    expect(P.contrastRatio(pal.accent, pal.band)).toBeGreaterThanOrEqual(2);
+    // Stamps are measured against the CARD: the band is a near neighbour of it
+    // by construction, so holding them off the band held them off the card twice
+    // and put a floor under how dark a stamp could be.
+    expect(P.contrastRatio(pal.accent, pal.bg)).toBeGreaterThanOrEqual(1.6);
     expect(P.contrastRatio(pal.band, pal.bg)).toBeGreaterThan(1.2);
+  });
+
+  // The bug this pair exists for: a black stamp on a dark card came out mid-grey.
+  // separate() chose its direction from the SURFACE, so "dark surface" meant
+  // "step toward white" — which dragged a black mark up through the card colour,
+  // losing contrast before it gained any, six times over.
+  it("leaves a dark colour dark when it already reads on the card", () => {
+    // Black stamps on a dark-but-not-black card: visible, so untouched.
+    expect(P.separate("#000000", "#4a4a4a", 1.6)).toBe("#000000");
+    expect(P.separate("#111111", "#555555", 1.6)).toBe("#111111");
+  });
+
+  it("moves a colour the way that actually gains contrast", () => {
+    // Nowhere to go down from black, so it must go up — and far enough to read.
+    const onBlack = P.separate("#000000", "#000000", 1.6);
+    expect(P.contrastRatio(onBlack, "#000000")).toBeGreaterThanOrEqual(1.6);
+    // White on white must go DOWN, not clamp at white.
+    const onWhite = P.separate("#ffffff", "#ffffff", 1.6);
+    expect(P.contrastRatio(onWhite, "#ffffff")).toBeGreaterThanOrEqual(1.6);
+    // And it takes the shorter road: a near-black mark on a light card darkens.
+    expect(P.relLuminance(P.separate("#2b2b2b", "#f0f0f0", 3))).toBeLessThan(
+      P.relLuminance("#2b2b2b") + 0.01,
+    );
+  });
+
+  it("keeps a dark brand colour EXACTLY, when it already reads on the card", () => {
+    // A cream page with a dark navy mark — the shape of most real logo files.
+    // Navy clears the card comfortably, so nothing should touch it. Under the
+    // old rule the accent was held 2.2:1 off the BAND, the band had settled on
+    // navy too, and six steps toward white turned the brand colour into a
+    // washed-out slate. This is that regression.
+    const pal = P.paletteFrom(pixels(["#f0e6d2", 800], ["#12213f", 200]))!;
+    expect(pal).not.toBeNull();
+    expect(pal.accent).toBe("#12213f");
+    expect(P.contrastRatio(pal.accent, pal.bg)).toBeGreaterThanOrEqual(1.6);
+    expect(P.contrastRatio(pal.fg, pal.bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("takes no palette from a logo that is only black and white", () => {
+    // Neither is a brand colour, so paletteFrom declines and the dashboard asks
+    // the owner to choose. That path matters here because the colour pickers are
+    // literal — saveCard sends f("accent").value raw, with no separate() — so a
+    // shop that wants pure black stamps sets them by hand and gets them.
+    expect(P.paletteFrom(pixels(["#ffffff", 800], ["#000000", 200]))).toBeNull();
   });
 
   it("still returns something usable from a one-colour logo", () => {
