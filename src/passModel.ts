@@ -116,7 +116,14 @@ export function buildPassJson(
     webServiceURL: `${config.baseUrl}/wallet`,
     authenticationToken: row.auth_token,
     sharingProhibited: true,
-    logoText: business,
+    // Apple draws this BESIDE the logo image, so a brand lockup that already
+    // contains the shop's name printed it twice. The owner ticks
+    // "my logo includes my name" and the field is dropped entirely — omitted,
+    // not empty-stringed, because Wallet reserves the slot for an empty string
+    // and leaves a gap where the text was. organizationName and description
+    // above keep the name regardless: those are the Add sheet and the
+    // notification, where an unnamed card is the worse failure.
+    ...(card.logo_has_name ? {} : { logoText: business }),
     backgroundColor: card.background_color,
     foregroundColor: card.foreground_color,
     labelColor: card.label_color,

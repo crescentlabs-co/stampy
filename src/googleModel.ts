@@ -25,13 +25,21 @@ export function objectId(row: Pick<PassRow, "serial">): string {
 }
 
 /** A café's hosted art URL (per-café route; ?v= makes Google re-fetch after an upload). */
-function artUrl(card: Pick<CardRow, "id">, name: "logo" | "banner", version = 0): string {
+function artUrl(card: Pick<CardRow, "id">, name: "logo" | "banner" | "mark", version = 0): string {
   const base = card.id === DEFAULT_CARD_ID ? "" : `/c/${card.id}`;
   return `${config.baseUrl}${base}/art/${name}.png${version ? `?v=${version}` : ""}`;
 }
 
-export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0): string {
-  return artUrl(card, "logo", logoVersion);
+/**
+ * What Google renders as programLogo.
+ *
+ * Its slot is small and close to square, so the wide brand lockup Apple's logo
+ * band wants shrinks to a sliver here. An owner can upload a square version for
+ * exactly this; with none (markVersion 0) it stays the main logo, which is what
+ * every card issued before this did.
+ */
+export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0, markVersion = 0): string {
+  return markVersion ? artUrl(card, "mark", markVersion) : artUrl(card, "logo", logoVersion);
 }
 
 export function buildLoyaltyClass(
@@ -40,6 +48,8 @@ export function buildLoyaltyClass(
   bannerVersion = 0,
   /** The shop's name — Google shows it as the issuer above the programme. */
   business = card.name,
+  /** Non-zero ⇒ a square mark exists and is used instead of the wide logo. */
+  markVersion = 0,
 ): Record<string, unknown> {
   const cls: Record<string, unknown> = {
     id: classId(card),
@@ -49,7 +59,7 @@ export function buildLoyaltyClass(
     // dashboard, so it can be years stale by the time a customer reads it.
     programName: `${business} loyalty card`,
     programLogo: {
-      sourceUri: { uri: logoUrl(card, logoVersion) },
+      sourceUri: { uri: logoUrl(card, logoVersion, markVersion) },
       contentDescription: {
         defaultValue: { language: "en", value: `${business} logo` },
       },

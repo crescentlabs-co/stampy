@@ -41,8 +41,6 @@ import {
   createOwner,
   DEFAULT_CARD_ID,
   getCard,
-  deleteCardBanner,
-  deleteCardLogo,
   deleteStampStrips,
   generateStaffPin,
   getOwner,
@@ -52,8 +50,6 @@ import {
   logOwnerLogin,
   ownerHasCard,
   ownerIsArchived,
-  setCardBanner,
-  setCardLogo,
   setMessage,
   setResetToken,
   setStaffPin,
@@ -70,10 +66,18 @@ import { applyAndPush, refreshCardArt } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
 import { config, setupStatus, signupOpen } from "../config.js";
 import { rgbToHex } from "../color.js";
-import { cardFieldsFromBody, designerCard, touchesLook } from "../cardView.js";
+import {
+  artBytes,
+  ART_KIND_PATTERN,
+  ART_KINDS,
+  cardFieldsFromBody,
+  designerCard,
+  touchesLook,
+  type ArtKind,
+} from "../cardView.js";
 import { resetEmailHtml, sendEmail, welcomeEmailHtml } from "../email.js";
 import { ensureClass } from "../googleWallet.js";
-import { validateArtPng, validateLogoPng } from "../imageValidate.js";
+import { validateArtPng } from "../imageValidate.js";
 import { dashboardPage, resetPage } from "../pages.js";
 import { canNudge, MAX_NUDGES_PER_WEEK } from "../winback.js";
 
@@ -408,68 +412,47 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
 });
 
 /**
- * Logo upload. The dashboard canvas-normalises every image to a ~320×320 PNG
- * and sends it base64-encoded in JSON; the server re-checks magic bytes + size
- * before storing. Google's hosted card re-syncs via ensureClass (the logo URL
- * is version-stamped, so Google re-fetches). Apple cards pick the logo up on
- * their next pass re-fetch.
+ * Card art upload — logo, banner, the square Android mark, and the owner's own
+ * stamp shape. One handler for all four: the designer sends them through the
+ * same browser code, and separate copies are how the banner came to be checked
+ * against the logo's size cap. `kind` is also the art path, so the URL an
+ * upload goes to and the URL it comes back from are built from one string.
+ *
+ * The browser canvas-normalises every image to a PNG and sends it base64 in
+ * JSON; the server re-checks magic bytes + size before storing. Google's hosted
+ * card re-syncs via ensureClass (art URLs are version-stamped, so Google
+ * re-fetches). Apple cards pick it up on their next pass re-fetch.
  */
-dashboardRouter.post("/api/card/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
-  const cardId = req.params.id!;
-  if (!(await ownerHasCard(req.owner!.id, cardId))) {
-    return void res.status(403).json({ error: "not-your-card" });
-  }
-  const { png } = (req.body ?? {}) as { png?: string };
-  if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(png, "base64");
-  } catch {
-    return void res.status(400).json({ error: "bad-base64" });
-  }
-  const reject = validateLogoPng(bytes);
-  if (reject) return void res.status(400).json({ error: reject });
-  await setCardLogo(cardId, bytes);
-  await syncArt(cardId);
-  res.json({ ok: true });
-});
+dashboardRouter.post(
+  `/api/card/:id/:kind(${ART_KIND_PATTERN})`,
+  requireOwner,
+  async (req: OwnerRequest, res) => {
+    const cardId = req.params.id!;
+    if (!(await ownerHasCard(req.owner!.id, cardId))) {
+      return void res.status(403).json({ error: "not-your-card" });
+    }
+    const kind = req.params.kind as ArtKind;
+    const bytes = artBytes(kind, (req.body ?? {}).png);
+    if (typeof bytes === "string") return void res.status(400).json({ error: bytes });
+    await ART_KINDS[kind].set(cardId, bytes);
+    await syncArt(cardId);
+    res.json({ ok: true });
+  },
+);
 
-dashboardRouter.delete("/api/card/:id/logo", requireOwner, async (req: OwnerRequest, res) => {
-  const cardId = req.params.id!;
-  if (!(await ownerHasCard(req.owner!.id, cardId))) {
-    return void res.status(403).json({ error: "not-your-card" });
-  }
-  await deleteCardLogo(cardId);
-  await syncArt(cardId);
-  res.json({ ok: true });
-});
-
-/** Banner image (Apple strip / Google hero) — same upload contract as the logo. */
-dashboardRouter.post("/api/card/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
-  const cardId = req.params.id!;
-  if (!(await ownerHasCard(req.owner!.id, cardId))) {
-    return void res.status(403).json({ error: "not-your-card" });
-  }
-  const { png } = (req.body ?? {}) as { png?: string };
-  if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
-  const bytes = Buffer.from(png, "base64");
-  // Art cap, not the logo cap: a banner is a photo and dwarfs a logo.
-  const reject = validateArtPng(bytes);
-  if (reject) return void res.status(400).json({ error: reject });
-  await setCardBanner(cardId, bytes);
-  await syncArt(cardId);
-  res.json({ ok: true });
-});
-
-dashboardRouter.delete("/api/card/:id/banner", requireOwner, async (req: OwnerRequest, res) => {
-  const cardId = req.params.id!;
-  if (!(await ownerHasCard(req.owner!.id, cardId))) {
-    return void res.status(403).json({ error: "not-your-card" });
-  }
-  await deleteCardBanner(cardId);
-  await syncArt(cardId);
-  res.json({ ok: true });
-});
+dashboardRouter.delete(
+  `/api/card/:id/:kind(${ART_KIND_PATTERN})`,
+  requireOwner,
+  async (req: OwnerRequest, res) => {
+    const cardId = req.params.id!;
+    if (!(await ownerHasCard(req.owner!.id, cardId))) {
+      return void res.status(403).json({ error: "not-your-card" });
+    }
+    await ART_KINDS[req.params.kind as ArtKind].del(cardId);
+    await syncArt(cardId);
+    res.json({ ok: true });
+  },
+);
 
 /**
  * Rich stamp grid. The dashboard renders one strip PNG per stamp count in the

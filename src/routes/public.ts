@@ -32,6 +32,8 @@ import {
   getCard,
   getCardBanner,
   getCardLogo,
+  getCardLogoMark,
+  getCardStampIcon,
   getCustomer,
   getPass,
   getStampStrip,
@@ -524,6 +526,38 @@ async function serveBanner(cardId: string, res: import("express").Response): Pro
 
 publicRouter.get("/art/banner.png", (_req, res) => serveBanner(DEFAULT_CARD_ID, res));
 publicRouter.get("/c/:cardId/art/banner.png", (req, res) => serveBanner(req.params.cardId!, res));
+
+/**
+ * The square logo (Google's programLogo) and the owner's own stamp shape.
+ *
+ * Both 404 when unset, and both callers treat that as "not configured" rather
+ * than an error: Google's class falls back to the wide logo URL, and the
+ * designer just leaves the stamp as plain dots. That is what makes either
+ * upload genuinely optional.
+ *
+ * Same-origin on purpose. The designer reads the stamp icon back into a canvas
+ * to re-render the grid, and a cross-origin image would taint that canvas and
+ * make toDataURL throw — the whole grid would stop rendering, not just the icon.
+ */
+async function serveOptionalArt(
+  get: (cardId: string) => Promise<{ png: Buffer } | null>,
+  cardId: string,
+  res: import("express").Response,
+): Promise<void> {
+  const row = await get(cardId).catch(() => null);
+  if (!row) return void res.status(404).end();
+  res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(row.png);
+}
+
+publicRouter.get("/art/mark.png", (_req, res) =>
+  serveOptionalArt(getCardLogoMark, DEFAULT_CARD_ID, res));
+publicRouter.get("/c/:cardId/art/mark.png", (req, res) =>
+  serveOptionalArt(getCardLogoMark, req.params.cardId!, res));
+
+publicRouter.get("/art/stamp-icon.png", (_req, res) =>
+  serveOptionalArt(getCardStampIcon, DEFAULT_CARD_ID, res));
+publicRouter.get("/c/:cardId/art/stamp-icon.png", (req, res) =>
+  serveOptionalArt(getCardStampIcon, req.params.cardId!, res));
 
 // Rendered stamp-grid strip for a given filled count. Apple embeds the bytes
 // directly and never comes here; this URL is baked into Android cards issued

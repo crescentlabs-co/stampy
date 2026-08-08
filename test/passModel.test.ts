@@ -33,6 +33,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     auto_winback_days: 14,
     auto_winback_message: "We miss you!",
     stamp_style: "",
+    logo_has_name: false,
     signup_message: "",
     archived_at: null,
     ...overrides,
@@ -163,6 +164,37 @@ describe("buildPassJson", () => {
     expect(p.organizationName).toBe("Teh Tarik Place");
     expect(p.logoText).toBe("Teh Tarik Place");
     expect(p.backgroundColor).toBe("rgb(1, 2, 3)");
+  });
+
+  // Apple draws logoText BESIDE the logo image, so a shop whose logo is a brand
+  // lockup — mark and wordmark together, which is the file most shops actually
+  // have — got its name printed twice on the front of the card.
+  describe("a logo that already carries the shop's name", () => {
+    it("drops the text beside the logo when the owner says it is in there", () => {
+      const p = buildPassJson(row(), card({ logo_has_name: true }), "Teh Tarik Place") as any;
+      expect("logoText" in p).toBe(false);
+    });
+
+    // Omitted, not blanked: Wallet keeps the slot for an empty string and leaves
+    // a gap where the text was.
+    it("omits the key rather than sending an empty string", () => {
+      const p = buildPassJson(row(), card({ logo_has_name: true })) as any;
+      expect(p.logoText).toBeUndefined();
+      expect(JSON.stringify(p)).not.toContain("logoText");
+    });
+
+    // The Add sheet and every notification read from these two. A card whose
+    // notifications say nothing about who sent them is the worse trade.
+    it("still names the shop where the name is the only identifier", () => {
+      const p = buildPassJson(row(), card({ logo_has_name: true }), "Teh Tarik Place") as any;
+      expect(p.organizationName).toBe("Teh Tarik Place");
+      expect(p.description).toBe("Teh Tarik Place loyalty card");
+    });
+
+    it("leaves every existing card alone — the flag defaults off", () => {
+      const p = buildPassJson(row(), card(), "Teh Tarik Place") as any;
+      expect(p.logoText).toBe("Teh Tarik Place");
+    });
   });
 
   it("surfaces the short code for the staff typed fallback", () => {

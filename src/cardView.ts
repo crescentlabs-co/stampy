@@ -16,9 +16,20 @@
  * `hasStaffPin` boolean so the UI can say "Reset" instead of "Set".
  */
 import { hexToRgb, rgbToHex } from "./color.js";
+import { validateArtPng, validateLogoPng } from "./imageValidate.js";
 import {
   cafeBannerVersion,
   cafeLogoVersion,
+  cardLogoMarkVersion,
+  cardStampIconVersion,
+  deleteCardBanner,
+  deleteCardLogo,
+  deleteCardLogoMark,
+  deleteCardStampIcon,
+  setCardBanner,
+  setCardLogo,
+  setCardLogoMark,
+  setCardStampIcon,
   stampStripsVersion,
   targetsInUse,
   updateCard,
@@ -102,7 +113,48 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   if (typeof body.signupMessage === "string") {
     fields.signup_message = body.signupMessage.trim().slice(0, 120);
   }
+  // "My logo already includes my business name" — drops the pass's logoText so
+  // a brand lockup does not print the name a second time beside itself.
+  if (typeof body.logoHasName === "boolean") fields.logo_has_name = body.logoHasName;
   return fields;
+}
+
+/**
+ * The four images a card can carry, and how to store each one.
+ *
+ * Both consoles upload the same four through the same browser code, so the
+ * routes are one parameterised handler each rather than eight hand-copied ones.
+ * That copying is not hypothetical: the banner was once validated against the
+ * LOGO's size cap and silently rejected every photo over 256KB.
+ *
+ * The URL segment is the key, because it is also the art path
+ * (/c/:cardId/art/<kind>.png) and the designer builds both from one string.
+ */
+export const ART_KINDS = {
+  logo: { set: setCardLogo, del: deleteCardLogo, big: false },
+  banner: { set: setCardBanner, del: deleteCardBanner, big: true },
+  mark: { set: setCardLogoMark, del: deleteCardLogoMark, big: false },
+  "stamp-icon": { set: setCardStampIcon, del: deleteCardStampIcon, big: false },
+} as const;
+
+export type ArtKind = keyof typeof ART_KINDS;
+
+/** The path fragment both routers match on, so neither can drift from the other. */
+export const ART_KIND_PATTERN = Object.keys(ART_KINDS).join("|");
+
+/**
+ * base64 → validated PNG bytes, or the error string a route should return.
+ * A banner is a rendered photo band and gets the larger cap; the rest are marks.
+ */
+export function artBytes(kind: ArtKind, png: unknown): Buffer | string {
+  if (typeof png !== "string" || !png) return "missing-png";
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(png, "base64");
+  } catch {
+    return "bad-base64";
+  }
+  return (ART_KINDS[kind].big ? validateArtPng(bytes) : validateLogoPng(bytes)) ?? bytes;
 }
 
 export interface DesignerCard {
@@ -120,9 +172,20 @@ export interface DesignerCard {
   bandColor: string;
   bandTexture: string;
   stampStyle: string;
+  /** The logo is a lockup that already says the shop's name — see CardRow. */
+  logoHasName: boolean;
   /** 0 = nothing uploaded. Used to cache-bust the preview image. */
   logoVersion: number;
   bannerVersion: number;
+  /** 0 = none; Google then falls back to the wide logo. */
+  markVersion: number;
+  /**
+   * 0 = no uploaded stamp shape. Non-zero is what tells the panel to fetch the
+   * source art back and hold it BEFORE re-rendering — without it the grid is
+   * redrawn as plain circles, which is how an uploaded stamp used to vanish on
+   * the first reload.
+   */
+  stampIconVersion: number;
   /** 0 = no rendered stamp grid (plain text dots). */
   stampsVersion: number;
   /**
@@ -140,12 +203,15 @@ export interface DesignerCard {
 
 /** Everything the designer needs for one card, art versions included. */
 export async function designerCard(card: CardRow, shopName?: string): Promise<DesignerCard> {
-  const [logoVersion, bannerVersion, stampsVersion, inUse] = await Promise.all([
-    cafeLogoVersion(card.id),
-    cafeBannerVersion(card.id),
-    stampStripsVersion(card.id),
-    targetsInUse(card.id),
-  ]);
+  const [logoVersion, bannerVersion, markVersion, stampIconVersion, stampsVersion, inUse] =
+    await Promise.all([
+      cafeLogoVersion(card.id),
+      cafeBannerVersion(card.id),
+      cardLogoMarkVersion(card.id),
+      cardStampIconVersion(card.id),
+      stampStripsVersion(card.id),
+      targetsInUse(card.id),
+    ]);
   return {
     id: card.id,
     name: card.name,
@@ -161,8 +227,11 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     bandColor: rgbToHex(card.band_color),
     bandTexture: card.band_texture,
     stampStyle: card.stamp_style,
+    logoHasName: card.logo_has_name,
     logoVersion,
     bannerVersion,
+    markVersion,
+    stampIconVersion,
     stampsVersion,
     targetsInUse: inUse,
     winbackMessage: card.auto_winback_message,
@@ -193,6 +262,10 @@ export function touchesLook(
   const drawn = [
     "background_color", "foreground_color", "label_color",
     "accent_color", "band_color", "band_texture", "stamp_style", "name",
+    // Ticking this removes the name printed beside the logo on every issued
+    // pass. Nothing about it is visible until the phone re-fetches, so a save
+    // that skipped the push would leave the name doubled until the next stamp.
+    "logo_has_name",
   ] as const;
   if (drawn.some((k) => fields[k] !== undefined)) return true;
   // The shop name is stored on the MERCHANT, so it never appears in `fields` —

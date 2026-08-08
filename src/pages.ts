@@ -617,7 +617,12 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* --- live wallet-card preview --- */
     .pv { border-radius: 14px; padding: 16px; margin: 10px 0 4px; box-shadow: 0 4px 16px rgba(43,29,21,.18); }
     .pv-top { display: flex; align-items: center; gap: 10px; }
-    .pv-logo { width: 34px; height: 34px; border-radius: 8px; object-fit: contain; background: rgba(255,255,255,.14); }
+    /* Height-bound, not a square. A brand lockup is wide, and forcing one into
+       a square box letterboxed it down to a sliver — which read as "this only
+       takes a small symbol" when the wallet was happy to show the whole thing.
+       A square mark is unchanged: it simply stops at the height. */
+    .pv-logo { height: 34px; width: auto; max-width: 120px; border-radius: 8px;
+               object-fit: contain; background: rgba(255,255,255,.14); }
     .pv-name { font-weight: 700; font-size: 1.02rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pv-hdr { text-align: right; }
     .pv-lbl { font-size: .62rem; letter-spacing: .08em; font-weight: 600; }
@@ -647,6 +652,12 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
     .logorow input[type=file] { display: none; }
     .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    /* A real tick-box, not a styled div: the panel is shared with the admin
+       console, so it carries its own copy rather than borrowing the dashboard's
+       .eye — which admin does not load. */
+    .chk { display: flex; align-items: flex-start; gap: 8px; font-size: .85rem;
+           color: var(--muted); font-weight: 400; cursor: pointer; }
+    .chk input { width: auto; margin: 2px 0 0; flex: none; }
     .copyrow { display: flex; gap: 8px; margin-top: 4px; }
     .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: var(--ghost-bg); }
     .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
@@ -759,12 +770,26 @@ export const DESIGN_PANEL_JS = /* js */ `
         <details class="fold" style="margin-top:12px" \${env.designOpen ? "open" : ""}>
         <summary>Design</summary>
 
-        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it.")}</label>
+        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it. A wide logo with your name in it is fine, and usually looks best.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
         <div class="swatches" data-swatches style="display:none"></div>
+        <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
+             already contains the name said it twice. This drops that text and
+             lets the lockup own the band; the name still reaches the Add sheet
+             and every notification through organizationName. -->
+        <label class="chk" style="margin-top:10px">
+          <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
+          <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo on the card. Leave it unticked if your logo is just a symbol, or nothing on the card says whose it is.")}</span>
+        </label>
+
+        <label style="margin-top:14px">Square logo for Android\${info("Optional. Google Wallet puts your logo in a small, nearly square space, where a wide logo shrinks to a sliver. Upload a square version — just the symbol usually works — and Android uses that instead. Skip it and Android keeps using the logo above.")}</label>
+        <div class="logorow">
+          <label class="btn btn-ghost" style="margin:0">Upload square logo<input data-mark type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
+        </div>
 
         <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
         <div class="crlist" data-roles></div>
@@ -796,7 +821,7 @@ export const DESIGN_PANEL_JS = /* js */ `
                tiles gone this is the only way back to plain dots, and a control
                that appears once you no longer need it is no control at all. -->
           <button class="btn btn-ghost" data-a="rmstamp">Plain dots</button>
-          \${info("One shape on a see-through background (PNG or SVG), not a photo. Its own colours are ignored — it gets filled with your stamp colour.")}
+          \${info("One shape on a see-through background (PNG or SVG), not a photo. Its own colours are ignored — it gets filled with your stamp colour. It shows on iPhone cards; Android shows the count as dots.")}
         </div>
         <p class="err" data-stamperr style="display:none"></p>
 
@@ -849,8 +874,34 @@ export const DESIGN_PANEL_JS = /* js */ `
         return drawBanner(style, a, shade(a, 0.35), w, h);
       }
       let stampStyle = c.stampStyle || "";  // '' = plain dots, 'custom' = uploaded
-      let customStampUrl = null;             // dataURL of an uploaded stamp icon
+      let customStampUrl = null;             // the uploaded stamp icon, once loaded
       const stampImg = new Image();          // holds that uploaded icon for drawing
+
+      // Load the STORED stamp shape back before anything re-renders.
+      //
+      // This is the whole reason an uploaded stamp used to disappear. The icon
+      // lived only in customStampUrl, so a reload — or a colour save, or a tap
+      // on a band texture — found nothing in memory and quietly redrew every
+      // stamp as a plain circle. cards.stamp_style still said 'custom',
+      // describing an image nothing had kept. It is a stored image now, and
+      // every path that re-renders awaits this first (see applyStamps and the
+      // self-heal below), so the grid can never be rebuilt without it.
+      let stampIconReady = false;
+      function loadStampIcon(src) {
+        return new Promise((resolve) => {
+          if (!src) { stampIconReady = false; customStampUrl = null; return resolve(); }
+          stampImg.onload = () => { stampIconReady = true; customStampUrl = src; resolve(); };
+          // A 404 (nothing stored) is not an error worth showing — it just means
+          // this card has no shape and the grid falls back to dots.
+          stampImg.onerror = () => { stampIconReady = false; customStampUrl = null; resolve(); };
+          stampImg.src = src;
+        });
+      }
+      // Same-origin, so the canvas it is drawn into stays untainted and
+      // toDataURL keeps working — see /c/:cardId/art/stamp-icon.png.
+      const stampIconReadyPromise = loadStampIcon(
+        c.stampIconVersion ? env.artUrl("stamp-icon", c.stampIconVersion) : "",
+      );
 
       // The banner is the BACKDROP the stamps are drawn onto, so it has to be
       // decoded before any strip is rendered — the pass has one strip slot, and
@@ -925,7 +976,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
         const r = Math.min(cw, ch) * 0.34;
         const perRow = Math.ceil(target / rows);
-        const customReady = customStampUrl && stampImg.complete && stampImg.naturalWidth > 0;
+        const customReady = stampIconReady && stampImg.complete && stampImg.naturalWidth > 0;
         const shaped = icon === "custom" && customReady
           ? { on: shapeStamp(stampImg, Math.ceil(r * 2), accent), size: Math.ceil(r * 2) }
           : null;
@@ -980,7 +1031,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         const pv = q("[data-pv]");
         pv.style.background = f("bg").value;
         pv.style.color = f("fg").value;
-        q("[data-pv-name]").textContent = f("shopName").value || "Your card";
+        // The name beside the logo is the pass's logoText, so the preview has to
+        // drop it under exactly the condition the pass does — otherwise the
+        // owner ticks the box and sees no change until the card is on a phone.
+        const pvName = q("[data-pv-name]");
+        pvName.textContent = f("shopName").value || "Your card";
+        pvName.style.display = c.logoHasName && c.logoVersion ? "none" : "";
         q("[data-pv-progress]").textContent = headerValue(start, target);
         q("[data-pv-tally]").textContent = start + "/" + target;
         q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
@@ -1014,6 +1070,9 @@ export const DESIGN_PANEL_JS = /* js */ `
           .catch(() => {}); // a failure just means we try again next visit
       }
 
+      // What each upload is called when a toast has to name it. Keyed by the
+      // same string the route takes, so a new kind cannot be added without one.
+      const ART_LABEL = { logo: "Logo", banner: "Banner", mark: "Square logo" };
       // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
       // fit "contain" letterboxes the whole image in; "cover" (the default) fills
       // the frame and crops the overflow. A logo MUST contain — cropping a
@@ -1024,6 +1083,14 @@ export const DESIGN_PANEL_JS = /* js */ `
           const img = new Image();
           img.onload = async () => {
             URL.revokeObjectURL(img.src);
+            // An SVG with no width/height attributes decodes at zero size in
+            // Safari. Every scale below then collapses to a 1×1 transparent
+            // pixel, which uploads perfectly and draws as nothing — an upload
+            // that "did not work" with no error anywhere to say why.
+            if (!img.width || !img.height) {
+              toast("That image has no size set. If it's an SVG, open it in your design tool and export it as a PNG.");
+              return;
+            }
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext.bind(canvas);
             if (fit === "keep") {
@@ -1050,7 +1117,7 @@ export const DESIGN_PANEL_JS = /* js */ `
             const { body } = await api(P("/" + kind), {
               method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
             });
-            if (body.ok) { onDone(dataUrl); toast((kind === "logo" ? "Logo" : "Banner") + " saved ✓"); }
+            if (body.ok) { onDone(dataUrl); toast(ART_LABEL[kind] + " saved ✓"); }
             else toast(body.error || "Upload failed");
           };
           img.onerror = () => toast("Couldn't read that image");
@@ -1077,6 +1144,42 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-pv-logo]").style.display = "none";
         q("[data-a=rmlogo]").style.display = "none";
         toast("Logo removed");
+      };
+
+      // The square version, for Google's small near-square logo slot. Padded to
+      // a square on purpose — the opposite of the logo above — because that slot
+      // is the shape being fitted, and letterboxing beats a cropped mark.
+      // Nothing on this page previews it: the preview is the Apple card, which
+      // never uses it, and a preview that showed it would be a lie.
+      wireUpload("[data-mark]", "mark", 400, 400, () => {
+        c.markVersion = 1;
+        q("[data-a=rmmark]").style.display = "";
+      }, "contain");
+      q("[data-a=rmmark]").onclick = async () => {
+        const { body } = await api(P("/mark"), { method: "DELETE" });
+        if (!body.ok) return toast(body.error || "Couldn't remove it");
+        c.markVersion = 0;
+        q("[data-a=rmmark]").style.display = "none";
+        toast("Square logo removed — Android goes back to your main logo");
+      };
+
+      // Saved the moment it is ticked, like the logo upload beside it rather
+      // than the colours below it. A tick-box that needed a second button would
+      // sit next to two controls that save themselves. On failure the box goes
+      // back to where it was: a control showing a state the server rejected is
+      // worse than one that visibly did not take.
+      q("[data-lname]").onchange = async () => {
+        const on = q("[data-lname]").checked;
+        const { body } = await api(P(), {
+          method: "POST", body: JSON.stringify({ logoHasName: on }),
+        });
+        if (!body.ok) {
+          q("[data-lname]").checked = !on;
+          return toast(body.error || "Couldn't save that");
+        }
+        c.logoHasName = on;
+        renderPreview();
+        toast(on ? "Your name will not be printed next to the logo" : "Your name will show next to the logo");
       };
 
       // ---- Colours out of the logo ----
@@ -1392,8 +1495,11 @@ export const DESIGN_PANEL_JS = /* js */ `
       async function applyStamps(style, quiet) {
         stampStyle = style;
         // The banner is baked into every strip, so it must be decoded first or
-        // the whole set renders on a bare colour.
+        // the whole set renders on a bare colour. The stamp shape for the same
+        // reason: re-render before it has loaded and the owner's icon is
+        // silently replaced by circles, in storage, for every count at once.
         await bannerReadyPromise;
+        await stampIconReadyPromise;
         const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
         // One set per target still in play, not just the current one. A pass keeps
         // the target it was issued with, so an owner going 8 → 6 still has
@@ -1425,13 +1531,19 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-emoji]").value = one;
         applyStamps(one || "dot");
       };
-      // Upload your own stamp icon → normalise to a small square PNG → apply.
-      // Rejected unless it has transparency: the shape is taken from the alpha
-      // channel, so a fully opaque image would stamp a solid square.
-      wireUpload("[data-stampimg]", null, 160, 160, (dataUrl) => {
+      // Upload your own stamp icon → check it → STORE it → re-render the grid.
+      //
+      // The storing step is the one that was missing. This used to pass kind
+      // null, which makes wireUpload hand back the dataURL without sending it
+      // anywhere, so the shape lived in one variable and the next re-render
+      // replaced it with circles. It is checked here rather than by letting
+      // wireUpload post for us, because "has a see-through background" has to
+      // be answered before the bytes are stored, not after.
+      wireUpload("[data-stampimg]", null, 256, 256, (dataUrl) => {
         const err = q("[data-stamperr]");
+        const show = (m) => { err.textContent = m; err.style.display = ""; };
         const probe = new Image();
-        probe.onload = () => {
+        probe.onload = async () => {
           const cv = document.createElement("canvas");
           cv.width = probe.naturalWidth; cv.height = probe.naturalHeight;
           const px = cv.getContext("2d");
@@ -1440,21 +1552,36 @@ export const DESIGN_PANEL_JS = /* js */ `
           let clear = 0;
           for (let i = 3; i < data.length; i += 4) if (data[i] < 24) clear++;
           if (clear < data.length / 4 * 0.02) {
-            err.textContent = "That image has no see-through background, so it would stamp a solid block. Save it as a PNG or SVG with transparency, or pick a built-in stamp above.";
-            err.style.display = "";
+            show("This picture needs a see-through background — right now it is a solid rectangle, so every stamp would print as a filled box. Export it as a PNG with transparency, or an SVG, and try again.");
             return;
           }
           err.style.display = "none";
-          customStampUrl = dataUrl; stampImg.src = dataUrl;
-          stampImg.onload = () => applyStamps("custom");
+          const { body } = await api(P("/stamp-icon"), {
+            method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+          });
+          if (!body.ok) {
+            show(body.error === "too-large"
+              ? "That file is too big. A stamp is drawn about the size of a fingernail, so a small, simple shape is all it needs."
+              : "Couldn't save that stamp. Check your connection and try again.");
+            return;
+          }
+          // Hold the new shape before re-rendering, for the same reason the
+          // stored one is loaded at mount: applyStamps writes the whole grid.
+          await loadStampIcon(dataUrl);
+          await applyStamps("custom");
         };
+        probe.onerror = () => show("Couldn't read that image.");
         probe.src = dataUrl;
-      });
+      }, "keep");
       // Back to plain dots — which is still a rendered strip, not the absence of
-      // one: the grid image is the only place stamps are drawn now.
+      // one: the grid image is the only place stamps are drawn now. The stored
+      // shape goes too: leaving it behind would have the next page load quietly
+      // offer to draw a stamp the owner had just removed.
       q("[data-a=rmstamp]").onclick = async () => {
-        customStampUrl = "";
+        q("[data-stamperr]").style.display = "none";
         q("[data-emoji]").value = "";
+        await api(P("/stamp-icon"), { method: "DELETE" });
+        await loadStampIcon("");
         await applyStamps("dot", true);
         toast("Back to plain dots");
       };
@@ -1703,7 +1830,9 @@ export function landingPage(
     .lhero { background: ${bg}; color: ${onBg}; margin: -20px -20px 18px; padding: 26px 20px 22px;
              border-radius: 0 0 22px 22px; text-align: center; }
     .lhero h1 { color: ${onBg}; margin: 0; font-size: 1.6rem; }
-    .lhero img { width: 76px; height: 76px; object-fit: contain; margin-bottom: 10px; }
+    /* Height-bound so a wide brand lockup keeps its width — see .pv-logo. */
+    .lhero img { height: 76px; width: auto; max-width: min(280px, 100%);
+                 object-fit: contain; margin-bottom: 10px; }
     .lhero .emoji { font-size: 3rem; line-height: 1; margin-bottom: 6px; }
     .lhero .sub { color: ${onBg}; opacity: .85; margin: 8px 0 0; }
     .card { overflow: hidden; }
@@ -1850,8 +1979,9 @@ export function claimPage(
     : "";
   const css = /* css */ `
     .cl-shop { text-align: center; margin-bottom: 6px; }
-    .cl-logo { width: 76px; height: 76px; border-radius: 18px; object-fit: contain;
-               margin: 0 auto 12px; display: block; box-shadow: var(--shadow); }
+    /* Height-bound so a wide brand lockup keeps its width — see .pv-logo. */
+    .cl-logo { height: 76px; width: auto; max-width: min(280px, 100%); border-radius: 18px;
+               object-fit: contain; margin: 0 auto 12px; display: block; box-shadow: var(--shadow); }
     .cl-name { font-family: var(--display); font-size: 1.7rem; line-height: 1.1;
                letter-spacing: -.02em; margin: 0; }
     .cl-reward { color: var(--muted); margin: 8px 0 0; }
@@ -4115,7 +4245,10 @@ export function posterPage(
     body { max-width: 640px; }
     .poster { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: #fff; }
     .phead { background: ${bg}; color: ${onBg}; padding: 26px 28px 22px; text-align: center; }
-    .phead img { width: 74px; height: 74px; object-fit: contain; margin-bottom: 10px; }
+    /* Height-bound so a wide brand lockup keeps its width — see .pv-logo. This
+       one is printed, so the cap is generous: paper has the room. */
+    .phead img { height: 74px; width: auto; max-width: min(320px, 100%);
+                 object-fit: contain; margin-bottom: 10px; }
     .phead h1 { font-size: 1.7rem; margin: 0; color: ${onBg}; letter-spacing: -.01em; }
     .pbody { padding: 26px 28px 20px; text-align: center; }
     .poffer { font-size: 1.5rem; font-weight: 700; line-height: 1.25; margin: 0 0 8px;

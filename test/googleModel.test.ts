@@ -35,6 +35,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     auto_winback_days: 14,
     auto_winback_message: "We miss you!",
     stamp_style: "",
+    logo_has_name: false,
     signup_message: "",
     archived_at: null,
     ...overrides,
@@ -87,6 +88,27 @@ describe("buildLoyaltyClass", () => {
     );
     const cls = buildLoyaltyClass(card({ id: "kopi2" }), 42) as any;
     expect(cls.programLogo.sourceUri.uri).toBe(
+      "https://stampy.example.test/c/kopi2/art/logo.png?v=42",
+    );
+  });
+
+  // Google's programLogo slot is small and close to square, so the wide brand
+  // lockup Apple's logo band wants comes out as a sliver on Android. The square
+  // upload is optional, and skipping it has to change nothing.
+  it("uses the square mark for programLogo, and only when one was uploaded", () => {
+    const none = buildLoyaltyClass(card({ id: "kopi2" }), 42) as any;
+    expect(none.programLogo.sourceUri.uri).toBe(
+      "https://stampy.example.test/c/kopi2/art/logo.png?v=42",
+    );
+    const marked = buildLoyaltyClass(card({ id: "kopi2" }), 42, 0, "Kopi Corner", 77) as any;
+    expect(marked.programLogo.sourceUri.uri).toBe(
+      "https://stampy.example.test/c/kopi2/art/mark.png?v=77",
+    );
+    // The wide logo is untouched by any of this — Apple still gets it.
+    expect(logoUrl(card({ id: "kopi2" }), 42, 77)).toBe(
+      "https://stampy.example.test/c/kopi2/art/mark.png?v=77",
+    );
+    expect(logoUrl(card({ id: "kopi2" }), 42, 0)).toBe(
       "https://stampy.example.test/c/kopi2/art/logo.png?v=42",
     );
   });

@@ -606,6 +606,76 @@ async function main() {
   const rmBanner = await fetch(base + "/dashboard/api/card/default/banner", { method: "DELETE", headers: { cookie } });
   expect(rmBanner.status === 200 && (await get("/art/banner.png")).status === 404, "banner delete reverts to none");
 
+  // --- The square Android mark, and the owner's own stamp shape ---
+  //
+  // Both are optional and both 404 until set, so that a card which never gets
+  // one behaves exactly as it did before they existed. The stamp shape is the
+  // important one: it used to live in a browser variable and nowhere else, so
+  // it survived until the first re-render and then became plain circles.
+  const art = async (kind: string, method = "POST", body?: unknown) =>
+    await fetch(base + "/dashboard/api/card/default/" + kind, {
+      method, headers: { "Content-Type": "application/json", cookie },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+  for (const kind of ["mark", "stamp-icon"]) {
+    expect((await get("/art/" + kind + ".png")).status === 404, `no ${kind} → 404 (optional art)`);
+    expect((await art(kind, "POST", { png: pngB64 })).status === 200, `${kind} upload accepted`);
+    const served = await fetch(base + "/art/" + kind + ".png");
+    expect(
+      Buffer.from(await served.arrayBuffer()).equals(Buffer.from(pngB64, "base64")),
+      `uploaded ${kind} bytes served back`,
+    );
+    expect(
+      (await art(kind, "POST", { png: Buffer.from("not a png").toString("base64") })).status === 400,
+      `a non-PNG ${kind} is rejected`,
+    );
+    const noAuth = await fetch(base + "/dashboard/api/card/default/" + kind, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ png: pngB64 }),
+    });
+    expect(noAuth.status === 401, `${kind} upload requires owner login`);
+  }
+  // Both versions reach the designer, which is what tells it to fetch the stamp
+  // shape back BEFORE re-rendering. Without that the grid is rebuilt as circles.
+  const ovArt = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body)
+    .cards.find((c: any) => c.id === "default");
+  expect(ovArt.markVersion > 0, "overview reports the square mark's version");
+  expect(ovArt.stampIconVersion > 0, "overview reports the stamp shape's version");
+
+  for (const kind of ["mark", "stamp-icon"]) {
+    expect((await art(kind, "DELETE")).status === 200, `${kind} delete works`);
+    expect((await get("/art/" + kind + ".png")).status === 404, `...and it 404s again after`);
+  }
+  const ovGone = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body)
+    .cards.find((c: any) => c.id === "default");
+  expect(ovGone.markVersion === 0 && ovGone.stampIconVersion === 0, "...and the versions go back to 0");
+
+  // --- A logo that already says the shop's name ---
+  // Apple prints logoText beside the logo image, so a brand lockup said the name
+  // twice. Defaults off, so nothing already issued changes.
+  expect((await getCard("default"))!.logo_has_name === false, "a card starts printing its name");
+  const lname = await fetch(base + "/dashboard/api/card/default", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ logoHasName: true }),
+  });
+  expect(lname.status === 200, "the logo-has-name tick-box saves");
+  expect((await getCard("default"))!.logo_has_name === true, "...and is stored on the card");
+  {
+    const { buildPassJson } = await import("../src/passModel.js");
+    const pass = buildPassJson(
+      { serial: "s", auth_token: "t", short_code: "ABC234", stamp_count: 1, stamps_target: 10, reward: "Free coffee" } as never,
+      (await getCard("default"))!,
+      "Kopi Corner",
+    ) as Record<string, unknown>;
+    expect(!("logoText" in pass), "...so the pass stops printing the name beside the logo");
+    expect(pass.organizationName === "Kopi Corner", "...but the Add sheet and notifications still name the shop");
+  }
+  await fetch(base + "/dashboard/api/card/default", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ logoHasName: false }),
+  });
+
   // --- Rich stamp grid: one strip PNG per count (Apple strip / Google hero) ---
   expect((await get("/art/stamps/2.png")).status === 404, "no stamp grid → strip 404 (falls back to text dots)");
   // Read the target NOW, not from the seed row: earlier blocks edit the card, and

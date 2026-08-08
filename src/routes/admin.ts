@@ -46,22 +46,26 @@ import {
   setMerchantArchived,
   setMerchantContact,
   getOwner,
-  deleteCardBanner,
-  deleteCardLogo,
   merchantForCard,
-  setCardBanner,
-  setCardLogo,
   updateMerchant,
   setStampStrips,
   updateCard,
   updateOwnerPassword,
   type OwnerRow,
 } from "../db.js";
-import { BAND_TEXTURES, cardFieldsFromBody, designerCard } from "../cardView.js";
+import {
+  artBytes,
+  ART_KIND_PATTERN,
+  ART_KINDS,
+  BAND_TEXTURES,
+  cardFieldsFromBody,
+  designerCard,
+  type ArtKind,
+} from "../cardView.js";
 import { refreshCardArt } from "../cardActions.js";
 import { ensureClass } from "../googleWallet.js";
 import { stageOf, triage, trialDaysLeft, value } from "../health.js";
-import { validateArtPng, validateLogoPng } from "../imageValidate.js";
+import { validateArtPng } from "../imageValidate.js";
 import { adminPage, counterSheetPage } from "../pages.js";
 
 export const adminRouter = Router();
@@ -297,34 +301,39 @@ adminRouter.post("/api/card/:id/design", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-adminRouter.post("/api/card/:id/design/:kind(logo|banner)", requireAdmin, async (req, res) => {
-  const kind = req.params.kind as "logo" | "banner";
-  const { png } = (req.body ?? {}) as { png?: string };
-  if (typeof png !== "string" || !png) return void res.status(400).json({ error: "missing-png" });
-  const bytes = Buffer.from(png, "base64");
-  // A band is a photo and dwarfs a logo, so the two caps differ.
-  const reject = kind === "logo" ? validateLogoPng(bytes) : validateArtPng(bytes);
-  if (reject) return void res.status(400).json({ error: reject });
-  const card = await getCard(req.params.id!);
-  if (!card) return void res.status(404).json({ error: "no-such-card" });
-  if (kind === "logo") await setCardLogo(card.id, bytes);
-  else await setCardBanner(card.id, bytes);
-  // Both platforms, not just Google: an iPhone has to be told to come back for
-  // the new art, or it keeps the old look until that customer's next stamp.
-  void refreshCardArt(card);
-  res.json({ ok: true });
-});
+// The admin twins of the dashboard's art uploads — same four kinds, same
+// contract, same ART_KINDS table, so neither console can grow an image the
+// other cannot set.
+adminRouter.post(
+  `/api/card/:id/design/:kind(${ART_KIND_PATTERN})`,
+  requireAdmin,
+  async (req, res) => {
+    const kind = req.params.kind as ArtKind;
+    const bytes = artBytes(kind, (req.body ?? {}).png);
+    if (typeof bytes === "string") return void res.status(400).json({ error: bytes });
+    const card = await getCard(req.params.id!);
+    if (!card) return void res.status(404).json({ error: "no-such-card" });
+    await ART_KINDS[kind].set(card.id, bytes);
+    // Both platforms, not just Google: an iPhone has to be told to come back for
+    // the new art, or it keeps the old look until that customer's next stamp.
+    void refreshCardArt(card);
+    res.json({ ok: true });
+  },
+);
 
-adminRouter.delete("/api/card/:id/design/:kind(logo|banner)", requireAdmin, async (req, res) => {
-  const card = await getCard(req.params.id!);
-  if (!card) return void res.status(404).json({ error: "no-such-card" });
-  if (req.params.kind === "logo") await deleteCardLogo(card.id);
-  else await deleteCardBanner(card.id);
-  // Both platforms, not just Google: an iPhone has to be told to come back for
-  // the new art, or it keeps the old look until that customer's next stamp.
-  void refreshCardArt(card);
-  res.json({ ok: true });
-});
+adminRouter.delete(
+  `/api/card/:id/design/:kind(${ART_KIND_PATTERN})`,
+  requireAdmin,
+  async (req, res) => {
+    const card = await getCard(req.params.id!);
+    if (!card) return void res.status(404).json({ error: "no-such-card" });
+    await ART_KINDS[req.params.kind as ArtKind].del(card.id);
+    // Both platforms, not just Google: an iPhone has to be told to come back for
+    // the new art, or it keeps the old look until that customer's next stamp.
+    void refreshCardArt(card);
+    res.json({ ok: true });
+  },
+);
 
 /**
  * The rendered stamp grid — one PNG per stamp count, per target still in play.

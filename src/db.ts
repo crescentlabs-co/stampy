@@ -66,6 +66,13 @@ export interface CardRow {
   auto_winback_message: string;
   /** Which stamp-grid icon preset is selected ('' = plain text dots, 'custom' = uploaded). */
   stamp_style: string;
+  /**
+   * The uploaded logo already reads as the shop's name — a brand lockup, mark
+   * and wordmark together. Apple draws logoText BESIDE the logo image, so
+   * without this the name appears twice; with it the pass omits logoText and
+   * the lockup owns the band. organizationName keeps the name either way.
+   */
+  logo_has_name: boolean;
   /** The owner's own line on the sign-up page; '' falls back to the generated one. */
   signup_message: string;
   /** Retired: hidden from the owner and off the join link. Issued passes still work. */
@@ -643,6 +650,39 @@ export async function migrate(): Promise<void> {
     -- rows that already exist, because a stored status is a second source of
     -- truth that drifts the first time a write is missed.
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+    -- v2.2: a logo that already says the shop's name.
+    --
+    -- Apple draws logoText BESIDE the logo image, so a proper brand lockup —
+    -- mark and wordmark together, which is what a shop actually has a file of —
+    -- put the name on the card twice. This says the picture carries the name, so
+    -- the pass leaves logoText out and lets the lockup own the band.
+    -- organizationName and description keep the name regardless: those are the
+    -- Add sheet and the notification, where an unnamed card is worse.
+    -- Defaults false, so every card already issued is unchanged.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS logo_has_name boolean NOT NULL DEFAULT false;
+    -- v2.2: a square version of the logo, for Google only.
+    --
+    -- Google's programLogo slot is small and near-square, so the wide lockup
+    -- Apple wants shrinks to a sliver on Android. Optional: with no row here the
+    -- class falls back to the main logo, which is exactly today's behaviour.
+    CREATE TABLE IF NOT EXISTS card_logo_marks (
+      card_id    text PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+      png        bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    -- v2.2: the owner's own stamp shape.
+    --
+    -- This upload already existed in the designer and was never stored anywhere:
+    -- it lived in one browser variable, so a reload — or a colour change, or a
+    -- band tap — silently redrew every stamp as a plain circle. Only the word
+    -- 'custom' in cards.stamp_style survived, which described an image nothing
+    -- had kept. The alpha channel IS the shape (see shapeStamp), so what is
+    -- stored here is the source art, not the rendered grid.
+    CREATE TABLE IF NOT EXISTS card_stamp_icons (
+      card_id    text PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+      png        bytea NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -1510,6 +1550,7 @@ export async function updateCard(
     auto_winback_days: number;
     auto_winback_message: string;
     stamp_style: string;
+    logo_has_name: boolean;
     signup_message: string;
     band_color: string;
     band_texture: string;
@@ -1555,69 +1596,75 @@ export async function updateCard(
   return after;
 }
 
-// ----------------------------------------------------------- café logos ----
+// ------------------------------------------------------------- card art ----
 
-export async function getCardLogo(
-  cardId: string,
-): Promise<{ png: Buffer; updated_at: Date } | null> {
-  const res = await getPool().query<{ png: Buffer; updated_at: Date }>(
-    `SELECT png, updated_at FROM card_logos WHERE card_id = $1`,
-    [cardId],
-  );
-  return res.rows[0] ?? null;
+/**
+ * The four single-image art tables are byte-identical in shape — one PNG per
+ * card, upserted, with an updated_at that doubles as a cache-buster. They get
+ * one set of accessors rather than four hand-copied ones, because that is how
+ * the banner came to be validated against the logo's size cap: the copies drift.
+ *
+ * `table` is a literal from the call sites just below and never user input; it
+ * is interpolated because an identifier cannot be a bound parameter.
+ */
+function cardArtTable(table: string) {
+  return {
+    async get(cardId: string): Promise<{ png: Buffer; updated_at: Date } | null> {
+      const res = await getPool().query<{ png: Buffer; updated_at: Date }>(
+        `SELECT png, updated_at FROM ${table} WHERE card_id = $1`,
+        [cardId],
+      );
+      return res.rows[0] ?? null;
+    },
+    async set(cardId: string, png: Buffer): Promise<void> {
+      await getPool().query(
+        `INSERT INTO ${table} (card_id, png, updated_at) VALUES ($1, $2, now())
+         ON CONFLICT (card_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
+        [cardId, png],
+      );
+    },
+    async del(cardId: string): Promise<void> {
+      await getPool().query(`DELETE FROM ${table} WHERE card_id = $1`, [cardId]);
+    },
+    /** Epoch-ms of the last change, or 0 when none — cache-busts Google's fetch. */
+    async version(cardId: string): Promise<number> {
+      const res = await getPool().query<{ updated_at: Date }>(
+        `SELECT updated_at FROM ${table} WHERE card_id = $1`,
+        [cardId],
+      );
+      const row = res.rows[0];
+      return row ? new Date(row.updated_at).getTime() : 0;
+    },
+  };
 }
 
-export async function setCardLogo(cardId: string, png: Buffer): Promise<void> {
-  await getPool().query(
-    `INSERT INTO card_logos (card_id, png, updated_at) VALUES ($1, $2, now())
-     ON CONFLICT (card_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
-    [cardId, png],
-  );
-}
+const logoArt = cardArtTable("card_logos");
+const bannerArt = cardArtTable("card_banners");
+/** The square logo, Google's programLogo only. Absent ⇒ fall back to the logo. */
+const markArt = cardArtTable("card_logo_marks");
+/** The owner's own stamp shape. Its ALPHA is the shape; see shapeStamp. */
+const stampIconArt = cardArtTable("card_stamp_icons");
 
-export async function deleteCardLogo(cardId: string): Promise<void> {
-  await getPool().query(`DELETE FROM card_logos WHERE card_id = $1`, [cardId]);
-}
+export const getCardLogo = logoArt.get;
+export const setCardLogo = logoArt.set;
+export const deleteCardLogo = logoArt.del;
+export const cafeLogoVersion = logoArt.version;
 
-/** Epoch-ms of the logo's last change, or 0 when none — used to cache-bust Google's fetch. */
-export async function cafeLogoVersion(cardId: string): Promise<number> {
-  const res = await getPool().query<{ updated_at: Date }>(
-    `SELECT updated_at FROM card_logos WHERE card_id = $1`,
-    [cardId],
-  );
-  const row = res.rows[0];
-  return row ? new Date(row.updated_at).getTime() : 0;
-}
+// Banner image (optional): Apple strip.png / Google heroImage.
+export const getCardBanner = bannerArt.get;
+export const setCardBanner = bannerArt.set;
+export const deleteCardBanner = bannerArt.del;
+export const cafeBannerVersion = bannerArt.version;
 
-// Banner image (optional): Apple strip.png / Google heroImage. Same shape as logos.
-export async function getCardBanner(cardId: string): Promise<{ png: Buffer } | null> {
-  const res = await getPool().query<{ png: Buffer }>(
-    `SELECT png FROM card_banners WHERE card_id = $1`,
-    [cardId],
-  );
-  return res.rows[0] ?? null;
-}
+export const getCardLogoMark = markArt.get;
+export const setCardLogoMark = markArt.set;
+export const deleteCardLogoMark = markArt.del;
+export const cardLogoMarkVersion = markArt.version;
 
-export async function setCardBanner(cardId: string, png: Buffer): Promise<void> {
-  await getPool().query(
-    `INSERT INTO card_banners (card_id, png, updated_at) VALUES ($1, $2, now())
-     ON CONFLICT (card_id) DO UPDATE SET png = EXCLUDED.png, updated_at = now()`,
-    [cardId, png],
-  );
-}
-
-export async function deleteCardBanner(cardId: string): Promise<void> {
-  await getPool().query(`DELETE FROM card_banners WHERE card_id = $1`, [cardId]);
-}
-
-export async function cafeBannerVersion(cardId: string): Promise<number> {
-  const res = await getPool().query<{ updated_at: Date }>(
-    `SELECT updated_at FROM card_banners WHERE card_id = $1`,
-    [cardId],
-  );
-  const row = res.rows[0];
-  return row ? new Date(row.updated_at).getTime() : 0;
-}
+export const getCardStampIcon = stampIconArt.get;
+export const setCardStampIcon = stampIconArt.set;
+export const deleteCardStampIcon = stampIconArt.del;
+export const cardStampIconVersion = stampIconArt.version;
 
 // ---- stamp strips: one rendered PNG per stamp count (rich stamp grid) ----
 
