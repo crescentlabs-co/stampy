@@ -425,6 +425,77 @@ describe("one designer, two pages", () => {
     }
   });
 
+  // A stamp keeps only its alpha and is filled with one colour; the logo never
+  // was, so "make the card black" left a black logo invisible on it and nothing
+  // could fix that. Both now go through ONE fill — two copies of a composite
+  // mode is exactly what drifts into a white stamp and a black logo.
+  it("recolours the logo through the same fill the stamp uses", () => {
+    for (const html of [dash, admin]) {
+      expect(html.match(/function fillThroughAlpha/g)!.length).toBe(1);
+      expect(html.match(/function tintLogo/g)!.length).toBe(1);
+      // shapeStamp must DELEGATE, not keep its own copy of source-in.
+      expect(html).toContain("fillThroughAlpha(sx, color, size, size);");
+      expect(html).toContain('[["", "Original"], ["white", "White"], ["black", "Black"]]');
+      // The tint is recomputed from the untouched upload every time; without
+      // that, the first White would be permanent and Original unreachable.
+      expect(html).toContain('P("/logo-original")');
+      expect(html).toContain("pngOriginal");
+    }
+  });
+
+  // An explicit logo colour is the owner taking the wheel — the auto-adjust
+  // must stop moving their card out from under a choice they just made.
+  it("stops auto-adjusting the card once a logo colour is chosen", () => {
+    for (const html of [dash, admin]) {
+      expect(html).toContain("if (c.logoTint) return;");
+    }
+  });
+
+  // Two unlabelled printables, one of them unbranded and pinned to a card id
+  // that a rename strands. There is one now, and nothing may link the old one.
+  it("offers one printable, and never links the retired counter sheet", () => {
+    for (const html of [dash, admin]) {
+      expect(html).not.toContain("/sheet");
+      expect(html).not.toContain("Counter sheet");
+    }
+    expect(admin).toContain("Print poster");
+  });
+
+  // Deleting a shop is the only irreversible thing in the console. The typed
+  // name is the gate; arm() only guards a mis-click. Invariant 8: no confirm().
+  it("gates shop deletion on the typed name, with no browser dialog", () => {
+    expect(admin).toContain("data-mdelete");
+    expect(admin).toContain("data-delname");
+    expect(admin).toContain("Tap again — this cannot be undone");
+    // Comments stripped first: the prose in this console names confirm() several
+    // times precisely to say it is never called (same idiom as the claim panel).
+    const code = admin
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+      .replace(/<!--[\s\S]*?-->/g, "");
+    for (const dialog of ["confirm(", "alert("]) expect(code).not.toContain(dialog);
+    // Every refusal has to say WHY, or an operator retries the one thing that
+    // will never work instead of archiving.
+    for (const reason of ["has-passes", "has-customers", "has-messages"]) {
+      expect(admin).toContain(reason);
+    }
+  });
+
+  // The same poster is being scanned either way: a customer who gets a generic
+  // white page today and a branded one tomorrow cannot tell it was one shop.
+  it("brands the coming-soon page and stops crushing a wide logo", () => {
+    const branded = shopNotOpenPage("Kopi Corner", 7, "kopi", {
+      background_color: "rgb(59, 32, 22)",
+    } as never);
+    expect(branded).toContain("#3b2016");
+    expect(branded).toContain("lhero");
+    expect(branded).toContain("/c/kopi/art/logo.png?v=7");
+    // The 72x72 rounded square letterboxed the wide lockup most shops upload.
+    expect(branded).not.toContain("width:72px;height:72px");
+    // With no card it still renders — the route can reach it before a card does.
+    expect(shopNotOpenPage("Kopi Corner")).toContain("Kopi Corner");
+  });
+
   // Taking the plate off is only safe if something notices when it leaves the
   // mark invisible. Both entry points have to run the check: an upload, and
   // "Use these colours" — which sets a card colour sampled FROM the logo, so it

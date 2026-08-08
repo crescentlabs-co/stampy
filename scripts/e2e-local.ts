@@ -1450,7 +1450,10 @@ async function main() {
   const posterCard = (await getCard(dfyOut.cardId))!;
   const dfyPoster = await get("/c/" + dfyOut.cardId + "/poster");
   expect(
-    dfyPoster.status === 200 && dfyPoster.body.includes(posterCard.reward),
+    // Lower-cased: the generated line reads "…get a free plate.", so compare the
+    // way the page actually renders it rather than the way the column stores it.
+    dfyPoster.status === 200 &&
+      dfyPoster.body.toLowerCase().includes(posterCard.reward.toLowerCase()),
     `the printable poster names the reward (${posterCard.reward})`,
   );
   expect(
@@ -1541,6 +1544,113 @@ async function main() {
     toZero.status === 409 && toZero.body.error === "last-card",
     "a shop can never archive its way down to no card at all",
   );
+
+  // --- Hard delete: the guards are the feature ------------------------------
+  //
+  // Deleting a shop is the only irreversible thing in the console and the only
+  // way to free an email that is stuck between an archived login and a claim
+  // form that says "already taken". What matters here is not that it deletes —
+  // it is that it REFUSES the moment a shop has issued anything, because the
+  // alternative is orphaning a card in somebody's wallet with no way to tell
+  // their phone, and erasing the history that proves they were ever a customer.
+  const newShop = async (name: string) => {
+    const r = await fetch(base + "/admin/api/card", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ cafeName: name, reward: "Free thing" }),
+    });
+    return JSON.parse(await r.text()) as { cardId: string; merchantId: string };
+  };
+  const delShop = async (merchantId: string, name: string, cookieUsed = cookieNow) => {
+    const r = await fetch(base + "/admin/api/merchant/" + merchantId, {
+      method: "DELETE", headers: { "Content-Type": "application/json", cookie: cookieUsed },
+      body: JSON.stringify({ name }),
+    });
+    return { status: r.status, body: JSON.parse(await r.text()) };
+  };
+  const merchantExists = async (id: string) =>
+    (await getPool().query("SELECT 1 FROM merchants WHERE id = $1", [id])).rowCount === 1;
+
+  const doomed = await newShop("Delete Me Cafe");
+  expect((await delShop(doomed.merchantId, "Delete Me Cafe", cookieOutsider)).status === 403,
+    "a non-admin cannot delete a shop");
+  expect(await merchantExists(doomed.merchantId), "...and it is still there");
+  const mistyped = await delShop(doomed.merchantId, "Delete Me Cafee");
+  expect(mistyped.status === 400 && mistyped.body.error === "name-mismatch",
+    "the typed name has to match — this is the real gate, not the two-tap");
+  expect(await merchantExists(doomed.merchantId), "...and a mistyped name changes nothing");
+
+  // A shop that has been LOOKED at still deletes: join_view rows are events, and
+  // taking the shop and its whole log together leaves nothing to disagree with.
+  await get("/c/" + doomed.cardId);
+  const delGone = await delShop(doomed.merchantId, "Delete Me Cafe");
+  expect(delGone.status === 200 && delGone.body.ok, "a shop that never issued a card deletes");
+  expect(!(await merchantExists(doomed.merchantId)), "...the merchant row is gone");
+  expect(
+    (await getPool().query("SELECT 1 FROM cards WHERE id = $1", [doomed.cardId])).rowCount === 0,
+    "...its card is gone",
+  );
+  expect(
+    (await getPool().query("SELECT 1 FROM events WHERE card_id = $1", [doomed.cardId])).rowCount === 0,
+    "...and its events went with it, rather than being orphaned",
+  );
+
+  // The one that matters: a shop holding a real pass must survive intact.
+  const trading = await newShop("Traded Already");
+  // Claim it, so there is a real login to prove survives the refusal too.
+  const tradeLink = await fetch(base + "/admin/api/merchant/" + trading.merchantId + "/claim-link", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  const tradeToken = JSON.parse(await tradeLink.text()).url.split("/claim/")[1];
+  await fetch(base + "/claim/" + tradeToken + "/finish", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "traded@example.test", password: "password123" }),
+  });
+  // Issued straight into the database rather than through /enroll: Apple signing
+  // is not configured here, and what is under test is the GUARD, not the wallet.
+  await mk("apple", undefined, trading.cardId);
+  const passCount = (await getPool().query("SELECT 1 FROM passes WHERE card_id = $1", [trading.cardId])).rowCount;
+  expect(passCount === 1, "the traded shop has a card in someone's wallet");
+  const refused = await delShop(trading.merchantId, "Traded Already");
+  expect(
+    refused.status === 409 && refused.body.error === "has-passes",
+    "a shop that issued a card is REFUSED, and told to archive instead",
+  );
+  expect(await merchantExists(trading.merchantId), "...the shop is untouched");
+  expect(
+    (await getPool().query("SELECT 1 FROM passes WHERE card_id = $1", [trading.cardId])).rowCount === 1,
+    "...and so is the customer's pass",
+  );
+  expect(
+    (await getPool().query("SELECT 1 FROM owners WHERE email = $1", ["traded@example.test"])).rowCount === 1,
+    "...and so is their login",
+  );
+
+  // The whole point: deleting frees the email for a fresh claim.
+  const stuck = await newShop("Stuck Email Shop");
+  const stuckLink = await fetch(base + "/admin/api/merchant/" + stuck.merchantId + "/claim-link", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  const stuckToken = JSON.parse(await stuckLink.text()).url.split("/claim/")[1];
+  await fetch(base + "/claim/" + stuckToken + "/finish", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "stuck@example.test", password: "password123" }),
+  });
+  const reclaimShop = await newShop("Second Chance");
+  const reclaimLink = await fetch(base + "/admin/api/merchant/" + reclaimShop.merchantId + "/claim-link", {
+    method: "POST", headers: { cookie: cookieNow },
+  });
+  const reclaimToken = JSON.parse(await reclaimLink.text()).url.split("/claim/")[1];
+  const claimBlocked = await fetch(base + "/claim/" + reclaimToken + "/finish", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "stuck@example.test", password: "password123" }),
+  });
+  expect(claimBlocked.status === 409, "the email is held hostage by the first shop's owner row");
+  expect((await delShop(stuck.merchantId, "Stuck Email Shop")).status === 200, "deleting that shop works");
+  const freed = await fetch(base + "/claim/" + reclaimToken + "/finish", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "stuck@example.test", password: "password123" }),
+  });
+  expect(freed.status === 200, "...and the address can claim a shop again");
 
   // --- Owner-level customers + nudge (span ALL of an owner's cards) ---
   const ownerCust = JSON.parse((await get("/dashboard/api/customers?cardId=all&lapsedDays=0", { headers: { cookie: cookieNow } })).body);

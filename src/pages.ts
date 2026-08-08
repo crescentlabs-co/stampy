@@ -5133,6 +5133,20 @@ export function adminPage(): string {
               : '<button class="btn btn-ghost dbtn" data-marchive="' + m.id + '">Archive shop</button>'}
           </div>
           <div data-pwout="\${m.id}"></div>
+          <!-- The only irreversible button in the console, and the only way to
+               free an email address that is stuck: login refuses an archived
+               owner and the claim form refuses an existing one, so an address
+               can be locked out of both with nothing else to unstick it.
+               Refused server-side the moment a shop has a pass, a customer or a
+               sent message — anything that traded is archived, never deleted. -->
+          <details class="fold" style="margin-top:10px">
+            <summary>Delete this shop permanently</summary>
+            <p class="muted" style="margin:8px 0">Only works if no card was ever issued. Everything goes: the shop, its programme, its login and its history. Archive instead if it ever had a customer.</p>
+            <label style="margin-top:4px">Type <strong>\${esc(m.name)}</strong> to confirm</label>
+            <input data-delname="\${m.id}" placeholder="\${esc(m.name)}" autocomplete="off">
+            <button class="btn btn-ghost dbtn" data-mdelete="\${m.id}" style="margin-top:8px" disabled>Delete shop</button>
+            <div data-delout="\${m.id}"></div>
+          </details>
           <label style="margin-top:12px">Phone</label>
           <input data-phone="\${m.id}" value="\${esc(m.contact_phone)}" placeholder="Who to ring">
           <label style="margin-top:8px">Notes</label>
@@ -5382,6 +5396,33 @@ export function adminPage(): string {
           await api("/merchant/" + id + "/unarchive", { method: "POST" });
           load();
         };
+        // Delete. The typed name is the real gate — arm() guards a mis-click,
+        // not a wrong row, and this is the one action with nothing behind it.
+        const delName = scope.querySelector("[data-delname]");
+        const delBtn = scope.querySelector("[data-mdelete]");
+        if (delName && delBtn) {
+          const shopName = (byMerchant.get(id).name || "").trim().toLowerCase();
+          delName.oninput = () => {
+            delBtn.disabled = delName.value.trim().toLowerCase() !== shopName;
+          };
+          armBtn(delBtn, "Tap again — this cannot be undone", async () => {
+            const out = scope.querySelector('[data-delout="' + id + '"]');
+            const { body: r } = await api("/merchant/" + id, {
+              method: "DELETE", body: JSON.stringify({ name: delName.value }),
+            });
+            if (r.ok) {
+              // No row to go back to, so re-read the whole console.
+              return void load();
+            }
+            const why = {
+              "has-passes": "This shop has issued a card to someone. Archive it instead.",
+              "has-customers": "This shop has customers. Archive it instead.",
+              "has-messages": "This shop has sent a message to a customer. Archive it instead.",
+              "name-mismatch": "That name doesn't match.",
+            }[r.error] || "Couldn't delete it.";
+            out.innerHTML = '<p class="muted" style="margin:8px 0 0">' + esc(why) + "</p>";
+          });
+        }
         // The designer opens IN the row, on first open, not by scrolling you to
         // a section elsewhere on the page — you are already looking at the shop.
         // Mounted lazily: it is a second request per shop and the row must not

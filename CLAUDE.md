@@ -184,6 +184,17 @@ stamp it reverses stays. The pruner (`pruneAbandonedPasses`) refuses to delete
 any pass that was ever stamped or ever reached a wallet, because that would let
 churn erase its own evidence.
 
+**There is exactly ONE exception, and it is `hardDeleteMerchant` (src/db.ts).**
+It removes a shop that never traded — refused outright if the merchant has any
+pass, any customer or any sent message — and takes its `events` rows with it, in
+the same transaction. The rule above exists so a *correction* can never rewrite
+history and leave a metric disagreeing with the log; here the shop and its
+entire log go together, so nothing survives to disagree. It exists because
+archiving cannot free an email address: login refuses an archived owner and the
+claim form refuses an existing one, so a demo shop or a typo can leave an
+address unable to do either. Do not widen this. Any other need to remove event
+rows is a new row, or it is a bug.
+
 **`logEvent` fills in what the caller omits** — merchant, customer, platform,
 progress, and the target in force — from the pass, in the same statement. Don't
 work around it. Those columns exist because they must be true of every row, and

@@ -1507,6 +1507,110 @@ export async function archiveCard(id: string): Promise<CardArchival> {
   }
 }
 
+export type MerchantDeletion =
+  | { ok: true; cards: number; ownerEmail: string | null }
+  | { ok: false; reason: "no-such-merchant" | "has-passes" | "has-customers" | "has-messages" };
+
+/**
+ * Remove a shop that never traded — completely, including its owner login.
+ *
+ * The one thing archiving cannot do. A shop built for a demo, a typo, or a
+ * merchant who never showed up leaves an owner row behind, and that row holds
+ * the email hostage: `getOwnerByEmail` makes the claim form refuse it
+ * (src/routes/claim.ts), and an archived merchant makes login refuse it too
+ * (`ownerIsArchived`). Between them, an address can end up unable to log in AND
+ * unable to claim, with no way out of the console. This is that way out.
+ *
+ * **The guards are the feature.** Refuses if a pass was EVER issued, if any
+ * customer exists, or if any message was sent — anything that traded gets
+ * archived, and nothing a real person holds in a wallet can be destroyed from
+ * here. Every condition is re-checked inside the transaction against locked
+ * rows, because the console's numbers being a few seconds stale must never turn
+ * into a live shop disappearing.
+ *
+ * NOTE — this DELETEs from `events`, which CLAUDE.md otherwise forbids
+ * absolutely. The rule exists so a correction can never rewrite history and
+ * leave a metric disagreeing with the log; here the shop and its entire log go
+ * together, in one transaction, leaving nothing to disagree. That exception is
+ * written down in CLAUDE.md and is limited to this function.
+ */
+export async function hardDeleteMerchant(id: string): Promise<MerchantDeletion> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const merchant = await client.query<{ owner_id: string | null }>(
+      `SELECT owner_id FROM merchants WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+    if (!merchant.rows.length) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "no-such-merchant" };
+    }
+    const ownerId = merchant.rows[0]!.owner_id;
+
+    // Every card the shop has ever held, archived ones included — an archived
+    // card's passes are still in wallets and still count against deleting.
+    const cardIds = (
+      await client.query<{ id: string }>(`SELECT id FROM cards WHERE merchant_id = $1`, [id])
+    ).rows.map((r) => r.id);
+
+    const anyPass = cardIds.length
+      ? await client.query(`SELECT 1 FROM passes WHERE card_id = ANY($1::text[]) LIMIT 1`, [cardIds])
+      : { rowCount: 0 };
+    if (anyPass.rowCount) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "has-passes" };
+    }
+    const anyCustomer = await client.query(
+      `SELECT 1 FROM customers WHERE merchant_id = $1 LIMIT 1`,
+      [id],
+    );
+    if (anyCustomer.rowCount) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "has-customers" };
+    }
+    const anyMessage = cardIds.length
+      ? await client.query(`SELECT 1 FROM messages WHERE card_id = ANY($1::text[]) LIMIT 1`, [
+          cardIds,
+        ])
+      : { rowCount: 0 };
+    if (anyMessage.rowCount) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "has-messages" };
+    }
+
+    let ownerEmail: string | null = null;
+    if (ownerId) {
+      const o = await client.query<{ email: string }>(`SELECT email FROM owners WHERE id = $1`, [
+        ownerId,
+      ]);
+      ownerEmail = o.rows[0]?.email ?? null;
+    }
+
+    // Child-first. The art tables, owner_cards and owner_logins cascade from
+    // cards/owners; events and merchant_slugs do not, so they go by hand.
+    if (cardIds.length) {
+      await client.query(`DELETE FROM events WHERE card_id = ANY($1::text[])`, [cardIds]);
+    }
+    await client.query(`DELETE FROM events WHERE merchant_id = $1`, [id]);
+    await client.query(`DELETE FROM merchant_slugs WHERE merchant_id = $1`, [id]);
+    if (cardIds.length) {
+      await client.query(`DELETE FROM cards WHERE id = ANY($1::text[])`, [cardIds]);
+    }
+    // The merchant must go before the owner: merchants.owner_id references it.
+    await client.query(`DELETE FROM merchants WHERE id = $1`, [id]);
+    if (ownerId) await client.query(`DELETE FROM owners WHERE id = $1`, [ownerId]);
+
+    await client.query("COMMIT");
+    return { ok: true, cards: cardIds.length, ownerEmail };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /** Put an archived card back. Always safe — nothing was lost to begin with. */
 export async function unarchiveCard(id: string): Promise<CardArchival> {
   const res = await getPool().query(

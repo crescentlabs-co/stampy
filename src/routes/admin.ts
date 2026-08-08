@@ -36,6 +36,7 @@ import {
   detachOwnerFromMerchant,
   clearClaimToken,
   getMerchant,
+  hardDeleteMerchant,
   setClaimToken,
   setMerchantPaid,
   unarchiveCard,
@@ -248,6 +249,31 @@ adminRouter.post("/api/merchant/:id/unclaim", requireAdmin, async (req, res) => 
   const row = await detachOwnerFromMerchant(merchant.id);
   if (!row) return void res.status(409).json({ error: "not-claimed" });
   res.json({ ok: true });
+});
+
+/**
+ * Delete a shop that never traded, owner login and all.
+ *
+ * The escape hatch for a demo shop, a typo, or a merchant who never showed up —
+ * cases where archiving leaves an owner row holding an email address hostage:
+ * login refuses it (archived) and the claim form refuses it (already an owner),
+ * so the address is stuck with no console action that frees it.
+ *
+ * `name` must match the shop exactly. Not decoration: this is the one
+ * irreversible button in the console, and the two-tap arm() on the client is
+ * about mis-clicks, not about deleting the wrong row. hardDeleteMerchant
+ * re-checks every guard inside its transaction regardless.
+ */
+adminRouter.delete("/api/merchant/:id", requireAdmin, async (req, res) => {
+  const merchant = await getMerchant(req.params.id!);
+  if (!merchant) return void res.status(404).json({ error: "no-such-merchant" });
+  const typed = ((req.body ?? {}) as { name?: string }).name ?? "";
+  if (typed.trim().toLowerCase() !== merchant.name.trim().toLowerCase()) {
+    return void res.status(400).json({ error: "name-mismatch" });
+  }
+  const out = await hardDeleteMerchant(merchant.id);
+  if (!out.ok) return void res.status(409).json({ error: out.reason });
+  res.json({ ok: true, cards: out.cards, ownerEmail: out.ownerEmail });
 });
 
 /** Whether this shop is paying. The one lifecycle fact nothing else implies. */
