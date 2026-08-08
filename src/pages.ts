@@ -772,11 +772,6 @@ export const DESIGN_PANEL_JS = /* js */ `
       const div = document.createElement("div");
       const api = env.api, toast = env.toast, modal = env.modal, info = env.info;
       const P = (suffix) => env.path(suffix || "");
-      // A full URL, for the one thing that cannot go through api(): an <img>.
-      // P() alone is only the SUFFIX -- api() supplies the console's prefix --
-      // so using it as an image src requested a path no router serves, and the
-      // 404 surfaced as "upload it again", forever.
-      const PU = (suffix) => env.apiBase + P(suffix);
       const bust = (v) => v ? "?v=" + v : "";
       const logoSrc = env.artUrl("logo", c.logoVersion);
       div.innerHTML = \`
@@ -807,14 +802,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
-        </div>
-        <!-- The logo can be recoloured the same way a stamp is: keep the shape,
-             throw the colours away, fill it with one colour. Without this, "make
-             the card black" left a black logo invisible on it and no setting
-             could fix that — the only thing that moved was the card. -->
-        <div data-tintrow style="\${c.logoVersion ? "" : "display:none"};margin-top:10px">
-          <span class="muted" style="font-size:.8rem">Logo colour\${info("Your logo is used exactly as uploaded unless you pick White or Black here. Those keep its shape and fill it with one flat colour — the same way your stamp works — which is what you want when the card is dark and your logo is dark. It only changes the logo, never the card.")}</span>
-          <div class="logorow" data-tints style="margin-top:6px"></div>
         </div>
         <div class="swatches" data-swatches style="display:none"></div>
         <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
@@ -980,33 +967,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         const k = Math.min(size / img.naturalWidth, size / img.naturalHeight); // contain, never crop
         const w = img.naturalWidth * k, h = img.naturalHeight * k;
         sx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        fillThroughAlpha(sx, color, size, size);
+        sx.globalCompositeOperation = "source-in";
+        sx.fillStyle = color; sx.fillRect(0, 0, size, size);
         return s;
-      }
-
-      /**
-       * Keep the shape, throw the colours away, fill with one colour.
-       *
-       * The one line that makes a stamp take the card's colour, factored out
-       * because the LOGO now does the same thing (see tintLogo). Two copies of
-       * a composite mode is exactly the kind of thing that drifts and leaves an
-       * owner with a white stamp and a black logo from one "White" button.
-       */
-      function fillThroughAlpha(ctx2d, color, w, h) {
-        ctx2d.globalCompositeOperation = "source-in";
-        ctx2d.fillStyle = color;
-        ctx2d.fillRect(0, 0, w, h);
-        ctx2d.globalCompositeOperation = "source-over";
-      }
-
-      /** The logo at its own size, recoloured. '' returns it untouched. */
-      function tintLogo(img, tint) {
-        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-        const cx = cv.getContext("2d");
-        cx.drawImage(img, 0, 0, w, h);
-        if (tint) fillThroughAlpha(cx, tint === "white" ? "#ffffff" : "#000000", w, h);
-        return cv;
       }
 
       /**
@@ -1270,9 +1233,6 @@ export const DESIGN_PANEL_JS = /* js */ `
        * closer to what they asked for than a blank card is.
        */
       async function ensureLogoReadable(dataUrl) {
-        // An explicit logo colour is the owner taking the wheel. Moving their
-        // card out from under a choice they just made is the opposite of help.
-        if (c.logoTint) return;
         const img = await new Promise((res) => {
           const i = new Image();
           i.onload = () => res(i); i.onerror = () => res(null); i.src = dataUrl;
@@ -1340,14 +1300,8 @@ export const DESIGN_PANEL_JS = /* js */ `
             }
             const dataUrl = canvas.toDataURL("image/png");
             if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
-            const b64 = dataUrl.split(",")[1];
-            // The logo keeps a second copy of itself. Tinting fills the shape
-            // with one flat colour and throws the real colours away, so without
-            // an untouched original the first White is permanent and Original
-            // can never come back. A fresh upload is its own original.
-            const payload = kind === "logo" ? { png: b64, pngOriginal: b64 } : { png: b64 };
             const { body } = await api(P("/" + kind), {
-              method: "POST", body: JSON.stringify(payload),
+              method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
             });
             if (body.ok) { onDone(dataUrl); toast(ART_LABEL[kind] + " saved ✓"); }
             else toast(body.error || "Upload failed");
@@ -1364,70 +1318,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").style.display = "";
-        q("[data-tintrow]").style.display = "";
-        // A new file is its own original, so any earlier tint no longer applies
-        // to it — starting from Original is the only honest state here.
-        c.logoTint = "";
         lastLogoUrl = url;
-        drawTints();
         readPalette(url); // the logo is where the colours come from
         // After the plate is gone, not before: the check is about what is left.
         void ensureLogoReadable(url);
       }, "keep");
-
-      // ---- Logo colour ----
-      const TINTS = [["", "Original"], ["white", "White"], ["black", "Black"]];
-
-      function drawTints() {
-        const host = q("[data-tints]");
-        if (!host) return;
-        host.innerHTML = "";
-        for (const [value, label] of TINTS) {
-          const b = document.createElement("button");
-          b.className = "btn " + (c.logoTint === value ? "btn-dark" : "btn-ghost");
-          b.style.margin = "0";
-          b.textContent = label;
-          b.onclick = () => applyTint(value);
-          host.appendChild(b);
-        }
-      }
-
-      /**
-       * Re-render the logo from its untouched original at the chosen colour and
-       * store the result as the served copy.
-       *
-       * Done in the browser because that is where a canvas is — there is no
-       * image library on the server and no build step to add one, which is the
-       * same reason the stamp grid is rendered here and posted.
-       */
-      async function applyTint(tint) {
-        const prev = c.logoTint;
-        if (prev === tint) return;
-        const src = await new Promise((res) => {
-          const i = new Image();
-          i.onload = () => res(i); i.onerror = () => res(null);
-          // Cache-busted: the served copy changes under this URL on every tint.
-          i.src = PU("/logo-original") + "?t=" + Date.now();
-        });
-        if (!src) {
-          return toast("This logo was uploaded before colours were available — upload it again to recolour it.");
-        }
-        const cv = tintLogo(src, tint);
-        const dataUrl = cv.toDataURL("image/png");
-        const { body } = await api(P("/logo"), {
-          method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
-        });
-        if (!body.ok) return toast(body.error || "Couldn't recolour the logo");
-        c.logoTint = tint;
-        c.logoVersion = Date.now();
-        lastLogoUrl = dataUrl;
-        q("[data-pv-logo]").src = dataUrl;
-        drawTints();
-        renderPreview();
-        await save({ logoTint: tint }, "Logo colour");
-        toast(tint ? "Logo set to " + tint : "Logo back to its own colours");
-      }
-      drawTints();
       // Removing the logo hides it here too, because the pass drops the image
       // entirely with no upload and shows the shop name alone — the preview has
       // to agree, or the owner is designing against something they won't get.
@@ -1435,10 +1330,8 @@ export const DESIGN_PANEL_JS = /* js */ `
         const { body } = await api(P("/logo"), { method: "DELETE" });
         if (!body.ok) return toast(body.error || "Couldn't remove logo");
         c.logoVersion = 0;
-        c.logoTint = "";
         q("[data-pv-logo]").style.display = "none";
         q("[data-a=rmlogo]").style.display = "none";
-        q("[data-tintrow]").style.display = "none";
         lastLogoUrl = "";
         toast("Logo removed");
       };
@@ -4296,9 +4189,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const artBase = card.id === "default" ? "" : "/c/" + card.id;
         host.appendChild(designPanel(card, {
           api, toast, modal, info,
-          // The prefix api() puts on every call. Needed separately because an
-          // <img> cannot go through api() and must carry the full path itself.
-          apiBase: "/dashboard/api",
           path: (suffix) => "/card/" + card.id + suffix,
           artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
           customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
@@ -4865,8 +4755,6 @@ export function adminPage(): string {
       host.innerHTML = "";
       const panel = designPanel(card, {
         api, toast, modal, info,
-        // See the dashboard's copy: the prefix api() adds, for <img> URLs.
-        apiBase: "/admin/api",
         path: (suffix) => "/card/" + card.id + "/design" + suffix,
         artUrl: (kind, v) => "/c/" + card.id + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
         // A real card has real holders, and the save confirmation names them.

@@ -66,12 +66,7 @@ export interface CardRow {
   auto_winback_message: string;
   /** Which stamp-grid icon preset is selected ('' = plain text dots, 'custom' = uploaded). */
   stamp_style: string;
-  /**
-   * How the logo is coloured: '' = exactly as uploaded, 'white' | 'black' = its
-   * shape filled with one colour, the same way a stamp is. Anything other than
-   * '' also means the owner has chosen deliberately, so the card colour is left
-   * alone rather than auto-adjusted to suit the logo.
-   */
+  /** Unused — see migrate(). The column cannot be dropped, so the field stays. */
   logo_tint: string;
   /**
    * The uploaded logo already reads as the shop's name — a brand lockup, mark
@@ -690,21 +685,13 @@ export async function migrate(): Promise<void> {
       png        bytea NOT NULL,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
-    -- v2.3: the logo, recoloured — the same trick the stamp has always used.
-    --
-    -- A stamp keeps only its alpha and is filled with the card's colour
-    -- (shapeStamp); the logo never was, so "make the card black and the logo go
-    -- white" was not something any setting could do. It can now, and because
-    -- that fill is destructive the SOURCE has to be kept or Original becomes
-    -- unreachable after a reload. png stays the served copy, so /art/logo.png
-    -- and every consumer of it are untouched.
-    --
-    -- Nullable: every logo uploaded before this has no original, and the UI
-    -- treats that as "Original only" rather than pretending it can recolour.
+    -- v2.3: added for a logo-recolouring control (Original/White/Black) that was
+    -- built and then removed — too fiddly for what it bought. The COLUMNS stay:
+    -- migrations here are additive only, and src/backup.ts refuses a restore
+    -- whose dump names a column the target lacks, so dropping these would
+    -- strand every dump taken while they existed. Nothing reads or writes
+    -- either one. Reuse them if the idea comes back; do not drop them.
     ALTER TABLE card_logos ADD COLUMN IF NOT EXISTS png_original bytea;
-    -- '' = as uploaded. Otherwise 'white' | 'black'. Also the flag that tells
-    -- ensureLogoReadable to stop moving the card colour: once an owner has
-    -- picked a logo colour they have taken the wheel.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS logo_tint text NOT NULL DEFAULT '';
   `);
 
@@ -1678,7 +1665,6 @@ export async function updateCard(
     auto_winback_message: string;
     stamp_style: string;
     logo_has_name: boolean;
-    logo_tint: string;
     signup_message: string;
     band_color: string;
     band_texture: string;
@@ -1777,47 +1763,6 @@ export const getCardLogo = logoArt.get;
 export const setCardLogo = logoArt.set;
 export const deleteCardLogo = logoArt.del;
 export const cafeLogoVersion = logoArt.version;
-
-/**
- * Store the served logo AND the untouched upload behind it.
- *
- * Only card_logos carries an original, so this sits outside cardArtTable rather
- * than widening all four. `png` is what /art/logo.png serves and what a tint has
- * already been applied to; `png_original` is what a later tint change — or a
- * return to Original — is recomputed FROM. Recolouring throws colours away, so
- * without this the first tint would be permanent.
- */
-export async function setCardLogoWithOriginal(
-  cardId: string,
-  png: Buffer,
-  pngOriginal: Buffer,
-): Promise<void> {
-  await getPool().query(
-    `INSERT INTO card_logos (card_id, png, png_original, updated_at)
-     VALUES ($1, $2, $3, now())
-     ON CONFLICT (card_id) DO UPDATE
-       SET png = EXCLUDED.png, png_original = EXCLUDED.png_original, updated_at = now()`,
-    [cardId, png, pngOriginal],
-  );
-}
-
-/** The upload as it arrived, or null for a logo stored before v2.3. */
-export async function getCardLogoOriginal(cardId: string): Promise<Buffer | null> {
-  const res = await getPool().query<{ png_original: Buffer | null }>(
-    `SELECT png_original FROM card_logos WHERE card_id = $1`,
-    [cardId],
-  );
-  return res.rows[0]?.png_original ?? null;
-}
-
-/** Re-point `png` at an already-tinted render, keeping the original untouched. */
-export async function setCardLogoRender(cardId: string, png: Buffer): Promise<boolean> {
-  const res = await getPool().query(
-    `UPDATE card_logos SET png = $2, updated_at = now() WHERE card_id = $1`,
-    [cardId, png],
-  );
-  return (res.rowCount ?? 0) > 0;
-}
 
 // Banner image (optional): Apple strip.png / Google heroImage.
 export const getCardBanner = bannerArt.get;
