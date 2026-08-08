@@ -1545,6 +1545,79 @@ async function main() {
     "a shop can never archive its way down to no card at all",
   );
 
+  // --- The logo's untouched original, on BOTH consoles ---------------------
+  //
+  // Tinting the logo fills its shape with one flat colour and discards the real
+  // ones, so the original upload is the only way back to "Original" — and the
+  // only thing that makes White/Black work at all. This shipped storing it on
+  // the dashboard's route and not the admin console's, and the tests at the
+  // time asserted the BUTTONS existed rather than that any of this worked, so
+  // every logo uploaded through the console failed with "upload it again" no
+  // matter how many times it was uploaded again. Exercise the round trip.
+  const otherPng =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADElEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const logoOriginal = async (path: string, cookieUsed = cookie) =>
+    fetch(base + path, { headers: { cookie: cookieUsed } });
+
+  // A logo uploaded WITHOUT an original (as every pre-v2.3 one was) 404s, so the
+  // designer can say "upload it again" instead of silently doing nothing.
+  expect(
+    (await logoOriginal("/dashboard/api/card/default/logo-original")).status === 404,
+    "a logo stored with no original reports that plainly",
+  );
+  // Now a real upload, the way the designer sends it.
+  await fetch(base + "/dashboard/api/card/default/logo", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ png: pngB64, pngOriginal: pngB64 }),
+  });
+  const origRes = await logoOriginal("/dashboard/api/card/default/logo-original");
+  expect(origRes.status === 200, "the dashboard stores the logo's original");
+  expect(
+    Buffer.from(await origRes.arrayBuffer()).equals(Buffer.from(pngB64, "base64")),
+    "...and hands the exact upload back",
+  );
+  expect(
+    (await logoOriginal("/dashboard/api/card/default/logo-original", cookieOutsider)).status === 403,
+    "...and it is owner-only",
+  );
+  // A tint re-posts only `png`. The original it was rendered FROM must survive,
+  // or the first White would be permanent and Original unreachable.
+  await fetch(base + "/dashboard/api/card/default/logo", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ png: otherPng }),
+  });
+  const afterTint = await logoOriginal("/dashboard/api/card/default/logo-original");
+  expect(
+    Buffer.from(await afterTint.arrayBuffer()).equals(Buffer.from(pngB64, "base64")),
+    "a re-tint replaces the served logo but never the original behind it",
+  );
+  expect(
+    Buffer.from(await (await fetch(base + "/art/logo.png")).arrayBuffer())
+      .equals(Buffer.from(otherPng, "base64")),
+    "...and the tinted render is what customers are served",
+  );
+  // The console's twin route. This is the half that was missing.
+  await fetch(base + "/admin/api/card/default/design/logo", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ png: otherPng, pngOriginal: otherPng }),
+  });
+  const adminOrig = await logoOriginal("/admin/api/card/default/design/logo-original", cookieNow);
+  expect(adminOrig.status === 200, "the ADMIN console stores the logo's original too");
+  expect(
+    Buffer.from(await adminOrig.arrayBuffer()).equals(Buffer.from(otherPng, "base64")),
+    "...and hands that upload back, so White/Black work on a console-built shop",
+  );
+  expect(
+    (await logoOriginal("/admin/api/card/default/design/logo-original", cookieOutsider)).status === 403,
+    "...and it is admin-only",
+  );
+  // Put the plain logo back so the assertions below still describe what is served.
+  await fetch(base + "/dashboard/api/card/default/logo", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ png: pngB64, pngOriginal: pngB64 }),
+  });
+
+
   // --- Hard delete: the guards are the feature ------------------------------
   //
   // Deleting a shop is the only irreversible thing in the console and the only

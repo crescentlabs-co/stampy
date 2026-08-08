@@ -50,7 +50,6 @@ import {
   logOwnerLogin,
   ownerHasCard,
   getCardLogoOriginal,
-  setCardLogoWithOriginal,
   ownerIsArchived,
   setMessage,
   setResetToken,
@@ -69,9 +68,9 @@ import { clear, hit, peek } from "../rateLimit.js";
 import { config, setupStatus, signupOpen } from "../config.js";
 import { rgbToHex } from "../color.js";
 import {
-  artBytes,
   ART_KIND_PATTERN,
   ART_KINDS,
+  storeArt,
   cardFieldsFromBody,
   designerCard,
   touchesLook,
@@ -434,17 +433,10 @@ dashboardRouter.post(
       return void res.status(403).json({ error: "not-your-card" });
     }
     const kind = req.params.kind as ArtKind;
-    const bytes = artBytes(kind, (req.body ?? {}).png);
-    if (typeof bytes === "string") return void res.status(400).json({ error: bytes });
-    // Only the logo carries an original, and only a fresh upload sends one — a
-    // tint change re-posts just `png`, because the original it was rendered FROM
-    // must survive untouched or Original becomes unreachable.
-    const original = kind === "logo" ? artBytes("logo", (req.body ?? {}).pngOriginal) : "no";
-    if (kind === "logo" && typeof original !== "string") {
-      await setCardLogoWithOriginal(cardId, bytes, original);
-    } else {
-      await ART_KINDS[kind].set(cardId, bytes);
-    }
+    // Shared with the admin console's twin route — see storeArt. Splitting this
+    // is what left every admin-uploaded logo without an original.
+    const err = await storeArt(kind, cardId, (req.body ?? {}) as Record<string, unknown>);
+    if (err) return void res.status(400).json({ error: err });
     await syncArt(cardId);
     res.json({ ok: true });
   },

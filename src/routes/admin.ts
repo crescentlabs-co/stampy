@@ -35,6 +35,7 @@ import {
   createUnclaimedMerchant,
   detachOwnerFromMerchant,
   clearClaimToken,
+  getCardLogoOriginal,
   getMerchant,
   hardDeleteMerchant,
   setClaimToken,
@@ -55,9 +56,9 @@ import {
   type OwnerRow,
 } from "../db.js";
 import {
-  artBytes,
   ART_KIND_PATTERN,
   ART_KINDS,
+  storeArt,
   BAND_TEXTURES,
   cardFieldsFromBody,
   designerCard,
@@ -334,17 +335,26 @@ adminRouter.post(
   requireAdmin,
   async (req, res) => {
     const kind = req.params.kind as ArtKind;
-    const bytes = artBytes(kind, (req.body ?? {}).png);
-    if (typeof bytes === "string") return void res.status(400).json({ error: bytes });
     const card = await getCard(req.params.id!);
     if (!card) return void res.status(404).json({ error: "no-such-card" });
-    await ART_KINDS[kind].set(card.id, bytes);
+    // Shared with the dashboard's twin route — see storeArt. This route used to
+    // call ART_KINDS[kind].set directly, so a logo uploaded here kept no
+    // original and the Original/White/Black buttons could never work on it.
+    const err = await storeArt(kind, card.id, (req.body ?? {}) as Record<string, unknown>);
+    if (err) return void res.status(400).json({ error: err });
     // Both platforms, not just Google: an iPhone has to be told to come back for
     // the new art, or it keeps the old look until that customer's next stamp.
     void refreshCardArt(card);
     res.json({ ok: true });
   },
 );
+
+/** The untouched upload, so the designer can re-render it at a new colour. */
+adminRouter.get(`/api/card/:id/design/logo-original`, requireAdmin, async (req, res) => {
+  const png = await getCardLogoOriginal(req.params.id!);
+  if (!png) return void res.status(404).json({ error: "no-original" });
+  res.type("png").set("Cache-Control", "no-store").send(png);
+});
 
 adminRouter.delete(
   `/api/card/:id/design/:kind(${ART_KIND_PATTERN})`,

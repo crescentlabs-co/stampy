@@ -28,6 +28,7 @@ import {
   deleteCardStampIcon,
   setCardBanner,
   setCardLogo,
+  setCardLogoWithOriginal,
   setCardLogoMark,
   setCardStampIcon,
   stampStripsVersion,
@@ -164,6 +165,41 @@ export function artBytes(kind: ArtKind, png: unknown): Buffer | string {
     return "bad-base64";
   }
   return (ART_KINDS[kind].big ? validateArtPng(bytes) : validateLogoPng(bytes)) ?? bytes;
+}
+
+/**
+ * Store an uploaded image for a card. Returns an error string, or null on success.
+ *
+ * **Both consoles must go through this.** The owner dashboard and the admin
+ * console each own a `POST …/:kind` route, and the designer that feeds them is
+ * one piece of browser code — so a rule applied in one router and not the other
+ * is invisible until a merchant hits it. That is not hypothetical: the logo's
+ * `png_original` was added to the dashboard's route only, and every logo
+ * uploaded through the admin console silently had no original, which made the
+ * Original/White/Black buttons fail with "upload it again" no matter how many
+ * times it was uploaded again.
+ *
+ * The logo alone keeps a second copy. Tinting fills its shape with one flat
+ * colour and discards the real colours, so the untouched upload is the only way
+ * back — and a tint change re-posts just `png`, leaving that original in place.
+ */
+export async function storeArt(
+  kind: ArtKind,
+  cardId: string,
+  body: Record<string, unknown>,
+): Promise<string | null> {
+  const bytes = artBytes(kind, body.png);
+  if (typeof bytes === "string") return bytes;
+  if (kind === "logo") {
+    const original = artBytes("logo", body.pngOriginal);
+    // A fresh upload sends one; a re-tint does not, and must not clobber it.
+    if (typeof original !== "string") {
+      await setCardLogoWithOriginal(cardId, bytes, original);
+      return null;
+    }
+  }
+  await ART_KINDS[kind].set(cardId, bytes);
+  return null;
 }
 
 export interface DesignerCard {
