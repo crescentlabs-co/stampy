@@ -624,7 +624,11 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pv-logo { height: 34px; width: auto; max-width: 120px; border-radius: 8px;
                object-fit: contain; background: rgba(255,255,255,.14); }
     .pv-name { font-weight: 700; font-size: 1.02rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pv-hdr { text-align: right; }
+    /* margin-left:auto, not "whatever .pv-name pushes". The name is hidden for a
+       logo that already carries it, and the progress was then the last flexible
+       thing in the row — so it stopped sitting on the right edge the moment the
+       tick-box was used. Wallet keeps the header field hard right regardless. */
+    .pv-hdr { text-align: right; margin-left: auto; }
     .pv-lbl { font-size: .62rem; letter-spacing: .08em; font-weight: 600; }
     .pv-progress { font-size: 1.05rem; font-weight: 700; }
     .pv-dots { font-size: 1.25rem; letter-spacing: 3px; margin: 2px 0 10px; }
@@ -770,7 +774,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         <details class="fold" style="margin-top:12px" \${env.designOpen ? "open" : ""}>
         <summary>Design</summary>
 
-        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it. A wide logo with your name in it is fine, and usually looks best.")}</label>
+        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out, so it does not show as a white box on a coloured card.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
@@ -821,7 +825,7 @@ export const DESIGN_PANEL_JS = /* js */ `
                tiles gone this is the only way back to plain dots, and a control
                that appears once you no longer need it is no control at all. -->
           <button class="btn btn-ghost" data-a="rmstamp">Plain dots</button>
-          \${info("One shape on a see-through background (PNG or SVG), not a photo. Its own colours are ignored — it gets filled with your stamp colour. It shows on iPhone cards; Android shows the count as dots.")}
+          \${info("A simple shape or symbol — not a photo. Upload it however you have it: if it sits on a plain background we take that background out for you, and we trim the empty space around it so it fills the stamp. Its own colours are ignored; it gets filled with your stamp colour. It shows on iPhone cards; Android shows the count as dots.")}
         </div>
         <p class="err" data-stamperr style="display:none"></p>
 
@@ -977,8 +981,13 @@ export const DESIGN_PANEL_JS = /* js */ `
         const r = Math.min(cw, ch) * 0.34;
         const perRow = Math.ceil(target / rows);
         const customReady = stampIconReady && stampImg.complete && stampImg.naturalWidth > 0;
+        // A shape is CONTAINED in its box while a dot FILLS one, so drawing both
+        // at 2r made every uploaded stamp read smaller than the dots it
+        // replaced — a round mark only touches the box at four points, and
+        // anything not square loses more. 2.5r puts the artwork back at the
+        // weight of a dot and still leaves a clear gap between neighbours.
         const shaped = icon === "custom" && customReady
-          ? { on: shapeStamp(stampImg, Math.ceil(r * 2), accent), size: Math.ceil(r * 2) }
+          ? { on: shapeStamp(stampImg, Math.ceil(r * 2.5), accent), size: Math.ceil(r * 2.5) }
           : null;
         for (let i = 0; i < target; i++) {
           const rowN = Math.floor(i / perRow), col = i % perRow;
@@ -1073,6 +1082,95 @@ export const DESIGN_PANEL_JS = /* js */ `
       // What each upload is called when a toast has to name it. Keyed by the
       // same string the route takes, so a new kind cannot be added without one.
       const ART_LABEL = { logo: "Logo", banner: "Banner", mark: "Square logo" };
+
+      // ---- Make an upload usable without asking the owner to edit it ----
+      //
+      // Shops have a logo as a PNG on a white square. That is the file they
+      // have, and telling them to go and produce a transparent one is asking
+      // for image editing most of them do not do. Two problems come out of it:
+      // a white box sitting behind the mark on a coloured card, and — for a
+      // stamp, whose SHAPE is its alpha channel — an upload that is rejected
+      // outright because a solid rectangle would stamp a solid rectangle.
+      //
+      // So: lift the flat backdrop, then trim the empty margin around what is
+      // left. The trim is the half that fixes "my stamp is too small" — a
+      // typical icon file is nearly half padding, and every pixel of it was
+      // being scaled down into the slot along with the artwork.
+
+      /**
+       * The flat colour an image sits on, or null if it does not sit on one.
+       *
+       * Read from the border ring only, and only trusted when the ring is
+       * overwhelmingly ONE colour. A photo, a gradient or a full-bleed design
+       * fails that test and is left completely alone — which is the point: this
+       * must never eat part of a picture that had no backdrop to remove.
+       */
+      function flatBackdrop(d, w, h) {
+        const edge = [];
+        const step = Math.max(1, Math.floor(Math.min(w, h) / 64));
+        for (let x = 0; x < w; x += step) { edge.push((x) * 4, ((h - 1) * w + x) * 4); }
+        for (let y = 0; y < h; y += step) { edge.push((y * w) * 4, (y * w + w - 1) * 4); }
+        let r = 0, g = 0, b = 0, n = 0;
+        for (const i of edge) {
+          if (d[i + 3] < 128) continue; // already transparent there
+          r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+        }
+        // A border that is already mostly transparent needs no lifting.
+        if (n < edge.length * 0.6) return null;
+        r = r / n; g = g / n; b = b / n;
+        let near = 0;
+        for (const i of edge) {
+          if (d[i + 3] < 128) continue;
+          if (Math.max(Math.abs(d[i] - r), Math.abs(d[i + 1] - g), Math.abs(d[i + 2] - b)) <= 16) near++;
+        }
+        return near >= n * 0.9 ? { r, g, b } : null;
+      }
+
+      /**
+       * Lift that backdrop and crop to what is actually drawn.
+       *
+       * Every matching pixel goes, not only the ones touching the border: a
+       * stamp is recoloured through its alpha, so a white disc enclosed by a
+       * ring is invisible as background but perfectly solid to that fill — it
+       * turned a ring-and-fist mark into a plain blob. The ramp rather than a
+       * threshold is what stops the result looking cut out with scissors.
+       */
+      function liftBackdrop(src) {
+        const cv = document.createElement("canvas");
+        cv.width = src.width; cv.height = src.height;
+        const cx = cv.getContext("2d", { willReadFrequently: true });
+        cx.drawImage(src, 0, 0);
+        const im = cx.getImageData(0, 0, cv.width, cv.height);
+        const d = im.data;
+        const bg = flatBackdrop(d, cv.width, cv.height);
+        if (bg) {
+          for (let i = 0; i < d.length; i += 4) {
+            const dist = Math.max(Math.abs(d[i] - bg.r), Math.abs(d[i + 1] - bg.g), Math.abs(d[i + 2] - bg.b));
+            // 0..10 away is backdrop, 40+ is artwork, in between fades.
+            const keep = Math.min(1, Math.max(0, (dist - 10) / 30));
+            d[i + 3] = Math.round(d[i + 3] * keep);
+          }
+          cx.putImageData(im, 0, 0);
+        }
+        // Trim. Uses the alpha we just wrote, so an image that already had a
+        // transparent margin is trimmed too, backdrop or no backdrop.
+        let x0 = cv.width, y0 = cv.height, x1 = -1, y1 = -1;
+        for (let y = 0; y < cv.height; y++) {
+          for (let x = 0; x < cv.width; x++) {
+            if (d[(y * cv.width + x) * 4 + 3] >= 24) {
+              if (x < x0) x0 = x; if (x > x1) x1 = x;
+              if (y < y0) y0 = y; if (y > y1) y1 = y;
+            }
+          }
+        }
+        if (x1 < 0) return cv; // nothing left; the caller's own check reports it
+        const tw = x1 - x0 + 1, th = y1 - y0 + 1;
+        if (tw === cv.width && th === cv.height) return cv;
+        const out = document.createElement("canvas");
+        out.width = tw; out.height = th;
+        out.getContext("2d").drawImage(cv, x0, y0, tw, th, 0, 0, tw, th);
+        return out;
+      }
       // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
       // fit "contain" letterboxes the whole image in; "cover" (the default) fills
       // the frame and crops the overflow. A logo MUST contain — cropping a
@@ -1091,6 +1189,10 @@ export const DESIGN_PANEL_JS = /* js */ `
               toast("That image has no size set. If it's an SVG, open it in your design tool and export it as a PNG.");
               return;
             }
+            // Lift the backdrop and trim the padding BEFORE scaling, so the
+            // artwork is measured at full resolution and the size cap is spent
+            // on the artwork rather than on the empty margin around it.
+            const src = liftBackdrop(img);
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext.bind(canvas);
             if (fit === "keep") {
@@ -1100,17 +1202,17 @@ export const DESIGN_PANEL_JS = /* js */ `
               // mark itself a fraction of the space it should have had. No
               // different upload could fix it, which is what made it feel like
               // there was a spec nobody had been told.
-              const s = Math.min(w / img.width, h / img.height, 1);
-              const dw = Math.max(1, Math.round(img.width * s));
-              const dh = Math.max(1, Math.round(img.height * s));
+              const s = Math.min(w / src.width, h / src.height, 1);
+              const dw = Math.max(1, Math.round(src.width * s));
+              const dh = Math.max(1, Math.round(src.height * s));
               canvas.width = dw; canvas.height = dh;
-              ctx("2d").drawImage(img, 0, 0, dw, dh);
+              ctx("2d").drawImage(src, 0, 0, dw, dh);
             } else {
               canvas.width = w; canvas.height = h;
               const s = fit === "contain"
-                ? Math.min(w / img.width, h / img.height)
-                : Math.max(w / img.width, h / img.height);
-              ctx("2d").drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
+                ? Math.min(w / src.width, h / src.height)
+                : Math.max(w / src.width, h / src.height);
+              ctx("2d").drawImage(src, (w - src.width * s) / 2, (h - src.height * s) / 2, src.width * s, src.height * s);
             }
             const dataUrl = canvas.toDataURL("image/png");
             if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
@@ -1551,8 +1653,11 @@ export const DESIGN_PANEL_JS = /* js */ `
           const data = px.getImageData(0, 0, cv.width, cv.height).data;
           let clear = 0;
           for (let i = 3; i < data.length; i += 4) if (data[i] < 24) clear++;
+          // Reached only when the backdrop could not be lifted — a photo, or
+          // artwork that runs to every edge. A plain white square, which is the
+          // file most shops have, is handled before this and never gets here.
           if (clear < data.length / 4 * 0.02) {
-            show("This picture needs a see-through background — right now it is a solid rectangle, so every stamp would print as a filled box. Export it as a PNG with transparency, or an SVG, and try again.");
+            show("This one has no plain background to remove — it looks like a photo, and a stamp would come out as a filled rectangle. A simple shape or symbol on one flat colour works best.");
             return;
           }
           err.style.display = "none";

@@ -391,6 +391,51 @@ describe("one designer, two pages", () => {
   });
 
   /**
+   * The uploaded stamp shape used to live in one browser variable and nowhere
+   * else, so a reload — or any re-render — replaced it with plain circles and
+   * wrote that over the owner's grid. Three things have to hold together for it
+   * to survive, and each is easy to remove while the others still look right.
+   */
+  it("stores the stamp shape, and loads it back before drawing", () => {
+    for (const html of [dash, admin]) {
+      // It reaches an endpoint at all. Passing a null kind to wireUpload is what
+      // made this a no-op for as long as the feature existed.
+      expect(html).toContain('api(P("/stamp-icon")');
+      // It is fetched again at mount...
+      expect(html.match(/function loadStampIcon/g)!.length).toBe(1);
+      expect(html).toContain('env.artUrl("stamp-icon", c.stampIconVersion)');
+      // ...and every re-render waits for it. Without this the first save after a
+      // page load bakes circles over the shape, in storage, for every count.
+      expect(html).toContain("await stampIconReadyPromise");
+      // Removing the shape removes the stored one too, not just the copy in memory.
+      expect(html).toContain('api(P("/stamp-icon"), { method: "DELETE" })');
+    }
+  });
+
+  // Uploads are cut out and trimmed in the browser so a shop can send the file
+  // it actually has — a logo on a white square — rather than being told to go
+  // and make a transparent one. One copy per page, like the renderers above.
+  it("lifts a flat backdrop and trims the margin, once per page", () => {
+    for (const html of [dash, admin]) {
+      expect(html.match(/function liftBackdrop/g)!.length).toBe(1);
+      expect(html.match(/function flatBackdrop/g)!.length).toBe(1);
+      // It has to run before the scale, or the size cap is spent on the padding
+      // instead of the artwork — which is what made an uploaded stamp look tiny.
+      expect(html).toContain("const src = liftBackdrop(img);");
+      expect(html).not.toContain("drawImage(img, 0, 0, dw, dh)");
+    }
+  });
+
+  // The progress field is hard right on a wallet card. In the preview it was
+  // held there by the shop name's flex:1 — so hiding the name for a logo that
+  // already carries it silently un-aligned it.
+  it("keeps the preview's progress on the right with no name beside it", () => {
+    for (const html of [dash, admin]) {
+      expect(html).toMatch(/\.pv-hdr \{[^}]*margin-left: auto/);
+    }
+  });
+
+  /**
    * The console's second target — a saved design, mocked up before a shop
    * existed and pushed onto its card later — is gone. It was the whole reason
    * the section had a switcher and a second panel, and the shop is built first
