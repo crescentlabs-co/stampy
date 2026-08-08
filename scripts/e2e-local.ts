@@ -1611,6 +1611,28 @@ async function main() {
     (await logoOriginal("/admin/api/card/default/design/logo-original", cookieOutsider)).status === 403,
     "...and it is admin-only",
   );
+  // The URL the DESIGNER actually builds, composed from the page itself and
+  // then fetched. This is the tie that was missing: the round-trip checks above
+  // called the correct routes by hand and passed while the browser was
+  // requesting a path with no console prefix on it at all (P() is only the
+  // suffix; api() supplies the prefix, and an <img> cannot go through api()).
+  // Server-side tests could never see that. Read the value the page ships and
+  // prove it resolves.
+  for (const [label, page, cardPath, cookieUsed] of [
+    ["dashboard", "/dashboard", "/card/default/logo-original", cookie],
+    ["admin console", "/admin", "/card/default/design/logo-original", cookieNow],
+  ] as const) {
+    const html = (await get(page)).body;
+    const found = /apiBase: "([^"]+)"/.exec(html);
+    expect(Boolean(found), `${label} designer ships an apiBase`);
+    const composed = found![1] + cardPath;
+    const hit = await fetch(base + composed, { headers: { cookie: cookieUsed } });
+    expect(
+      hit.status === 200,
+      `the ${label}'s own logo-original URL (${composed}) is a live route`,
+    );
+  }
+
   // Put the plain logo back so the assertions below still describe what is served.
   await fetch(base + "/dashboard/api/card/default/logo", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },

@@ -438,9 +438,23 @@ describe("one designer, two pages", () => {
       expect(html).toContain('[["", "Original"], ["white", "White"], ["black", "Black"]]');
       // The tint is recomputed from the untouched upload every time; without
       // that, the first White would be permanent and Original unreachable.
-      expect(html).toContain('P("/logo-original")');
       expect(html).toContain("pngOriginal");
+      // Via PU(), never bare P(). P() is only the SUFFIX — api() supplies each
+      // console's prefix, and an <img> cannot go through api(), so using P() as
+      // an image src requested a path no router serves. The 404 surfaced as
+      // "upload it again", which is advice that could never work.
+      expect(html).toContain('PU("/logo-original")');
+      expect(html).not.toContain('i.src = P("/logo-original")');
     }
+  });
+
+  // Each console's designer must carry the SAME prefix its api() fetches with.
+  // These two strings living in different places is the whole bug above.
+  it("gives the designer the api prefix its own console uses", () => {
+    expect(dash).toContain('fetch("/dashboard/api"');
+    expect(dash).toContain('apiBase: "/dashboard/api"');
+    expect(admin).toContain('fetch("/admin/api"');
+    expect(admin).toContain('apiBase: "/admin/api"');
   });
 
   // An explicit logo colour is the owner taking the wheel — the auto-adjust

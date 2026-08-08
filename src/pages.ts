@@ -772,6 +772,11 @@ export const DESIGN_PANEL_JS = /* js */ `
       const div = document.createElement("div");
       const api = env.api, toast = env.toast, modal = env.modal, info = env.info;
       const P = (suffix) => env.path(suffix || "");
+      // A full URL, for the one thing that cannot go through api(): an <img>.
+      // P() alone is only the SUFFIX -- api() supplies the console's prefix --
+      // so using it as an image src requested a path no router serves, and the
+      // 404 surfaced as "upload it again", forever.
+      const PU = (suffix) => env.apiBase + P(suffix);
       const bust = (v) => v ? "?v=" + v : "";
       const logoSrc = env.artUrl("logo", c.logoVersion);
       div.innerHTML = \`
@@ -1402,7 +1407,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           const i = new Image();
           i.onload = () => res(i); i.onerror = () => res(null);
           // Cache-busted: the served copy changes under this URL on every tint.
-          i.src = P("/logo-original") + "?t=" + Date.now();
+          i.src = PU("/logo-original") + "?t=" + Date.now();
         });
         if (!src) {
           return toast("This logo was uploaded before colours were available — upload it again to recolour it.");
@@ -4291,6 +4296,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const artBase = card.id === "default" ? "" : "/c/" + card.id;
         host.appendChild(designPanel(card, {
           api, toast, modal, info,
+          // The prefix api() puts on every call. Needed separately because an
+          // <img> cannot go through api() and must carry the full path itself.
+          apiBase: "/dashboard/api",
           path: (suffix) => "/card/" + card.id + suffix,
           artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
           customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
@@ -4857,6 +4865,8 @@ export function adminPage(): string {
       host.innerHTML = "";
       const panel = designPanel(card, {
         api, toast, modal, info,
+        // See the dashboard's copy: the prefix api() adds, for <img> URLs.
+        apiBase: "/admin/api",
         path: (suffix) => "/card/" + card.id + "/design" + suffix,
         artUrl: (kind, v) => "/c/" + card.id + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
         // A real card has real holders, and the save confirmation names them.
