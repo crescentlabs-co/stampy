@@ -12,7 +12,6 @@ import {
   adminPage,
   cardPickerPage,
   claimPage,
-  counterSheetPage,
   dashboardPage,
   landingPage,
   marketingPage,
@@ -1272,7 +1271,6 @@ describe("the rebrand renamed the label, not the identifiers", () => {
       ["staff signed out", staffPage(false)],
       ["staff signed in", staffPage(true)],
       ["login + dashboard", dashboardPage(true, "hi@x.com")],
-      ["counter sheet", counterSheetPage(named, "Kopi Corner")],
       ["admin console", adminPage()],
       ["reset password", resetPage()],
     ];

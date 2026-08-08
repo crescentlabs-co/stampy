@@ -803,6 +803,14 @@ export const DESIGN_PANEL_JS = /* js */ `
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
+        <!-- The logo can be recoloured the same way a stamp is: keep the shape,
+             throw the colours away, fill it with one colour. Without this, "make
+             the card black" left a black logo invisible on it and no setting
+             could fix that — the only thing that moved was the card. -->
+        <div data-tintrow style="\${c.logoVersion ? "" : "display:none"};margin-top:10px">
+          <span class="muted" style="font-size:.8rem">Logo colour\${info("Your logo is used exactly as uploaded unless you pick White or Black here. Those keep its shape and fill it with one flat colour — the same way your stamp works — which is what you want when the card is dark and your logo is dark. It only changes the logo, never the card.")}</span>
+          <div class="logorow" data-tints style="margin-top:6px"></div>
+        </div>
         <div class="swatches" data-swatches style="display:none"></div>
         <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
              already contains the name said it twice. This drops that text and
@@ -967,9 +975,33 @@ export const DESIGN_PANEL_JS = /* js */ `
         const k = Math.min(size / img.naturalWidth, size / img.naturalHeight); // contain, never crop
         const w = img.naturalWidth * k, h = img.naturalHeight * k;
         sx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        sx.globalCompositeOperation = "source-in";
-        sx.fillStyle = color; sx.fillRect(0, 0, size, size);
+        fillThroughAlpha(sx, color, size, size);
         return s;
+      }
+
+      /**
+       * Keep the shape, throw the colours away, fill with one colour.
+       *
+       * The one line that makes a stamp take the card's colour, factored out
+       * because the LOGO now does the same thing (see tintLogo). Two copies of
+       * a composite mode is exactly the kind of thing that drifts and leaves an
+       * owner with a white stamp and a black logo from one "White" button.
+       */
+      function fillThroughAlpha(ctx2d, color, w, h) {
+        ctx2d.globalCompositeOperation = "source-in";
+        ctx2d.fillStyle = color;
+        ctx2d.fillRect(0, 0, w, h);
+        ctx2d.globalCompositeOperation = "source-over";
+      }
+
+      /** The logo at its own size, recoloured. '' returns it untouched. */
+      function tintLogo(img, tint) {
+        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+        const cx = cv.getContext("2d");
+        cx.drawImage(img, 0, 0, w, h);
+        if (tint) fillThroughAlpha(cx, tint === "white" ? "#ffffff" : "#000000", w, h);
+        return cv;
       }
 
       /**
@@ -1233,6 +1265,9 @@ export const DESIGN_PANEL_JS = /* js */ `
        * closer to what they asked for than a blank card is.
        */
       async function ensureLogoReadable(dataUrl) {
+        // An explicit logo colour is the owner taking the wheel. Moving their
+        // card out from under a choice they just made is the opposite of help.
+        if (c.logoTint) return;
         const img = await new Promise((res) => {
           const i = new Image();
           i.onload = () => res(i); i.onerror = () => res(null); i.src = dataUrl;
@@ -1300,8 +1335,14 @@ export const DESIGN_PANEL_JS = /* js */ `
             }
             const dataUrl = canvas.toDataURL("image/png");
             if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
+            const b64 = dataUrl.split(",")[1];
+            // The logo keeps a second copy of itself. Tinting fills the shape
+            // with one flat colour and throws the real colours away, so without
+            // an untouched original the first White is permanent and Original
+            // can never come back. A fresh upload is its own original.
+            const payload = kind === "logo" ? { png: b64, pngOriginal: b64 } : { png: b64 };
             const { body } = await api(P("/" + kind), {
-              method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+              method: "POST", body: JSON.stringify(payload),
             });
             if (body.ok) { onDone(dataUrl); toast(ART_LABEL[kind] + " saved ✓"); }
             else toast(body.error || "Upload failed");
@@ -1318,11 +1359,70 @@ export const DESIGN_PANEL_JS = /* js */ `
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").style.display = "";
+        q("[data-tintrow]").style.display = "";
+        // A new file is its own original, so any earlier tint no longer applies
+        // to it — starting from Original is the only honest state here.
+        c.logoTint = "";
         lastLogoUrl = url;
+        drawTints();
         readPalette(url); // the logo is where the colours come from
         // After the plate is gone, not before: the check is about what is left.
         void ensureLogoReadable(url);
       }, "keep");
+
+      // ---- Logo colour ----
+      const TINTS = [["", "Original"], ["white", "White"], ["black", "Black"]];
+
+      function drawTints() {
+        const host = q("[data-tints]");
+        if (!host) return;
+        host.innerHTML = "";
+        for (const [value, label] of TINTS) {
+          const b = document.createElement("button");
+          b.className = "btn " + (c.logoTint === value ? "btn-dark" : "btn-ghost");
+          b.style.margin = "0";
+          b.textContent = label;
+          b.onclick = () => applyTint(value);
+          host.appendChild(b);
+        }
+      }
+
+      /**
+       * Re-render the logo from its untouched original at the chosen colour and
+       * store the result as the served copy.
+       *
+       * Done in the browser because that is where a canvas is — there is no
+       * image library on the server and no build step to add one, which is the
+       * same reason the stamp grid is rendered here and posted.
+       */
+      async function applyTint(tint) {
+        const prev = c.logoTint;
+        if (prev === tint) return;
+        const src = await new Promise((res) => {
+          const i = new Image();
+          i.onload = () => res(i); i.onerror = () => res(null);
+          // Cache-busted: the served copy changes under this URL on every tint.
+          i.src = P("/logo-original") + "?t=" + Date.now();
+        });
+        if (!src) {
+          return toast("This logo was uploaded before colours were available — upload it again to recolour it.");
+        }
+        const cv = tintLogo(src, tint);
+        const dataUrl = cv.toDataURL("image/png");
+        const { body } = await api(P("/logo"), {
+          method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+        });
+        if (!body.ok) return toast(body.error || "Couldn't recolour the logo");
+        c.logoTint = tint;
+        c.logoVersion = Date.now();
+        lastLogoUrl = dataUrl;
+        q("[data-pv-logo]").src = dataUrl;
+        drawTints();
+        renderPreview();
+        await save({ logoTint: tint }, "Logo colour");
+        toast(tint ? "Logo set to " + tint : "Logo back to its own colours");
+      }
+      drawTints();
       // Removing the logo hides it here too, because the pass drops the image
       // entirely with no upload and shows the shop name alone — the preview has
       // to agree, or the owner is designing against something they won't get.
@@ -1330,8 +1430,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         const { body } = await api(P("/logo"), { method: "DELETE" });
         if (!body.ok) return toast(body.error || "Couldn't remove logo");
         c.logoVersion = 0;
+        c.logoTint = "";
         q("[data-pv-logo]").style.display = "none";
         q("[data-a=rmlogo]").style.display = "none";
+        q("[data-tintrow]").style.display = "none";
+        lastLogoUrl = "";
         toast("Logo removed");
       };
 
@@ -2138,18 +2241,43 @@ export function notReadyPage(reason?: string): string {
  * stamp: the staff PIN belongs to the owner, and there is no owner yet. So the
  * Add-to-Wallet buttons are simply not offered until the shop is live.
  */
-export function shopNotOpenPage(business: string, logoVersion = 0, cardId = ""): string {
+export function shopNotOpenPage(
+  business: string,
+  logoVersion = 0,
+  cardId = "",
+  /** The card, for its colours. Omitted ⇒ the plain site palette. */
+  card?: Pick<CardRow, "background_color">,
+): string {
+  const base = !cardId || cardId === "default" ? "" : `/c/${cardId}`;
+  // Same hero as the join page, deliberately: this is the SAME poster being
+  // scanned, and a customer who gets a generic white card here and a branded one
+  // tomorrow has no way to know it was the same shop. It used to force the logo
+  // into a 72x72 rounded square, which letterboxes a wide brand lockup down to a
+  // sliver — the one shape most shops actually upload.
+  const bg = card ? rgbToHex(card.background_color) : "";
+  const onBg = bg ? contrastText(bg) : "";
+  const css = bg
+    ? /* css */ `
+      .lhero { background: ${bg}; color: ${onBg}; margin: -20px -20px 18px; padding: 26px 20px 22px;
+               border-radius: 0 0 22px 22px; text-align: center; }
+      .lhero h1 { color: ${onBg}; margin: 0; font-size: 1.6rem; }
+      .lhero img { height: 76px; width: auto; max-width: min(280px, 100%);
+                   object-fit: contain; margin-bottom: 10px; }
+      .card { overflow: hidden; }`
+    : "";
   const logo = logoVersion && cardId
-    ? `<img src="${cardId === "default" ? "" : `/c/${cardId}`}/art/logo.png?v=${logoVersion}" alt=""
-           style="width:72px;height:72px;border-radius:18px;object-fit:contain;margin:0 auto 14px;display:block">`
+    ? `<img src="${base}/art/logo.png?v=${logoVersion}" alt="">`
     : "";
   return page(
     `${business} — coming soon`,
     `<div class="card" style="text-align:center">
-      ${logo}
-      <h1>${esc(business)}</h1>
+      <div class="${bg ? "lhero" : ""}">
+        ${logo}
+        <h1>${esc(business)}</h1>
+      </div>
       <p class="sub">Their loyalty card isn’t open yet. Check back soon.</p>
     </div>`,
+    css,
   );
 }
 
@@ -4498,55 +4626,10 @@ export function posterPage(
 
 // ---------------------------------------------------------------- admin ----
 
-/**
- * A print-ready sheet for a café's counter: the Add-to-Wallet QR, big, with the
- * reward named under it. Built for the admin doing done-for-you onboarding —
- * open it, hit print, hand it over. Deliberately plain HTML/CSS with a print
- * stylesheet rather than generated PDF, so there is no new dependency and the
- * merchant can print it from any phone or laptop.
- */
-export function counterSheetPage(
-  card: { id: string; name: string; reward: string; stamps_target: number },
-  /** The shop. Named on the sheet above the card, so a merchant running two
-   *  cards gets two posters that are obviously from the same place. */
-  business = card.name,
-): string {
-  const css = /* css */ `
-    body { max-width: 720px; }
-    .sheet { border: 1px solid var(--line); border-radius: 20px; padding: 40px 32px; text-align: center;
-             background: #fff; }
-    .sheet h1 { font-size: 2rem; margin: 0 0 6px; }
-    .sheet .reward { font-size: 1.25rem; font-weight: 700; margin: 0 0 4px; }
-    .sheet .how { color: var(--muted); margin: 0 0 24px; }
-    .sheet img { width: 100%; max-width: 340px; height: auto; }
-    .sheet .steps { text-align: left; max-width: 340px; margin: 24px auto 0; color: var(--muted);
-                    font-size: .9rem; line-height: 1.7; }
-    .noprint { margin-top: 18px; }
-    /* On paper: no browser chrome, no buttons, no page background. */
-    @media print {
-      .noprint { display: none; }
-      body { max-width: none; padding: 0; background: #fff; }
-      .sheet { border: none; padding: 0; }
-    }
-  `;
-  const body = `
-    <div class="sheet">
-      <h1>${esc(business)}</h1>
-      ${business === card.name ? "" : `<p class="sub" style="margin:-4px 0 10px">${esc(card.name)}</p>`}
-      <p class="reward">${esc(card.reward)} after ${card.stamps_target} stamps</p>
-      <p class="how">Scan to add your card — no app to download</p>
-      <img src="/c/${encodeURIComponent(card.id)}/qr" alt="Add-to-Wallet QR code">
-      <div class="steps">
-        1. Point your camera at the code<br>
-        2. Tap <strong>Add to Apple Wallet</strong> or <strong>Google Wallet</strong><br>
-        3. Show the card when you order — it stamps itself
-      </div>
-    </div>
-    <div class="noprint">
-      <button class="btn btn-dark" onclick="window.print()">Print this sheet</button>
-    </div>`;
-  return page(`${business} — counter sheet`, body, css);
-}
+// counterSheetPage lived here. It was the plain, admin-only second printable,
+// and posterPage above replaced it on every axis: branded, carries the logo, and
+// its QR is /j/:ref rather than /c/:cardId — so a rename or a second card can
+// never strand it. /c/:cardId/qr stays a route; only this sheet is gone.
 
 /**
  * The merchant console — one page, one path down it.
@@ -4808,12 +4891,13 @@ export function adminPage(): string {
       return panel;
     }
 
-    /** The links an operator hands over, for one card. Poster, till sheet, QR. */
+    /** The links an operator hands over, for one card. One printable, and the link. */
     function cardLinks(card, merchantId, origin) {
-      return '<a class="btn btn-ghost" target="_blank" href="/c/' + card.id + '/poster">Poster</a>' +
-        '<a class="btn btn-ghost" target="_blank" href="/admin/card/' + card.id + '/sheet">Counter sheet</a>' +
+      return '<a class="btn btn-ghost" target="_blank" href="/c/' + card.id + '/poster">Print poster</a>' +
         '<button class="btn btn-ghost" data-nfc="' + origin + "/j/" + merchantId + '">Copy sign-up link</button>' +
-        '<span class="lnk">' + origin + "/j/" + merchantId + "</span>";
+        '<span class="lnk">' + origin + "/j/" + merchantId + "</span>" +
+        '<p class="muted" style="margin:6px 0 0;font-size:.78rem">Branded with your colours and logo. ' +
+        'The code sends people to your shop, so it keeps working if you rename or add a second card.</p>';
     }
 
     async function load() {
@@ -5028,12 +5112,11 @@ export function adminPage(): string {
             \${
               // LIVE cards only, and named when there is more than one. Built
               // from every card the shop had ever held, an archived programme
-              // left a dead poster and a dead counter sheet on the row looking
-              // exactly like the working pair beside them.
+              // left a dead poster on the row looking exactly like the working
+              // one beside it.
               liveCards.map((c) => {
                 const tag = liveCards.length > 1 ? " · " + esc(c.name) : "";
-                return '<a class="btn btn-ghost cbtn" target="_blank" href="/c/' + c.id + '/poster">Poster' + tag + "</a>" +
-                  '<a class="btn btn-ghost cbtn" target="_blank" href="/admin/card/' + c.id + '/sheet">Counter sheet' + tag + "</a>";
+                return '<a class="btn btn-ghost cbtn" target="_blank" href="/c/' + c.id + '/poster">Print poster' + tag + "</a>";
               }).join("")
             }
             \${m.has_owner

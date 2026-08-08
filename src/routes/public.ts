@@ -162,7 +162,7 @@ async function landing(
   // shop was claimed is worth knowing about, and the funnel would otherwise
   // lose it silently.
   if (!open) {
-    return void res.type("html").send(shopNotOpenPage(business, logoVersion, card.id));
+    return void res.type("html").send(shopNotOpenPage(business, logoVersion, card.id, card));
   }
   res.type("html").send(
     landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId, business, logoVersion),

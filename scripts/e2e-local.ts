@@ -1443,19 +1443,24 @@ async function main() {
     }),
   });
   expect((await getCard("default"))!.stamp_style === "🧑‍🍳", "a multi-code-point emoji survives as the stamp style");
-  // The counter sheet: the operator prints it, so it is admin-only, and it
-  // carries what the person at the till needs — this card's QR and its reward.
-  const sheetCard = (await getCard(dfyOut.cardId))!;
-  const sheet = await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieNow } });
+  // The poster is now the only printable. It is public (the merchant prints it
+  // themselves) and its QR is the MERCHANT link, not this card's — which is the
+  // whole reason the admin-only counter sheet was retired: /c/:cardId strands a
+  // printed sheet the moment a shop renames or adds a second card.
+  const posterCard = (await getCard(dfyOut.cardId))!;
+  const dfyPoster = await get("/c/" + dfyOut.cardId + "/poster");
   expect(
-    sheet.status === 200 && sheet.body.includes("/c/" + dfyOut.cardId + "/qr") &&
-      sheet.body.includes(sheetCard.reward),
-    `the printable counter sheet carries the card's QR and reward (${sheetCard.reward})`,
+    dfyPoster.status === 200 && dfyPoster.body.includes(posterCard.reward),
+    `the printable poster names the reward (${posterCard.reward})`,
+  );
+  expect(
+    dfyPoster.body.includes("/j/") && !dfyPoster.body.includes("/c/" + dfyOut.cardId + "/qr"),
+    "the poster's QR is the merchant link, so a rename can never strand it",
   );
   expect((await get("/c/" + dfyOut.cardId)).status === 200, "and the sign-up link still works");
   expect(
-    (await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieOutsider } })).status === 403,
-    "the counter sheet is admin-only",
+    (await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieNow } })).status === 404,
+    "the counter sheet is gone",
   );
 
   // --- Archiving a card: operator-only, reversible, destroys nothing ---

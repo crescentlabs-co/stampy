@@ -116,8 +116,17 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   // "My logo already includes my business name" — drops the pass's logoText so
   // a brand lockup does not print the name a second time beside itself.
   if (typeof body.logoHasName === "boolean") fields.logo_has_name = body.logoHasName;
+  // How the logo is coloured. A closed vocabulary: anything else would be stored
+  // and then mean nothing to the renderer, which is how stamp_style once held
+  // 'custom' for an image nobody had kept.
+  if (typeof body.logoTint === "string" && LOGO_TINTS.includes(body.logoTint)) {
+    fields.logo_tint = body.logoTint;
+  }
   return fields;
 }
+
+/** '' = as uploaded. The other two fill the logo's shape, as a stamp is filled. */
+export const LOGO_TINTS = ["", "white", "black"];
 
 /**
  * The four images a card can carry, and how to store each one.
@@ -172,6 +181,8 @@ export interface DesignerCard {
   bandColor: string;
   bandTexture: string;
   stampStyle: string;
+  /** '' | 'white' | 'black' — how the logo is coloured. */
+  logoTint: string;
   /** The logo is a lockup that already says the shop's name — see CardRow. */
   logoHasName: boolean;
   /** 0 = nothing uploaded. Used to cache-bust the preview image. */
@@ -227,6 +238,7 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     bandColor: rgbToHex(card.band_color),
     bandTexture: card.band_texture,
     stampStyle: card.stamp_style,
+    logoTint: card.logo_tint,
     logoHasName: card.logo_has_name,
     logoVersion,
     bannerVersion,

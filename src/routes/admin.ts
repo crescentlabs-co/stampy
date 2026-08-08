@@ -66,7 +66,7 @@ import { refreshCardArt } from "../cardActions.js";
 import { ensureClass } from "../googleWallet.js";
 import { stageOf, triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng } from "../imageValidate.js";
-import { adminPage, counterSheetPage } from "../pages.js";
+import { adminPage } from "../pages.js";
 
 export const adminRouter = Router();
 
@@ -89,12 +89,11 @@ adminRouter.get("/", (_req, res) => {
   res.type("html").send(adminPage());
 });
 
-/** Print-ready counter sheet for one card: the QR, big, with the reward named. */
-adminRouter.get("/card/:id/sheet", requireAdmin, async (req, res) => {
-  const card = await getCard(req.params.id!);
-  if (!card) return void res.status(404).type("html").send("<p>No such card.</p>");
-  res.type("html").send(counterSheetPage(card, await businessNameForCard(card)));
-});
+// The counter sheet used to live here: a second printable, plain white, whose QR
+// pointed at /c/:cardId. It was strictly worse than the poster — unbranded, and
+// pinned to one card, so a rename or a second card broke it while the poster's
+// /j/:ref kept working. Two unlabelled buttons side by side made choosing wrong
+// the default. One printable now: /c/:cardId/poster.
 
 /**
  * Everything the console renders, in one round trip.

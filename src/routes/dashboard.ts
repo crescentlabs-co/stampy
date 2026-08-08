@@ -49,6 +49,8 @@ import {
   linkOwnerCard,
   logOwnerLogin,
   ownerHasCard,
+  getCardLogoOriginal,
+  setCardLogoWithOriginal,
   ownerIsArchived,
   setMessage,
   setResetToken,
@@ -434,11 +436,39 @@ dashboardRouter.post(
     const kind = req.params.kind as ArtKind;
     const bytes = artBytes(kind, (req.body ?? {}).png);
     if (typeof bytes === "string") return void res.status(400).json({ error: bytes });
-    await ART_KINDS[kind].set(cardId, bytes);
+    // Only the logo carries an original, and only a fresh upload sends one — a
+    // tint change re-posts just `png`, because the original it was rendered FROM
+    // must survive untouched or Original becomes unreachable.
+    const original = kind === "logo" ? artBytes("logo", (req.body ?? {}).pngOriginal) : "no";
+    if (kind === "logo" && typeof original !== "string") {
+      await setCardLogoWithOriginal(cardId, bytes, original);
+    } else {
+      await ART_KINDS[kind].set(cardId, bytes);
+    }
     await syncArt(cardId);
     res.json({ ok: true });
   },
 );
+
+/**
+ * The logo as it was uploaded, before any recolouring.
+ *
+ * Owner-authed rather than public: it is the same mark, but nothing customer-
+ * facing needs it, and /art/logo.png is the copy that is meant to be served.
+ * The designer fetches this to re-render at a new colour, which is why a tint
+ * can be changed and undone any number of times without re-uploading.
+ */
+dashboardRouter.get("/api/card/:id/logo-original", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
+  }
+  const png = await getCardLogoOriginal(cardId);
+  // A logo stored before v2.3 has none. 404 so the designer can say "upload it
+  // again to recolour it" instead of silently doing nothing.
+  if (!png) return void res.status(404).json({ error: "no-original" });
+  res.type("png").set("Cache-Control", "no-store").send(png);
+});
 
 dashboardRouter.delete(
   `/api/card/:id/:kind(${ART_KIND_PATTERN})`,
