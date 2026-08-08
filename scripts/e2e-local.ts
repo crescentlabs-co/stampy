@@ -841,6 +841,23 @@ async function main() {
   expect((await get("/j/" + quietRef + "/qr")).status === 200, "the merchant QR still renders");
 
   // --- Archiving a merchant takes it out of the work list entirely ---
+  // Sign this owner in BEFORE the shop closes: a live session that outlives the
+  // archiving is the case the checks below are actually about, and logging in
+  // afterwards is now refused outright (see further down).
+  // This fixture's password was never a real hash, so take the password the way
+  // the admin console would hand one over.
+  const quietPw = JSON.parse(await (await fetch(
+    base + "/admin/api/owner/" + quietOwner.id + "/reset-password",
+    { method: "POST", headers: { cookie: cookieNow } },
+  )).text()).tempPassword;
+  const quietLogin = async () =>
+    await fetch(base + "/dashboard/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "quiet@shop.my", password: quietPw }),
+    });
+  const quietCookie = (await quietLogin()).headers.get("set-cookie")?.split(";")[0] ?? "";
+  expect(quietCookie !== "", "the owner of an open shop can log in");
+
   const arch = await fetch(base + "/admin/api/merchant/" + quietMerchant.id + "/archive", {
     method: "POST", headers: { cookie: cookieNow },
   });
@@ -856,20 +873,30 @@ async function main() {
   // sign-up page still issued cards. A soft delete that leaves every door open
   // is a label, not a state.
   {
-    // This fixture's password was never a real hash, so take the session the way
-    // the admin console would hand one over.
-    const rst = JSON.parse(await (await fetch(
-      base + "/admin/api/owner/" + quietOwner.id + "/reset-password",
-      { method: "POST", headers: { cookie: cookieNow } },
-    )).text());
-    const back = await fetch(base + "/dashboard/api/login", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "quiet@shop.my", password: rst.tempPassword }),
-    });
-    const quietCookie = back.headers.get("set-cookie")?.split(";")[0] ?? "";
     expect(
       (await get("/dashboard/api/overview", { headers: { cookie: quietCookie } })).status === 403,
       "an archived shop's owner cannot use the dashboard",
+    );
+    // Refused at the door, not one call later. A closed owner used to log in
+    // SUCCESSFULLY — correct password, cookie set, state saying logged-in — and
+    // land on a dashboard whose every call 403s, which the page rendered as a
+    // permanent "Loading…" with no log out button and no way back to the login
+    // form. Same refusal staff sign-in has always given.
+    const closedLogin = await quietLogin();
+    expect(closedLogin.status === 403, "an archived shop's owner cannot log in at all");
+    expect(
+      JSON.parse(await closedLogin.text()).error === "account-closed",
+      "...and is told the account is closed, not that the password is wrong",
+    );
+    expect(
+      (closedLogin.headers.get("set-cookie") ?? "") === "",
+      "...and is handed no session to sit inside",
+    );
+    // A cookie from before the shop closed lands on the login form rather than
+    // on a dashboard that cannot load.
+    expect(
+      JSON.parse((await get("/dashboard/api/state", { headers: { cookie: quietCookie } })).body).loggedIn === false,
+      "...and an older session reads as logged out",
     );
     const closedStaff = await fetch(base + "/staff/api/login", {
       method: "POST", headers: { "Content-Type": "application/json", "x-card-id": quietCard.id },
@@ -888,6 +915,7 @@ async function main() {
       (await get("/dashboard/api/overview", { headers: { cookie: quietCookie } })).status === 200,
       "unarchiving restores the dashboard",
     );
+    expect((await quietLogin()).status === 200, "...and lets the owner log in again");
     expect(
       !(await get("/c/" + quietCard.id)).body.includes("isn’t open yet"),
       "...and the sign-up page",

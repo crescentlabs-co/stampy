@@ -6,6 +6,7 @@
  * structural promises the server relies on.
  */
 import { describe, expect, it } from "vitest";
+import ts from "typescript";
 import { FLAG_GUIDE } from "../src/health.js";
 import {
   adminPage,
@@ -80,6 +81,65 @@ describe("inline page scripts parse", () => {
         // Function() compiles the body without executing it — a syntax error throws.
         expect(() => new Function(src), src.slice(0, 120)).not.toThrow();
       }
+    });
+  }
+});
+
+/*
+ * Syntax is not the bug that actually shipped. The dashboard called a helper
+ * named esc() that existed twice in src/pages.ts — once as server-side
+ * TypeScript, once inside the ADMIN console's script — and not once in the
+ * dashboard's own. That parses perfectly. In a browser it threw
+ * ReferenceError mid-render, so the screen it was building (the "this account
+ * has no shop" screen, and the log out button inside it) never painted, and
+ * the owner was left on the server-rendered word "Loading…" with no way back
+ * to the login form.
+ *
+ * So: resolve every name too, not just the grammar. Each script is checked as
+ * its own module, because that is what a <script> tag is here — a global
+ * defined by one page must NOT satisfy a reference on another, which is the
+ * precise mistake being guarded against. Only TS2304 ("Cannot find name") is
+ * asserted on; every other diagnostic is noise from untyped browser code.
+ */
+
+/** Globals that genuinely arrive from somewhere else at runtime. */
+const EXTERNAL_GLOBALS = [
+  "jsQR", // served from node_modules by a src-only <script> the extractor skips
+  "BarcodeDetector", // a real browser API, absent from TS's DOM lib; the stamper
+                     // feature-detects it and falls back to jsQR (iPhone Safari)
+];
+
+/** TS2304 diagnostics for one inline script, checked in isolation. */
+function undefinedNames(src: string): string[] {
+  const file = "/inline-script.js";
+  // The trailing export makes it a module: declarations stay local to this one
+  // script instead of leaking into the next page's check.
+  const text = `${EXTERNAL_GLOBALS.map((g) => `declare const ${g}: any;`).join("\n")}\n${src}\nexport {};\n`;
+  const options: ts.CompilerOptions = {
+    allowJs: true,
+    checkJs: true,
+    noEmit: true,
+    target: ts.ScriptTarget.ESNext,
+    lib: ["lib.esnext.d.ts", "lib.dom.d.ts"],
+    types: [],
+  };
+  const host = ts.createCompilerHost(options, true);
+  const original = host.getSourceFile.bind(host);
+  host.getSourceFile = (name, ...rest) =>
+    name === file ? ts.createSourceFile(name, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS) : original(name, ...rest);
+  host.fileExists = (name) => (name === file ? true : ts.sys.fileExists(name));
+  host.readFile = (name) => (name === file ? text : ts.sys.readFile(name));
+
+  return ts
+    .getPreEmitDiagnostics(ts.createProgram([file], options, host))
+    .filter((d) => d.code === 2304 && d.file?.fileName === file)
+    .map((d) => ts.flattenDiagnosticMessageText(d.messageText, " "));
+}
+
+describe("inline page scripts reference nothing undefined", () => {
+  for (const [name, html] of pages) {
+    it(`${name} page defines every name its JS calls`, () => {
+      for (const src of inlineScripts(html)) expect(undefinedNames(src)).toEqual([]);
     });
   }
 });

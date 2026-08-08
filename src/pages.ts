@@ -3433,16 +3433,28 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // empty shops nobody asked for.
     const ALLOW_SIGNUP = ${allowSignup ? "true" : "false"};
     const RESET_BOX = ${JSON.stringify(resetBox)};
+    // Never rejects. A dropped connection used to throw out of whichever click
+    // handler called this, unnoticed — no toast, a button that looked dead. It
+    // reports status 0 instead, which every caller already treats as "not ok".
     async function api(path, opts = {}) {
-      const res = await fetch("/dashboard/api" + path, {
-        ...opts, headers: { "Content-Type": "application/json", ...(opts.headers||{}) },
-      });
+      let res;
+      try {
+        res = await fetch("/dashboard/api" + path, {
+          ...opts, headers: { "Content-Type": "application/json", ...(opts.headers||{}) },
+        });
+      } catch (e) {
+        return { status: 0, body: { error: "network" } };
+      }
       return { status: res.status, body: await res.json().catch(() => ({})) };
     }
     function toast(msg) {
       const t = $(".toast"); t.textContent = msg; t.classList.add("show");
       setTimeout(() => t.classList.remove("show"), 2600);
     }
+    // Escaping for the handful of screens built by string concatenation rather
+    // than a template literal. Same helper as the admin console's.
+    const esc = (s) => String(s == null ? "" : s)
+      .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
 
     // Reveal/hide password fields via a "Show" checkbox (data-eye = their
     // selector). querySelectorAll, not querySelector: one checkbox drives every
@@ -3506,6 +3518,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const { status, body } = await api("/" + mode, { method: "POST", body: JSON.stringify(payload) });
         if (body.ok) location.reload();
         else if (status === 429) toast("Too many attempts — try again in " + (body.retryAfterSeconds || 60) + "s.");
+        else if (status === 0) toast("Couldn't reach PunchMe — check your connection.");
+        else if (body.error === "account-closed") toast("This account is closed — message whoever set your PunchMe up.");
         else toast(body.error === "email-taken" ? "That email already has an account — log in instead."
                  : body.error || ("Failed (" + status + ")"));
       };
@@ -3945,9 +3959,46 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // ---- app shell: owner-scoped tabs ----
     const S = { cards: [], email: "", tab: "customers", selCard: 0, hasStaffPin: false, joinRef: "" };
 
+    /**
+     * A screen with no tabs behind it: a message and a way out. EVERY dead end
+     * on this page goes through here, because the page's server-rendered body
+     * is the word "Loading…" and nothing else — whatever fails to paint over it
+     * leaves an owner staring at a spinner that is not a spinner, with no log
+     * out button and therefore no way to reach the login form again. The retry
+     * argument is optional; the log out button never is.
+     */
+    function deadEnd(email, message, retry) {
+      $("#app").innerHTML =
+        '<div><h1 style="margin:0">Dashboard</h1>' +
+        (email ? '<p class="sub" style="margin:2px 0 14px">' + esc(email) + "</p>" : "") + "</div>" +
+        '<p class="muted">' + esc(message) + "</p>" +
+        '<div style="display:flex;gap:8px;margin-top:16px">' +
+        (retry ? '<button class="btn btn-ghost" style="width:auto;padding:10px 16px" data-retry>Try again</button>' : "") +
+        '<button class="btn btn-ghost" style="width:auto;padding:10px 16px" data-out>Log out</button></div>';
+      if (retry) $("[data-retry]").onclick = () => retry();
+      // Logging out must work even when the server is the thing that is broken:
+      // reload regardless, so a failed request cannot pin somebody to this
+      // screen. The cookie clear is best-effort, the escape is not.
+      $("[data-out]").onclick = async () => {
+        try { await api("/logout", { method: "POST" }); } finally { location.reload(); }
+      };
+    }
+
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
+      // An archived shop is closed and requireOwner refuses every call behind
+      // it. Say which it is; the alternative was reading cards off a body that
+      // does not have any.
+      if (status === 403) {
+        return void deadEnd("", "This account is closed. If that is a surprise, message whoever set your PunchMe up.");
+      }
+      // Anything else that is not the overview: a 5xx, a proxy's HTML error
+      // page, a dropped connection. Offer the retry rather than crash on a
+      // body that has no cards in it.
+      if (!Array.isArray(body.cards)) {
+        return void deadEnd("", "Couldn't load your dashboard. Check your connection and try again.", app);
+      }
       S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "customers";
       S.hasStaffPin = !!body.hasStaffPin;
       S.joinRef = body.joinRef || "";
@@ -3956,14 +4007,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // away over a mis-click — but it owns nothing, and every tab below reads
       // S.cards[0]. Say so plainly rather than render three empty tabs.
       if (!S.cards.length) {
-        $("#app").innerHTML =
-          '<div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">' +
-          esc(S.email) + "</p></div>" +
-          '<p class="muted">This account does not have a shop. If that is a surprise, ' +
-          "message whoever set your PunchMe up — they can hand it back.</p>" +
-          '<button class="btn btn-ghost" style="margin-top:16px;width:auto;padding:10px 16px" data-out>Log out</button>';
-        $("[data-out]").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
-        return;
+        return void deadEnd(
+          S.email,
+          "This account does not have a shop. If that is a surprise, message whoever set your PunchMe up — they can hand it back.",
+        );
       }
       // Three tabs, each one job: who your customers are and how it's going ·
       // what the card is · everything you set once. Home and Customers used to
@@ -4005,11 +4052,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       wireInfo(panel);
     }
 
-    (async () => {
-      const { body } = await api("/state");
-      if (body.loggedIn) app();
-      else authForm("login");
-    })();
+    // The last line of defence. The body this script boots into is the word
+    // "Loading…", so ANY exception before something paints over it leaves an
+    // owner on a dead screen with no log out button and no way back to the
+    // login form — which is exactly what one undefined helper did. Awaited, not
+    // fired and forgotten: an un-awaited app() would reject past this catch.
+    async function boot() {
+      try {
+        const { body } = await api("/state");
+        if (body.loggedIn) await app();
+        else authForm("login");
+      } catch (e) {
+        console.error("[dashboard] boot failed:", e);
+        deadEnd("", "Something went wrong loading this page.", boot);
+      }
+    }
+    boot();
   `;
   return page(
     "PunchMe — Dashboard",

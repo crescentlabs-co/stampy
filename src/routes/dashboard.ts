@@ -108,7 +108,13 @@ dashboardRouter.get("/", (_req, res) => {
 /** Tells the page whether a session is already active. */
 dashboardRouter.get("/api/state", async (req, res) => {
   const ownerId = sessionOwnerId(req);
-  res.json({ loggedIn: Boolean(ownerId && (await getOwner(ownerId))) });
+  const owner = ownerId ? await getOwner(ownerId) : null;
+  // An archived owner is not logged in as far as this page is concerned: every
+  // call behind requireOwner would 403, so saying "logged in" only lands a
+  // stale cookie on a dashboard that cannot load. The login form instead, which
+  // then says plainly that the account is closed.
+  const live = Boolean(owner) && !(await ownerIsArchived(owner!.id));
+  res.json({ loggedIn: live });
 });
 
 dashboardRouter.post("/api/signup", async (req, res) => {
@@ -200,6 +206,14 @@ dashboardRouter.post("/api/login", async (req, res) => {
     return void res.status(401).json({ error: "wrong-email-or-password" });
   }
   clear(rlKey);
+  // Closed shops are refused at the door, the same way staff sign-in refuses
+  // them (src/routes/staff.ts). Checked AFTER the password verifies so it can
+  // never be used to work out which emails have accounts, and before the
+  // cookie is set so a closed account never holds a session at all — it used
+  // to log in successfully and land on a dashboard that 403s on every call.
+  if (await ownerIsArchived(owner.id)) {
+    return void res.status(403).json({ error: "account-closed" });
+  }
   setSessionCookie(res, owner.id);
   // "Does this merchant ever open their dashboard?" had no answer before,
   // because nothing recorded a sign-in. Best-effort; never blocks the login.
