@@ -22,8 +22,9 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { randomBytes } from "node:crypto";
 import { hashPassword, sessionOwnerId } from "../auth.js";
 import { CLAIM_TTL_MS, hashClaimToken } from "../claim.js";
-import { config } from "../config.js";
+import { config, setupStatus } from "../config.js";
 import {
+  allCards,
   allCardsWithStats,
   allOwners,
   createCard,
@@ -150,6 +151,44 @@ adminRouter.post("/api/merchant/:id/archive", requireAdmin, async (req, res) => 
 adminRouter.post("/api/merchant/:id/unarchive", requireAdmin, async (req, res) => {
   await setMerchantArchived(req.params.id!, false);
   res.json({ ok: true });
+});
+
+/**
+ * Re-send every card's Google Wallet class.
+ *
+ * The class carries the things built from BASE_URL — the hosted logo and banner
+ * URLs, the Terms and Privacy links, and the issuer callback URL — and none of
+ * them move when the domain does. Class data renders on every object already
+ * issued, so this is what makes an Android card in a wallet today pick up a new
+ * domain without touching that customer's object.
+ *
+ * It lives here rather than only in scripts/google-resync.ts because the
+ * credentials are in Railway, not on anyone's laptop: the script needs
+ * GOOGLE_SERVICE_ACCOUNT_B64 exported locally, which means a private key in a
+ * shell history, and invariant 2 says secrets stay in Railway's UI. Pressing a
+ * button runs it where the key already is.
+ *
+ * Safe to press repeatedly: a class PATCH carries no notifyPreference, so it
+ * notifies nobody (invariant 3), and it touches no object, so no stamp count
+ * can move. Sequential rather than parallel — a burst of writes against one
+ * issuer is how you find a rate limit you did not know about.
+ */
+adminRouter.post("/api/google-resync", requireAdmin, async (_req, res) => {
+  if (!setupStatus().canGoogleWallet) {
+    return void res.status(409).json({ error: "google-not-configured" });
+  }
+  const cards = await allCards();
+  const results: { id: string; name: string; ok: boolean; reason: string }[] = [];
+  for (const card of cards) {
+    const r = await ensureClass(card);
+    results.push({ id: card.id, name: card.name, ok: r.ok, reason: r.ok ? "" : (r.reason ?? "") });
+  }
+  res.json({
+    ok: true,
+    total: results.length,
+    failed: results.filter((r) => !r.ok).length,
+    results,
+  });
 });
 
 /** Operator-kept contact details — owners.email is a login, not a person. */

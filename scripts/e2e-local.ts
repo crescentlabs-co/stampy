@@ -1466,6 +1466,35 @@ async function main() {
     "the counter sheet is gone",
   );
 
+  // --- Google resync: the button that survives a domain change -------------
+  //
+  // A card's Google class carries everything built from BASE_URL — the hosted
+  // art URLs, the Terms and Privacy links, the issuer callback — and none of it
+  // moves when the public address does. The equivalent script cannot run from a
+  // laptop (the service-account key is in Railway and stays there), so this
+  // endpoint is the real path and has to work.
+  const resync = async (cookieUsed: string) => {
+    const r = await fetch(base + "/admin/api/google-resync", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieUsed },
+    });
+    return { status: r.status, body: JSON.parse(await r.text()) };
+  };
+  expect((await resync(cookieOutsider)).status === 403, "a non-admin cannot resync Google");
+  const gr = await resync(cookieNow);
+  // Google is not configured in e2e, so the honest answer is a clean refusal —
+  // never a cheerful "done" over nothing, which is exactly how the script used
+  // to behave and why nobody noticed it had done nothing at all.
+  expect(
+    gr.status === 409 && gr.body.error === "google-not-configured",
+    "with no Google credentials it refuses plainly rather than reporting success",
+  );
+  // The console must not offer a button whose endpoint does not exist.
+  expect((await get("/admin")).body.includes('id="gresync"'), "the console offers the resync button");
+  expect(
+    (await get("/admin")).body.includes('api("/google-resync"'),
+    "...and points it at the route that serves it",
+  );
+
   // --- Archiving a card: operator-only, reversible, destroys nothing ---
   const archive = async (id: string, cookieUsed: string, action = "archive") => {
     const r = await fetch(base + "/admin/api/card/" + id + "/" + action, {

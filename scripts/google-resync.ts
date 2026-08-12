@@ -17,7 +17,7 @@
  * Needs the same Google credentials the server runs with. Without them it says
  * so and exits 0 — nothing to do is not a failure.
  */
-import { getPool, type CardRow } from "../src/db.js";
+import { allCards, getPool } from "../src/db.js";
 import { ensureClass } from "../src/googleWallet.js";
 import { setupStatus } from "../src/config.js";
 
@@ -29,13 +29,22 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+// This is the usual outcome when run from a laptop, and it used to print one
+// cheerful line and exit 0 — which reads as "done" when nothing happened at all.
+// The credentials live in Railway, and invariant 2 says they stay there, so the
+// console button is the real path and this exits non-zero to say so.
 if (!setupStatus().canGoogleWallet) {
-  console.log("Google Wallet is not configured — nothing to resync.");
-  process.exit(0);
+  console.error("Google Wallet is not configured IN THIS SHELL.\n");
+  console.error("  GOOGLE_ISSUER_ID and GOOGLE_SERVICE_ACCOUNT_B64 live in Railway's");
+  console.error("  Variables, and a service-account private key should not be copied");
+  console.error("  onto a laptop or into a shell history to run this.\n");
+  console.error("  Use the button instead:  /admin → Shops → Maintenance →");
+  console.error("  'Resync Google Wallet'. It runs the same code where the key is.\n");
+  process.exit(1);
 }
 
 const pool = getPool();
-const { rows } = await pool.query<CardRow>(`SELECT * FROM cards ORDER BY created_at`);
+const rows = await allCards();
 console.log(`Resyncing ${rows.length} class${rows.length === 1 ? "" : "es"} to Google…\n`);
 
 let failed = 0;

@@ -1056,6 +1056,19 @@ export async function currentSlug(merchantId: string): Promise<string> {
   return res.rows[0]?.slug ?? merchantId;
 }
 
+/**
+ * Every card, archived ones included, oldest first.
+ *
+ * Archived is deliberate: retiring a card does not take its passes out of
+ * anybody's wallet, so its Google class still has to carry working art URLs.
+ * Shared by the admin console's Google resync and scripts/google-resync.ts so
+ * the two cannot end up refreshing different sets.
+ */
+export async function allCards(): Promise<CardRow[]> {
+  const res = await getPool().query<CardRow>(`SELECT * FROM cards ORDER BY created_at`);
+  return res.rows;
+}
+
 export async function getMerchant(id: string): Promise<MerchantRow | null> {
   const res = await getPool().query<MerchantRow>(`SELECT * FROM merchants WHERE id = $1`, [id]);
   return res.rows[0] ?? null;

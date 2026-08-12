@@ -5182,6 +5182,16 @@ export function adminPage(): string {
           <summary>Archived shops (\${archivedMerchants.length})\${info("Closed accounts. Nothing is deleted and every card already in a wallet keeps working — they are just out of the working list, raise no problems, and are left out of the tiles above. Restore one from inside its row.")}</summary>
           <div class="tw"><table>\${MERCHANT_HEAD}\${archivedMerchants.map(merchantRow).join("")}</table></div>
         </details>\` : ""}
+
+        <details class="fold" style="margin-top:22px">
+          <summary>Maintenance</summary>
+          <p class="muted" style="margin:8px 0">Press this after the public address changes. Android cards load
+            their logo, banner and stamp images from that address, and the link Google calls back on is stored
+            with each shop — none of it moves by itself. iPhone cards need nothing. It notifies nobody and
+            cannot change anyone's stamps, so it is safe to press twice.</p>
+          <button class="btn btn-ghost" id="gresync">Resync Google Wallet</button>
+          <div id="gresync-out"></div>
+        </details>
         </div>
 
         <div id="pane-new" hidden>
@@ -5208,6 +5218,33 @@ export function adminPage(): string {
             </li>
           </ol>
         </div>\`;
+
+      // Re-send every shop's Google class. Sequential on the server, so this can
+      // take a few seconds on a long list — say so rather than look hung.
+      const gr = $("#gresync");
+      if (gr) gr.onclick = async () => {
+        const out = $("#gresync-out");
+        gr.disabled = true;
+        gr.textContent = "Resyncing…";
+        out.innerHTML = "";
+        const { body: r } = await api("/google-resync", { method: "POST" });
+        gr.disabled = false;
+        gr.textContent = "Resync Google Wallet";
+        if (!r.ok) {
+          out.innerHTML = '<p class="muted" style="margin:8px 0 0">' + (r.error === "google-not-configured"
+            ? "Google Wallet isn’t set up in Railway, so there is nothing to resync."
+            : "Couldn’t resync — " + esc(String(r.error || "unknown"))) + "</p>";
+          return;
+        }
+        // Name the failures. "3 of 10 failed" with no names is a message you
+        // cannot act on, and this is the screen you act from.
+        const bad = (r.results || []).filter((x) => !x.ok);
+        out.innerHTML = '<p class="muted" style="margin:8px 0 0">' +
+          (r.failed
+            ? esc(r.failed + " of " + r.total + " failed: ") +
+              bad.map((x) => esc(x.name) + " (" + esc(x.reason) + ")").join(", ")
+            : esc(r.total + " shop" + (r.total === 1 ? "" : "s") + " resynced ✓")) + "</p>";
+      };
 
       // ---- panes ------------------------------------------------------------
       $("#atabs").querySelectorAll("button").forEach((b) => {
