@@ -179,6 +179,18 @@ stamps as `count(stamp) - count(undo)`); `passes.stamp_count` is a cache that
 can be rebuilt. Keep it that way: a stored aggregate that drifts from the log is
 how the Home headline came to disagree with the list under it.
 
+**There is exactly one exception, and it is not a precedent.**
+`hardDeleteMerchant` (src/db.ts) deletes a shop and its entire history in one
+transaction — events included — so the same onboarding flow can be set up and
+torn down repeatedly while testing. The rule exists so a correction can never
+rewrite history and leave a metric disagreeing with the log; here the shop and
+its whole log go together, leaving nothing to disagree. It also destroys
+`passes`, whose `serial` and `auth_token` are inside cards already on customers'
+phones, so every card that shop issued is orphaned permanently with no way to
+tell the phone. A **paid** shop is refused, the operator must type the shop's
+name, and archiving stays the default. Do not widen this, and do not copy the
+pattern into anything that deletes less than a whole merchant.
+
 A correction is a new row, never an edit. An `undo` is its own event and the
 stamp it reverses stays. The pruner (`pruneAbandonedPasses`) refuses to delete
 any pass that was ever stamped or ever reached a wallet, because that would let

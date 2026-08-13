@@ -449,10 +449,15 @@ describe("one designer, two pages", () => {
       .replace(/<!--[\s\S]*?-->/g, "");
     for (const dialog of ["confirm(", "alert("]) expect(code).not.toContain(dialog);
     // Every refusal has to say WHY, or an operator retries the one thing that
-    // will never work instead of archiving.
-    for (const reason of ["has-passes", "has-customers", "has-messages"]) {
-      expect(admin).toContain(reason);
+    // will never work. There is one refusal left — a paying shop — because a
+    // shop that has merely traded is now deletable on purpose: setting the same
+    // onboarding flow up repeatedly issues a card every time.
+    expect(admin).toContain("paid-shop");
+    for (const gone of ["has-passes", "has-customers", "has-messages"]) {
+      expect(admin).not.toContain(gone);
     }
+    // The damage has to be on screen before the button is armed.
+    expect(admin).toContain("cannot be restored");
   });
 
   // The same poster is being scanned either way: a customer who gets a generic

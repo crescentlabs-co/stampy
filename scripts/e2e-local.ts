@@ -1616,9 +1616,14 @@ async function main() {
     "...and its events went with it, rather than being orphaned",
   );
 
-  // The one that matters: a shop holding a real pass must survive intact.
+  // A shop that HAS traded deletes too, and that is the point of it.
+  //
+  // This used to be the guard: a shop holding a pass was refused and told to
+  // archive. That made the button useless for the job it exists for — setting
+  // the same onboarding flow up end to end, over and over, which issues a card
+  // every time. So the pass, its customer, its events and its messages go with
+  // the shop, and the only thing still refused is a shop that is PAYING.
   const trading = await newShop("Traded Already");
-  // Claim it, so there is a real login to prove survives the refusal too.
   const tradeLink = await fetch(base + "/admin/api/merchant/" + trading.merchantId + "/claim-link", {
     method: "POST", headers: { cookie: cookieNow },
   });
@@ -1628,23 +1633,49 @@ async function main() {
     body: JSON.stringify({ email: "traded@example.test", password: "password123" }),
   });
   // Issued straight into the database rather than through /enroll: Apple signing
-  // is not configured here, and what is under test is the GUARD, not the wallet.
-  await mk("apple", undefined, trading.cardId);
-  const passCount = (await getPool().query("SELECT 1 FROM passes WHERE card_id = $1", [trading.cardId])).rowCount;
-  expect(passCount === 1, "the traded shop has a card in someone's wallet");
-  const refused = await delShop(trading.merchantId, "Traded Already");
-  expect(
-    refused.status === 409 && refused.body.error === "has-passes",
-    "a shop that issued a card is REFUSED, and told to archive instead",
-  );
-  expect(await merchantExists(trading.merchantId), "...the shop is untouched");
+  // is not configured here, and what is under test is the DELETE, not the wallet.
+  const tradedPass = await mk("apple", undefined, trading.cardId);
+  await logEvent(trading.cardId, tradedPass.serial, "stamp", { actor: "staff:e2e" });
   expect(
     (await getPool().query("SELECT 1 FROM passes WHERE card_id = $1", [trading.cardId])).rowCount === 1,
-    "...and so is the customer's pass",
+    "the traded shop has a card in someone's wallet",
   );
+
+  // Paying is the one refusal left, and it is checked on a locked row.
+  await fetch(base + "/admin/api/merchant/" + trading.merchantId + "/paid", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ paid: true }),
+  });
+  const paidRefused = await delShop(trading.merchantId, "Traded Already");
+  expect(paidRefused.status === 409 && paidRefused.body.error === "paid-shop",
+    "a PAYING shop is refused, however it is typed");
+  expect(await merchantExists(trading.merchantId), "...and is untouched");
+  await fetch(base + "/admin/api/merchant/" + trading.merchantId + "/paid", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ paid: false }),
+  });
+
+  const tradedGone = await delShop(trading.merchantId, "Traded Already");
+  expect(tradedGone.status === 200 && tradedGone.body.ok, "an unpaid shop deletes even having issued a card");
+  expect(tradedGone.body.passes === 1, `...and reports the passes it destroyed (${tradedGone.body.passes})`);
+  // Nothing may be left behind pointing at a shop that no longer exists.
+  for (const [table, sql, args] of [
+    ["passes", "SELECT 1 FROM passes WHERE card_id = $1", [trading.cardId]],
+    ["events", "SELECT 1 FROM events WHERE card_id = $1", [trading.cardId]],
+    ["customers", "SELECT 1 FROM customers WHERE merchant_id = $1", [trading.merchantId]],
+    ["cards", "SELECT 1 FROM cards WHERE merchant_id = $1", [trading.merchantId]],
+    ["merchants", "SELECT 1 FROM merchants WHERE id = $1", [trading.merchantId]],
+    ["owners", "SELECT 1 FROM owners WHERE email = $1", ["traded@example.test"]],
+  ] as [string, string, unknown[]][]) {
+    expect((await getPool().query(sql, args)).rowCount === 0, `...and no ${table} row survives it`);
+  }
+  // The pass is gone, so its registrations must have cascaded rather than
+  // pointing at a serial nothing can resolve.
   expect(
-    (await getPool().query("SELECT 1 FROM owners WHERE email = $1", ["traded@example.test"])).rowCount === 1,
-    "...and so is their login",
+    (await getPool().query(
+      "SELECT 1 FROM registrations WHERE serial = $1", [tradedPass.serial],
+    )).rowCount === 0,
+    "...and the device registration cascaded with the pass",
   );
 
   // The whole point: deleting frees the email for a fresh claim.

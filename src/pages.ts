@@ -4976,11 +4976,12 @@ export function adminPage(): string {
                free an email address that is stuck: login refuses an archived
                owner and the claim form refuses an existing one, so an address
                can be locked out of both with nothing else to unstick it.
-               Refused server-side the moment a shop has a pass, a customer or a
-               sent message — anything that traded is archived, never deleted. -->
+               It also deletes shops that HAVE traded, because setting the same
+               onboarding flow up repeatedly issues cards every time. A paid
+               shop is refused server-side; nothing else is. -->
           <details class="fold" style="margin-top:10px">
             <summary>Delete this shop permanently</summary>
-            <p class="muted" style="margin:8px 0">Only works if no card was ever issued. Everything goes: the shop, its programme, its login and its history. Archive instead if it ever had a customer.</p>
+            <p class="muted" style="margin:8px 0">Everything goes: the shop, its programme, its login, its customers and its whole history. \${m.customers ? "<strong>" + m.customers + " customer(s) hold a card from this shop. Their cards stop working and cannot be restored.</strong> " : ""}Archive instead unless you are certain — that keeps every card working and can be undone.</p>
             <label style="margin-top:4px">Type <strong>\${esc(m.name)}</strong> to confirm</label>
             <input data-delname="\${m.id}" placeholder="\${esc(m.name)}" autocomplete="off">
             <button class="btn btn-ghost dbtn" data-mdelete="\${m.id}" style="margin-top:8px" disabled>Delete shop</button>
@@ -5291,9 +5292,7 @@ export function adminPage(): string {
               return void load();
             }
             const why = {
-              "has-passes": "This shop has issued a card to someone. Archive it instead.",
-              "has-customers": "This shop has customers. Archive it instead.",
-              "has-messages": "This shop has sent a message to a customer. Archive it instead.",
+              "paid-shop": "This shop is paying. Mark it unpaid first if you really mean it.",
               "name-mismatch": "That name doesn't match.",
             }[r.error] || "Couldn't delete it.";
             out.innerHTML = '<p class="muted" style="margin:8px 0 0">' + esc(why) + "</p>";

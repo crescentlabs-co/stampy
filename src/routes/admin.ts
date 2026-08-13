@@ -311,7 +311,7 @@ adminRouter.delete("/api/merchant/:id", requireAdmin, async (req, res) => {
   }
   const out = await hardDeleteMerchant(merchant.id);
   if (!out.ok) return void res.status(409).json({ error: out.reason });
-  res.json({ ok: true, cards: out.cards, ownerEmail: out.ownerEmail });
+  res.json({ ok: true, cards: out.cards, passes: out.passes, ownerEmail: out.ownerEmail });
 });
 
 /** Whether this shop is paying. The one lifecycle fact nothing else implies. */

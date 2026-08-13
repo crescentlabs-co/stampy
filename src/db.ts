@@ -1520,8 +1520,8 @@ export async function archiveCard(id: string): Promise<CardArchival> {
 }
 
 export type MerchantDeletion =
-  | { ok: true; cards: number; ownerEmail: string | null }
-  | { ok: false; reason: "no-such-merchant" | "has-passes" | "has-customers" | "has-messages" };
+  | { ok: true; cards: number; passes: number; ownerEmail: string | null }
+  | { ok: false; reason: "no-such-merchant" | "paid-shop" };
 
 /**
  * Remove a shop that never traded — completely, including its owner login.
@@ -1533,12 +1533,20 @@ export type MerchantDeletion =
  * (`ownerIsArchived`). Between them, an address can end up unable to log in AND
  * unable to claim, with no way out of the console. This is that way out.
  *
- * **The guards are the feature.** Refuses if a pass was EVER issued, if any
- * customer exists, or if any message was sent — anything that traded gets
- * archived, and nothing a real person holds in a wallet can be destroyed from
- * here. Every condition is re-checked inside the transaction against locked
- * rows, because the console's numbers being a few seconds stale must never turn
- * into a live shop disappearing.
+ * **It deletes a shop that HAS traded, on purpose.** It began by refusing the
+ * moment a pass, a customer or a message existed — archive anything real. That
+ * made it useless for the job it is needed for: running the same onboarding
+ * flow end to end, repeatedly, which issues cards every time. The only refusal
+ * left is a PAID shop, re-checked inside the transaction against a locked row,
+ * because the console's numbers being seconds stale must never turn into a live
+ * business disappearing. Money is the one signal that says a real shop is on
+ * the other end of this row, and no test shop has it.
+ *
+ * What that costs, plainly: `passes` holds the serial and auth token that are
+ * inside cards already on customers' phones. Deleting them orphans every issued
+ * card permanently and there is no way to tell the phone. Nothing here is
+ * recoverable without a dump. Archiving stays the default in the console and is
+ * what a real shop closing gets.
  *
  * NOTE — this DELETEs from `events`, which CLAUDE.md otherwise forbids
  * absolutely. The rule exists so a correction can never rewrite history and
@@ -1550,8 +1558,8 @@ export async function hardDeleteMerchant(id: string): Promise<MerchantDeletion> 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const merchant = await client.query<{ owner_id: string | null }>(
-      `SELECT owner_id FROM merchants WHERE id = $1 FOR UPDATE`,
+    const merchant = await client.query<{ owner_id: string | null; paid_at: Date | null }>(
+      `SELECT owner_id, paid_at FROM merchants WHERE id = $1 FOR UPDATE`,
       [id],
     );
     if (!merchant.rows.length) {
@@ -1566,29 +1574,11 @@ export async function hardDeleteMerchant(id: string): Promise<MerchantDeletion> 
       await client.query<{ id: string }>(`SELECT id FROM cards WHERE merchant_id = $1`, [id])
     ).rows.map((r) => r.id);
 
-    const anyPass = cardIds.length
-      ? await client.query(`SELECT 1 FROM passes WHERE card_id = ANY($1::text[]) LIMIT 1`, [cardIds])
-      : { rowCount: 0 };
-    if (anyPass.rowCount) {
+    // The only refusal, and it is checked on the locked row rather than on
+    // whatever the console was showing a few seconds ago.
+    if (merchant.rows[0]!.paid_at) {
       await client.query("ROLLBACK");
-      return { ok: false, reason: "has-passes" };
-    }
-    const anyCustomer = await client.query(
-      `SELECT 1 FROM customers WHERE merchant_id = $1 LIMIT 1`,
-      [id],
-    );
-    if (anyCustomer.rowCount) {
-      await client.query("ROLLBACK");
-      return { ok: false, reason: "has-customers" };
-    }
-    const anyMessage = cardIds.length
-      ? await client.query(`SELECT 1 FROM messages WHERE card_id = ANY($1::text[]) LIMIT 1`, [
-          cardIds,
-        ])
-      : { rowCount: 0 };
-    if (anyMessage.rowCount) {
-      await client.query("ROLLBACK");
-      return { ok: false, reason: "has-messages" };
+      return { ok: false, reason: "paid-shop" };
     }
 
     let ownerEmail: string | null = null;
@@ -1599,12 +1589,21 @@ export async function hardDeleteMerchant(id: string): Promise<MerchantDeletion> 
       ownerEmail = o.rows[0]?.email ?? null;
     }
 
-    // Child-first. The art tables, owner_cards and owner_logins cascade from
-    // cards/owners; events and merchant_slugs do not, so they go by hand.
+    // Child-first, and the order is the whole difficulty: passes.card_id,
+    // events.card_id and messages.card_id reference cards with NO cascade, and
+    // passes.customer_id references customers — so customers cannot go first.
+    // The art tables, stamp strips, registrations, owner_cards and owner_logins
+    // all cascade from cards or owners and are deliberately not listed.
+    let passes = 0;
     if (cardIds.length) {
+      await client.query(`DELETE FROM messages WHERE card_id = ANY($1::text[])`, [cardIds]);
       await client.query(`DELETE FROM events WHERE card_id = ANY($1::text[])`, [cardIds]);
+      const gone = await client.query(`DELETE FROM passes WHERE card_id = ANY($1::text[])`, [cardIds]);
+      passes = gone.rowCount ?? 0;
+      await client.query(`DELETE FROM owner_cards WHERE card_id = ANY($1::text[])`, [cardIds]);
     }
     await client.query(`DELETE FROM events WHERE merchant_id = $1`, [id]);
+    await client.query(`DELETE FROM customers WHERE merchant_id = $1`, [id]);
     await client.query(`DELETE FROM merchant_slugs WHERE merchant_id = $1`, [id]);
     if (cardIds.length) {
       await client.query(`DELETE FROM cards WHERE id = ANY($1::text[])`, [cardIds]);
@@ -1614,7 +1613,7 @@ export async function hardDeleteMerchant(id: string): Promise<MerchantDeletion> 
     if (ownerId) await client.query(`DELETE FROM owners WHERE id = $1`, [ownerId]);
 
     await client.query("COMMIT");
-    return { ok: true, cards: cardIds.length, ownerEmail };
+    return { ok: true, cards: cardIds.length, passes, ownerEmail };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
