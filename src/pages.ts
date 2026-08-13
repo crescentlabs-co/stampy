@@ -726,14 +726,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
     .emojirow input { flex: 1; font-size: 1.15rem; }
     .emojirow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
-    /* --- band textures --- */
-    .bantpl { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px; }
-    .bantpl .bt { width: 72px; height: 32px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
-                  position: relative; overflow: hidden; background-size: cover; background-position: center;
-                  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
-    .bantpl .bt:hover { border-color: var(--accent); }
-    .bantpl .bt.sel { border-color: var(--accent); }
-    .bantpl .bt span { position: absolute; inset: auto 0 2px 0; text-align: center; font-size: .58rem;
                        color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
     /* --- premium card preview --- */
     .pv { border-radius: 18px; padding: 16px; margin: 10px 0 4px; overflow: hidden;
@@ -841,9 +833,6 @@ export const DESIGN_PANEL_JS = /* js */ `
           <input data-f="bandColor" type="color" value="\${c.bandColor}">
         </div>
 
-        <label style="margin-top:14px">Band\${info("The pattern behind the stamps. They are all kept deliberately soft — the stamps are drawn on top, and a busy band makes them hard to read.")}</label>
-        <div class="bantpl" data-bandtex></div>
-
         <label style="margin-top:14px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
         <div class="emojirow">
           <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
@@ -905,14 +894,12 @@ export const DESIGN_PANEL_JS = /* js */ `
       // Big stamps that fill in (like a real punch card), rendered in the browser
       // and stored server-side. Apple uses them as the strip image, Google as the
       // hero image. Emoji glyphs bake in this device's emoji look.
-      // Declared up here, not beside the texture picker: drawStampStrip reads
-      // them and renderPreview calls it during setup, so declaring these further
-      // down would leave them in the dead zone and throw.
-      let bandTexture = c.bandTexture || "gradient";
+      // Declared up here: drawStampStrip reads it and renderPreview calls that
+      // during setup, so declaring it further down would leave it in the dead
+      // zone and throw.
       /** The band at any size, from whatever the colour picker currently says. */
-      function bandPng(style, w, h) {
-        const a = f("bandColor").value;
-        return drawBanner(style, a, shade(a, 0.35), w, h);
+      function bandPng(w, h) {
+        return drawBanner(f("bandColor").value, w, h);
       }
       let stampStyle = c.stampStyle || "";  // '' = plain dots, 'custom' = uploaded
       const stampImg = new Image();          // holds the uploaded icon for drawing
@@ -1027,8 +1014,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // re-downloaded: you dragged the picker and the card never moved. Now
         // the picker is the source and the stored PNG is only the copy the
         // wallets fetch.
-        const bandHex = f("bandColor").value;
-        paintBand(x, bandTexture, bandHex, shade(bandHex, 0.35), W, H);
+        paintBand(x, f("bandColor").value, W, H);
         const accent = f("accent").value;
         const cols = stampGridCols(target), rows = target > 1 ? 2 : 1;
         const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
@@ -1279,7 +1265,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (out === bg || contrastRatio(ink, out) < 2) return; // nothing gained; leave it alone
         f("bg").value = out;
         f("fg").value = pickTextColor(out);
-        renderPreview(); drawTextureRow(); drawRoles();
+        renderPreview(); drawRoles();
         await save({ bg: out, fg: f("fg").value }, "Card colour");
         toast("That logo was almost invisible on your card colour, so the card was made "
           + (up ? "lighter" : "darker") + " to suit. Change it below if you'd rather.");
@@ -1444,12 +1430,12 @@ export const DESIGN_PANEL_JS = /* js */ `
           f("bg").value = found.bg; f("fg").value = found.fg;
           f("label").value = found.label; f("accent").value = found.accent;
           f("bandColor").value = found.band;
-          renderPreview(); drawTextureRow(); drawRoles();
+          renderPreview(); drawRoles();
           await save({
             bg: found.bg, fg: found.fg, label: found.label,
             accent: found.accent, bandColor: found.band,
           }, "Colours");
-          await saveBanner(bandPng(bandTexture, 750, 246));
+          await saveBanner(bandPng(750, 246));
           // The extracted card colour can land on top of the logo's own ink —
           // it was sampled FROM the logo, so of course it can. Same check as on
           // upload; without it, "Use these colours" can hide the mark it came from.
@@ -1498,7 +1484,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // Text is the one thing never chosen by eye — swapping the card colour
         // would otherwise quietly leave unreadable text behind it.
         if (role === "bg") f("fg").value = pickTextColor(hex);
-        renderPreview(); drawTextureRow(); refreshSwatches();
+        renderPreview(); refreshSwatches();
       }
       /** Header swatches and the selected chip, updated in place. */
       function refreshSwatches() {
@@ -1580,16 +1566,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         toast("Band saved ✓");
       }
 
-      function shade(hex, p) { // p in -1..1 → darken/lighten
-        const n = parseInt((hex || "#3b2016").slice(1), 16), t = p < 0 ? 0 : 255, a = Math.abs(p);
-        let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-        r = Math.round((t - r) * a) + r; g = Math.round((t - g) * a) + g; b = Math.round((t - b) * a) + b;
-        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-      }
-      /** The band as a data URL, for the texture swatches and the stored PNG. */
-      function drawBanner(style, c1, c2, w, h) {
+      /** The band as a data URL — the copy the wallets fetch. */
+      function drawBanner(c1, w, h) {
         const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-        paintBand(cv.getContext("2d"), style, c1, c2, w, h);
+        paintBand(cv.getContext("2d"), c1, w, h);
         return cv.toDataURL("image/png");
       }
       /**
@@ -1598,121 +1578,22 @@ export const DESIGN_PANEL_JS = /* js */ `
        * by the time the stamps are drawn on top, so the band would simply be
        * missing from the strip.
        */
-      function paintBand(x, style, c1, c2, w, h) {
-        // Every texture is deliberately soft. The stamps are drawn ON TOP of
-        // this, so a band that competes with them is the one way the picker can
-        // make a card worse — hence the low alphas throughout.
-        if (style === "flat") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-        } else if (style === "stripes") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.globalAlpha = .22;
-          const sw = w / 14;
-          for (let i = -h; i < w; i += sw * 2) {
-            x.beginPath(); x.moveTo(i, h); x.lineTo(i + h, 0);
-            x.lineTo(i + h + sw, 0); x.lineTo(i + sw, h); x.closePath(); x.fill();
-          }
-          x.globalAlpha = 1;
-        } else if (style === "dots") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.globalAlpha = .26;
-          const step = w / 16, r = step * 0.17;
-          for (let row = 0, y = step / 2; y < h; y += step * .8, row++) {
-            for (let px = (row % 2 ? step / 2 : 0) + step / 2; px < w; px += step) {
-              x.beginPath(); x.arc(px, y, r, 0, Math.PI * 2); x.fill();
-            }
-          }
-          x.globalAlpha = 1;
-        } else if (style === "chevron") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.strokeStyle = c2; x.globalAlpha = .24; x.lineWidth = Math.max(2, h / 26);
-          const step = h / 3;
-          for (let y = -h; y < h * 2; y += step) {
-            x.beginPath();
-            for (let px = 0; px <= w; px += w / 8) {
-              const up = Math.round(px / (w / 8)) % 2 === 0;
-              x.lineTo(px, y + (up ? 0 : step * .6));
-            }
-            x.stroke();
-          }
-          x.globalAlpha = 1; x.lineWidth = 1;
-        } else if (style === "grain") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          // Deterministic, not Math.random: the band is re-rendered on every
-          // save, and a different speckle each time would be a pointless new
-          // image for the wallets to fetch.
-          x.fillStyle = c2;
-          for (let i = 0; i < 2600; i++) {
-            const s = Math.sin(i * 12.9898) * 43758.5453;
-            const t = Math.sin(i * 78.233) * 43758.5453;
-            x.globalAlpha = .05 + ((s - Math.floor(s)) * .12);
-            x.fillRect((s - Math.floor(s)) * w, (t - Math.floor(t)) * h, 2, 2);
-          }
-          x.globalAlpha = 1;
-        } else if (style === "rays") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.globalAlpha = .16;
-          for (let i = 0; i < 12; i += 2) {
-            const a = (i / 12) * Math.PI * 2;
-            x.beginPath(); x.moveTo(w / 2, h / 2);
-            x.arc(w / 2, h / 2, w, a, a + Math.PI / 12); x.closePath(); x.fill();
-          }
-          x.globalAlpha = 1;
-        } else if (style === "diagonal") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          x.fillStyle = c2; x.beginPath(); x.moveTo(0, h); x.lineTo(w, 0); x.lineTo(w, h); x.closePath(); x.fill();
-        } else if (style === "glow") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h);
-          const g = x.createRadialGradient(w * .5, h * .5, 10, w * .5, h * .5, w * .6);
-          g.addColorStop(0, c2); g.addColorStop(1, c1); x.fillStyle = g; x.fillRect(0, 0, w, h);
-        } else if (style === "waves") {
-          x.fillStyle = c1; x.fillRect(0, 0, w, h); x.fillStyle = c2;
-          for (let k = 0; k < 3; k++) { x.globalAlpha = .18 + k * .12; x.beginPath(); x.moveTo(0, h * .4 + k * 34);
-            for (let px = 0; px <= w; px += 8) x.lineTo(px, h * .4 + k * 34 + Math.sin(px / 90 + k) * 26);
-            x.lineTo(w, h); x.lineTo(0, h); x.closePath(); x.fill(); } x.globalAlpha = 1;
-        } else { // gradient
-          const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, c1); g.addColorStop(1, c2);
-          x.fillStyle = g; x.fillRect(0, 0, w, h);
-        }
+      function paintBand(x, c1, w, h) {
+        x.fillStyle = c1;
+        x.fillRect(0, 0, w, h);
       }
-      // ---- The band: the strip the stamps sit on, in its own colour ----
-      // It is still stored as the banner PNG, so Google's hero image and Apple's
-      // strip backdrop are unchanged — what went away is uploading a photo.
-      // "flat" is one colour; the rest shade toward a lighter version of it.
-      // Must stay in step with BAND_TEXTURES in src/cardView.ts. That allowlist
-      // is what refuses an unknown one, so a texture the browser can draw but
-      // the server rejects would silently save as flat.
-      const TEXTURES = [
-        { name: "Flat", style: "flat" },
-        { name: "Gradient", style: "gradient" },
-        { name: "Glow", style: "glow" },
-        { name: "Diagonal", style: "diagonal" },
-        { name: "Waves", style: "waves" },
-        { name: "Stripes", style: "stripes" },
-        { name: "Dots", style: "dots" },
-        { name: "Chevron", style: "chevron" },
-        { name: "Grain", style: "grain" },
-        { name: "Rays", style: "rays" },
-      ];
-      const btpl = q("[data-bandtex]");
-      function drawTextureRow() {
-        btpl.innerHTML = "";
-        for (const t of TEXTURES) {
-          const bt = document.createElement("div");
-          bt.className = "bt" + (t.style === bandTexture ? " sel" : "");
-          bt.title = t.name;
-          bt.style.backgroundImage = "url(" + bandPng(t.style, 144, 64) + ")";
-          bt.innerHTML = "<span>" + t.name + "</span>";
-          bt.onclick = async () => {
-            bandTexture = t.style;
-            drawTextureRow();
-            await api(P(), { method: "POST", body: JSON.stringify({ bandTexture: t.style }) });
-            await saveBanner(bandPng(t.style, 750, 246));
-          };
-          btpl.appendChild(bt);
-        }
-      }
-      drawTextureRow();
+      // ---- The band: the strip the stamps sit on, in one flat colour ----
+      //
+      // There were ten textures here — gradient, glow, waves, chevron, grain and
+      // the rest. They went because they were ten ways to answer a question the
+      // owner had not asked: the stamps are drawn ON TOP of this, so every one
+      // of them was tuned to be barely visible, and a control that can only make
+      // the card slightly worse is not a choice. The band is now the Band colour
+      // in the Colours list, and nothing else.
+      //
+      // It is still rendered and stored as the banner PNG: Apple uses it as the
+      // strip backdrop, Google as the class hero image, and it is painted into
+      // every stamp strip. Only a browser can draw it, so the PNG stays.
 
       // Renders the full 0..target set and stores it (immediate, like banners).
       // The quiet flag is for the piggy-back call from save(), which toasts its own.
@@ -1883,7 +1764,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
         }, "Design");
-        await saveBanner(bandPng(bandTexture, 750, 246));
+        await saveBanner(bandPng(750, 246));
       }
 
       // One button, not two, wherever the caller sets no rules. The one INSIDE

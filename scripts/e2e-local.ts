@@ -1334,11 +1334,8 @@ async function main() {
   const beforeDesign = (await getCard(dfyOut.cardId))!;
   expect(await design("", {
     shopName: "Nasi Lemak House KL", bg: "#123047", fg: "#eef7fc", label: "#8fc4e6",
-    accent: "#ffd166", bandColor: "#0b1d2b", bandTexture: "chevron",
+    accent: "#ffd166", bandColor: "#0b1d2b",
   }) === 200, "the designer saves colours and the band onto a live card");
-  // The same fixed vocabulary owners get. An unknown texture reaches the
-  // renderer as a flat fill and nobody is told, so it must be refused here too.
-  await design("", { bandTexture: "haunted-mansion" });
   expect(await design("/logo", { png: pngB64 }) === 200, "…its logo");
   expect(await design("/stamps", {
     style: "🍗", strips: [{ target: beforeDesign.stamps_target, filled: 0, png: pngB64 }],
@@ -1349,7 +1346,7 @@ async function main() {
   const designed = (await getCard(dfyOut.cardId))!;
   expect(
     designed.background_color === "rgb(18, 48, 71)" && designed.accent_color === "rgb(255, 209, 102)" &&
-      designed.band_color === "rgb(11, 29, 43)" && designed.band_texture === "chevron" &&
+      designed.band_color === "rgb(11, 29, 43)" &&
       designed.stamp_style === "🍗",
     "every colour, the band and the stamps land on the live card",
   );
@@ -1403,28 +1400,24 @@ async function main() {
     });
     return { status: r.status, body: JSON.parse(await r.text()) };
   };
-  await saveCard({ bandColor: "#123047", bandTexture: "waves" });
+  await saveCard({ bandColor: "#123047" });
   const banded = (await getCard("default"))!;
   expect(banded.band_color === "rgb(18, 48, 71)", `the band colour is stored as rgb (${banded.band_color})`);
-  expect(banded.band_texture === "waves", "the band texture is stored");
   const bandedOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
   const bandedCard = bandedOv.cards.find((x: any) => x.id === "default");
   expect(
-    bandedCard.bandColor === "#123047" && bandedCard.bandTexture === "waves",
+    bandedCard.bandColor === "#123047",
     "...and comes back to the designer as hex, so the pickers round-trip",
   );
-  // The texture vocabulary is fixed: an unknown one would reach the renderer and
-  // silently fall through to a flat fill.
-  await saveCard({ bandTexture: "haunted-mansion" });
-  expect((await getCard("default"))!.band_texture === "waves", "an unknown band texture is refused, not stored");
-  // Every texture the designer offers has to be one this allowlist accepts.
-  // The two lists live in different files, and a name in only one of them saves
-  // as flat with no error at all — the owner picks Chevron and gets nothing.
-  const dashTextures = (await get("/dashboard")).body;
-  for (const t of ["flat", "gradient", "glow", "diagonal", "waves", "stripes", "dots", "chevron", "grain", "rays"]) {
-    expect(dashTextures.includes('style: "' + t + '"'), `the designer offers the ${t} band texture`);
-    await saveCard({ bandTexture: t });
-    expect((await getCard("default"))!.band_texture === t, `...and the server stores ${t} rather than refusing it`);
+  // The band is one flat colour. Ten textures went with the redesign, and the
+  // column with them: a texture sent now is simply not a field any more, so it
+  // cannot be stored, and the designer offers nothing that could send one.
+  await saveCard({ bandTexture: "chevron" });
+  expect((await getCard("default"))!.band_texture === "flat",
+    "a band texture is no longer a field the server will write");
+  const dashBand = (await get("/dashboard")).body;
+  for (const t of ["gradient", "glow", "waves", "chevron", "grain", "rays"]) {
+    expect(!dashBand.includes('style: "' + t + '"'), `the designer no longer offers the ${t} band texture`);
   }
   // Any emoji is a valid stamp now, including one built from several code points
   // joined together — the column takes the glyph as-is.

@@ -36,18 +36,6 @@ import {
   type CardRow,
 } from "./db.js";
 
-/**
- * The band textures the designer offers, and the server's allowlist for them.
- *
- * Must stay in step with TEXTURES inside DESIGN_PANEL_JS (src/pages.ts): a
- * texture the browser can draw but this refuses stores as flat, and nobody is
- * told. It sits beside the writer that enforces it.
- */
-export const BAND_TEXTURES = [
-  "flat", "gradient", "glow", "diagonal", "waves",
-  "stripes", "dots", "chevron", "grain", "rays",
-];
-
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = typeof v === "number" ? Math.trunc(v) : Number.parseInt(String(v), 10);
   if (!Number.isFinite(n)) return fallback;
@@ -93,13 +81,12 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
   if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
   if (typeof body.accent === "string") fields.accent_color = hexToRgb(body.accent);
-  // The band across the middle of the card. Its texture is a fixed vocabulary —
-  // anything else would reach the renderer as an unknown style and fall through
-  // to a flat fill without saying so.
+  // The band across the middle of the card — one flat colour. It carried a
+  // texture too (gradient, waves, chevron…): ten variations of a surface the
+  // stamps are drawn on top of, every one tuned to be barely visible so it
+  // could not fight them. cards.band_texture survives as a column because
+  // migrations here are additive, and is now written by nothing.
   if (typeof body.bandColor === "string") fields.band_color = hexToRgb(body.bandColor);
-  if (typeof body.bandTexture === "string" && BAND_TEXTURES.includes(body.bandTexture)) {
-    fields.band_texture = body.bandTexture;
-  }
   // The default text a nudge is pre-filled with. The column is still called
   // auto_winback_message from when a scheduler used it; nothing is automated
   // any more (see src/winback.ts), but event and column names here are
@@ -170,6 +157,7 @@ export interface DesignerCard {
   label: string;
   accent: string;
   bandColor: string;
+  /** Always 'flat' now; kept so an older stored value still round-trips. */
   bandTexture: string;
   stampStyle: string;
   /** The logo is a lockup that already says the shop's name — see CardRow. */
@@ -261,7 +249,7 @@ export function touchesLook(
 ): boolean {
   const drawn = [
     "background_color", "foreground_color", "label_color",
-    "accent_color", "band_color", "band_texture", "stamp_style", "name",
+    "accent_color", "band_color", "stamp_style", "name",
     // Ticking this removes the name printed beside the logo on every issued
     // pass. Nothing about it is visible until the phone re-fetches, so a save
     // that skipped the push would leave the name doubled until the next stamp.

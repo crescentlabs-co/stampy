@@ -735,6 +735,18 @@ export async function migrate(): Promise<void> {
   await getPool().query(
     `ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_texture text NOT NULL DEFAULT 'gradient'`,
   );
+  // v2.4: the band is one flat colour, and the ten textures are gone. The column
+  // stays (additive-only), but every row is flattened once, because leaving the
+  // old value is not harmless: the renderer's fall-through for an unrecognised
+  // style was GRADIENT, not flat, so a card stored as 'chevron' would have come
+  // back as a gradient — a look its owner never chose and could no longer
+  // change. Runs once; after it, there is nothing left to flatten.
+  const flattened = await getPool().query(
+    `UPDATE cards SET band_texture = 'flat' WHERE band_texture <> 'flat'`,
+  );
+  if (flattened.rowCount) {
+    console.log(`[migrate] band flattened on ${flattened.rowCount} card(s)`);
+  }
 
   // v1.8: put the target into the stamp-grid key. See the ALTER above for what
   // this fixes. The existing rows were rendered at whatever each card's target

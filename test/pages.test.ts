@@ -955,7 +955,7 @@ describe("dashboard information architecture", () => {
   it("gives every design section the same weight and a one-word name", () => {
     const design = html.slice(html.indexOf("<summary>Design</summary>"), html.indexOf('data-a="savedesign"'));
     expect(design).not.toContain('class="sec');
-    for (const name of ["Logo", "Colours", "Band", "Stamps"]) {
+    for (const name of ["Logo", "Colours", "Stamps"]) {
       expect(design).toContain(`>${name}`);
     }
     expect(html).not.toContain("Band texture");
@@ -1003,10 +1003,15 @@ describe("dashboard information architecture", () => {
 
   // A texture the browser can draw but the server rejects saves as flat with no
   // error, so the two lists have to be checked against each other.
-  it("offers the same band textures the server will accept", () => {
-    for (const t of ["stripes", "dots", "chevron", "grain", "rays"]) {
-      expect(html).toContain(`style: "${t}"`);
+  // The ten band textures are gone — they were ten variations of a surface the
+  // stamps are drawn on top of, each tuned to be barely visible so it could not
+  // fight them. The band is the Band colour in the Colours list and nothing
+  // else, so neither the picker nor the server has a vocabulary to disagree on.
+  it("offers no band textures at all", () => {
+    for (const t of ["stripes", "dots", "chevron", "grain", "rays", "gradient"]) {
+      expect(html).not.toContain(`style: "${t}"`);
     }
+    expect(html).not.toContain("data-bandtex");
   });
 
   // Six preset tiles did what the emoji field does, and every card starts on
@@ -1063,7 +1068,7 @@ describe("dashboard information architecture", () => {
   // The band is drawn from the picker, not from the stored PNG — otherwise
   // dragging the colour changes nothing until it has been round-tripped.
   it("paints the band from the live picker value", () => {
-    expect(html).toContain("paintBand(x, bandTexture");
+    expect(html).toContain('paintBand(x, f("bandColor").value');
     expect(html).not.toContain("bannerReady && bannerImg.naturalWidth");
   });
 
@@ -1074,9 +1079,9 @@ describe("dashboard information architecture", () => {
     expect(html).toContain('}, "keep");');
   });
 
-  it("builds the band from a colour and a texture, not an uploaded photo", () => {
+  it("builds the band from one colour, not a texture and not an uploaded photo", () => {
     expect(html).toContain('data-f="bandColor"');
-    expect(html).toContain("data-bandtex");
+    expect(html).not.toContain("data-bandtex");
     expect(html).not.toContain("data-banner]"); // the photo upload input
     expect(html).not.toContain("rmbanner");
   });

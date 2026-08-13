@@ -59,7 +59,6 @@ import {
   artBytes,
   ART_KIND_PATTERN,
   ART_KINDS,
-  BAND_TEXTURES,
   cardFieldsFromBody,
   designerCard,
   type ArtKind,
