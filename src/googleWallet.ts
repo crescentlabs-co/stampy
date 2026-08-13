@@ -162,11 +162,9 @@ export async function ensureClass(card: CardRow): Promise<GoogleResult> {
 export async function createObject(row: PassRow, card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const [bannerV, business] = await Promise.all([
-      cafeBannerVersion(card.id).catch(() => 0),
-      businessNameForCard(card),
-    ]);
-    const obj = buildLoyaltyObject(row, card, bannerV, business);
+    // Enrol happens once per customer and nobody is holding a queue for it, so
+    // this keeps its lookup — unlike the stamp path above.
+    const obj = buildLoyaltyObject(row, card, await businessNameForCard(card));
     const inserted = await api("POST", "/loyaltyObject", obj);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyObject/${obj.id as string}`, obj));
@@ -195,14 +193,16 @@ export function saveJwtUrl(row: PassRow, card: CardRow): string | null {
 export async function patchBalance(row: PassRow, card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
-    const [bannerV, business] = await Promise.all([
-      cafeBannerVersion(card.id).catch(() => 0),
-      businessNameForCard(card),
-    ]);
+    // Two database reads used to happen here on every stamp: the banner version
+    // and the shop's name. The banner is gone from the patch entirely (it lives
+    // on the class), and the name only reaches the wire as the header of a nudge
+    // — so on an ordinary stamp, which is nearly all of them, this now waits on
+    // nothing but Google. card.name is the right fallback and is never sent.
+    const business = row.message ? await businessNameForCard(card) : card.name;
     // Only what changed: PATCH leaves everything else as it is, so the card's
-    // identity and barcode are not re-sent on every stamp.
+    // identity, barcode and artwork are not re-sent on every stamp.
     const patch = {
-      ...buildLoyaltyPatch(row, card, bannerV, business),
+      ...buildLoyaltyPatch(row, card, business),
       notifyPreference: "NOTIFY_ON_UPDATE",
     };
     return toResult(await api("PATCH", `/loyaltyObject/${objectId(row)}`, patch));

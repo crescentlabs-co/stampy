@@ -122,26 +122,31 @@ export function buildLoyaltyClass(
  * business being re-sent several times a day per customer. buildLoyaltyObject
  * spreads this, so the two can never describe a card differently.
  *
- * **The hero image is the shop's banner, and never the stamp grid.** This used
- * to point at /art/stamps/{count}.png, which meant every single stamp handed
- * Google a URL it had never seen and had to fetch and process before the card
- * could render — measured at ~20s to reach an Android phone, against 3-5s with
- * no image at all. The banner URL is identical on every stamp, so Google
- * fetches it once. Progress is carried by loyaltyPoints and the dots below it,
- * which are text and arrive quickly.
+ * **No image of any kind.** This carried the stamp grid once, which meant every
+ * stamp handed Google a URL it had never seen and had to fetch before the card
+ * could render — ~20s to reach an Android phone against 3-5s without. Replacing
+ * it with the banner fixed that, and then left a subtler version of the same
+ * cost: an identical image URL re-sent several times a day per customer, on the
+ * one call a customer is waiting on, for a picture that had not changed.
+ *
+ * The banner belongs on the CLASS (buildLoyaltyClass), which is per-shop, sent
+ * on enrol and on card edits, and renders on every object beneath it. So a
+ * stamp needs to say nothing about it at all: PATCH leaves omitted fields alone,
+ * which is the whole reason this function exists. Uploading a new banner still
+ * reaches every existing Android card, because that path calls ensureClass.
+ *
+ * What is left is text — the balance and the dots — which is all a stamp
+ * actually changes.
  *
  * Apple is unaffected and keeps the rendered grid: a .pkpass embeds the image
  * bytes, so there is nothing for the phone to go and fetch (src/passBuilder.ts).
  *
- * @param bannerVersion 0 ⇒ no banner uploaded, and heroImage is set to null
- *   rather than omitted — omitting it would leave the last stamp-grid image
- *   frozen on every card issued before this change, showing a full grid beside
- *   a number that disagrees with it.
+ * @param business only reaches the wire when a nudge is set; the caller may
+ *   skip looking it up otherwise (see patchBalance).
  */
 export function buildLoyaltyPatch(
   row: PassRow,
   card: CardRow,
-  bannerVersion = 0,
   business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
@@ -163,21 +168,17 @@ export function buildLoyaltyPatch(
       },
       ...(row.message ? [{ id: "message", header: business, body: row.message }] : []),
     ],
-    heroImage: bannerVersion
-      ? {
-          sourceUri: { uri: artUrl(card, "banner", bannerVersion) },
-          contentDescription: {
-            defaultValue: { language: "en", value: `${business} banner` },
-          },
-        }
-      : null,
   };
 }
 
+/**
+ * The object carries identity and progress; the class carries the look. An
+ * object heroImage would shadow the class's banner AND have to be re-sent to
+ * change, which is what made the stamp path carry a picture in the first place.
+ */
 export function buildLoyaltyObject(
   row: PassRow,
   card: CardRow,
-  bannerVersion = 0,
   business = card.name,
 ): Record<string, unknown> {
   return {
@@ -193,7 +194,7 @@ export function buildLoyaltyObject(
       value: row.serial,
       alternateText: `Code ${row.short_code}`,
     },
-    ...buildLoyaltyPatch(row, card, bannerVersion, business),
+    ...buildLoyaltyPatch(row, card, business),
   };
 }
 

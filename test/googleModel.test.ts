@@ -189,12 +189,13 @@ describe("buildLoyaltyObject", () => {
     expect(withMsg.textModulesData.find((t: any) => t.id === "message").body).toBe("We miss you!");
   });
 
-  it("uses the shop's banner as the hero image, never the stamp grid", () => {
-    const obj = buildLoyaltyObject(row({ stamp_count: 3 }), card(), 1720000000000) as any;
-    expect(obj.heroImage.sourceUri.uri).toBe(
-      "https://stampy.example.test/art/banner.png?v=1720000000000",
-    );
-    expect(obj.heroImage.sourceUri.uri).not.toContain("/art/stamps/");
+  // The look lives on the class, which is per-shop and renders on every object
+  // beneath it. An object-level image would shadow it AND have to be re-sent to
+  // change — which is exactly how the stamp path came to carry a picture.
+  it("carries no image of its own — the class holds the banner", () => {
+    const obj = buildLoyaltyObject(row({ stamp_count: 3 }), card()) as any;
+    expect(obj.heroImage).toBeUndefined();
+    expect(JSON.stringify(obj)).not.toContain("/art/");
   });
 });
 
@@ -238,7 +239,7 @@ describe("buildLoyaltyPatch", () => {
   // on the slowest hop in the product.
   it("carries only what a stamp changes", () => {
     const patch = buildLoyaltyPatch(row({ stamp_count: 7 }), card()) as any;
-    expect(Object.keys(patch).sort()).toEqual(["heroImage", "loyaltyPoints", "textModulesData"]);
+    expect(Object.keys(patch).sort()).toEqual(["loyaltyPoints", "textModulesData"]);
     expect(patch.loyaltyPoints.balance.string).toBe("7/10");
   });
 
@@ -249,35 +250,33 @@ describe("buildLoyaltyPatch", () => {
     }
   });
 
-  // THE fix for the 20-second Android stamp. The hero image used to carry the
-  // stamp count in its URL, so every stamp handed Google an image it had never
-  // seen and had to fetch and process before the card could render. If this
-  // ever varies by count again, that delay comes straight back.
-  it("points at the same image no matter how many stamps the card has", () => {
-    const at3 = buildLoyaltyPatch(row({ stamp_count: 3 }), card(), 1700000000000) as any;
-    const at7 = buildLoyaltyPatch(row({ stamp_count: 7 }), card(), 1700000000000) as any;
-    expect(at3.heroImage.sourceUri.uri).toBe(at7.heroImage.sourceUri.uri);
-    expect(at3.heroImage.sourceUri.uri).toBe(
-      "https://stampy.example.test/art/banner.png?v=1700000000000",
-    );
-    // Progress still moves — just in text, which is the part that arrives fast.
+  // THE fix for the 20-second Android stamp, in its strongest form. The hero
+  // image once carried the stamp count in its URL, so every stamp handed Google
+  // an image it had never seen and had to fetch before the card could render.
+  // Moving it to the shop's banner fixed that and left a quieter version of the
+  // same cost — an unchanged picture re-sent several times a day per customer,
+  // on the one call somebody is waiting on. A stamp now mentions no image at
+  // all. Any URL reappearing here brings some amount of that delay back.
+  it("mentions no image at all, at any stamp count", () => {
+    for (const n of [0, 3, 7, 10]) {
+      const patch = buildLoyaltyPatch(row({ stamp_count: n }), card()) as any;
+      expect(patch.heroImage, `heroImage at ${n} stamps`).toBeUndefined();
+      expect(JSON.stringify(patch), `a URL at ${n} stamps`).not.toContain("http");
+    }
+    // Progress still moves — in text, which is the part that arrives fast.
+    const at3 = buildLoyaltyPatch(row({ stamp_count: 3 }), card()) as any;
+    const at7 = buildLoyaltyPatch(row({ stamp_count: 7 }), card()) as any;
     expect(at3.loyaltyPoints.balance.string).toBe("3/10");
     expect(at7.loyaltyPoints.balance.string).toBe("7/10");
     expect(at3.textModulesData[0].body).not.toBe(at7.textModulesData[0].body);
   });
 
-  // Explicitly null, not absent: PATCH leaves omitted fields alone, so a card
-  // issued before this change would keep its last stamp-grid image forever —
-  // a full grid sitting beside a number that disagrees with it.
-  it("clears the hero image when the shop has no banner", () => {
-    const patch = buildLoyaltyPatch(row({ stamp_count: 3 }), card(), 0) as any;
-    expect(patch.heroImage).toBeNull();
-    expect("heroImage" in patch).toBe(true);
-  });
-
-  it("scopes the banner to the card when it isn't the default one", () => {
-    const patch = buildLoyaltyPatch(row(), card({ id: "abc12345" }), 99) as any;
-    expect(patch.heroImage.sourceUri.uri).toBe(
+  // Dropping it from the stamp must not mean losing it: uploading a banner
+  // calls ensureClass, and class art renders on every object already issued.
+  // If this stops being true, the banner silently disappears from Android.
+  it("still delivers the banner — via the class, scoped to the card", () => {
+    const cls = buildLoyaltyClass(card({ id: "abc12345" }), 0, 99) as any;
+    expect(cls.heroImage.sourceUri.uri).toBe(
       "https://stampy.example.test/c/abc12345/art/banner.png?v=99",
     );
   });
@@ -286,10 +285,20 @@ describe("buildLoyaltyPatch", () => {
   // drift, and a card that renders one way on save renders another on a stamp.
   it("is a strict subset of the full object", () => {
     const r = row({ stamp_count: 4, message: "See you soon" });
-    const patch = buildLoyaltyPatch(r, card(), 42) as any;
-    const full = buildLoyaltyObject(r, card(), 42) as any;
+    const patch = buildLoyaltyPatch(r, card(), "Kopi Corner") as any;
+    const full = buildLoyaltyObject(r, card(), "Kopi Corner") as any;
     for (const key of Object.keys(patch)) {
       expect(full[key]).toEqual(patch[key]);
     }
+  });
+
+  // The shop name only reaches the wire as a nudge's header, which is why
+  // patchBalance skips the database lookup for it on an ordinary stamp. If the
+  // name starts appearing elsewhere in the patch, that shortcut is wrong.
+  it("uses the shop name only for a nudge header", () => {
+    const plain = buildLoyaltyPatch(row(), card(), "Some Other Shop") as any;
+    expect(JSON.stringify(plain)).not.toContain("Some Other Shop");
+    const nudged = buildLoyaltyPatch(row({ message: "Miss you" }), card(), "Some Other Shop") as any;
+    expect(nudged.textModulesData.find((t: any) => t.id === "message").header).toBe("Some Other Shop");
   });
 });
