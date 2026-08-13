@@ -1,0 +1,350 @@
+/**
+ * Enough of a browser to RUN the designer.
+ *
+ * The design panel is ~1100 lines of JavaScript living inside a template
+ * literal. Nothing type-checks it and, until this file, nothing executed it —
+ * `test/pages.test.ts` compiles it and greps it for strings. That is how two
+ * bugs that destroyed an owner's uploaded stamp shipped green twice: both were
+ * about WHEN things happen (an image had not decoded yet; an object was not
+ * updated), and no amount of string-matching can see a sequence.
+ *
+ * Deliberately tiny, and deliberately not jsdom: this project has no build step
+ * and a lean toolchain (invariant 12), and a full DOM would be a large
+ * dependency to assert two orderings. It supports exactly what the panel
+ * touches — measured, not guessed: document, Image, fetch, URL, and a 2D canvas
+ * context of 14 methods and 8 properties. When the panel starts using something
+ * new, this throws rather than silently returning undefined, so the gap shows up
+ * as a failing test instead of a passing one.
+ */
+
+/** A recorded canvas call, so a test can ask what was actually drawn. */
+export interface DrawCall {
+  op: string;
+  args: unknown[];
+}
+
+class FakeClassList {
+  constructor(private el: FakeEl) {}
+  add(...names: string[]): void {
+    const cur = new Set(this.el.className.split(/\s+/).filter(Boolean));
+    for (const n of names) cur.add(n);
+    this.el.className = [...cur].join(" ");
+  }
+  remove(...names: string[]): void {
+    const cur = new Set(this.el.className.split(/\s+/).filter(Boolean));
+    for (const n of names) cur.delete(n);
+    this.el.className = [...cur].join(" ");
+  }
+  toggle(name: string, on?: boolean): void {
+    if (on === undefined ? !this.contains(name) : on) this.add(name);
+    else this.remove(name);
+  }
+  contains(name: string): boolean {
+    return this.el.className.split(/\s+/).includes(name);
+  }
+}
+
+export class FakeEl {
+  tag: string;
+  attrs: Record<string, string> = {};
+  children: FakeEl[] = [];
+  parent: FakeEl | null = null;
+  text = "";
+  style: Record<string, string> = {};
+  dataset: Record<string, string> = {};
+  classList = new FakeClassList(this);
+  /** Handlers the panel assigns; tests fire them to simulate a tap. */
+  onclick: (() => unknown) | null = null;
+  onchange: (() => unknown) | null = null;
+  oninput: (() => unknown) | null = null;
+  files: unknown[] = [];
+  width = 0;
+  height = 0;
+  /** Populated for a <canvas>; the log of everything drawn on it. */
+  calls: DrawCall[] = [];
+
+  constructor(tag: string) {
+    this.tag = tag.toLowerCase();
+  }
+
+  get className(): string { return this.attrs.class ?? ""; }
+  set className(v: string) { this.attrs.class = v; }
+  get value(): string { return this.attrs.value ?? ""; }
+  set value(v: string) { this.attrs.value = String(v); }
+  get src(): string { return this.attrs.src ?? ""; }
+  set src(v: string) { this.attrs.src = String(v); }
+  get textContent(): string {
+    return this.children.length ? this.children.map((c) => c.textContent).join("") : this.text;
+  }
+  set textContent(v: string) { this.children = []; this.text = String(v); }
+  get isConnected(): boolean { return true; }
+
+  get innerHTML(): string { return this.text; }
+  set innerHTML(html: string) {
+    this.children = parseHtml(String(html), this);
+    this.text = String(html);
+  }
+
+  setAttribute(k: string, v: string): void { this.attrs[k] = String(v); }
+  getAttribute(k: string): string | null { return this.attrs[k] ?? null; }
+  removeAttribute(k: string): void { delete this.attrs[k]; }
+  appendChild(child: FakeEl): FakeEl { child.parent = this; this.children.push(child); return child; }
+  remove(): void {
+    if (!this.parent) return;
+    this.parent.children = this.parent.children.filter((c) => c !== this);
+    this.parent = null;
+  }
+  addEventListener(type: string, fn: () => unknown): void {
+    if (type === "click") this.onclick = fn;
+    else if (type === "change") this.onchange = fn;
+    else if (type === "input") this.oninput = fn;
+  }
+  /** A <canvas>. toDataURL is deterministic so callers can compare payloads. */
+  getContext(kind: string): Record<string, unknown> {
+    if (kind !== "2d") throw new Error(`harness: unsupported context "${kind}"`);
+    return makeCtx(this);
+  }
+  toDataURL(): string { return "data:image/png;base64,SEFSTkVTUw=="; }
+
+  /** Every descendant, self included, in document order. */
+  all(): FakeEl[] {
+    return [this, ...this.children.flatMap((c) => c.all())];
+  }
+  querySelector(sel: string): FakeEl | null {
+    return this.querySelectorAll(sel)[0] ?? null;
+  }
+  querySelectorAll(sel: string): FakeEl[] {
+    const groups = sel.split(",").map((s) => s.trim()).filter(Boolean);
+    const hit = this.all().slice(1).filter((el) => groups.some((g) => matches(el, g)));
+    return hit;
+  }
+}
+
+/** Selector support: tag, .class, [attr], [attr=value], and a descendant chain. */
+function matches(el: FakeEl, sel: string): boolean {
+  const parts = sel.trim().split(/\s+/);
+  const last = parts[parts.length - 1]!;
+  if (!matchesSimple(el, last)) return false;
+  // Walk ancestors for any leading parts, right to left.
+  let node = el.parent;
+  for (let i = parts.length - 2; i >= 0; i--) {
+    let found = false;
+    while (node) {
+      if (matchesSimple(node, parts[i]!)) { found = true; node = node.parent; break; }
+      node = node.parent;
+    }
+    if (!found) return false;
+  }
+  return true;
+}
+
+function matchesSimple(el: FakeEl, sel: string): boolean {
+  const re = /^([a-zA-Z][\w-]*)?((?:\.[\w-]+)*)((?:\[[^\]]+\])*)$/;
+  const m = re.exec(sel);
+  if (!m) throw new Error(`harness: selector not supported: "${sel}"`);
+  const [, tag, classes, attrs] = m;
+  if (tag && el.tag !== tag.toLowerCase()) return false;
+  for (const cls of (classes ?? "").split(".").filter(Boolean)) {
+    if (!el.classList.contains(cls)) return false;
+  }
+  for (const raw of (attrs ?? "").match(/\[[^\]]+\]/g) ?? []) {
+    const body = raw.slice(1, -1);
+    const eq = body.indexOf("=");
+    if (eq === -1) {
+      if (!(body in el.attrs)) return false;
+    } else {
+      const k = body.slice(0, eq);
+      const v = body.slice(eq + 1).replace(/^["']|["']$/g, "");
+      if (el.attrs[k] !== v) return false;
+    }
+  }
+  return true;
+}
+
+const VOID_TAGS = new Set(["img", "input", "br", "hr", "meta", "link", "source"]);
+
+/** A small forgiving parser — enough for the panel's own markup, nothing more. */
+function parseHtml(html: string, parent: FakeEl): FakeEl[] {
+  const roots: FakeEl[] = [];
+  const stack: FakeEl[] = [];
+  const tokens = html.matchAll(/<!--[\s\S]*?-->|<\/([a-zA-Z][\w-]*)\s*>|<([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>|([^<]+)/g);
+  for (const t of tokens) {
+    const [raw, closeTag, openTag, attrText, selfClose, textRun] = t;
+    if (raw.startsWith("<!--")) continue;
+    const top = stack[stack.length - 1];
+    if (closeTag) {
+      // Pop to the matching open tag; unbalanced markup just closes what it can.
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i]!.tag === closeTag.toLowerCase()) { stack.length = i; break; }
+      }
+    } else if (openTag) {
+      const el = new FakeEl(openTag);
+      for (const a of (attrText ?? "").matchAll(/([\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)) {
+        const key = a[1]!;
+        el.attrs[key] = a[2] ?? a[3] ?? a[4] ?? "";
+        if (key.startsWith("data-")) {
+          const camel = key.slice(5).replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase());
+          el.dataset[camel] = el.attrs[key]!;
+        }
+      }
+      if (top) top.appendChild(el); else { el.parent = parent; roots.push(el); }
+      if (!selfClose && !VOID_TAGS.has(el.tag)) stack.push(el);
+    } else if (textRun && textRun.trim()) {
+      if (top) top.text += textRun;
+    }
+  }
+  return roots;
+}
+
+/** A 2D context that records rather than rasterises. */
+function makeCtx(canvas: FakeEl): Record<string, unknown> {
+  const log = (op: string, ...args: unknown[]) => { canvas.calls.push({ op, args }); };
+  const gradient = { addColorStop: () => {} };
+  return {
+    canvas,
+    fillStyle: "", strokeStyle: "", font: "", globalAlpha: 1,
+    globalCompositeOperation: "", lineWidth: 1, textAlign: "", textBaseline: "",
+    beginPath: () => log("beginPath"),
+    closePath: () => log("closePath"),
+    moveTo: (...a: unknown[]) => log("moveTo", ...a),
+    lineTo: (...a: unknown[]) => log("lineTo", ...a),
+    arc: (...a: unknown[]) => log("arc", ...a),
+    fill: () => log("fill"),
+    stroke: () => log("stroke"),
+    fillRect: (...a: unknown[]) => log("fillRect", ...a),
+    fillText: (...a: unknown[]) => log("fillText", ...a),
+    drawImage: (...a: unknown[]) => log("drawImage", ...a),
+    createLinearGradient: () => gradient,
+    createRadialGradient: () => gradient,
+    putImageData: () => log("putImageData"),
+    // Mid-grey, half of it transparent. Not arbitrary: the stamp upload refuses
+    // anything with no see-through pixels, and a uniformly opaque fake would
+    // have every upload test failing for a reason that has nothing to do with
+    // what is being tested. The scattered alpha also keeps flatBackdrop from
+    // deciding there is a flat backdrop to lift.
+    getImageData: (_x: number, _y: number, w: number, h: number) => {
+      const data = new Uint8ClampedArray(Math.max(4, w * h * 4));
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = 128; data[i + 1] = 128; data[i + 2] = 128;
+        data[i + 3] = (i / 4) % 2 ? 255 : 0;
+      }
+      return { width: w, height: h, data };
+    },
+  };
+}
+
+export interface Harness {
+  root: FakeEl;
+  /** Every fetch the panel made: [url, init]. */
+  requests: { url: string; method: string; body: unknown }[];
+  /**
+   * Every canvas the panel created. Canvases are made with createElement and
+   * never attached, so they are unreachable from the returned node — and the
+   * drawing is the whole thing under test.
+   */
+  canvases: FakeEl[];
+  /** Every Image it created, so a test can see what art was requested. */
+  images: FakeEl[];
+  /** Everything drawn on every canvas, in order. */
+  drawn: () => DrawCall[];
+  /** Resolves once every Image the panel created has fired onload. */
+  settle: () => Promise<void>;
+  globals: Record<string, unknown>;
+}
+
+/**
+ * Build the globals the panel runs against.
+ *
+ * `imageSize` decides what every Image reports once loaded — 0 makes a decode
+ * fail, which is how a missing stamp icon (404) is simulated.
+ */
+export function makeHarness(opts: { imageSize?: number; fetchJson?: unknown } = {}): Harness {
+  const size = opts.imageSize ?? 64;
+  const root = new FakeEl("body");
+  const requests: Harness["requests"] = [];
+  const canvases: FakeEl[] = [];
+  const images: FakeEl[] = [];
+  const pending: Promise<void>[] = [];
+
+  class FakeImage extends FakeEl {
+    naturalWidth = 0;
+    naturalHeight = 0;
+    complete = false;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    // Registers here, not in createElement: the panel makes its long-lived
+    // images with `new Image()`, and those are exactly the ones under test.
+    constructor() { super("img"); images.push(this); }
+    override get src(): string { return this.attrs.src ?? ""; }
+    override set src(v: string) {
+      this.attrs.src = String(v);
+      // Async on purpose — a real decode never completes in the same tick, and
+      // that gap is precisely the bug this harness exists to catch.
+      pending.push(new Promise<void>((resolve) => {
+        setTimeout(() => {
+          if (size > 0) {
+            // width/height as well as natural*: a real decoded image has both,
+            // and the panel reads the plain pair when it checks an SVG actually
+            // carries a size.
+            this.naturalWidth = size; this.naturalHeight = size;
+            this.width = size; this.height = size;
+            this.complete = true;
+            this.onload?.();
+          } else {
+            this.onerror?.();
+          }
+          resolve();
+        }, 0);
+      }));
+    }
+  }
+
+  const newEl = (tag: string): FakeEl => {
+    if (tag === "img") return new FakeImage();
+    const el = new FakeEl(tag);
+    if (tag === "canvas") canvases.push(el);
+    return el;
+  };
+
+  const document = {
+    createElement: newEl,
+    querySelector: (sel: string) => root.querySelector(sel),
+    querySelectorAll: (sel: string) => root.querySelectorAll(sel),
+    body: root,
+  };
+
+  const globals: Record<string, unknown> = {
+    document,
+    Image: FakeImage,
+    URL: { createObjectURL: () => "blob:harness", revokeObjectURL: () => {} },
+    fetch: async (url: string, init: { method?: string; body?: string } = {}) => {
+      requests.push({
+        url,
+        method: init.method ?? "GET",
+        body: init.body ? JSON.parse(init.body) : undefined,
+      });
+      return {
+        status: 200,
+        ok: true,
+        json: async () => opts.fetchJson ?? { ok: true },
+        text: async () => JSON.stringify(opts.fetchJson ?? { ok: true }),
+      };
+    },
+    setTimeout,
+    console,
+  };
+
+  const settle = async (): Promise<void> => {
+    // Drain repeatedly: an onload handler frequently starts the next load.
+    for (let i = 0; i < 12; i++) {
+      const batch = pending.splice(0);
+      await Promise.all(batch);
+      await new Promise((r) => setTimeout(r, 0));
+      if (!pending.length) break;
+    }
+  };
+
+  const drawn = (): DrawCall[] => canvases.flatMap((cv) => cv.calls);
+
+  return { root, requests, canvases, images, drawn, settle, globals };
+}

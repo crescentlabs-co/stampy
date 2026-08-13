@@ -670,6 +670,12 @@ export const DESIGN_PANEL_CSS = /* css */ `
        the file and come back. */
     .err { color: #a33; background: #fdeaea; border: 1px solid #f2c9c9; border-radius: 10px;
            padding: 10px 12px; font-size: .84rem; margin-top: 8px; }
+    /* "Your own stamp is being used" — the shape itself, at the size it is read
+       at, so the answer is the picture rather than a sentence about it. */
+    .stampnow { display: flex; align-items: center; gap: 8px; margin: 8px 0 0;
+                font-size: .84rem; color: var(--muted); }
+    .stampnow img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px;
+                    background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); padding: 3px; }
     /* --- designer controls --- */
     /* Where the five native pickers sit while no row is open. They are moved out
        into the open row, not proxied — see drawRoles. */
@@ -851,6 +857,13 @@ export const DESIGN_PANEL_JS = /* js */ `
           <button class="btn btn-ghost" data-a="rmstamp">Plain dots</button>
           \${info("A simple shape or symbol — not a photo. Upload it however you have it: if it sits on a plain background we take that background out for you, and we trim the empty space around it so it fills the stamp. Its own colours are ignored; it gets filled with your stamp colour. It shows on iPhone cards; Android shows the count as dots.")}
         </div>
+        <!-- What is actually set. The rendered grid used to be the only signal,
+             and the grid was exactly what went wrong — so an owner whose shape
+             was safe in the database had nothing on the screen telling them so.
+             Says its piece even when the grid below is still drawing. -->
+        <p class="stampnow" data-stampnow style="display:none">
+          <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
+        </p>
         <p class="err" data-stamperr style="display:none"></p>
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
@@ -902,26 +915,25 @@ export const DESIGN_PANEL_JS = /* js */ `
         return drawBanner(style, a, shade(a, 0.35), w, h);
       }
       let stampStyle = c.stampStyle || "";  // '' = plain dots, 'custom' = uploaded
-      let customStampUrl = null;             // the uploaded stamp icon, once loaded
-      const stampImg = new Image();          // holds that uploaded icon for drawing
+      const stampImg = new Image();          // holds the uploaded icon for drawing
 
       // Load the STORED stamp shape back before anything re-renders.
       //
       // This is the whole reason an uploaded stamp used to disappear. The icon
-      // lived only in customStampUrl, so a reload — or a colour save, or a tap
-      // on a band texture — found nothing in memory and quietly redrew every
-      // stamp as a plain circle. cards.stamp_style still said 'custom',
-      // describing an image nothing had kept. It is a stored image now, and
-      // every path that re-renders awaits this first (see applyStamps and the
-      // self-heal below), so the grid can never be rebuilt without it.
+      // lived only in a variable, so a reload — or a colour save, or a tap on a
+      // band texture — found nothing in memory and quietly redrew every stamp as
+      // a plain circle. cards.stamp_style still said 'custom', describing an
+      // image nothing had kept. It is a stored image now, and every path that
+      // re-renders awaits this first (see applyStamps and the self-heal below),
+      // so the grid can never be rebuilt without it.
       let stampIconReady = false;
       function loadStampIcon(src) {
         return new Promise((resolve) => {
-          if (!src) { stampIconReady = false; customStampUrl = null; return resolve(); }
-          stampImg.onload = () => { stampIconReady = true; customStampUrl = src; resolve(); };
+          if (!src) { stampIconReady = false; return resolve(); }
+          stampImg.onload = () => { stampIconReady = true; resolve(); };
           // A 404 (nothing stored) is not an error worth showing — it just means
           // this card has no shape and the grid falls back to dots.
-          stampImg.onerror = () => { stampIconReady = false; customStampUrl = null; resolve(); };
+          stampImg.onerror = () => { stampIconReady = false; resolve(); };
           stampImg.src = src;
         });
       }
@@ -949,6 +961,24 @@ export const DESIGN_PANEL_JS = /* js */ `
       const bannerReadyPromise = loadBanner(
         c.bannerVersion ? env.artUrl("banner", c.bannerVersion) : "",
       );
+
+      /**
+       * Repaint once the stored art has actually decoded.
+       *
+       * Without this the panel LIES on every open. The mount paints the preview
+       * synchronously, microseconds after these two images were handed a src, so
+       * neither has decoded: the stamp grid falls through to plain circles and
+       * the band to bare colour. Nothing then repainted, because renderPreview
+       * only runs on a field edit — so an owner who opened the designer and
+       * simply looked at it saw dots over an uploaded shape that was safely in
+       * the database, and reasonably concluded the upload had been lost.
+       *
+       * Deliberately not awaited by the mount: the panel must appear at once on
+       * a slow connection, then correct itself.
+       */
+      void Promise.all([stampIconReadyPromise, bannerReadyPromise]).then(() => {
+        if (div.isConnected || div.querySelector("[data-pv]")) renderPreview();
+      });
 
       // Draws the stamp grid for filled/target onto a wide strip → dataURL.
       // Filled cells show the icon; empty cells show a faint "hole" of it.
@@ -1688,6 +1718,13 @@ export const DESIGN_PANEL_JS = /* js */ `
       // The quiet flag is for the piggy-back call from save(), which toasts its own.
       async function applyStamps(style, quiet) {
         stampStyle = style;
+        // Onto the card object too, not just the local. The dashboard builds
+        // this panel from a card it loaded ONCE at page load and keeps reusing
+        // — so leaving c.stampStyle stale meant switching tabs and coming back
+        // rebuilt the panel believing the card was on dots, and the next save
+        // wrote dots over the owner's grid and set stamp_style back. The panel
+        // that reads this object is the one that has to be told.
+        c.stampStyle = style;
         // The banner is baked into every strip, so it must be decoded first or
         // the whole set renders on a bare colour. The stamp shape for the same
         // reason: re-render before it has loaded and the owner's icon is
@@ -1712,6 +1749,22 @@ export const DESIGN_PANEL_JS = /* js */ `
         renderPreview();
         if (!quiet) toast("Stamp style saved ✓");
       }
+
+      /**
+       * Say whether a shape is stored, and show it.
+       *
+       * Reads c.stampIconVersion rather than the in-memory image, so it answers
+       * "what is SAVED" — which is the question that was unanswerable, and the
+       * reason a safely stored upload looked lost.
+       */
+      function showStamp() {
+        const row = q("[data-stampnow]");
+        if (!row) return;
+        if (!c.stampIconVersion) { row.style.display = "none"; return; }
+        q("[data-stampnow-img]").src = env.artUrl("stamp-icon", c.stampIconVersion);
+        row.style.display = "";
+      }
+      showStamp();
 
       // The six preset tiles (Dot, Coffee, Star, Heart, Donut, Boba) are gone:
       // they were six ways to do what the emoji field does, and every card
@@ -1765,6 +1818,11 @@ export const DESIGN_PANEL_JS = /* js */ `
           // Hold the new shape before re-rendering, for the same reason the
           // stored one is loaded at mount: applyStamps writes the whole grid.
           await loadStampIcon(dataUrl);
+          // A stamp is stored now, and this object is what a re-mount reads —
+          // the logo and the square mark beside it already do this. Leaving it
+          // at 0 is what let a tab switch decide the card had no shape.
+          c.stampIconVersion = Date.now();
+          showStamp();
           await applyStamps("custom");
         };
         probe.onerror = () => show("Couldn't read that image.");
@@ -1779,6 +1837,8 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-emoji]").value = "";
         await api(P("/stamp-icon"), { method: "DELETE" });
         await loadStampIcon("");
+        c.stampIconVersion = 0;
+        showStamp();
         await applyStamps("dot", true);
         toast("Back to plain dots");
       };
