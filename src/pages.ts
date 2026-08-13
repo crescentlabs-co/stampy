@@ -918,10 +918,16 @@ export const DESIGN_PANEL_JS = /* js */ `
         <!-- The switch, first thing. It cycles the preview above AND the one
              surface-specific block below, so it is the frame everything else in
              here is read inside — it cannot sit halfway down the panel. -->
+        <!-- data-tab, NOT data-surface. data-surface marks a preview PANE, and
+             showSurface hides every one that is not current — so while the
+             buttons carried it too, picking iPhone hid the Android and Sign-up
+             buttons and the strip collapsed to a single tab that appeared to do
+             nothing. Never label a control with the attribute used to hide the
+             thing it controls. -->
         <div class="seg dseg" data-surfaces role="tablist">
-          <button data-surface="apple" class="on">iPhone</button>
-          <button data-surface="google">Android</button>
-          <button data-surface="signup">Sign-up</button>
+          <button data-tab="apple" class="on">iPhone</button>
+          <button data-tab="google">Android</button>
+          <button data-tab="signup">Sign-up</button>
           <span class="thumb"></span>
         </div>
 
@@ -1902,15 +1908,20 @@ export const DESIGN_PANEL_JS = /* js */ `
        * is showing you one surface while you edit another.
        */
       const surfaceSeg = q("[data-surfaces]");
+      // Scoped to the preview box rather than the whole panel: hiding is a blunt
+      // instrument, and searching the entire panel for data-surface is what let
+      // it reach the tab buttons. Inside the box the attribute can only mean a
+      // preview pane.
+      const pvbox = q("[data-pvbox]");
       function showSurface(name) {
-        surfaceSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.surface === name));
+        surfaceSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
         moveThumb(surfaceSeg);
         div.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== name; });
-        div.querySelectorAll("[data-surface]").forEach((p) => { p.hidden = p.dataset.surface !== name; });
+        pvbox.querySelectorAll("[data-surface]").forEach((p) => { p.hidden = p.dataset.surface !== name; });
         renderPreview();
       }
       surfaceSeg.querySelectorAll("button").forEach((b) => {
-        b.onclick = () => showSurface(b.dataset.surface);
+        b.onclick = () => showSurface(b.dataset.tab);
       });
       // A hidden .seg measures zero, so the thumb cannot be seated until the
       // panel is on the page — and the owner's Design fold starts CLOSED, so

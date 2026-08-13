@@ -205,7 +205,7 @@ describe("the design panel, mounted", () => {
       const div = build(card(), h);
       await h.settle();
       const tab = (name: string) =>
-        div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.surface === name)!;
+        div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.tab === name)!;
 
       tab("google").onclick!();
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(false);
@@ -217,6 +217,53 @@ describe("the design panel, mounted", () => {
       tab("signup").onclick!();
       expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(false);
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(true);
+    });
+
+    /**
+     * The strip must still HAVE three tabs after you use it.
+     *
+     * The buttons carried data-surface, the same attribute that marks a preview
+     * pane — and showSurface hides every pane that is not current. So picking
+     * iPhone hid the Android and Sign-up buttons, and the strip collapsed to a
+     * single tab sitting under "Design" that appeared to do nothing at all. The
+     * grep-and-compile tests could not see it, and neither could an assertion
+     * written as querySelector('[data-surface="google"]'): the preview pane
+     * comes first in document order, so it answered for the button.
+     */
+    it("keeps all three tabs on screen through every switch", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const tabs = () => div.querySelectorAll("[data-surfaces] button");
+      for (const name of ["apple", "google", "signup", "apple"]) {
+        tabs().find((b) => b.dataset.tab === name)!.onclick!();
+        expect(tabs().length).toBe(3);
+        expect(tabs().filter((b) => b.hidden).map((b) => b.dataset.tab)).toEqual([]);
+        expect(tabs().filter((b) => b.classList.contains("on")).map((b) => b.dataset.tab)).toEqual([name]);
+      }
+    });
+
+    /**
+     * The console re-parents the preview box into a sticky right-hand rail
+     * (mountDesigner). Every lookup in the panel goes through
+     * div.querySelector, so the rail has to stay INSIDE the panel — appended to
+     * an aside that is itself a child of it. Hoist it any higher and the tabs
+     * switch the editor while the mock beside them stays where it was, and
+     * renderPreview throws on the first repaint.
+     */
+    it("still switches the previews once the console re-parents them into its rail", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const box = div.querySelector("[data-pvbox]")!;
+      const aside = (h.globals.document as { createElement: (t: string) => FakeEl }).createElement("aside");
+      div.appendChild(aside);
+      box.remove();
+      aside.appendChild(box);
+
+      div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.tab === "google")!.onclick!();
+      expect(box.querySelector('[data-surface="google"]')!.hidden).toBe(false);
+      expect(box.querySelector('[data-surface="apple"]')!.hidden).toBe(true);
     });
 
     /**
