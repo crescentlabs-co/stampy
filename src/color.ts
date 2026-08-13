@@ -38,6 +38,27 @@ export function contrastText(hex: string): string {
   return l > 0.179 ? "#111111" : "#ffffff";
 }
 
+/**
+ * WCAG relative luminance, 0 (black) … 1 (white). Exported because the poster
+ * has to decide whether a brand colour is visible ON PAPER, which is white.
+ */
+export function relativeLuminance(hex: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return 0;
+  const chan = (i: number) => {
+    const v = parseInt(m[1]!.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * chan(0) + 0.7152 * chan(2) + 0.0722 * chan(4);
+}
+
+/** WCAG contrast ratio between two colours, 1 (identical) … 21 (black on white). */
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
 /** "#3b2016" or "#abc" (picker format) → "rgb(59, 32, 22)" (DB/PassKit format). */
 export function hexToRgb(hex: string): string {
   const h = hex.trim();

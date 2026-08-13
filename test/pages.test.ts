@@ -193,6 +193,55 @@ describe("the printable sign-up poster", () => {
     expect(nasty).toContain("&lt;img src=x");
   });
 
+  /**
+   * The poster is printed, which is the one output nobody can nudge afterwards.
+   * Each of these was a real way for it to come out wrong on paper.
+   */
+  describe("survives the shop it belongs to", () => {
+    it("wraps a long unbroken name instead of clipping it", () => {
+      // .poster is overflow:hidden, so without this the name is cut mid-word.
+      const html = posterPage(POSTER_CARD, "Kopitiam@BukitBintangSS15Petaling", "k", 0);
+      expect(html).toMatch(/\.phead h1 \{[^}]*overflow-wrap: anywhere/);
+      expect(html).toContain("Kopitiam@BukitBintangSS15Petaling");
+    });
+
+    it("shrinks the name and the offer rather than pushing the QR off the sheet", () => {
+      const html = posterPage(POSTER_CARD, "Kopi Corner", "k", 0);
+      expect(html).toMatch(/\.phead h1 \{[^}]*font-size: clamp\(/);
+      expect(html).toMatch(/\.poffer \{ font-size: clamp\(/);
+      // And if it still runs long, it may not split across two pages.
+      expect(html).toMatch(/\.poster \{ break-inside: avoid/);
+    });
+
+    // The frame is printed on white paper. A pale brand colour framed white in
+    // white — the QR looked unfinished and nobody could tell why.
+    it("keeps the QR frame visible when the accent is nearly white", () => {
+      const pale = { ...POSTER_CARD, accent_color: "rgb(252, 252, 250)" } as typeof POSTER_CARD;
+      const html = posterPage(pale, "Kopi Corner", "k", 0);
+      expect(html).not.toContain("border: 6px solid #fcfcfa");
+      // Falls back to the card colour, which here is the dark brown.
+      expect(html).toContain("border: 6px solid #3b2016");
+    });
+
+    it("falls back to ink when the card colour is pale too", () => {
+      const washed = {
+        ...POSTER_CARD, accent_color: "rgb(252, 252, 250)", background_color: "rgb(255, 255, 255)",
+      } as typeof POSTER_CARD;
+      expect(posterPage(washed, "Kopi Corner", "k", 0)).toContain("border: 6px solid #111111");
+    });
+
+    // Same rule the wallet card follows: a lockup that already reads as the
+    // name must not have the name printed beside it.
+    it("prints the name once when the logo already carries it", () => {
+      const withName = posterPage(POSTER_CARD, "Kopi Corner", "k", 7, true);
+      expect(withName).toContain("art/logo.png");
+      expect(withName).not.toContain("<h1>Kopi Corner</h1>");
+      // ...but a logo-less shop still gets its name, or nothing identifies it.
+      expect(posterPage(POSTER_CARD, "Kopi Corner", "k", 0, true)).toContain("<h1>Kopi Corner</h1>");
+      expect(posterPage(POSTER_CARD, "Kopi Corner", "k", 7, false)).toContain("<h1>Kopi Corner</h1>");
+    });
+  });
+
   it("drops the logo slot entirely when none is uploaded", () => {
     expect(posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 0)).not.toContain("art/logo.png");
   });
@@ -384,20 +433,41 @@ describe("one designer, two pages", () => {
   });
 
   /**
-   * ~21 controls, ten band tiles and five colour rows in one undifferentiated
-   * column: fine once you know it, impossible the first time. The numbers say
-   * how many decisions there are and that there is an end to them.
+   * The numbered steps became three surfaces. Steps implied an order that does
+   * not exist — nobody does the logo before the colours because a number said
+   * so — while the real division is which wallet, or the poster, a control
+   * affects. What is SHARED must stay out of the tabs: a pane is hidden, and
+   * the five colour pickers are the source of truth every render reads.
    */
-  it("walks through the design in numbered steps, on both pages", () => {
+  it("splits the design by surface, on both pages", () => {
     for (const html of [dash, admin]) {
-      const opens = (html.match(/<section class="dstep">/g) ?? []).length;
-      expect(opens).toBe(4);
-      // Unbalanced section tags would swallow everything after them into the
-      // last step, which renders as one long block and looks almost right.
-      expect((html.match(/<\/section>/g) ?? []).length).toBe(opens);
-      for (const [n, name] of [["1", "Your logo"], ["2", "Colours"], ["3", "Stamps"], ["4", "See it for real"]]) {
-        expect(html).toContain(`<span class="sn">${n}</span>${name}`);
+      for (const name of ["apple", "google", "signup"]) {
+        expect(html).toContain(`data-surface="${name}"`);
+        expect(html).toContain(`data-pane="${name}"`);
       }
+      // The switch moves the editor and the preview together — one control, so
+      // the panel can never show one surface while editing another.
+      expect(html).toContain("function showSurface(name)");
+      expect(html).toContain('showSurface("apple")');
+      // A hidden .seg measures zero, so the thumb is seated after the pane shows.
+      expect(html).toMatch(/showSurface[\s\S]{0,400}moveThumb\(surfaceSeg\)/);
+      // Shared, and outside every pane.
+      expect(html).toContain('<div class="colorpark" data-park>');
+      expect(html).not.toMatch(/data-pane="[a-z]+"[\s\S]{0,600}data-park/);
+    }
+  });
+
+  // Android is sent one colour, a near-square logo and the count as TEXT — no
+  // rendered grid and no custom shape, ever. A mock that drew them would be a
+  // lie the owner only discovers on somebody else's phone.
+  it("previews all three surfaces, and Google as Google", () => {
+    for (const html of [dash, admin]) {
+      expect(html).toContain("data-pvg");   // the Android card
+      expect(html).toContain("data-pvp");   // the printed sheet
+      expect(html).toContain("function renderGoogle");
+      expect(html).toContain("function renderPoster");
+      // No band and no strip on the Android mock.
+      expect(html).not.toContain("data-pvg-banner");
     }
   });
 
@@ -585,9 +655,14 @@ describe("one designer, two pages", () => {
    */
   it("keeps the moved preview inside the panel that queries it", () => {
     const i = admin.indexOf("panel.appendChild(aside)");
-    const j = admin.indexOf('aside.appendChild(panel.querySelector(".pv"))');
+    const j = admin.indexOf('aside.appendChild(panel.querySelector("[data-pvbox]"))');
     expect(i).toBeGreaterThan(-1);
     expect(j).toBeGreaterThan(i);
+    // ONE node, and it is the box rather than the card inside it: moving the
+    // card alone left its label, the other two previews and the test links
+    // behind in the left column.
+    expect(admin).not.toContain('aside.appendChild(panel.querySelector(".pv"))');
+    expect((admin.match(/aside\.appendChild\(/g) ?? []).length).toBe(1);
   });
 
   /**

@@ -13,7 +13,7 @@
  * somebody uploads a stamp and then looks at their Customers list.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { DESIGN_PANEL_JS, MODAL_JS, PALETTE_JS } from "../src/pages.js";
+import { DESIGN_PANEL_JS, MODAL_JS, PALETTE_JS, SEG_JS } from "../src/pages.js";
 import { makeHarness, type FakeEl } from "./domHarness.js";
 
 /** A card as the designer receives it, mid-life: colours set, nothing uploaded. */
@@ -47,7 +47,9 @@ let build: (c: Record<string, unknown>, h: ReturnType<typeof makeHarness>) => Fa
 
 beforeAll(() => {
   // The page inlines these three in this order; so do we.
-  const src = `${PALETTE_JS}\n${MODAL_JS}\n${DESIGN_PANEL_JS}\nreturn designPanel;`;
+  // The same four the pages inline, in the same order — the panel calls
+  // moveThumb from SEG_JS for its surface switch.
+  const src = `${PALETTE_JS}\n${MODAL_JS}\n${SEG_JS}\n${DESIGN_PANEL_JS}\nreturn designPanel;`;
   build = (c, h) => {
     const names = Object.keys(h.globals);
     const make = new Function(...names, src)(...names.map((n) => h.globals[n])) as (
@@ -152,6 +154,86 @@ describe("the design panel, mounted", () => {
     await h.settle();
     expect(c.stampIconVersion).toBeFalsy();
     expect(div.querySelector("[data-stampnow]")?.style.display).not.toBe("");
+  });
+
+  /**
+   * Three surfaces, one switch. The tab moves the editor AND the preview
+   * together, because they answer one question: the reason to look at the
+   * Android card is that you are about to change something only Android sees.
+   */
+  describe("the surface switch", () => {
+    it("opens on the iPhone card, with the other two out of the way", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      expect(div.querySelector('[data-surface="apple"]')!.hidden).toBe(false);
+      expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(true);
+      expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(true);
+      expect(div.querySelector('[data-pane="apple"]')!.hidden).toBe(false);
+      expect(div.querySelector('[data-pane="google"]')!.hidden).toBe(true);
+    });
+
+    it("moves the editor and the preview together", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const tab = (name: string) =>
+        div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.surface === name)!;
+
+      tab("google").onclick!();
+      expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(false);
+      expect(div.querySelector('[data-pane="google"]')!.hidden).toBe(false);
+      // ...and the one you are no longer editing is not still on screen.
+      expect(div.querySelector('[data-surface="apple"]')!.hidden).toBe(true);
+      expect(div.querySelector('[data-pane="apple"]')!.hidden).toBe(true);
+
+      tab("signup").onclick!();
+      expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(false);
+      expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(true);
+    });
+
+    /**
+     * The five colour pickers are the single source of truth every function
+     * reads through f(). Parked inside a pane, a tab switch would hide them and
+     * the next render would read an element that is not there.
+     */
+    it("keeps the colour pickers and the rules inputs out of the panes", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      for (const key of ["bg", "fg", "label", "accent", "bandColor", "stampsTarget", "reward"]) {
+        const el = div.querySelector('[data-f="' + key + '"]')!;
+        expect(el, key).not.toBeUndefined();
+        // No ancestor may be a tab pane.
+        let node = el.parent;
+        let inPane = false;
+        while (node) { if ("pane" in node.dataset) inPane = true; node = node.parent; }
+        expect(inPane, key + " is inside a tab pane").toBe(false);
+      }
+    });
+
+    it("draws all three previews from the same inputs", async () => {
+      const h = makeHarness();
+      const div = build(card({ shopName: "Kopi Corner", reward: "Free coffee" }), h);
+      await h.settle();
+      // Android is text dots and a balance — never the rendered grid, which it
+      // is never sent.
+      expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("2/10");
+      expect(div.querySelector("[data-pvg-dots]")!.textContent).toBe("●●○○○○○○○○");
+      expect(div.querySelector("[data-pvg-issuer]")!.textContent).toBe("Kopi Corner");
+      // The poster headline falls back to the generated line, as posterPage does.
+      expect(div.querySelector("[data-pvp-offer]")!.textContent)
+        .toBe("Collect 10 stamps, get a free coffee.");
+    });
+
+    // The frame is printed on white paper, so a near-white accent prints as no
+    // frame at all — the same fallback posterPage makes server-side.
+    it("keeps the poster's QR frame visible when the accent is nearly white", async () => {
+      const h = makeHarness();
+      const div = build(card({ accent: "#fcfcfa" }), h);
+      await h.settle();
+      expect(div.querySelector("[data-pvp-qr]")!.style.borderColor).toBe("#3b2016");
+    });
   });
 
   /** The state readout that was missing entirely — the grid was the only signal. */

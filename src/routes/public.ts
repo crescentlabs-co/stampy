@@ -521,7 +521,7 @@ publicRouter.get("/c/:cardId/poster", async (req, res) => {
     merchantId: merchant?.id ?? null,
     metadata: { ua: (req.get("user-agent") ?? "").slice(0, 200) },
   }).catch((err) => console.error("[poster_view] not logged:", err));
-  res.type("html").send(posterPage(card, business, joinRef, logoVersion));
+  res.type("html").send(posterPage(card, business, joinRef, logoVersion, card.logo_has_name));
 });
 
 // Publicly served logo — Google Wallet requires a hosted programLogo URL.

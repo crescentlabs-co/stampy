@@ -2,7 +2,7 @@
  * All HTML pages, server-rendered from template strings — no frontend build,
  * nothing for the founder to compile. Mobile-first (staff use their phones).
  */
-import { contrastText, rgbToHex } from "./color.js";
+import { contrastRatio, contrastText, rgbToHex } from "./color.js";
 import { FLAG_GUIDE } from "./health.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
@@ -664,6 +664,48 @@ export const DESIGN_PANEL_CSS = /* css */ `
              margin: 14px auto 2px; display: flex; align-items: center; justify-content: center;
              font-weight: 700; font-size: .8rem; letter-spacing: 1px; }
     .pv-note { text-align: center; font-size: .72rem; margin-top: 6px; opacity: .75; }
+
+    /* --- the Google card --- */
+    /* Google renders one colour, a near-square logo, the issuer above the
+       programme, a points row, and text modules. No band, no strip, no grid. */
+    .pvg-top { display: flex; align-items: center; gap: 10px; }
+    .pvg-logo { width: 38px; height: 38px; border-radius: 999px; object-fit: contain;
+                background: rgba(255,255,255,.14); flex: none; padding: 3px; }
+    .pvg-names { min-width: 0; }
+    .pvg-issuer { font-size: .72rem; letter-spacing: .04em; opacity: .8;
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pvg-prog { font-weight: 700; font-size: 1rem;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pvg-pts { display: flex; align-items: baseline; gap: 8px; margin-top: 14px; }
+    .pvg-bal { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; }
+    .pvg-dots { font-size: 1.05rem; letter-spacing: 2px; margin-top: 4px; opacity: .95; }
+    .pvg-mod { margin-top: 12px; }
+
+    /* --- the printed sheet --- */
+    /* White, because paper is. Only the head band and the QR frame are brand. */
+    .pvp { background: #fff; color: #111; border-radius: 12px; overflow: hidden;
+           margin: 10px 0 4px; box-shadow: 0 10px 30px -8px rgba(43,29,21,.35); }
+    .pvp-head { padding: 16px 14px 14px; text-align: center; }
+    .pvp-logo { height: 34px; width: auto; max-width: 65%; object-fit: contain; margin-bottom: 6px; }
+    .pvp-name { font-family: var(--display); font-weight: 800; font-size: 1.05rem;
+                letter-spacing: -.01em; overflow-wrap: anywhere; }
+    .pvp-body { padding: 14px 14px 16px; text-align: center; }
+    .pvp-offer { font-weight: 700; font-size: .92rem; line-height: 1.3; overflow-wrap: anywhere; }
+    .pvp-no { color: #6b6b66; font-size: .72rem; margin: 6px 0 12px; }
+    .pvp-qr { border: 4px solid var(--line); border-radius: 10px; width: 96px; height: 96px;
+              margin: 0 auto; display: flex; align-items: center; justify-content: center;
+              font-weight: 700; font-size: .72rem; color: #111; letter-spacing: 1px; }
+    .pvp-steps { color: #6b6b66; font-size: .68rem; line-height: 1.7; margin-top: 12px; text-align: left; }
+
+    /* The surface switch. Smaller than the page-level tabs it borrows from —
+       it is a control inside a panel, not the panel's own navigation. */
+    .dseg { margin-bottom: 4px; }
+    .dseg button { font-size: .84rem; padding: 8px 10px; }
+    .dpane { display: block; }
+    .dpane[hidden] { display: none; }
+    .pvbox { min-width: 0; }
+    .pvacts { display: flex; gap: 8px; margin-top: 12px; }
+    .pvacts .btn { width: auto; padding: 9px 13px; font-size: .85rem; }
     /* Inline rejection notice (e.g. a stamp upload with no transparency) —
        stays on screen, unlike a toast, because it asks the owner to go and fix
        the file and come back. */
@@ -792,21 +834,72 @@ export const DESIGN_PANEL_JS = /* js */ `
       const bust = (v) => v ? "?v=" + v : "";
       const logoSrc = env.artUrl("logo", c.logoVersion);
       div.innerHTML = \`
-        <label class="sec first" style="display:block">Preview</label>
-        <div class="pv" data-pv>
-          <div class="pv-top">
-            <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="" style="\${c.logoVersion ? "" : "display:none"}">
-            <span class="pv-name" data-pv-name></span>
-            <div class="pv-hdr"><div class="pv-progress" data-pv-progress></div></div>
+        <!-- One box, three surfaces. It is ONE node on purpose: the console
+             moves the preview into a sticky rail, and anything left behind as a
+             sibling would sit in the wrong column. The box does not belong to a
+             tab either — it is what every tab is editing, so it stays put. -->
+        <div class="pvbox" data-pvbox>
+          <label class="sec first" style="display:block">Preview</label>
+
+          <div class="pv" data-pv data-surface="apple">
+            <div class="pv-top">
+              <img class="pv-logo" data-pv-logo src="\${logoSrc}" alt="" style="\${c.logoVersion ? "" : "display:none"}">
+              <span class="pv-name" data-pv-name></span>
+              <div class="pv-hdr"><div class="pv-progress" data-pv-progress></div></div>
+            </div>
+            <div class="pv-banner" data-pv-banner></div>
+            <div class="pv-dots" data-pv-dots></div>
+            <div class="pv-row2">
+              <div><div class="pv-lbl">REWARD</div><div class="pv-reward" data-pv-reward></div></div>
+              <div><div class="pv-lbl">PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
+            </div>
+            <div class="pv-qr">QR</div>
+            <div class="pv-note">Code ABC123 · updates by itself</div>
           </div>
-          <div class="pv-banner" data-pv-banner></div>
-          <div class="pv-dots" data-pv-dots></div>
-          <div class="pv-row2">
-            <div><div class="pv-lbl">REWARD</div><div class="pv-reward" data-pv-reward></div></div>
-            <div><div class="pv-lbl">PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
+
+          <!-- Google. Deliberately NOT the Apple card in another colour: Android
+               gets one colour, a near-square logo, and the count as TEXT — no
+               rendered grid and no custom stamp shape, ever (see
+               buildLoyaltyPatch). Showing the grid here would be a lie the
+               owner only discovers on somebody else's phone. -->
+          <div class="pv pvg" data-pvg data-surface="google" hidden>
+            <div class="pvg-top">
+              <img class="pvg-logo" data-pvg-logo alt="" style="\${(c.markVersion || c.logoVersion) ? "" : "display:none"}">
+              <div class="pvg-names">
+                <div class="pvg-issuer" data-pvg-issuer></div>
+                <div class="pvg-prog" data-pvg-prog></div>
+              </div>
+            </div>
+            <div class="pvg-pts"><span class="pv-lbl">STAMPS</span><span class="pvg-bal" data-pvg-bal></span></div>
+            <div class="pvg-dots" data-pvg-dots></div>
+            <div class="pvg-mod"><div class="pv-lbl">REWARD</div><div data-pvg-reward></div></div>
+            <div class="pv-qr">QR</div>
+            <div class="pv-note">Card ABC123</div>
           </div>
-          <div class="pv-qr">QR</div>
-          <div class="pv-note">Code ABC123 · updates by itself</div>
+
+          <!-- The printed sheet, at a size you can judge. Not an iframe of the
+               real page: that is a round trip per keystroke, and the poster is
+               a server-rendered document. Same order and same rules as
+               posterPage, including hiding the name when the logo carries it. -->
+          <div class="pvp" data-pvp data-surface="signup" hidden>
+            <div class="pvp-head" data-pvp-head>
+              <img class="pvp-logo" data-pvp-logo alt="" style="\${c.logoVersion ? "" : "display:none"}">
+              <div class="pvp-name" data-pvp-name></div>
+            </div>
+            <div class="pvp-body">
+              <div class="pvp-offer" data-pvp-offer></div>
+              <div class="pvp-no">Scan to get your card — no app to download.</div>
+              <div class="pvp-qr" data-pvp-qr><span>QR</span></div>
+              <div class="pvp-steps">1. Point your camera at the code<br>2. Tap Add to Wallet<br>3. Show it when you order</div>
+            </div>
+          </div>
+
+          <!-- The real thing, on a real phone. Was step 4 of the design flow;
+               it is not a design step, it is how you check one. -->
+          <div class="pvacts">
+            <button class="btn btn-ghost" data-a="testcard">See it for real\${info("Puts this card in your own wallet, or opens your sign-up page. It is a real card but it never counts as a customer and never appears in your numbers. The link lasts 30 minutes.")}</button>
+          </div>
+          <div data-testout style="display:none"></div>
         </div>
 
         <!-- Design sits directly under the preview it changes, folded away. It is
@@ -815,40 +908,23 @@ export const DESIGN_PANEL_JS = /* js */ `
         <details class="fold" style="margin-top:12px" \${env.designOpen ? "open" : ""}>
         <summary>Design</summary>
 
-        <section class="dstep">
-        <h4><span class="sn">1</span>Your logo</h4>
-        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
+        <!-- Shared first: the logo and the colours feed all three surfaces, so
+             they belong to none of the tabs below. -->
+        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
-        <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
-             already contains the name said it twice. This drops that text and
-             lets the lockup own the band; the name still reaches the Add sheet
-             and every notification through organizationName. -->
-        <label class="chk" style="margin-top:10px">
-          <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
-          <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo on the card. Leave it unticked if your logo is just a symbol, or nothing on the card says whose it is.")}</span>
-        </label>
 
-        <label style="margin-top:14px">Square logo for Android\${info("Google Wallet puts your logo in a small, nearly square space, where a wide logo shrinks to a sliver. Upload a square version — just the symbol usually works — and Android uses that instead. Skip it and Android keeps using the logo above.")}</label>
-        <div class="logorow">
-          <label class="btn btn-ghost" style="margin:0">Upload square logo<input data-mark type="file" accept="image/*"></label>
-          <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
-        </div>
-
-        </section>
-
-        <section class="dstep">
-        <h4><span class="sn">2</span>Colours</h4>
-        <label style="margin-top:8px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
+        <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with. These colours are used on all three: the iPhone card, the Android card and your sign-up poster.")}</label>
         <div class="crlist" data-roles></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
-             from the start. They are PARKED here and MOVED into whichever row is
-             open, rather than hidden and clicked from a proxy: calling .click()
-             on a display:none colour input does not reliably open the OS picker,
-             so the owner has to be tapping the real thing. -->
+             from the start — and must NOT live inside a tab pane, which is
+             hidden and re-rendered. They are PARKED here and MOVED into whichever
+             row is open, rather than hidden and clicked from a proxy: calling
+             .click() on a display:none colour input does not reliably open the
+             OS picker, so the owner has to be tapping the real thing. -->
         <div class="colorpark" data-park>
           <input data-f="bg" type="color" value="\${c.bg}">
           <input data-f="fg" type="color" value="\${c.fg}">
@@ -857,11 +933,27 @@ export const DESIGN_PANEL_JS = /* js */ `
           <input data-f="bandColor" type="color" value="\${c.bandColor}">
         </div>
 
-        </section>
+        <!-- Then only what actually differs between the three. The tab switches
+             the preview above with it, so you are always looking at the thing
+             you are editing. -->
+        <div class="seg dseg" data-surfaces role="tablist" style="margin-top:18px">
+          <button data-surface="apple" class="on">iPhone</button>
+          <button data-surface="google">Android</button>
+          <button data-surface="signup">Sign-up</button>
+          <span class="thumb"></span>
+        </div>
 
-        <section class="dstep">
-        <h4><span class="sn">3</span>Stamps</h4>
-        <label style="margin-top:8px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
+        <section class="dpane" data-pane="apple">
+        <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
+             already contains the name said it twice. This drops that text and
+             lets the lockup own the band; the name still reaches the Add sheet
+             and every notification through organizationName. -->
+        <label class="chk" style="margin-top:14px">
+          <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
+          <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo, on the card or on the poster. Leave it unticked if your logo is just a symbol, or nothing says whose card it is.")}</span>
+        </label>
+
+        <label style="margin-top:14px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour. iPhone only — Android is sent the count as text, so it shows dots whatever you choose here.")}</label>
         <!-- One line. Two rows for three controls made the emoji field look like
              a field you had to fill in, when it is one of three equal answers.
              The button labels are short so the input still has somewhere to go
@@ -873,32 +965,28 @@ export const DESIGN_PANEL_JS = /* js */ `
           <button class="btn btn-ghost" data-a="useemoji">Use</button>
           <label class="btn btn-ghost" style="margin:0">Upload<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
           <button class="btn btn-ghost" data-a="rmstamp">Dots</button>
-          \${info("A simple shape or symbol — not a photo. Upload it however you have it: a plain background is taken out and the empty space around it trimmed. Its own colours are ignored; it is filled with your stamp colour. iPhone only — Android shows the count as dots.")}
+          \${info("A simple shape or symbol — not a photo. Upload it however you have it: a plain background is taken out and the empty space around it trimmed. Its own colours are ignored; it is filled with your stamp colour.")}
         </div>
         <!-- What is actually set. The rendered grid used to be the only signal,
              and the grid was exactly what went wrong — so an owner whose shape
              was safe in the database had nothing on the screen telling them so.
-             Says its piece even when the grid below is still drawing. -->
+             Says its piece even when the grid above is still drawing. -->
         <p class="stampnow" data-stampnow style="display:none">
           <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
         </p>
         <p class="err" data-stamperr style="display:none"></p>
-
-        <!-- See it for real, before deciding it is finished. A preview drawn
-             on a page is a guess at what a wallet does with the same colours;
-             the card on your own phone is the answer. It is a genuine pass and
-             it behaves like one, but it is flagged is_test, so it never reaches
-             the customer count, the list, the funnel or a nudge. -->
         </section>
 
-        <section class="dstep">
-        <h4><span class="sn">4</span>See it for real</h4>
-        <label style="margin-top:8px">See it on your phone\${info("Puts this card in your own wallet so you can look at it before your customers do. It does not count as a customer and never appears in your numbers. The link lasts 30 minutes.")}</label>
+        <section class="dpane" data-pane="google" hidden>
+        <label style="margin-top:14px">Square logo\${info("Google Wallet puts your logo in a small, nearly square space, where a wide logo shrinks to a sliver. Upload a square version — just the symbol usually works. Skip it and Android keeps using your main logo.")}</label>
         <div class="logorow">
-          <button class="btn btn-ghost" data-a="testcard">Add to my wallet</button>
+          <label class="btn btn-ghost" style="margin:0">Upload square logo<input data-mark type="file" accept="image/*"></label>
+          <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
         </div>
-        <div data-testout style="display:none"></div>
+        </section>
 
+        <section class="dpane" data-pane="signup" hidden>
+        <p class="muted" style="margin:14px 0 0;font-size:.84rem">Your poster and sign-up page use the logo and colours above. The line customers read is under Card details below.</p>
         </section>
 
         <button class="btn btn-neon" style="margin-top:18px" data-a="savedesign">Save design</button>
@@ -1152,7 +1240,68 @@ export const DESIGN_PANEL_JS = /* js */ `
           banner.classList.toggle("on", Boolean(c.bannerVersion));
           dots.textContent = "●".repeat(start) + "○".repeat(target - start);
         }
+        renderGoogle(start, target);
+        renderPoster();
       }
+
+      /**
+       * The Android card.
+       *
+       * Google is handed ONE colour and no images beyond the logo, so this mock
+       * is deliberately plainer than the Apple one — that difference is the
+       * information. It shows the count as text because that is literally what
+       * Android receives: the rendered grid and the custom stamp shape never
+       * reach it (src/googleModel.ts), and a mock that drew them would be a lie
+       * the owner only finds out about on somebody else's phone.
+       */
+      function renderGoogle(start, target) {
+        const g = q("[data-pvg]");
+        if (!g) return;
+        g.style.background = f("bg").value;
+        g.style.color = pickTextColor(f("bg").value);
+        const name = f("shopName").value || "Your shop";
+        q("[data-pvg-issuer]").textContent = name;
+        q("[data-pvg-prog]").textContent = name + " loyalty card";
+        q("[data-pvg-bal]").textContent = start + "/" + target;
+        q("[data-pvg-dots]").textContent = "●".repeat(start) + "○".repeat(target - start);
+        q("[data-pvg-reward]").textContent = f("reward").value || "Your reward";
+        // The square mark if there is one, else the wide logo — the same
+        // fallback logoUrl() applies when the class is built.
+        const im = q("[data-pvg-logo]");
+        const v = c.markVersion || c.logoVersion;
+        if (v) {
+          im.src = env.artUrl(c.markVersion ? "mark" : "logo", v);
+          im.style.display = "";
+        } else im.style.display = "none";
+      }
+
+      /** The printed sheet. Same order and the same rules as posterPage. */
+      function renderPoster() {
+        const pp = q("[data-pvp]");
+        if (!pp) return;
+        const bg = f("bg").value;
+        const head = q("[data-pvp-head]");
+        head.style.background = bg;
+        head.style.color = pickTextColor(bg);
+        const nm = q("[data-pvp-name]");
+        nm.textContent = f("shopName").value || "Your shop";
+        // The poster hides the name under the same condition the card does.
+        nm.style.display = c.logoHasName && c.logoVersion ? "none" : "";
+        const im = q("[data-pvp-logo]");
+        if (c.logoVersion) { im.src = env.artUrl("logo", c.logoVersion); im.style.display = ""; }
+        else im.style.display = "none";
+        const reward = f("reward").value || "your reward";
+        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
+        q("[data-pvp-offer]").textContent =
+          f("signupMessage").value || ("Collect " + target + " stamps, get a " + reward.toLowerCase() + ".");
+        // The QR frame is the accent on white paper, and a pale accent prints as
+        // no frame at all — the same fallback posterPage makes server-side.
+        const accent = f("accent").value;
+        q("[data-pvp-qr]").style.borderColor =
+          contrastRatio(accent, "#ffffff") >= 1.6 ? accent
+            : (contrastRatio(bg, "#ffffff") >= 1.6 ? bg : "#111111");
+      }
+
       for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
       renderPreview();
 
@@ -1712,8 +1861,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         out.style.display = "";
         out.innerHTML =
           '<div class="logorow" style="flex-wrap:wrap">' +
-          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.apple) + '">Apple Wallet</a>' +
-          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.google) + '">Google Wallet</a>' +
+          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.apple) + '">iPhone</a>' +
+          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.google) + '">Android</a>' +
+          // The third surface. Not a test pass at all — the sign-up page is
+          // public, so it is just opened, and nothing is minted by looking.
+          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" target="_blank" href="/c/' +
+            encodeURIComponent(c.id) + '">Sign-up page</a>' +
           "</div>" +
           // The QR is behind the same authorisation the links are, so it is
           // built from the console's own api base rather than a public URL.
@@ -1721,6 +1874,29 @@ export const DESIGN_PANEL_JS = /* js */ `
           // still renders is worse than one that visibly reloads.
           '<img class="testqr" alt="" src="' + esc(env.apiBase + env.path("/test-qr.png")) + "?v=" + Date.now() + '">';
       };
+
+      /**
+       * The tab switches what you edit AND what the preview shows.
+       *
+       * One control for both, because they are one question: the reason to look
+       * at the Android card is that you are about to change something only
+       * Android sees. Two switches would let them disagree, and then the panel
+       * is showing you one surface while you edit another.
+       */
+      const surfaceSeg = q("[data-surfaces]");
+      function showSurface(name) {
+        surfaceSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.surface === name));
+        moveThumb(surfaceSeg);
+        div.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== name; });
+        div.querySelectorAll("[data-surface]").forEach((p) => { p.hidden = p.dataset.surface !== name; });
+        renderPreview();
+      }
+      surfaceSeg.querySelectorAll("button").forEach((b) => {
+        b.onclick = () => showSurface(b.dataset.surface);
+      });
+      // A hidden .seg measures zero, so the thumb cannot be seated until the
+      // panel is on the page — the console mounts this inside a closed details.
+      showSurface("apple");
 
       /**
        * Say whether a shape is stored, and show it.
@@ -4498,12 +4674,23 @@ export function posterPage(
   joinRef: string,
   /** 0 = no uploaded logo, so the header runs on type alone. */
   logoVersion = 0,
+  /** The logo is a lockup that already reads as the name — see cards.logo_has_name. */
+  logoHasName = false,
 ): string {
   const bg = rgbToHex(card.background_color);
   const accent = rgbToHex(card.accent_color);
   // Never sampled: a shop whose brand colour is dark and whose accent is also
   // dark would otherwise print a header nobody can read.
   const onBg = contrastText(bg);
+  // The QR frame is the accent, and the paper behind it is white — so a pale
+  // brand colour printed as no frame at all. Fall back to the card colour, and
+  // to ink if that is pale too, rather than framing white in white.
+  const frame = contrastRatio(accent, "#ffffff") >= 1.6
+    ? accent
+    : (contrastRatio(bg, "#ffffff") >= 1.6 ? bg : "#111111");
+  // A lockup that already says the name would otherwise print it twice, exactly
+  // as the wallet card did before logo_has_name existed.
+  const showName = !(logoHasName && logoVersion);
   const ref = encodeURIComponent(joinRef);
   const css = /* css */ `
     body { max-width: 640px; }
@@ -4513,14 +4700,18 @@ export function posterPage(
        one is printed, so the cap is generous: paper has the room. */
     .phead img { height: 74px; width: auto; max-width: min(320px, 100%);
                  object-fit: contain; margin-bottom: 10px; }
-    .phead h1 { font-size: 1.7rem; margin: 0; color: ${onBg}; letter-spacing: -.01em; }
+    /* overflow-wrap, because .poster clips rather than wraps: one long unbroken
+       word ("Kopitiam@BukitBintang") was silently cut off mid-name. clamp so a
+       long name shrinks instead of pushing the QR onto a second sheet. */
+    .phead h1 { font-size: clamp(1.15rem, 5vw, 1.7rem); margin: 0; color: ${onBg};
+                letter-spacing: -.01em; overflow-wrap: anywhere; }
     .pbody { padding: 26px 28px 20px; text-align: center; }
-    .poffer { font-size: 1.5rem; font-weight: 700; line-height: 1.25; margin: 0 0 8px;
-              text-wrap: balance; }
+    .poffer { font-size: clamp(1.05rem, 4.2vw, 1.5rem); font-weight: 700; line-height: 1.25;
+              margin: 0 0 8px; text-wrap: balance; overflow-wrap: anywhere; }
     .pno { font-size: 1rem; color: var(--muted); margin: 0 0 20px; }
     /* The QR is the point of the sheet, so it takes the space. Framed in the
        card's accent so the paper reads as theirs from across a counter. */
-    .pqr { border: 6px solid ${accent}; border-radius: 16px; padding: 12px; background: #fff;
+    .pqr { border: 6px solid ${frame}; border-radius: 16px; padding: 12px; background: #fff;
            width: min(100%, 380px); margin: 0 auto; }
     .pqr img { display: block; width: 100%; height: auto; }
     .psteps { text-align: left; max-width: 340px; margin: 22px auto 0; color: var(--muted);
@@ -4530,6 +4721,9 @@ export function posterPage(
     .noprint { margin-top: 18px; }
     @media print {
       .noprint { display: none; }
+      /* One sheet. A 120-character message used to push the QR over the page
+         break, which prints a poster with its code cut in half. */
+      .poster { break-inside: avoid; page-break-inside: avoid; }
       body { max-width: none; padding: 0; background: #fff; }
       .poster { border: none; border-radius: 0; }
       /* Browsers strip background colours when printing unless told not to. The
@@ -4542,7 +4736,7 @@ export function posterPage(
     <div class="poster">
       <div class="phead">
         ${logoVersion ? `<img src="/c/${encodeURIComponent(card.id)}/art/logo.png?v=${logoVersion}" alt="">` : ""}
-        <h1>${esc(business)}</h1>
+        ${showName ? `<h1>${esc(business)}</h1>` : ""}
       </div>
       <div class="pbody">
         <p class="poffer">${signupLine(card)}</p>
@@ -4823,8 +5017,10 @@ export function adminPage(): string {
       aside.className = "dsrail";
       panel.appendChild(aside);
       // Move, don't clone: the panel keeps every handle it wired to these nodes.
-      aside.appendChild(panel.querySelector(".sec.first"));
-      aside.appendChild(panel.querySelector(".pv"));
+      // ONE node now — the box holds all three previews, its label and the
+      // links. Moving the card alone left its siblings in the left column,
+      // which is how a preview ends up describing a surface you cannot see.
+      aside.appendChild(panel.querySelector("[data-pvbox]"));
       if (rail) aside.insertAdjacentHTML("beforeend", '<div class="dsacts">' + rail + "</div>");
       host.appendChild(panel);
       wireInfo(panel);
@@ -5564,7 +5760,11 @@ export function adminPage(): string {
         cl.innerHTML = claimPanelHtml(building.merchant);
         wireInfo(cl);
         wireClaim(cl, building.merchant);
-        await mountDesigner(ed, building.cardId, cardLinks({ id: building.cardId }, building.merchantId, origin));
+        // No rail: "Copy sign-up link" and "Print poster" are for handing a
+        // shop over, and this one does not exist for anybody yet. The same
+        // links sit on its row the moment it does. It refreshes on save now,
+        // which the shops-tab mount always did and this one never has.
+        await mountDesigner(ed, building.cardId, "", load);
       }
 
       $("#dfy-create").onclick = async () => {

@@ -60,6 +60,13 @@ export class FakeEl {
   files: unknown[] = [];
   width = 0;
   height = 0;
+  /** Layout geometry. Always 0: nothing here is laid out, and a tab thumb
+   *  measuring zero is exactly what a real hidden .seg reports too. */
+  offsetWidth = 0;
+  offsetLeft = 0;
+  scrollWidth = 0;
+  clientWidth = 0;
+  scrollIntoView(): void {}
   /** Populated for a <canvas>; the log of everything drawn on it. */
   calls: DrawCall[] = [];
 
@@ -332,6 +339,9 @@ export function makeHarness(opts: { imageSize?: number; fetchJson?: unknown } = 
     },
     setTimeout,
     console,
+    // SEG_JS reseats every tab thumb on resize and once the fonts land. Neither
+    // happens here, but both have to be addressable or the panel throws at mount.
+    window: { addEventListener: () => {}, removeEventListener: () => {} },
   };
 
   const settle = async (): Promise<void> => {
