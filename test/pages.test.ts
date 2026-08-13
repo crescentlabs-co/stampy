@@ -379,7 +379,6 @@ describe("one designer, two pages", () => {
   it("puts the fold's own boxes back on the page colour", () => {
     for (const html of [dash, admin]) {
       expect(html).toContain(".fold .crlist { background: var(--bg); }");
-      expect(html).toMatch(/\.fold \.swatches \{ background: var\(--bg\)/);
       expect(html).toMatch(/:is\(\.fold, \.grp, \.bucket, \.mdetail\) \.btn-ghost \{/);
     }
   });
@@ -516,12 +515,19 @@ describe("one designer, two pages", () => {
   // mark invisible. Both entry points have to run the check: an upload, and
   // "Use these colours" — which sets a card colour sampled FROM the logo, so it
   // can land right on top of the logo's own ink.
-  it("checks a stripped logo still reads, on upload AND on Use these colours", () => {
+  // The colours are taken from the logo automatically now, so the readability
+  // check is the LAST step of one awaited sequence rather than a second thing
+  // fired alongside it: the card colour it checks against is sampled from the
+  // very logo it is checking, so running the two unordered let one overwrite
+  // the other's answer.
+  it("checks a stripped logo still reads, after taking its colours", () => {
     for (const html of [dash, admin]) {
       expect(html.match(/async function ensureLogoReadable/g)!.length).toBe(1);
       expect(html.match(/function artworkColor/g)!.length).toBe(1);
-      expect(html).toContain("void ensureLogoReadable(url);");
-      expect(html).toContain("if (lastLogoUrl) await ensureLogoReadable(lastLogoUrl);");
+      expect(html).toContain("await ensureLogoReadable(dataUrl, true);");
+      expect(html).toContain("void applyLogoColours(url);");
+      // Nothing may fire it unawaited beside the palette read any more.
+      expect(html).not.toContain("void ensureLogoReadable(url);");
       // Alpha-weighted, or the transparent margin liftBackdrop just made would
       // drag the measured ink toward nothing and the check would never fire.
       expect(html).toContain("const k = d[i + 3] / 255;");
@@ -1062,7 +1068,9 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("data-stamptpl");
     expect(html).not.toContain("STAMP_ICONS");
     expect(html).toContain("data-emoji");
-    expect(html).toContain(">Plain dots<");
+    // All three on one row now, so the labels are short.
+    expect(html).toContain('data-a="rmstamp"');
+    expect(html).toContain('data-stampimg');
   });
 
   // A hint that pushes the form down is a paragraph with extra steps.
@@ -1088,14 +1096,20 @@ describe("dashboard information architecture", () => {
   it("has no themes or vertical templates left to guess with", () => {
     expect(html).not.toContain("data-presets");
     expect(html).not.toContain("data-vtpl");
-    expect(html).toContain("Use these colours");
+    // Nor a palette to opt into: the logo's colours are simply taken.
+    expect(html).toContain("applyLogoColours");
   });
 
   // Colours come from the logo they are uploading anyway — a second "brand
   // photo" upload was one more thing to explain for the same result.
-  it("takes its palette from the logo, with no second image to upload", () => {
+  it("takes its palette from the logo, automatically and with no second upload", () => {
     expect(html).not.toContain("data-brandpic");
-    expect(html).toContain("readPalette(url)");
+    expect(html).toContain("await readPalette(dataUrl);");
+    // The button and its swatch block are gone — nobody pressed it, and the
+    // alternative was matching a brand by eye in five colour pickers.
+    expect(html).not.toContain("data-a=usepal");
+    expect(html).not.toContain("Use these colours");
+    expect(html).not.toContain("data-swatches");
   });
 
   // Matching a shade by hand in a colour picker is the fiddliest thing on the

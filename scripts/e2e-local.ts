@@ -1750,6 +1750,25 @@ async function main() {
     expect(linkRes.ok && linkRes.apple.includes("?t=") && linkRes.google.includes("?t="),
       "the dashboard mints a signed test link for both wallets");
 
+    // The CONSOLE's twin, at the path the shared panel actually calls. Only the
+    // dashboard side was covered, and the console's routes were registered one
+    // segment away from where env.path points — so the button 404'd into an
+    // HTML page and said "Couldn't make a link" with nothing to explain it.
+    // The whole point of the console's copy is testing a card before it ships.
+    const adminLink = await get("/admin/api/card/" + testCard + "/design/test-link",
+      { headers: { cookie: cookieNow } });
+    expect(adminLink.status === 200, `the console mints one too (${adminLink.status})`);
+    const adminLinkBody = JSON.parse(adminLink.body);
+    expect(adminLinkBody.ok && adminLinkBody.apple.includes("?t=") && adminLinkBody.google.includes("?t="),
+      "...for both wallets, on the path the designer asks for");
+    const adminQr = await get("/admin/api/card/" + testCard + "/design/test-qr.png",
+      { headers: { cookie: cookieNow } });
+    expect(adminQr.status === 200, `...and the QR beside it renders (${adminQr.status})`);
+    expect(
+      (await get("/admin/api/card/" + testCard + "/design/test-link")).status === 403,
+      "...and neither is reachable without an admin session",
+    );
+
     // An unsigned flag must NOT work, or anyone could issue themselves a card
     // the shop never sees — which is a hole in the numbers dressed as a feature.
     const forged = await fetch(base + "/c/" + testCard + "/enroll/google?t=not-a-real-token");

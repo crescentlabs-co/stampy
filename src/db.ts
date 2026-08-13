@@ -502,7 +502,7 @@ export async function migrate(): Promise<void> {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_merchants_owner ON merchants(owner_id);
     -- Rows are only ever ADDED. A merchant who renames keeps their old slug
-    -- resolving forever, because it may be printed on a poster or an NFC tag
+    -- resolving forever, because it may be printed on a poster
     -- that nobody is going to reprint.
     CREATE TABLE IF NOT EXISTS merchant_slugs (
       slug        text PRIMARY KEY,
@@ -1048,7 +1048,7 @@ function slugify(name: string): string {
 /**
  * Reserve a readable alias for a merchant. Slugs are only ever ADDED — a merchant
  * who renames keeps every older slug pointing at them, because one of them may be
- * printed on a poster or written to an NFC tag that nobody is going to redo.
+ * printed on a poster that nobody is going to reprint.
  * Returns the slug actually taken, which may carry a numeric suffix.
  */
 export async function claimSlug(merchantId: string, name: string): Promise<string> {

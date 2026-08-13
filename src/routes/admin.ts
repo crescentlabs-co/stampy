@@ -108,7 +108,7 @@ adminRouter.get("/", (_req, res) => {
  * only the FIRST card's retention for anyone running two.
  *
  * `cards` survives for what genuinely belongs to a programme rather than a
- * business: its permanent id, its NFC/sign-up link, and archiving it.
+ * business: its permanent id, its sign-up link, and archiving it.
  *
  * `flags` is computed server-side so the rules live in one place (src/health.ts)
  * and are unit-tested without a browser or a database.
@@ -333,8 +333,16 @@ adminRouter.post("/api/merchant/:id/paid", requireAdmin, async (req, res) => {
 // Authorisation here is requireAdmin — NOT ownerHasCard. That is the whole
 // point: the operator sets cards up on merchants' behalf.
 
-/** The console's twin of the dashboard's test link — any card, claimed or not. */
-adminRouter.get("/api/card/:id/test-link", requireAdmin, async (req, res) => {
+/**
+ * The console's twin of the dashboard's test link — any card, claimed or not.
+ *
+ * Under /design, not beside it. The shared panel builds every URL it calls from
+ * env.path, which on this side is `/card/:id/design…` — so these two sat at a
+ * path the panel never asks for, 404'd into an HTML page, and surfaced as
+ * "Couldn't make a link" with nothing to say why. The dashboard's env.path has
+ * no such segment, which is why the same code worked there.
+ */
+adminRouter.get("/api/card/:id/design/test-link", requireAdmin, async (req, res) => {
   const card = await getCard(req.params.id!);
   if (!card) return void res.status(404).json({ error: "no-such-card" });
   const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
@@ -346,8 +354,8 @@ adminRouter.get("/api/card/:id/test-link", requireAdmin, async (req, res) => {
   });
 });
 
-/** The console's twin of the test QR. */
-adminRouter.get("/api/card/:id/test-qr.png", requireAdmin, async (req, res) => {
+/** The console's twin of the test QR — same path rule as above. */
+adminRouter.get("/api/card/:id/design/test-qr.png", requireAdmin, async (req, res) => {
   const card = await getCard(req.params.id!);
   if (!card) return void res.status(404).end();
   const wallet = req.query.wallet === "google" ? "enroll/google" : "enroll";

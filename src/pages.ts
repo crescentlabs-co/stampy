@@ -599,7 +599,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
        with the controls dissolved into it. */
     .fold .crlist { background: var(--bg); }
     .fold .crow2.open { background: var(--surface); }
-    .fold .swatches { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
     .fold .chipcustom input[type=color] { background: var(--bg); }
     /* A fold nested in a tinted region (the console's merchant drill-down) has
        the same problem one level up: it flips to white and keeps its border. */
@@ -718,10 +717,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
     /* --- colour presets --- */
     /* --- colours pulled out of an uploaded image --- */
-    .swatches { margin-top: 10px; padding: 12px; border-radius: 12px; background: var(--ghost-bg); }
-    .swrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .swrow .sw { width: 30px; height: 30px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
-    .swrow .btn { width: auto; padding: 8px 12px; font-size: .85rem; margin-left: auto; }
     /* --- colours: one named row per part of the card, opening to its palette --- */
     /* This replaced a chip row AND a row of five colour squares that set the
        same five fields. Two controls for one job read as two different jobs. */
@@ -745,7 +740,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .chip:hover { border-color: var(--accent); }
     .chip.on { border-color: var(--accent); }
     .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
-    .emojirow input { flex: 1; font-size: 1.15rem; }
+    /* min-width:0 or the field refuses to shrink and pushes the row to wrap:
+       a flex item's default min-width is its content, not zero. */
+    .emojirow input[type=text], .emojirow input:not([type]) { flex: 1; min-width: 0; font-size: 1.15rem; }
+    .emojirow input[type=file] { display: none; }
     .emojirow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
                        color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
     /* --- premium card preview --- */
@@ -819,13 +817,11 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         <section class="dstep">
         <h4><span class="sn">1</span>Your logo</h4>
-        <p class="hint">Upload it however you have it. We take a plain background out and trim the empty space around it.</p>
-        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out, so it does not show as a white box on a coloured card.")}</label>
+        <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
         </div>
-        <div class="swatches" data-swatches style="display:none"></div>
         <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
              already contains the name said it twice. This drops that text and
              lets the lockup own the band; the name still reaches the Add sheet
@@ -835,7 +831,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo on the card. Leave it unticked if your logo is just a symbol, or nothing on the card says whose it is.")}</span>
         </label>
 
-        <label style="margin-top:14px">Square logo for Android\${info("Optional. Google Wallet puts your logo in a small, nearly square space, where a wide logo shrinks to a sliver. Upload a square version — just the symbol usually works — and Android uses that instead. Skip it and Android keeps using the logo above.")}</label>
+        <label style="margin-top:14px">Square logo for Android\${info("Google Wallet puts your logo in a small, nearly square space, where a wide logo shrinks to a sliver. Upload a square version — just the symbol usually works — and Android uses that instead. Skip it and Android keeps using the logo above.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload square logo<input data-mark type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
@@ -845,7 +841,6 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         <section class="dstep">
         <h4><span class="sn">2</span>Colours</h4>
-        <p class="hint">Tap a part of the card, then tap a colour. The band is the strip the stamps sit on.</p>
         <label style="margin-top:8px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
         <div class="crlist" data-roles></div>
         <!-- The five native pickers are the source of truth every other function
@@ -866,19 +861,19 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         <section class="dstep">
         <h4><span class="sn">3</span>Stamps</h4>
-        <p class="hint">Plain dots, an emoji, or your own shape.</p>
         <label style="margin-top:8px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
+        <!-- One line. Two rows for three controls made the emoji field look like
+             a field you had to fill in, when it is one of three equal answers.
+             The button labels are short so the input still has somewhere to go
+             inside a 480px column; "Dots" is always shown because it is the only
+             way back, and a control that appears once you no longer need it is
+             no control at all. -->
         <div class="emojirow">
-          <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
-          <button class="btn btn-ghost" data-a="useemoji">Use this</button>
-        </div>
-        <div class="logorow" style="margin-top:8px">
-          <label class="btn btn-ghost" style="margin:0">Upload your own stamp<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
-          <!-- Always visible, not only for an uploaded stamp. With the preset
-               tiles gone this is the only way back to plain dots, and a control
-               that appears once you no longer need it is no control at all. -->
-          <button class="btn btn-ghost" data-a="rmstamp">Plain dots</button>
-          \${info("A simple shape or symbol — not a photo. Upload it however you have it: if it sits on a plain background we take that background out for you, and we trim the empty space around it so it fills the stamp. Its own colours are ignored; it gets filled with your stamp colour. It shows on iPhone cards; Android shows the count as dots.")}
+          <input data-emoji maxlength="8" placeholder="Emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
+          <button class="btn btn-ghost" data-a="useemoji">Use</button>
+          <label class="btn btn-ghost" style="margin:0">Upload<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
+          <button class="btn btn-ghost" data-a="rmstamp">Dots</button>
+          \${info("A simple shape or symbol — not a photo. Upload it however you have it: a plain background is taken out and the empty space around it trimmed. Its own colours are ignored; it is filled with your stamp colour. iPhone only — Android shows the count as dots.")}
         </div>
         <!-- What is actually set. The rendered grid used to be the only signal,
              and the grid was exactly what went wrong — so an owner whose shape
@@ -898,7 +893,6 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         <section class="dstep">
         <h4><span class="sn">4</span>See it for real</h4>
-        <p class="hint">A preview is a guess at what a wallet does with your colours. Your own phone is the answer.</p>
         <label style="margin-top:8px">See it on your phone\${info("Puts this card in your own wallet so you can look at it before your customers do. It does not count as a customer and never appears in your numbers. The link lasts 30 minutes.")}</label>
         <div class="logorow">
           <button class="btn btn-ghost" data-a="testcard">Add to my wallet</button>
@@ -930,7 +924,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         <div class="row2 row3">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
           <div><label>Free stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
-          <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers. Optional — leave at 0 to hide it.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
+          <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
         </div>
 
         <label style="margin-top:16px">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
@@ -1300,7 +1294,7 @@ export const DESIGN_PANEL_JS = /* js */ `
        * contrast ratio, and the nearest shade that shows their mark is much
        * closer to what they asked for than a blank card is.
        */
-      async function ensureLogoReadable(dataUrl) {
+      async function ensureLogoReadable(dataUrl, quiet) {
         const img = await new Promise((res) => {
           const i = new Image();
           i.onload = () => res(i); i.onerror = () => res(null); i.src = dataUrl;
@@ -1318,9 +1312,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         f("bg").value = out;
         f("fg").value = pickTextColor(out);
         renderPreview(); drawRoles();
-        await save({ bg: out, fg: f("fg").value }, "Card colour");
-        toast("That logo was almost invisible on your card colour, so the card was made "
-          + (up ? "lighter" : "darker") + " to suit. Change it below if you'd rather.");
+        await save({ bg: out, fg: f("fg").value }, "Card colour", quiet);
+        if (!quiet) {
+          toast("That logo was almost invisible on your card colour, so the card was made "
+            + (up ? "lighter" : "darker") + " to suit. Change it below if you'd rather.");
+        }
       }
 
       // image upload helper: normalise to PNG (wide logo, or wide banner) → POST.
@@ -1387,9 +1383,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").style.display = "";
         lastLogoUrl = url;
-        readPalette(url); // the logo is where the colours come from
-        // After the plate is gone, not before: the check is about what is left.
-        void ensureLogoReadable(url);
+        // One awaited sequence: read the palette, apply it, then check the logo
+        // is still readable on the colour that came out of it.
+        void applyLogoColours(url);
       }, "keep");
       // Removing the logo hides it here too, because the pass drops the image
       // entirely with no upload and shows the shop name alone — the preview has
@@ -1441,58 +1437,75 @@ export const DESIGN_PANEL_JS = /* js */ `
       };
 
       // ---- Colours out of the logo ----
-      // Read on this device: the palette is pulled from the logo the owner is
-      // already uploading, so there is no second image to explain. Nothing is
-      // applied until they tap the button — an upload that silently repainted
-      // their card would be worse than no feature at all.
+      //
+      // Applied on upload, not offered. It used to paint five swatches and a
+      // button asking permission, on the reasoning that an upload which
+      // silently repainted the card would be worse than no feature at all. In
+      // practice almost nobody pressed it, and the alternative was matching
+      // their own brand by eye in five colour pickers — so the card that came
+      // out of a logo upload looked nothing like the shop.
+      //
+      // It overwrites whatever was there, every time, and there is no undo in
+      // this panel. That is the trade, and the ⓘ on the Logo label says so.
       let found = null;
+
+      /** Read the palette out of an image. Resolves once found is set. */
       function readPalette(dataUrl) {
-        const im = new Image();
-        im.onload = () => {
-          // 64px is plenty to count colours by and keeps this instant on a phone.
-          const k = Math.min(64 / im.naturalWidth, 64 / im.naturalHeight, 1);
-          const cv = document.createElement("canvas");
-          cv.width = Math.max(1, Math.round(im.naturalWidth * k));
-          cv.height = Math.max(1, Math.round(im.naturalHeight * k));
-          const x = cv.getContext("2d", { willReadFrequently: true });
-          x.drawImage(im, 0, 0, cv.width, cv.height);
-          let data;
-          try { data = x.getImageData(0, 0, cv.width, cv.height).data; }
-          catch (e) { return; } // tainted canvas — nothing to offer
-          found = paletteFrom(data);
-          showSwatches();
-          drawRoles();
-        };
-        im.src = dataUrl;
+        return new Promise((resolve) => {
+          const im = new Image();
+          im.onload = () => {
+            // 64px is plenty to count colours by and keeps this instant on a phone.
+            const k = Math.min(64 / im.naturalWidth, 64 / im.naturalHeight, 1);
+            const cv = document.createElement("canvas");
+            cv.width = Math.max(1, Math.round(im.naturalWidth * k));
+            cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+            const x = cv.getContext("2d", { willReadFrequently: true });
+            x.drawImage(im, 0, 0, cv.width, cv.height);
+            let data;
+            try { data = x.getImageData(0, 0, cv.width, cv.height).data; }
+            catch (e) { found = null; return resolve(); } // tainted canvas
+            found = paletteFrom(data);
+            // Still needed with the swatches gone: every colour in the logo is
+            // offered as a chip in every colour row.
+            drawRoles();
+            resolve();
+          };
+          im.onerror = () => { found = null; resolve(); };
+          im.src = dataUrl;
+        });
       }
-      function showSwatches() {
-        const host = q("[data-swatches]");
-        host.style.display = "";
+
+      /**
+       * Take the logo's colours, in ONE save.
+       *
+       * Sequenced deliberately. readPalette and ensureLogoReadable are both
+       * async, and ensureLogoReadable snapshots bg AFTER its own decode — run
+       * unawaited they race, and two writes to the same columns land in
+       * undefined order. Awaiting also means one toast rather than four, and one
+       * strip re-bake rather than three.
+       */
+      async function applyLogoColours(dataUrl) {
+        await readPalette(dataUrl);
         if (!found) {
-          host.innerHTML = '<p class="muted" style="margin:0">No clear colours in that logo — set the colours below yourself.</p>';
-          return;
+          // Nothing usable: leave the card exactly as it was and say so, rather
+          // than a paragraph on screen explaining a thing that did not happen.
+          return toast("No clear colours in that logo — set them yourself below");
         }
-        const chip = (hex, name) => '<span class="sw" title="' + name + '" style="background:' + hex + '"></span>';
-        host.innerHTML =
-          '<div class="swrow">' + chip(found.bg, "Card") + chip(found.band, "Band") +
-          chip(found.accent, "Stamps") + chip(found.label, "Labels") + chip(found.fg, "Text") +
-          '<button class="btn btn-ghost" data-a="usepal">Use these colours</button></div>' +
-          '<p class="muted" style="margin:6px 0 0">Text is chosen for readability rather than taken from the logo, so it can always be read on the card.</p>';
-        host.querySelector("[data-a=usepal]").onclick = async () => {
-          f("bg").value = found.bg; f("fg").value = found.fg;
-          f("label").value = found.label; f("accent").value = found.accent;
-          f("bandColor").value = found.band;
-          renderPreview(); drawRoles();
-          await save({
-            bg: found.bg, fg: found.fg, label: found.label,
-            accent: found.accent, bandColor: found.band,
-          }, "Colours");
-          await saveBanner(bandPng(750, 246));
-          // The extracted card colour can land on top of the logo's own ink —
-          // it was sampled FROM the logo, so of course it can. Same check as on
-          // upload; without it, "Use these colours" can hide the mark it came from.
-          if (lastLogoUrl) await ensureLogoReadable(lastLogoUrl);
-        };
+        f("bg").value = found.bg; f("fg").value = found.fg;
+        f("label").value = found.label; f("accent").value = found.accent;
+        f("bandColor").value = found.band;
+        renderPreview(); drawRoles();
+        await save({
+          bg: found.bg, fg: found.fg, label: found.label,
+          accent: found.accent, bandColor: found.band,
+        }, "", true);
+        await saveBanner(bandPng(750, 246), true);
+        // The extracted card colour is sampled FROM the logo, so it can land on
+        // top of the logo's own ink. This is the same check the upload used to
+        // run on its own, and it must come last or it corrects a colour that is
+        // about to be overwritten.
+        await ensureLogoReadable(dataUrl, true);
+        toast("Colours taken from your logo ✓");
       }
 
       // ---- Swap any colour into any role ----
@@ -1608,14 +1621,14 @@ export const DESIGN_PANEL_JS = /* js */ `
       // The band is stored exactly where the uploaded banner photo used to be, so
       // nothing downstream changes: Apple composites it behind the stamps, Google
       // uses it as the hero image. Photos are gone — this is always generated.
-      async function saveBanner(dataUrl) {
+      async function saveBanner(dataUrl, quiet) {
         const { body } = await api(P("/banner"), { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
         if (!body.ok) return toast(body.error || "Band failed");
         // Re-bake the strips: the band is the backdrop INSIDE each strip PNG,
         // so a new band that isn't re-rendered would never reach the pass.
         await loadBanner(dataUrl);
         await applyStamps(stampStyle || "dot", true);
-        toast("Band saved ✓");
+        if (!quiet) toast("Band saved ✓");
       }
 
       /** The band as a data URL — the copy the wallets fetch. */
@@ -1698,8 +1711,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (!body.ok) return toast(body.error || "Couldn't make a link");
         out.style.display = "";
         out.innerHTML =
-          '<p class="muted" style="margin:10px 0 6px">Open on the phone you want the card on, ' +
-          "or scan the code. It does not count as a customer.</p>" +
           '<div class="logorow" style="flex-wrap:wrap">' +
           '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.apple) + '">Apple Wallet</a>' +
           '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.google) + '">Google Wallet</a>' +
@@ -1808,14 +1819,16 @@ export const DESIGN_PANEL_JS = /* js */ `
       // a colour change (design) and a target change (rules) each alter them.
       // That re-render IS the pre-generation step: one PNG per stamp count, so a
       // customer's stamp only ever swaps which stored image the pass points at.
-      async function save(fields, label) {
+      // The quiet flag is for a caller stringing several of these together — the
+      // logo colour path does four writes and one thing to say at the end of them.
+      async function save(fields, label, quiet) {
         const { body } = await api(P(), { method: "POST", body: JSON.stringify(fields) });
         if (!body.ok) return toast(body.error || "Save failed");
         Object.assign(c, fields);
         // Always regenerate, even on plain dots: the strip image is now the only
         // place stamps are drawn, so a card with no strips would show nothing.
         await applyStamps(stampStyle || "dot", true);
-        toast(label + " saved ✓");
+        if (!quiet) toast(label + " saved ✓");
       }
 
       // How many people this actually reaches. Read once when the panel opens, so
@@ -4682,7 +4695,9 @@ export function adminPage(): string {
     /* A value shown exactly once, inside the tinted drill-down: white, or the
        one thing on the row that must be read is the one that blends in. */
     .mdetail .temp { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
-    .nfc { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+    /* Was .nfc, and never had anything to do with NFC — it is the monospace
+       treatment for an id or a URL shown verbatim. */
+    .mono { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
     .cbtn, .dbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
     .arch { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
             background: var(--ghost-bg); color: var(--muted); padding: 2px 6px; border-radius: 5px; }
@@ -4813,8 +4828,8 @@ export function adminPage(): string {
       if (rail) aside.insertAdjacentHTML("beforeend", '<div class="dsacts">' + rail + "</div>");
       host.appendChild(panel);
       wireInfo(panel);
-      aside.querySelectorAll("[data-nfc]").forEach((b) => {
-        b.onclick = () => { navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; };
+      aside.querySelectorAll("[data-copy]").forEach((b) => {
+        b.onclick = () => { navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied ✓"; };
       });
       return panel;
     }
@@ -4822,7 +4837,7 @@ export function adminPage(): string {
     /** The links an operator hands over, for one card. One printable, and the link. */
     function cardLinks(card, merchantId, origin) {
       return '<a class="btn btn-ghost" target="_blank" href="/c/' + card.id + '/poster">Print poster</a>' +
-        '<button class="btn btn-ghost" data-nfc="' + origin + "/j/" + merchantId + '">Copy sign-up link</button>' +
+        '<button class="btn btn-ghost" data-copy="' + origin + "/j/" + merchantId + '">Copy sign-up link</button>' +
         '<span class="lnk">' + origin + "/j/" + merchantId + "</span>" +
         '<p class="muted" style="margin:6px 0 0;font-size:.78rem">Branded with your colours and logo. ' +
         'The code sends people to your shop, so it keeps working if you rename or add a second card.</p>';
@@ -5009,7 +5024,7 @@ export function adminPage(): string {
           <div class="tw"><table>
             <tr><th>Phone</th><th>Stamps</th><th>Rewards</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>
             \${staffRows.map((s) => \`<tr>
-              <td class="nfc">\${esc(s.actor.replace("staff:", ""))}</td><td>\${s.stamps}</td>
+              <td class="mono">\${esc(s.actor.replace("staff:", ""))}</td><td>\${s.stamps}</td>
               <td class="\${s.stamps >= 10 && s.redeems / s.stamps > 0.3 ? "bad" : ""}">\${s.redeems}</td>
               <td>\${s.undos}</td><td>\${s.forced}</td><td>\${ago(s.last_seen)}</td>
             </tr>\`).join("")}
@@ -5033,10 +5048,10 @@ export function adminPage(): string {
         <div class="dpanel" style="margin-top:14px">
           <h4>Contact &amp; actions</h4>
           <div class="flags" style="margin-bottom:8px">
-            Sign-up link: <span class="nfc">\${origin}/j/\${m.id}</span>
+            Sign-up link: <span class="mono">\${origin}/j/\${m.id}</span>
           </div>
           <div class="rst" style="margin-top:0">
-            <button class="btn btn-ghost cbtn" data-nfc="\${origin}/j/\${m.id}">Copy link</button>
+            <button class="btn btn-ghost cbtn" data-copy="\${origin}/j/\${m.id}">Copy link</button>
             \${
               // LIVE cards only, and named when there is more than one. Built
               // from every card the shop had ever held, an archived programme
@@ -5081,10 +5096,13 @@ export function adminPage(): string {
           <label style="margin-top:8px">Notes</label>
           <input data-note="\${m.id}" value="\${esc(m.contact_note)}" placeholder="Anything worth remembering">
           <button class="btn btn-ghost cbtn" data-savecontact="\${m.id}" style="margin-top:8px">Save contact</button>
+          <!-- The NFC sticker URL and its Copy button lived here. NFC is not V1
+               and the row said so in three places; what is NOT going is the
+               archive control beside it, which is the console's only way to
+               retire a card and would otherwise have stranded two routes. -->
           \${cards.length ? \`<div class="flags" style="margin-top:12px">
-            Programme\${cards.length === 1 ? "" : "s"}, for the NFC sticker\${info("The Add-to-Wallet URL to program onto an NFC sticker. You set these up for merchants; they never see it. A card id is printed on posters and baked into every Android card ever issued from it, so archiving is the only safe retirement — nothing is deleted and cards already in wallets keep stamping.")}
-            \${cards.map((c) => '<div style="margin-top:6px"><span class="nfc">' + origin + (c.id === "default" ? "/" : "/c/" + c.id) + "</span> " +
-              '<button class="btn btn-ghost cbtn" data-nfc="' + origin + (c.id === "default" ? "/" : "/c/" + c.id) + '">Copy</button> ' +
+            Programme\${cards.length === 1 ? "" : "s"}\${info("A card id is printed on posters and baked into every Android card ever issued from it, so archiving is the only safe retirement — nothing is deleted and cards already in wallets keep stamping.")}
+            \${cards.map((c) => '<div style="margin-top:6px"><span class="mono">' + esc(c.name) + "</span> " +
               (c.archived_at
                 ? '<button class="btn btn-ghost dbtn" data-unarchive="' + c.id + '">Restore</button>'
                 : '<button class="btn btn-ghost dbtn" data-archive="' + c.id + '">Archive</button>') + "</div>").join("")}
@@ -5332,8 +5350,8 @@ export function adminPage(): string {
       /** Buttons inside a merchant's drill-down, wired when it is first built. */
       function wireDetail(id) {
         const scope = document.querySelector('[data-d="' + id + '"]');
-        scope.querySelectorAll("[data-nfc]").forEach((b) => {
-          b.onclick = () => { navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; };
+        scope.querySelectorAll("[data-copy]").forEach((b) => {
+          b.onclick = () => { navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied ✓"; };
         });
         const save = scope.querySelector("[data-savecontact]");
         if (save) save.onclick = async () => {
@@ -5461,7 +5479,7 @@ export function adminPage(): string {
           (out
             ? '<div class="temp" style="margin-top:8px">' + esc(m.claim_token || "(link withdrawn)") +
               (m.claim_token
-                ? '<br><button class="btn btn-ghost cbtn" data-nfc="' + esc(m.claim_token) + '">Copy it</button> '
+                ? '<br><button class="btn btn-ghost cbtn" data-copy="' + esc(m.claim_token) + '">Copy it</button> '
                 : " ") +
               "Out now, good until " + dayMonth(m.claim_expires) + ".</div>"
             : "") +
@@ -5485,8 +5503,8 @@ export function adminPage(): string {
        * false and the button silently stops working.
        */
       function wireClaim(scope, m, done) {
-        scope.querySelectorAll("[data-nfc]").forEach((b) => {
-          b.onclick = () => { navigator.clipboard.writeText(b.dataset.nfc); b.textContent = "Copied ✓"; };
+        scope.querySelectorAll("[data-copy]").forEach((b) => {
+          b.onclick = () => { navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied ✓"; };
         });
         const out = scope.querySelector('[data-claimout="' + m.id + '"]');
         const mk = scope.querySelector("[data-claimlink]");
@@ -5499,10 +5517,10 @@ export function adminPage(): string {
             return;
           }
           out.innerHTML = '<div class="temp" style="margin-top:8px">' + esc(r.url) +
-            '<br><button class="btn btn-ghost cbtn" data-nfc="' + esc(r.url) + '">Copy it</button> ' +
+            '<br><button class="btn btn-ghost cbtn" data-copy="' + esc(r.url) + '">Copy it</button> ' +
             "Send this in the DM. It works once, and lasts 7 days." +
             (r.replaced ? " The link you sent before no longer works." : "") + "</div>";
-          out.querySelector("[data-nfc]").onclick = (e) => {
+          out.querySelector("[data-copy]").onclick = (e) => {
             navigator.clipboard.writeText(r.url); e.target.textContent = "Copied ✓";
           };
           if (done) done();
