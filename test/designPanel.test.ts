@@ -49,7 +49,13 @@ beforeAll(() => {
   // The page inlines these three in this order; so do we.
   // The same four the pages inline, in the same order — the panel calls
   // moveThumb from SEG_JS for its surface switch.
-  const src = `${PALETTE_JS}\n${MODAL_JS}\n${SEG_JS}\n${DESIGN_PANEL_JS}\nreturn designPanel;`;
+  // `esc` is not the panel's own — both hosts define the same one line for line
+  // (src/pages.ts, dashboardPage and adminPage), and the panel uses it for the
+  // few fragments it builds by concatenation. Repeated verbatim here rather than
+  // stubbed, because a lenient stand-in would let a real escaping bug through.
+  const escJs = `const esc = (s) => String(s == null ? "" : s)
+      .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);`;
+  const src = `${PALETTE_JS}\n${MODAL_JS}\n${SEG_JS}\n${escJs}\n${DESIGN_PANEL_JS}\nreturn designPanel;`;
   build = (c, h) => {
     const names = Object.keys(h.globals);
     const make = new Function(...names, src)(...names.map((n) => h.globals[n])) as (
@@ -67,6 +73,7 @@ beforeAll(() => {
       toast: () => {},
       modal: async () => true,
       info: () => "",
+      apiBase: "/dashboard/api",
       path: (suffix = "") => "/card/default" + suffix,
       artUrl: (kind: string, v: number) => "/c/default/art/" + kind + ".png" + (v ? "?v=" + v : ""),
       customersPath: "/customers?cardId=default",
@@ -173,6 +180,26 @@ describe("the design panel, mounted", () => {
       expect(div.querySelector('[data-pane="google"]')!.hidden).toBe(true);
     });
 
+    /**
+     * The strip is the first thing inside Design, above the logo and the
+     * colours. Below them it was three-quarters of the way down a scrolling
+     * panel, far from the preview it drives, so it read as a setting for the
+     * block beside it rather than as the frame for the whole panel.
+     */
+    it("puts the strip at the top of the fold, above everything shared", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const order = div.all();
+      const at = (sel: string) => order.indexOf(div.querySelector(sel)!);
+      expect(at("[data-surfaces]")).toBeGreaterThan(at("summary"));
+      expect(at("[data-surfaces]")).toBeLessThan(at("[data-logo]"));
+      expect(at("[data-surfaces]")).toBeLessThan(at("[data-roles]"));
+      // And still inside the fold — outside it, it would scroll away from the
+      // panes it switches.
+      expect(at("[data-surfaces]")).toBeGreaterThan(at("details"));
+    });
+
     it("moves the editor and the preview together", async () => {
       const h = makeHarness();
       const div = build(card(), h);
@@ -233,6 +260,56 @@ describe("the design panel, mounted", () => {
       const div = build(card({ accent: "#fcfcfa" }), h);
       await h.settle();
       expect(div.querySelector("[data-pvp-qr]")!.style.borderColor).toBe("#3b2016");
+    });
+  });
+
+  /**
+   * "Add a test card" — a title and three buttons, no reveal step.
+   *
+   * It used to be one button that, when pressed, produced three buttons. On a
+   * laptop the first two of those then did nothing anybody could see: the iPhone
+   * link hands the browser a .pkpass, which a desktop downloads silently and
+   * cannot open. So the owner pressed twice to reach a button that appeared
+   * broken.
+   */
+  describe("the test-card buttons", () => {
+    const links = { ok: true, apple: "https://x.test/apple", google: "https://x.test/google" };
+
+    it("offers all three at rest, with nothing to press first", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const wallets = div.querySelectorAll("[data-a=test]").map((b) => b.dataset.w);
+      expect(wallets).toEqual(["apple", "google"]);
+      // The sign-up page is a public page, so it is a plain link — pressing it
+      // mints nothing, and it needs no round trip to become pressable.
+      expect(div.querySelector('[data-a=test][data-w="apple"]')!.textContent).toBe("iPhone");
+      // Nothing revealed yet, and no stale QR sitting in the markup.
+      expect(div.querySelector(".testqr")).toBeNull();
+    });
+
+    it("shows a QR on a laptop instead of a link that cannot open", async () => {
+      const h = makeHarness({ fetchJson: links });
+      const div = build(card(), h);
+      await h.settle();
+      await div.querySelector('[data-a=test][data-w="google"]')!.onclick!();
+
+      expect(h.navigated.href).toBe("");
+      const qr = div.querySelector(".testqr")!;
+      // Per wallet: one QR for both would send an Android phone to Apple's pass.
+      expect(qr.src).toContain("wallet=google");
+      expect(qr.src).toContain("/dashboard/api/card/default/test-qr.png");
+      expect(div.querySelector("[data-testout]")!.hidden).toBe(false);
+    });
+
+    it("sends a phone straight to the wallet, since it can actually open it", async () => {
+      const h = makeHarness({ fetchJson: links, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)" });
+      const div = build(card(), h);
+      await h.settle();
+      await div.querySelector('[data-a=test][data-w="apple"]')!.onclick!();
+
+      expect(h.navigated.href).toBe(links.apple);
+      expect(div.querySelector(".testqr")).toBeNull();
     });
   });
 

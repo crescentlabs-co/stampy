@@ -698,9 +698,12 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pvp-steps { color: #6b6b66; font-size: .68rem; line-height: 1.7; margin-top: 12px; text-align: left; }
 
     /* The surface switch. Smaller than the page-level tabs it borrows from —
-       it is a control inside a panel, not the panel's own navigation. */
-    .dseg { margin-bottom: 4px; }
-    .dseg button { font-size: .84rem; padding: 8px 10px; }
+       it is a control inside a panel, not the panel's own navigation. Mini on
+       purpose: inline-flex, so the strip is only as wide as its three labels.
+       Stretched full width it read as navigation, which is the one thing it is
+       not: it picks which surface you are looking at. */
+    .dseg { display: inline-flex; margin: 2px 0 12px; }
+    .dseg button { flex: 0 0 auto; font-size: .84rem; padding: 8px 14px; }
     .dpane { display: block; }
     .dpane[hidden] { display: none; }
     .pvbox { min-width: 0; }
@@ -894,12 +897,16 @@ export const DESIGN_PANEL_JS = /* js */ `
             </div>
           </div>
 
-          <!-- The real thing, on a real phone. Was step 4 of the design flow;
-               it is not a design step, it is how you check one. -->
+          <!-- The real thing, on a real phone. A title and three buttons: it
+               used to be one button that revealed three buttons, which is a
+               step whose only job was to hide the step after it. -->
+          <label class="sec" style="margin-top:18px">Add a test card\${info("Puts this card in your own wallet, or opens your sign-up page. It is a real card, but it never counts as a customer and never appears in your numbers. Each link lasts 30 minutes.")}</label>
           <div class="pvacts">
-            <button class="btn btn-ghost" data-a="testcard">See it for real\${info("Puts this card in your own wallet, or opens your sign-up page. It is a real card but it never counts as a customer and never appears in your numbers. The link lasts 30 minutes.")}</button>
+            <button class="btn btn-ghost" data-a="test" data-w="apple">iPhone</button>
+            <button class="btn btn-ghost" data-a="test" data-w="google">Android</button>
+            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}">Sign-up page</a>
           </div>
-          <div data-testout style="display:none"></div>
+          <div data-testout hidden></div>
         </div>
 
         <!-- Design sits directly under the preview it changes, folded away. It is
@@ -908,8 +915,18 @@ export const DESIGN_PANEL_JS = /* js */ `
         <details class="fold" style="margin-top:12px" \${env.designOpen ? "open" : ""}>
         <summary>Design</summary>
 
-        <!-- Shared first: the logo and the colours feed all three surfaces, so
-             they belong to none of the tabs below. -->
+        <!-- The switch, first thing. It cycles the preview above AND the one
+             surface-specific block below, so it is the frame everything else in
+             here is read inside — it cannot sit halfway down the panel. -->
+        <div class="seg dseg" data-surfaces role="tablist">
+          <button data-surface="apple" class="on">iPhone</button>
+          <button data-surface="google">Android</button>
+          <button data-surface="signup">Sign-up</button>
+          <span class="thumb"></span>
+        </div>
+
+        <!-- Shared next: the logo and the colours feed all three surfaces, so
+             they belong to none of the tabs. -->
         <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
@@ -933,16 +950,9 @@ export const DESIGN_PANEL_JS = /* js */ `
           <input data-f="bandColor" type="color" value="\${c.bandColor}">
         </div>
 
-        <!-- Then only what actually differs between the three. The tab switches
-             the preview above with it, so you are always looking at the thing
-             you are editing. -->
-        <div class="seg dseg" data-surfaces role="tablist" style="margin-top:18px">
-          <button data-surface="apple" class="on">iPhone</button>
-          <button data-surface="google">Android</button>
-          <button data-surface="signup">Sign-up</button>
-          <span class="thumb"></span>
-        </div>
-
+        <!-- Then only what actually differs between the three. Android has one
+             control and the sign-up page has none — they are there to be looked
+             at, and the preview is doing that job above. -->
         <section class="dpane" data-pane="apple">
         <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
              already contains the name said it twice. This drops that text and
@@ -985,8 +995,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         </div>
         </section>
 
+        <!-- Nothing of its own. One line rather than none, because a tab that
+             shows an empty space reads as a tab that failed to load. -->
         <section class="dpane" data-pane="signup" hidden>
-        <p class="muted" style="margin:14px 0 0;font-size:.84rem">Your poster and sign-up page use the logo and colours above. The line customers read is under Card details below.</p>
+        <p class="muted" style="margin:0;font-size:.84rem">Nothing to set — it uses your logo and colours.</p>
         </section>
 
         <button class="btn btn-neon" style="margin-top:18px" data-a="savedesign">Save design</button>
@@ -1848,32 +1860,38 @@ export const DESIGN_PANEL_JS = /* js */ `
       /**
        * Put this card in the owner's own wallet.
        *
-       * Both wallets are offered because only the person holding the phone
-       * knows which one they need, and a QR beside them because the designer is
-       * usually open on a laptop while the wallet is on a phone. The links are
-       * fetched on press rather than rendered with the panel: they expire, and
-       * one minted when the page loaded would be stale by the time it is read.
+       * Both wallets, because only the person holding the phone knows which one
+       * they need. Minted on press rather than rendered with the panel: the
+       * links last 30 minutes, so one made at page load would be stale by the
+       * time anybody read it.
+       *
+       * On a laptop these did nothing you could see. The iPhone link hands the
+       * browser a .pkpass, which a desktop downloads silently and cannot open,
+       * and Google's save link wants the phone that is signed in — so pressing
+       * either one looked broken. A desktop gets the QR instead: it is the only
+       * one of the three that can actually reach the phone the wallet is on.
+       * The sign-up page is a plain link, on any device — it is a public page,
+       * nothing is minted by looking at it.
        */
-      q("[data-a=testcard]").onclick = async () => {
-        const out = q("[data-testout]");
-        const { body } = await api(P("/test-link"));
-        if (!body.ok) return toast(body.error || "Couldn't make a link");
-        out.style.display = "";
-        out.innerHTML =
-          '<div class="logorow" style="flex-wrap:wrap">' +
-          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.apple) + '">iPhone</a>' +
-          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.google) + '">Android</a>' +
-          // The third surface. Not a test pass at all — the sign-up page is
-          // public, so it is just opened, and nothing is minted by looking.
-          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" target="_blank" href="/c/' +
-            encodeURIComponent(c.id) + '">Sign-up page</a>' +
-          "</div>" +
-          // The QR is behind the same authorisation the links are, so it is
-          // built from the console's own api base rather than a public URL.
-          // Cache-busted: the token inside it expires, and a stale QR that
-          // still renders is worse than one that visibly reloads.
-          '<img class="testqr" alt="" src="' + esc(env.apiBase + env.path("/test-qr.png")) + "?v=" + Date.now() + '">';
-      };
+      const onPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+      div.querySelectorAll("[data-a=test]").forEach((b) => {
+        b.onclick = async () => {
+          const wallet = b.dataset.w;
+          const out = q("[data-testout]");
+          const { body } = await api(P("/test-link"));
+          if (!body.ok) return toast(body.error || "Couldn't make a link");
+          if (onPhone) { location.href = wallet === "google" ? body.google : body.apple; return; }
+          out.hidden = false;
+          // The QR is behind the same authorisation the link is, so it is built
+          // from this page's own api base rather than a public URL. Cache-busted
+          // per press: the token inside it expires, and a stale QR that still
+          // renders is worse than one that visibly reloads.
+          out.innerHTML =
+            '<p class="muted" style="margin:12px 0 0;font-size:.84rem">Scan this with the phone you want the card on.</p>' +
+            '<img class="testqr" alt="" src="' + esc(env.apiBase + env.path("/test-qr.png")) +
+              "?wallet=" + wallet + "&v=" + Date.now() + '">';
+        };
+      });
 
       /**
        * The tab switches what you edit AND what the preview shows.
@@ -1895,8 +1913,13 @@ export const DESIGN_PANEL_JS = /* js */ `
         b.onclick = () => showSurface(b.dataset.surface);
       });
       // A hidden .seg measures zero, so the thumb cannot be seated until the
-      // panel is on the page — the console mounts this inside a closed details.
+      // panel is on the page — and the owner's Design fold starts CLOSED, so
+      // the first seating always measured nothing and left a zero-width thumb
+      // under the tab it was meant to mark. Re-seat when the fold opens; that
+      // is the first moment the strip has a width at all.
       showSurface("apple");
+      const dfold = div.querySelector("details.fold");
+      if (dfold) dfold.addEventListener("toggle", () => { if (dfold.open) moveThumb(surfaceSeg); });
 
       /**
        * Say whether a shape is stored, and show it.

@@ -58,6 +58,9 @@ export class FakeEl {
   onchange: (() => unknown) | null = null;
   oninput: (() => unknown) | null = null;
   files: unknown[] = [];
+  /** Mirrors the HTML attribute, so markup that ships hidden reports hidden
+   *  before any script has touched it. */
+  hidden = false;
   width = 0;
   height = 0;
   /** Layout geometry. Always 0: nothing here is laid out, and a tab thumb
@@ -189,6 +192,7 @@ function parseHtml(html: string, parent: FakeEl): FakeEl[] {
       for (const a of (attrText ?? "").matchAll(/([\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)) {
         const key = a[1]!;
         el.attrs[key] = a[2] ?? a[3] ?? a[4] ?? "";
+        if (key === "hidden") el.hidden = true;
         if (key.startsWith("data-")) {
           const camel = key.slice(5).replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase());
           el.dataset[camel] = el.attrs[key]!;
@@ -257,6 +261,8 @@ export interface Harness {
   /** Resolves once every Image the panel created has fired onload. */
   settle: () => Promise<void>;
   globals: Record<string, unknown>;
+  /** The stand-in for window.location — `href` is what the panel navigated to. */
+  navigated: { href: string };
 }
 
 /**
@@ -265,9 +271,13 @@ export interface Harness {
  * `imageSize` decides what every Image reports once loaded — 0 makes a decode
  * fail, which is how a missing stamp icon (404) is simulated.
  */
-export function makeHarness(opts: { imageSize?: number; fetchJson?: unknown } = {}): Harness {
+export function makeHarness(
+  opts: { imageSize?: number; fetchJson?: unknown; userAgent?: string } = {},
+): Harness {
   const size = opts.imageSize ?? 64;
   const root = new FakeEl("body");
+  /** Where the panel sent the browser, if it did. `href` is the whole record. */
+  const navigated = { href: "" };
   const requests: Harness["requests"] = [];
   const canvases: FakeEl[] = [];
   const images: FakeEl[] = [];
@@ -342,6 +352,11 @@ export function makeHarness(opts: { imageSize?: number; fetchJson?: unknown } = 
     // SEG_JS reseats every tab thumb on resize and once the fonts land. Neither
     // happens here, but both have to be addressable or the panel throws at mount.
     window: { addEventListener: () => {}, removeEventListener: () => {} },
+    // The test-card buttons branch on these: a phone is sent straight to its
+    // wallet, a laptop is shown a QR instead. A desktop UA is the default here
+    // because that is where the designer is actually open.
+    navigator: { userAgent: opts.userAgent ?? "Mozilla/5.0 (Macintosh)" },
+    location: navigated,
   };
 
   const settle = async (): Promise<void> => {
@@ -356,5 +371,5 @@ export function makeHarness(opts: { imageSize?: number; fetchJson?: unknown } = 
 
   const drawn = (): DrawCall[] => canvases.flatMap((cv) => cv.calls);
 
-  return { root, requests, canvases, images, drawn, settle, globals };
+  return { root, requests, canvases, images, drawn, settle, globals, navigated };
 }
