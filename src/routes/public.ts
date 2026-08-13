@@ -20,12 +20,14 @@ import QRCode from "qrcode";
 import {
   readCustomerCookie,
   readEnrollCookie,
+  readTestPassToken,
   setCustomerCookie,
   setEnrollCookie,
 } from "../auth.js";
 import { config, setupStatus } from "../config.js";
 import {
   createCustomer,
+  testPassFor,
   createPass,
   DEFAULT_CARD_ID,
   generateShortCode,
@@ -169,7 +171,13 @@ async function landing(
   );
 }
 
-async function newPass(card: CardRow, platform: Platform, customerId: string | null, source: string) {
+async function newPass(
+  card: CardRow,
+  platform: Platform,
+  customerId: string | null,
+  source: string,
+  isTest = false,
+) {
   const row = await createPass({
     serial: randomUUID(),
     cardId: card.id,
@@ -180,9 +188,28 @@ async function newPass(card: CardRow, platform: Platform, customerId: string | n
     stampCount: Math.min(card.stamps_start, card.stamps_target), // endowed progress
     stampsTarget: card.stamps_target,
     reward: card.reward,
+    isTest,
   });
+  // logEvent reads is_test off the pass, so this row is already marked as a
+  // test enrol and drops out of the funnel without the caller doing anything.
   await logEvent(card.id, row.serial, "enroll", { actor: "customer", source });
   return row;
+}
+
+/**
+ * The shop's own card, in the shop's own wallet.
+ *
+ * Its own customer, so it can never collide with a real one, and reused rather
+ * than re-minted so pressing the button twice does not leave two test cards
+ * behind. Reissued every time, which is the point: it has to show what the
+ * design looks like NOW.
+ */
+async function testPass(card: CardRow, platform: Platform) {
+  const existing = await testPassFor(card.id, platform);
+  if (existing) return (await reissuePass(existing.serial)) ?? existing;
+  const merchant = await merchantForCard(card.id).catch(() => null);
+  const customer = merchant ? await createCustomer(merchant.id, true) : null;
+  return newPass(card, platform, customer?.id ?? null, "test", true);
 }
 
 /**
@@ -227,6 +254,12 @@ async function reuseOrCreatePass(
   platform: Platform,
   source = "",
 ) {
+  // The shop looking at its own card. Signed and expiring, because a test pass
+  // is excluded from every customer count and a plain query flag would let
+  // anyone issue themselves a card the shop never sees.
+  if (readTestPassToken(String(req.query.t ?? ""), card.id)) {
+    return testPass(card, platform);
+  }
   const merchant = await merchantForCard(card.id);
   if (!merchant) {
     const known = readEnrollCookie(req, card.id);

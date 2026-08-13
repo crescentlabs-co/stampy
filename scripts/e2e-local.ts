@@ -1705,6 +1705,111 @@ async function main() {
   });
   expect(freed.status === 200, "...and the address can claim a shop again");
 
+  // --- The shop's own card, in the shop's own wallet ---
+  const { readTestPassToken } = await import("../src/auth.js");
+  const { testPassFor: testPassForQ, createCustomer: mkTestCustomer, createPass: mkPass,
+          generateShortCode: shortCode2, reissuePass: reissue2 } = await import("../src/db.js");
+  /** Exactly what the enrol route does once the signed token checks out. */
+  const mkTestPass = async (cardId: string, platform: "apple" | "google") => {
+    const existing = await testPassForQ(cardId, platform);
+    if (existing) return (await reissue2(existing.serial)) ?? existing;
+    const card = (await getCard(cardId))!;
+    const m = await merchantOf(cardId);
+    const cust = m ? await mkTestCustomer(m.id, true) : null;
+    const row = await mkPass({
+      serial: crypto.randomUUID(), cardId, customerId: cust?.id ?? null, platform,
+      shortCode: shortCode2(), authToken: "test-auth-token-000000",
+      stampCount: 0, stampsTarget: card.stamps_target, reward: card.reward, isTest: true,
+    });
+    await logEvent(cardId, row.serial, "enroll", { actor: "customer", source: "test" });
+    return row;
+  };
+
+  //
+  // A test pass is a REAL pass: scannable, stampable, pushable. What it is not
+  // is a customer, and the whole risk of the feature is a number somewhere
+  // disagreeing about that. CLAUDE.md is explicit that "customer" has one
+  // definition everywhere, and that the Home headline has already come to
+  // disagree with the list under it twice. So this checks every reader, not a
+  // sample: the exclusion lives in ~15 queries and one missed site is a silent
+  // wrong number rather than a failure.
+  {
+    const testCard = "default";
+    const before = {
+      counts: JSON.parse((await get("/dashboard/api/customers?cardId=" + testCard + "&lapsedDays=0",
+        { headers: { cookie: cookieNow } })).body),
+      ov: JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body)
+        .cards.find((x: any) => x.id === testCard),
+      health: JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+        .merchants.find((m: any) => (m.card_ids ?? []).includes(testCard)),
+    };
+
+    // Minted the way the button does it: a signed, expiring link.
+    const linkRes = JSON.parse((await get("/dashboard/api/card/" + testCard + "/test-link",
+      { headers: { cookie: cookieNow } })).body);
+    expect(linkRes.ok && linkRes.apple.includes("?t=") && linkRes.google.includes("?t="),
+      "the dashboard mints a signed test link for both wallets");
+
+    // An unsigned flag must NOT work, or anyone could issue themselves a card
+    // the shop never sees — which is a hole in the numbers dressed as a feature.
+    const forged = await fetch(base + "/c/" + testCard + "/enroll/google?t=not-a-real-token");
+    const forgedPass = (await getPool().query(
+      "SELECT count(*)::int AS n FROM passes WHERE card_id = $1 AND is_test", [testCard])).rows[0].n;
+    expect(forgedPass === 0, `a forged test token mints nothing (${forged.status})`);
+
+    // Neither wallet is configured here, and both enrol routes refuse with a 503
+    // before minting anything — so the pass itself is made through the same
+    // function the route calls. What is under test is the FLAG and every number
+    // that has to ignore it, not pass signing.
+    const token = new URL(linkRes.google).searchParams.get("t")!;
+    expect(readTestPassToken(token, testCard), "the minted token verifies for this card");
+    expect(!readTestPassToken(token, "some-other-card"), "...and for no other card");
+    const tpRow = await mkTestPass(testCard, "google");
+    const tp = (await getPool().query<{ serial: string; is_test: boolean }>(
+      "SELECT serial, is_test FROM passes WHERE card_id = $1 AND is_test", [testCard])).rows;
+    expect(tp.length === 1 && tp[0]!.is_test, "...exactly one test pass, flagged");
+    expect(tp[0]!.serial === tpRow.serial, "...and it is the one that was just made");
+
+    // Pressing again hands back the SAME card rather than piling them up.
+    const againRow = await mkTestPass(testCard, "google");
+    expect(againRow.serial === tpRow.serial, "...and asking again reuses it rather than minting another");
+
+    // It behaves like a real card where behaving like one is the point.
+    await logEvent(testCard, tp[0]!.serial, "stamp", { actor: "staff:e2e" });
+
+    // Now: nothing anybody reads may have moved.
+    const after = {
+      counts: JSON.parse((await get("/dashboard/api/customers?cardId=" + testCard + "&lapsedDays=0",
+        { headers: { cookie: cookieNow } })).body),
+      ov: JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body)
+        .cards.find((x: any) => x.id === testCard),
+      health: JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+        .merchants.find((m: any) => (m.card_ids ?? []).includes(testCard)),
+    };
+    expect(after.counts.counts.active === before.counts.counts.active,
+      `the customer count is unchanged (${before.counts.counts.active} → ${after.counts.counts.active})`);
+    expect(after.counts.counts.issuedNeverAdded === before.counts.counts.issuedNeverAdded,
+      "...and it did not fall into the abandoned bucket instead");
+    expect(after.counts.customers.length === before.counts.customers.length,
+      "...the Customers list is unchanged");
+    expect(!after.counts.customers.some((c: any) => c.serial === tp[0]!.serial),
+      "...and the test card is not in it");
+    expect(after.ov.metrics.active === before.ov.metrics.active,
+      `...the Home headline is unchanged (${before.ov.metrics.active} → ${after.ov.metrics.active})`);
+    expect(after.ov.metrics.stamps === before.ov.metrics.stamps,
+      `...and its stamp did not count (${before.ov.metrics.stamps} → ${after.ov.metrics.stamps})`);
+    expect(after.health.customers === before.health.customers,
+      "...the console's customer count is unchanged");
+    expect(after.health.made === before.health.made,
+      "...and the funnel did not record a sign-up");
+    // The nudge buckets are the one that would actually reach a person: the
+    // owner messaging their own test card, against that card's 7-day limit.
+    const buckets = JSON.parse((await get("/dashboard/api/customers?cardId=" + testCard + "&lapsedDays=0",
+      { headers: { cookie: cookieNow } })).body).buckets ?? [];
+    expect(!JSON.stringify(buckets).includes(tp[0]!.serial),
+      "...and it is in no nudge bucket, so it can never be messaged");
+  }
+
   // --- Owner-level customers + nudge (span ALL of an owner's cards) ---
   const ownerCust = JSON.parse((await get("/dashboard/api/customers?cardId=all&lapsedDays=0", { headers: { cookie: cookieNow } })).body);
   expect(Array.isArray(ownerCust.customers) && ownerCust.customers.length >= 2, "owner customers span all their cards");

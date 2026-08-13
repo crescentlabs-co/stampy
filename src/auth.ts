@@ -288,3 +288,31 @@ export function clearSessionCookie(res: Response): void {
 export function sessionOwnerId(req: Request): string | null {
   return parseSessionCookie(readCookie(req));
 }
+
+// ------------------------------------------------------- test-card links ----
+
+/** Half an hour: long enough to walk to a phone, short enough not to be shared. */
+const TEST_LINK_MS = 30 * 60 * 1000;
+
+/**
+ * A signed, expiring link that mints a TEST pass for one card.
+ *
+ * Signed rather than a plain `?test=1`, because a test pass is excluded from
+ * every customer count — an open query parameter would let anybody issue
+ * themselves a card that the shop never sees, which is a hole in the numbers
+ * dressed up as a feature. Only the dashboard and the console can mint one, and
+ * only for a card they are already authorised to open.
+ */
+export function createTestPassToken(cardId: string): string {
+  return seal(`${cardId}.${Date.now() + TEST_LINK_MS}`);
+}
+
+/** The card this token is good for, or null if it is forged, stale or for another card. */
+export function readTestPassToken(token: string | undefined, cardId: string): boolean {
+  const payload = unseal(token);
+  if (payload === null) return false;
+  const dot = payload.lastIndexOf(".");
+  if (dot < 1) return false;
+  const [id, expiresStr] = [payload.slice(0, dot), payload.slice(dot + 1)];
+  return id === cardId && fresh(expiresStr);
+}

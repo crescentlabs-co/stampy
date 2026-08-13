@@ -20,7 +20,8 @@
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { randomBytes } from "node:crypto";
-import { hashPassword, sessionOwnerId } from "../auth.js";
+import QRCode from "qrcode";
+import { createTestPassToken, hashPassword, sessionOwnerId } from "../auth.js";
 import { CLAIM_TTL_MS, hashClaimToken } from "../claim.js";
 import { config, setupStatus } from "../config.js";
 import {
@@ -331,6 +332,30 @@ adminRouter.post("/api/merchant/:id/paid", requireAdmin, async (req, res) => {
 //
 // Authorisation here is requireAdmin — NOT ownerHasCard. That is the whole
 // point: the operator sets cards up on merchants' behalf.
+
+/** The console's twin of the dashboard's test link — any card, claimed or not. */
+adminRouter.get("/api/card/:id/test-link", requireAdmin, async (req, res) => {
+  const card = await getCard(req.params.id!);
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
+  const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+  const token = createTestPassToken(card.id);
+  res.json({
+    ok: true,
+    apple: `${base}/c/${card.id}/enroll?t=${encodeURIComponent(token)}`,
+    google: `${base}/c/${card.id}/enroll/google?t=${encodeURIComponent(token)}`,
+  });
+});
+
+/** The console's twin of the test QR. */
+adminRouter.get("/api/card/:id/test-qr.png", requireAdmin, async (req, res) => {
+  const card = await getCard(req.params.id!);
+  if (!card) return void res.status(404).end();
+  const wallet = req.query.wallet === "google" ? "enroll/google" : "enroll";
+  const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+  const url = `${base}/c/${card.id}/${wallet}?t=${encodeURIComponent(createTestPassToken(card.id))}`;
+  const png = await QRCode.toBuffer(url, { type: "png", width: 640, margin: 2, errorCorrectionLevel: "M" });
+  res.set("Content-Type", "image/png").set("Cache-Control", "no-store").send(png);
+});
 
 /** Everything the designer needs to open on this card. */
 adminRouter.get("/api/card/:id/design-state", requireAdmin, async (req, res) => {

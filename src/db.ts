@@ -119,6 +119,12 @@ export interface PassRow {
   message: string;
   created_at: Date;
   updated_at: Date;
+  /**
+   * A card the owner or the operator added to their own wallet to look at it.
+   * Behaves exactly like a real pass everywhere it is scanned or pushed, and is
+   * excluded from every count anybody reads — see REAL_PASS_SQL.
+   */
+  is_test: boolean;
 }
 
 export interface RegistrationRow {
@@ -662,6 +668,20 @@ export async function migrate(): Promise<void> {
     -- Add sheet and the notification, where an unnamed card is worse.
     -- Defaults false, so every card already issued is unchanged.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS logo_has_name boolean NOT NULL DEFAULT false;
+    -- v2.5: a pass the shop owner (or the operator) added to their OWN wallet to
+    -- see how the card looks. It is a real pass — a real wallet has to accept
+    -- it — but it is not a customer, and it must never reach a number anybody
+    -- reads. Every counting query excludes it (grep REAL_PASS_SQL); the
+    -- operational ones that resolve a scan or push an update deliberately do
+    -- not, because a test card has to behave exactly like a real one or it is
+    -- not a test. Defaults false, so nothing already issued moves.
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
+    CREATE INDEX IF NOT EXISTS idx_passes_test ON passes(card_id) WHERE is_test;
+    -- Mirrored onto customers so a person created only to hold a test card is
+    -- excluded by the same rule, and onto events so the funnel and the counter
+    -- log can filter without joining back to the pass on every row.
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
     -- v2.2: a square version of the logo, for Google only.
     --
     -- Google's programLogo slot is small and near-square, so the wide lockup
@@ -1358,10 +1378,10 @@ export async function joinTargetCard(merchant: MerchantRow): Promise<CardRow | n
 // ------------------------------------------------------------- customers ----
 
 /** A person at one merchant. Holds no PII — see the customers table comment. */
-export async function createCustomer(merchantId: string): Promise<CustomerRecord> {
+export async function createCustomer(merchantId: string, isTest = false): Promise<CustomerRecord> {
   const res = await getPool().query<CustomerRecord>(
-    `INSERT INTO customers (id, merchant_id) VALUES ($1, $2) RETURNING *`,
-    [randomUUID(), merchantId],
+    `INSERT INTO customers (id, merchant_id, is_test) VALUES ($1, $2, $3) RETURNING *`,
+    [randomUUID(), merchantId, isTest],
   );
   return res.rows[0]!;
 }
@@ -1870,7 +1890,7 @@ export async function targetsInUse(cardId: string): Promise<number[]> {
   const res = await getPool().query<{ target: number }>(
     `SELECT DISTINCT p.stamps_target AS target
        FROM passes p
-      WHERE p.card_id = $1 AND ${ACTIVE_PASS_SQL}
+      WHERE p.card_id = $1 AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}
       ORDER BY target`,
     [cardId],
   );
@@ -1941,6 +1961,24 @@ const LAST_VISIT_SQL = `COALESCE(
          WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp'),
        p.created_at
      )`;
+
+/**
+ * "This pass belongs to a real person."
+ *
+ * A test pass is one the shop owner or the operator added to their own wallet to
+ * see the card. It is a genuine pass — a wallet has to accept it — so it must be
+ * scannable, stampable and pushable like any other. It is simply not a
+ * CUSTOMER, and every number anybody reads has to agree about that.
+ *
+ * Spelled out at each counting site rather than folded into ACTIVE_PASS_SQL,
+ * because two of those sites use `NOT ACTIVE_PASS_SQL` to find abandoned passes
+ * — a test pass would have fallen straight into the abandoned bucket instead of
+ * out of the report. Grep this name to see the full set: if a new query counts
+ * passes and does not mention it, it is wrong.
+ *
+ * Assumes the passes table is aliased `p`.
+ */
+const REAL_PASS_SQL = `p.is_test = false`;
 
 // A pass row alone proves nothing: it is written on the /enroll hit, before iOS
 // even shows the Add sheet, so prefetches, bots and cancelled sheets all left
@@ -2016,7 +2054,7 @@ export async function cardCustomers(cardId: string, activeOnly = true): Promise<
   const res = await getPool().query<CustomerRow>(
     `SELECT ${CUSTOMER_COLUMNS_SQL}
        FROM passes p
-      WHERE p.card_id = $1 ${activeOnly ? `AND ${ACTIVE_PASS_SQL}` : ""}
+      WHERE p.card_id = $1 AND ${REAL_PASS_SQL} ${activeOnly ? `AND ${ACTIVE_PASS_SQL}` : ""}
       ORDER BY last_visit DESC`,
     [cardId],
   );
@@ -2045,7 +2083,7 @@ export async function cardCounts(cardId: string): Promise<CardCounts> {
               AND NOT EXISTS (SELECT 1 FROM events e
                                WHERE e.serial = p.serial AND e.type = 'pass_added'))::text AS never_added,
             count(*) FILTER (WHERE ${REMOVED_PASS_SQL})::text AS removed
-       FROM passes p WHERE p.card_id = $1`,
+       FROM passes p WHERE p.card_id = $1 AND ${REAL_PASS_SQL}`,
     [cardId],
   );
   const row = res.rows[0];
@@ -2112,13 +2150,13 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
             EXISTS (SELECT 1 FROM card_logos l WHERE l.card_id = c.id) AS has_logo,
             EXISTS (SELECT 1 FROM card_banners b WHERE b.card_id = c.id) AS has_banner,
             (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
-              WHERE p.card_id = c.id AND ${ACTIVE_PASS_SQL}) AS active,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id) AS cards,
+              WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}) AS active,
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}) AS cards,
             ${NET_STAMPS_SQL} AS stamps,
             (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'redeem') AS redemptions,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
               AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'nudge')) AS nudged,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
               AND EXISTS (SELECT 1 FROM events s WHERE s.serial = p.serial AND s.type = 'stamp'
                             AND s.created_at > (SELECT max(n.created_at) FROM events n
                                                  WHERE n.serial = p.serial AND n.type = 'nudge'))) AS nudge_returned,
@@ -2134,14 +2172,14 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
                AND e.created_at > now() - interval '30 days') AS stamps_30d,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')) AS added,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REMOVED_PASS_SQL}) AS removed,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND NOT ${ACTIVE_PASS_SQL}
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND ${REMOVED_PASS_SQL}) AS removed,
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND NOT ${ACTIVE_PASS_SQL}
                AND NOT EXISTS (SELECT 1 FROM events e
                                 WHERE e.serial = p.serial AND e.type = 'pass_added')) AS never_added,
-            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p WHERE p.card_id = c.id
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
                AND ${LAST_VISIT_SQL} > now() - interval '7 days'
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_7d,
-            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p WHERE p.card_id = c.id
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
                AND ${LAST_VISIT_SQL} > now() - interval '30 days'
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_30d
        FROM cards c
@@ -2320,9 +2358,14 @@ export interface MerchantHealthRow {
 export async function merchantHealth(): Promise<MerchantHealthRow[]> {
   // Their cards, as a scalar subquery source. Every per-merchant aggregate below
   // sums over this rather than assuming a single card.
+  // NOT e.is_test on every event-derived column at once: the funnel, the stamp
+  // counts, the nudge counts. A card the owner added to their own wallet writes
+  // a real enroll and a real wallet_click, and those would otherwise show up as
+  // demand in the one report used to judge whether a shop is working.
   const ev = (filter: string, since = "") =>
     `(SELECT count(*)::int FROM events e
        WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+         AND NOT e.is_test
          AND ${filter}${since ? ` AND e.created_at > now() - interval '${since}'` : ""})`;
   const res = await getPool().query<MerchantHealthRow>(
     `SELECT m.id, m.name, m.created_at, m.archived_at, m.contact_phone, m.contact_note,
@@ -2381,14 +2424,16 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
                 AND e.created_at <= now() - interval '7 days') AS stamps_prev_7d,
             (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
               WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
-                AND ${ACTIVE_PASS_SQL}) AS customers,
+                AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}) AS customers,
             (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
               WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND ${REAL_PASS_SQL}
                 AND ${LAST_VISIT_SQL} > now() - interval '7 days'
                 AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_7d,
             ${ev("e.type = 'redeem'")} AS redemptions,
             (SELECT count(*)::int FROM passes p
               WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND ${REAL_PASS_SQL}
                 AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
 
             ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot', 'false') <> 'true'")} AS scanned,
@@ -2411,10 +2456,12 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             -- read as two people messaged.
             (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
               WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND ${REAL_PASS_SQL}
                 AND EXISTS (SELECT 1 FROM events e
                              WHERE e.serial = p.serial AND e.type = 'nudge')) AS nudged,
             (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
               WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND ${REAL_PASS_SQL}
                 AND EXISTS (SELECT 1 FROM events s
                              WHERE s.serial = p.serial AND s.type = 'stamp'
                                AND s.created_at > (SELECT max(n.created_at) FROM events n
@@ -2600,6 +2647,7 @@ const RETENTION_CTE = `WITH person AS (
          FROM passes p
          JOIN cards c ON c.id = p.card_id
          LEFT JOIN events e ON e.serial = p.serial
+        WHERE ${REAL_PASS_SQL}
         GROUP BY c.merchant_id, ${PERSON_KEY_SQL}
      ),
      started AS (SELECT * FROM person WHERE n > 0)`;
@@ -2723,7 +2771,7 @@ export async function adminStaffAudit(): Promise<AdminStaffRow[]> {
             count(*) FILTER (WHERE e.forced)::int AS forced,
             min(e.created_at) AS first_seen, max(e.created_at) AS last_seen
        FROM events e JOIN cards c ON c.id = e.card_id
-      WHERE e.actor LIKE 'staff:%'
+      WHERE e.actor LIKE 'staff:%' AND NOT e.is_test
       GROUP BY c.merchant_id, e.actor
       ORDER BY count(*) FILTER (WHERE e.type = 'stamp') DESC
       LIMIT 200`,
@@ -2842,14 +2890,31 @@ export async function createPass(row: {
   stampCount: number;
   stampsTarget: number;
   reward: string;
+  /** The owner or the operator looking at their own card — never a customer. */
+  isTest?: boolean;
 }): Promise<PassRow> {
   const res = await getPool().query<PassRow>(
-    `INSERT INTO passes (serial, card_id, customer_id, platform, short_code, auth_token, stamp_count, stamps_target, reward)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    `INSERT INTO passes (serial, card_id, customer_id, platform, short_code, auth_token, stamp_count, stamps_target, reward, is_test)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
     [row.serial, row.cardId, row.customerId ?? null, row.platform, row.shortCode, row.authToken,
-     row.stampCount, row.stampsTarget, row.reward],
+     row.stampCount, row.stampsTarget, row.reward, row.isTest === true],
   );
   return res.rows[0]!;
+}
+
+/**
+ * The card's test pass for one wallet, if it has one.
+ *
+ * At most one per card per platform, on purpose: pressing "Add to my wallet"
+ * twice hands back the SAME card rather than piling up test passes nobody will
+ * ever delete. Reissued on each press, so it always shows today's design.
+ */
+export async function testPassFor(cardId: string, platform: Platform): Promise<PassRow | null> {
+  const res = await getPool().query<PassRow>(
+    `SELECT * FROM passes WHERE card_id = $1 AND platform = $2 AND is_test LIMIT 1`,
+    [cardId, platform],
+  );
+  return res.rows[0] ?? null;
 }
 
 export async function getPass(serial: string): Promise<PassRow | null> {
@@ -3030,7 +3095,7 @@ export async function logEvent(
     `INSERT INTO events (
        card_id, serial, type, actor, forced, source,
        merchant_id, customer_id, platform, device_id, staff_id,
-       stamps_after, stamps_target, metadata
+       stamps_after, stamps_target, metadata, is_test
      )
      SELECT $1, $2, $3, $4, $5, $6,
             COALESCE($7, c.merchant_id),
@@ -3039,7 +3104,12 @@ export async function logEvent(
             $10, $11,
             COALESCE($12, p.stamp_count),
             COALESCE($13, p.stamps_target),
-            $14::jsonb
+            $14::jsonb,
+            -- Off the pass, exactly like the columns above it. A caller cannot
+            -- pass it and cannot forget it: every event a test card produces is
+            -- a test event, and the ones with no pass (join_view, poster_view)
+            -- are real by definition — nobody has a test card yet at that point.
+            COALESCE(p.is_test, false)
        FROM (SELECT $1::text AS id) k
        LEFT JOIN passes p ON p.serial = $2
        LEFT JOIN cards  c ON c.id = k.id
@@ -3155,7 +3225,7 @@ export async function nudgeOutcomes(cardId: string): Promise<NudgeOutcomes> {
     `WITH x AS (
        SELECT (SELECT max(created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'nudge') AS last_nudge,
               (SELECT max(created_at) FROM events e WHERE e.serial = p.serial AND e.type = 'stamp') AS last_stamp
-         FROM passes p WHERE p.card_id = $1
+         FROM passes p WHERE p.card_id = $1 AND ${REAL_PASS_SQL}
      )
      SELECT
        count(*) FILTER (WHERE last_nudge IS NOT NULL AND last_stamp IS NOT NULL AND last_stamp > last_nudge)::int AS returned,
@@ -3207,7 +3277,7 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
   // Same definition of "customer" as the headline beside it — ACTIVE_PASS_SQL,
   // counted per PERSON. A different one here is exactly how the Home headline
   // came to disagree with the list under it, twice.
-  const MATURE_PASS_SQL = `p.card_id = $1 AND ${ACTIVE_PASS_SQL}
+  const MATURE_PASS_SQL = `p.card_id = $1 AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}
           AND p.created_at < now() - interval '${RETURN_WINDOW_DAYS} days'`;
   const res = await getPool().query<{
     active: string;
@@ -3221,8 +3291,8 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
   }>(
     `SELECT
        (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
-          WHERE p.card_id = $1 AND ${ACTIVE_PASS_SQL})::text AS active,
-       (SELECT count(*) FROM passes WHERE card_id = $1)::text AS cards,
+          WHERE p.card_id = $1 AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL})::text AS active,
+       (SELECT count(*) FROM passes p WHERE p.card_id = $1 AND ${REAL_PASS_SQL})::text AS cards,
        GREATEST(count(*) FILTER (WHERE type = 'stamp')
               - count(*) FILTER (WHERE type = 'undo'), 0)::text AS stamps,
        count(*) FILTER (WHERE type = 'redeem')::text AS redemptions,
@@ -3235,7 +3305,7 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
           WHERE ${MATURE_PASS_SQL}
             AND EXISTS (SELECT 1 FROM events e
                          WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp'))::text AS returned
-     FROM events WHERE card_id = $1`,
+     FROM events WHERE card_id = $1 AND NOT is_test`,
     [cardId],
   );
   const r = res.rows[0]!;
@@ -3372,7 +3442,7 @@ export async function counterActivity(cardIds: string[]): Promise<CounterActivit
               count(DISTINCT e.device_id)
                 FILTER (WHERE e.type = 'stamp' AND e.device_id <> '' AND ${today})::text AS phones,
               max(e.created_at) FILTER (WHERE e.type = 'stamp') AS last_stamp
-         FROM events e WHERE e.card_id = ANY($1)`,
+         FROM events e WHERE e.card_id = ANY($1) AND NOT e.is_test`,
       [cardIds],
     ),
     // Every counter action today with its exact time. The time is the point:
@@ -3380,7 +3450,8 @@ export async function counterActivity(cardIds: string[]): Promise<CounterActivit
     sql.query<CounterEvent>(
       `SELECT e.created_at AS at, e.type, p.short_code AS code
          FROM events e LEFT JOIN passes p ON p.serial = e.serial
-        WHERE e.card_id = ANY($1) AND e.type IN ('stamp', 'undo', 'redeem') AND ${today}
+        WHERE e.card_id = ANY($1) AND NOT e.is_test
+          AND e.type IN ('stamp', 'undo', 'redeem') AND ${today}
         ORDER BY e.created_at DESC
         LIMIT 300`,
       [cardIds],
@@ -3403,7 +3474,7 @@ export async function counterActivity(cardIds: string[]): Promise<CounterActivit
          SELECT e.serial, e.created_at, p.short_code,
                 lag(e.created_at) OVER (PARTITION BY e.serial ORDER BY e.created_at) AS prev
            FROM events e LEFT JOIN passes p ON p.serial = e.serial
-          WHERE e.card_id = ANY($1) AND e.type = 'stamp' AND ${today}
+          WHERE e.card_id = ANY($1) AND NOT e.is_test AND e.type = 'stamp' AND ${today}
        ),
        marked AS (
          SELECT *, CASE WHEN prev IS NULL OR created_at - prev > interval '60 seconds'
@@ -3439,7 +3510,7 @@ export async function counterActivity(cardIds: string[]): Promise<CounterActivit
               max(e.created_at) AS last_seen,
               count(*) FILTER (WHERE e.type = 'stamp')::int AS stamps
          FROM events e
-        WHERE e.card_id = ANY($1) AND e.device_id <> ''
+        WHERE e.card_id = ANY($1) AND NOT e.is_test AND e.device_id <> ''
           AND e.created_at > now() - interval '${DEVICE_WINDOW_DAYS} days'
         GROUP BY e.device_id
         ORDER BY max(e.created_at) DESC

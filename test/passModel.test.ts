@@ -55,6 +55,7 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
     message: "",
     created_at: new Date(),
     updated_at: new Date(),
+    is_test: false,
     ...overrides,
   };
 }

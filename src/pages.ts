@@ -674,6 +674,8 @@ export const DESIGN_PANEL_CSS = /* css */ `
        at, so the answer is the picture rather than a sentence about it. */
     .stampnow { display: flex; align-items: center; gap: 8px; margin: 8px 0 0;
                 font-size: .84rem; color: var(--muted); }
+    .testqr { width: 150px; height: 150px; margin-top: 10px; border-radius: 10px;
+              background: #fff; padding: 6px; box-shadow: inset 0 0 0 1px var(--line); }
     .stampnow img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px;
                     background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); padding: 3px; }
     /* --- designer controls --- */
@@ -854,6 +856,17 @@ export const DESIGN_PANEL_JS = /* js */ `
           <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
         </p>
         <p class="err" data-stamperr style="display:none"></p>
+
+        <!-- See it for real, before deciding it is finished. A preview drawn
+             on a page is a guess at what a wallet does with the same colours;
+             the card on your own phone is the answer. It is a genuine pass and
+             it behaves like one, but it is flagged is_test, so it never reaches
+             the customer count, the list, the funnel or a nudge. -->
+        <label style="margin-top:16px">See it on your phone\${info("Puts this card in your own wallet so you can look at it before your customers do. It does not count as a customer and never appears in your numbers. The link lasts 30 minutes.")}</label>
+        <div class="logorow">
+          <button class="btn btn-ghost" data-a="testcard">Add to my wallet</button>
+        </div>
+        <div data-testout style="display:none"></div>
 
         <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
         </details>
@@ -1630,6 +1643,34 @@ export const DESIGN_PANEL_JS = /* js */ `
         renderPreview();
         if (!quiet) toast("Stamp style saved ✓");
       }
+
+      /**
+       * Put this card in the owner's own wallet.
+       *
+       * Both wallets are offered because only the person holding the phone
+       * knows which one they need, and a QR beside them because the designer is
+       * usually open on a laptop while the wallet is on a phone. The links are
+       * fetched on press rather than rendered with the panel: they expire, and
+       * one minted when the page loaded would be stale by the time it is read.
+       */
+      q("[data-a=testcard]").onclick = async () => {
+        const out = q("[data-testout]");
+        const { body } = await api(P("/test-link"));
+        if (!body.ok) return toast(body.error || "Couldn't make a link");
+        out.style.display = "";
+        out.innerHTML =
+          '<p class="muted" style="margin:10px 0 6px">Open on the phone you want the card on, ' +
+          "or scan the code. It does not count as a customer.</p>" +
+          '<div class="logorow" style="flex-wrap:wrap">' +
+          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.apple) + '">Apple Wallet</a>' +
+          '<a class="btn btn-ghost" style="width:auto;padding:10px 14px" href="' + esc(body.google) + '">Google Wallet</a>' +
+          "</div>" +
+          // The QR is behind the same authorisation the links are, so it is
+          // built from the console's own api base rather than a public URL.
+          // Cache-busted: the token inside it expires, and a stale QR that
+          // still renders is worse than one that visibly reloads.
+          '<img class="testqr" alt="" src="' + esc(env.apiBase + env.path("/test-qr.png")) + "?v=" + Date.now() + '">';
+      };
 
       /**
        * Say whether a shape is stored, and show it.
@@ -4131,6 +4172,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         host.appendChild(designPanel(card, {
           api, toast, modal, info,
           path: (suffix) => "/card/" + card.id + suffix,
+        apiBase: "/dashboard/api",
           artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
           customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
           rulesNote: "",
@@ -4697,6 +4739,7 @@ export function adminPage(): string {
       const panel = designPanel(card, {
         api, toast, modal, info,
         path: (suffix) => "/card/" + card.id + "/design" + suffix,
+        apiBase: "/admin/api",
         artUrl: (kind, v) => "/c/" + card.id + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
         // A real card has real holders, and the save confirmation names them.
         customersPath: "/card/" + card.id + "/counts",

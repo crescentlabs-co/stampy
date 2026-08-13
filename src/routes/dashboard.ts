@@ -15,9 +15,11 @@
  * linked to them via owner_cards.
  */
 import { Router, type Request, type Response, type NextFunction } from "express";
+import QRCode from "qrcode";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import {
   clearSessionCookie,
+  createTestPassToken,
   hashPassword,
   sessionOwnerId,
   setSessionCookie,
@@ -409,6 +411,47 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
     });
   }
   res.json({ ok: true });
+});
+
+/**
+ * A link that puts THIS card in your own wallet, without becoming a customer.
+ *
+ * The sign-up link with the sign-up removed: no landing page, no cookie, and a
+ * pass flagged `is_test` so it stays out of every count the owner reads. Signed
+ * and short-lived — see createTestPassToken for why it cannot be a plain flag.
+ *
+ * Returns both wallets. Which one is useful depends on the phone in the owner's
+ * hand, and they are the only person who knows that.
+ */
+dashboardRouter.get("/api/card/:id/test-link", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
+  }
+  const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+  const token = createTestPassToken(cardId);
+  res.json({
+    ok: true,
+    apple: `${base}/c/${cardId}/enroll?t=${encodeURIComponent(token)}`,
+    google: `${base}/c/${cardId}/enroll/google?t=${encodeURIComponent(token)}`,
+  });
+});
+
+/**
+ * The same link as a QR, because the designer is usually open on a laptop and
+ * the wallet is on a phone. Minted per request: the token is short-lived, so a
+ * QR that sat in a screenshot stops working on its own.
+ */
+dashboardRouter.get("/api/card/:id/test-qr.png", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(403).json({ error: "not-your-card" });
+  }
+  const wallet = req.query.wallet === "google" ? "enroll/google" : "enroll";
+  const base = config.baseUrl || `${req.protocol}://${req.get("host")}`;
+  const url = `${base}/c/${cardId}/${wallet}?t=${encodeURIComponent(createTestPassToken(cardId))}`;
+  const png = await QRCode.toBuffer(url, { type: "png", width: 640, margin: 2, errorCorrectionLevel: "M" });
+  res.set("Content-Type", "image/png").set("Cache-Control", "no-store").send(png);
 });
 
 /**
