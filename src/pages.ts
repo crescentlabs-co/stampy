@@ -685,6 +685,25 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .chipcustom input[type=color] { width: 30px; height: 30px; padding: 2px; margin: 0;
                                     border: 1px solid var(--field-border); border-radius: 8px;
                                     background: var(--surface); cursor: pointer; }
+    /* --- the design steps ---
+       One thing at a time. This screen carried ~21 controls, ten band tiles and
+       five colour rows in one undifferentiated column, which is fine once you
+       know it and impossible the first time. The numbers are the whole point:
+       they say how many decisions there are, and that there is an end. */
+    .dstep { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
+    .dstep:first-of-type { border-top: 0; margin-top: 6px; padding-top: 0; }
+    .dstep > h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 2px;
+                 font-family: var(--display); font-weight: 800; font-size: 1rem;
+                 letter-spacing: -.01em; color: var(--ink); }
+    .dstep > h4 .sn { display: inline-flex; align-items: center; justify-content: center;
+                     width: 22px; height: 22px; border-radius: 999px; flex: none;
+                     background: var(--slab); color: var(--on-slab);
+                     font-size: .74rem; font-weight: 800; letter-spacing: 0; }
+    .dstep > p.hint { margin: 0 0 8px; color: var(--muted); font-size: .84rem; }
+    /* DESIGN.md rule 9, which this panel was breaking by name: --ghost-bg on
+       --surface is one shade apart, and eight ghost buttons live inside this
+       fold. Inside it they go back to the page colour with a hairline. */
+    .fold .btn-ghost { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
     .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
     .logorow input[type=file] { display: none; }
     .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
@@ -798,6 +817,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         <details class="fold" style="margin-top:12px" \${env.designOpen ? "open" : ""}>
         <summary>Design</summary>
 
+        <section class="dstep">
+        <h4><span class="sn">1</span>Your logo</h4>
+        <p class="hint">Upload it however you have it. We take a plain background out and trim the empty space around it.</p>
         <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster — and we read your colours out of it. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out, so it does not show as a white box on a coloured card.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
@@ -819,7 +841,12 @@ export const DESIGN_PANEL_JS = /* js */ `
           <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
         </div>
 
-        <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
+        </section>
+
+        <section class="dstep">
+        <h4><span class="sn">2</span>Colours</h4>
+        <p class="hint">Tap a part of the card, then tap a colour. The band is the strip the stamps sit on.</p>
+        <label style="margin-top:8px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with.")}</label>
         <div class="crlist" data-roles></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
@@ -835,7 +862,12 @@ export const DESIGN_PANEL_JS = /* js */ `
           <input data-f="bandColor" type="color" value="\${c.bandColor}">
         </div>
 
-        <label style="margin-top:14px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
+        </section>
+
+        <section class="dstep">
+        <h4><span class="sn">3</span>Stamps</h4>
+        <p class="hint">Plain dots, an emoji, or your own shape.</p>
+        <label style="margin-top:8px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour.")}</label>
         <div class="emojirow">
           <input data-emoji maxlength="8" placeholder="Paste any emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
           <button class="btn btn-ghost" data-a="useemoji">Use this</button>
@@ -862,13 +894,20 @@ export const DESIGN_PANEL_JS = /* js */ `
              the card on your own phone is the answer. It is a genuine pass and
              it behaves like one, but it is flagged is_test, so it never reaches
              the customer count, the list, the funnel or a nudge. -->
-        <label style="margin-top:16px">See it on your phone\${info("Puts this card in your own wallet so you can look at it before your customers do. It does not count as a customer and never appears in your numbers. The link lasts 30 minutes.")}</label>
+        </section>
+
+        <section class="dstep">
+        <h4><span class="sn">4</span>See it for real</h4>
+        <p class="hint">A preview is a guess at what a wallet does with your colours. Your own phone is the answer.</p>
+        <label style="margin-top:8px">See it on your phone\${info("Puts this card in your own wallet so you can look at it before your customers do. It does not count as a customer and never appears in your numbers. The link lasts 30 minutes.")}</label>
         <div class="logorow">
           <button class="btn btn-ghost" data-a="testcard">Add to my wallet</button>
         </div>
         <div data-testout style="display:none"></div>
 
-        <button class="btn btn-dark" style="margin-top:14px" data-a="savedesign">Save design</button>
+        </section>
+
+        <button class="btn btn-neon" style="margin-top:18px" data-a="savedesign">Save design</button>
         </details>
 
         <!-- No section headers here. Each .sec costs ~50px of rule and margin,
@@ -1811,7 +1850,14 @@ export const DESIGN_PANEL_JS = /* js */ `
       // One button, not two, wherever the caller sets no rules. The one INSIDE
       // the fold is what goes: a save you cannot see because the section it
       // lives in is collapsed is worse than no save button at all.
-      if (env.singleSave) q("[data-a=savedesign]").remove();
+      if (env.singleSave) {
+        q("[data-a=savedesign]").remove();
+        // ...which would otherwise leave the panel with no primary at all.
+        // DESIGN.md rule 1: neon marks the next action, and exactly one thing
+        // on a screen is the next action. The console's single Save card button
+        // becomes it; the dashboard's stays on Save design, above the rules.
+        q("[data-a=saverules]").className = "btn btn-neon";
+      }
 
       // The sentences that used to sit as grey subtext under these two buttons
       // are now in front of the button. Same words, read this time.

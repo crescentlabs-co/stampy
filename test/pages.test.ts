@@ -384,6 +384,43 @@ describe("one designer, two pages", () => {
     }
   });
 
+  /**
+   * ~21 controls, ten band tiles and five colour rows in one undifferentiated
+   * column: fine once you know it, impossible the first time. The numbers say
+   * how many decisions there are and that there is an end to them.
+   */
+  it("walks through the design in numbered steps, on both pages", () => {
+    for (const html of [dash, admin]) {
+      const opens = (html.match(/<section class="dstep">/g) ?? []).length;
+      expect(opens).toBe(4);
+      // Unbalanced section tags would swallow everything after them into the
+      // last step, which renders as one long block and looks almost right.
+      expect((html.match(/<\/section>/g) ?? []).length).toBe(opens);
+      for (const [n, name] of [["1", "Your logo"], ["2", "Colours"], ["3", "Stamps"], ["4", "See it for real"]]) {
+        expect(html).toContain(`<span class="sn">${n}</span>${name}`);
+      }
+    }
+  });
+
+  // DESIGN.md rule 1: neon marks the next action, and one thing on a screen is
+  // the next action. Both save buttons were .btn-dark, so the panel marked
+  // nothing at all; making both neon would break the rule the other way.
+  it("marks exactly one next action in the designer", () => {
+    const panel = (html: string) =>
+      html.slice(html.indexOf("<summary>Design</summary>"), html.indexOf('data-a="saverules"'));
+    expect((panel(dash).match(/btn-neon/g) ?? []).length).toBe(1);
+    // The console removes Save design, so its Save card button is promoted.
+    expect(admin).toContain('q("[data-a=saverules]").className = "btn btn-neon"');
+  });
+
+  // Rule 9, which this panel was breaking by name: --ghost-bg on --surface is
+  // one shade apart, and eight ghost buttons live inside this fold.
+  it("steps the fold's ghost buttons back to the page colour", () => {
+    for (const html of [dash, admin]) {
+      expect(html).toMatch(/\.fold \.btn-ghost \{ background: var\(--bg\)/);
+    }
+  });
+
   it("points both copies at a real card, from either side", () => {
     expect(dash).toContain('path: (suffix) => "/card/" + card.id + suffix');
     expect(admin).toContain('path: (suffix) => "/card/" + card.id + "/design" + suffix');
@@ -530,7 +567,7 @@ describe("one designer, two pages", () => {
     // The panel itself keeps both buttons; only one of them is removed at mount.
     for (const html of [dash, admin]) {
       expect(html).toContain('data-a="savedesign"');
-      expect(html).toContain('if (env.singleSave) q("[data-a=savedesign]").remove()');
+      expect(html).toContain('q("[data-a=savedesign]").remove()');
     }
   });
 
