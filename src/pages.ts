@@ -712,8 +712,22 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .dpane { display: block; }
     .dpane[hidden] { display: none; }
     .pvbox { min-width: 0; }
-    .pvacts { display: flex; gap: 8px; margin-top: 12px; }
+    /* One line, tight under the card: title then three ways to open it. It used
+       to be a .sec heading, which draws a rule and 28px of air, and that read as
+       a new section beginning rather than as something you do to the card
+       directly above. wrap so a narrow phone breaks after the title. */
+    .pvacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+    .pvacts-t { font-size: .82rem; font-weight: 600; color: var(--muted);
+                display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; }
     .pvacts .btn { width: auto; padding: 9px 13px; font-size: .85rem; }
+    /* Square, so the two marks read as a pair rather than as two buttons that
+       happen to have pictures in them. */
+    .pvicon { padding: 8px; line-height: 0; min-width: 38px; display: inline-flex;
+              align-items: center; justify-content: center; }
+    /* The separation that used to sit above "Add a test card". It belongs here:
+       between looking at the card and changing it, not between the card and the
+       three buttons that open it. */
+    .dfold { margin-top: 22px; border-top-width: 1px; }
     /* Inline rejection notice (e.g. a stamp upload with no transparency) —
        stays on screen, unlike a toast, because it asks the owner to go and fix
        the file and come back. */
@@ -807,6 +821,34 @@ export const DESIGN_PANEL_CSS = /* css */ `
        information the customer reads, so show the whole strip at its real shape. */
     .pv-banner.strip { height: auto; aspect-ratio: 750 / 246; background-size: 100% 100%; }
 `;
+
+/**
+ * The two wallet marks, inline.
+ *
+ * Inline SVG because there is no build step and no asset pipeline: a file would
+ * be a second request for 400 bytes, and an external URL is a dependency this
+ * page does not otherwise have. They are baked in here, server-side, so the
+ * browser never evaluates them as an expression.
+ *
+ * `currentColor` on purpose — the buttons are ghost buttons and the panel is
+ * rendered in both a light dashboard and a light console, but a token change
+ * should not leave two invisible marks behind.
+ *
+ * Both buttons carry a title and an aria-label. An icon-only control that a
+ * screen reader announces as "button" is not a control, and neither is one a
+ * new owner has to press to find out what it does.
+ */
+const APPLE_GLYPH =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">' +
+  '<path d="M16.36 12.78c.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.69 0-1.75-.78-2.87-.76-1.48.02-2.84.86-3.6 2.18-1.53 2.66-.39 6.6 1.1 8.76.73 1.06 1.6 2.25 2.74 2.21 1.1-.04 1.52-.71 2.85-.71 1.33 0 1.71.71 2.87.69 1.19-.02 1.94-1.08 2.66-2.14.84-1.23 1.19-2.42 1.21-2.48-.03-.01-2.32-.89-2.34-3.52zM14.2 6.4c.6-.74 1.01-1.75.9-2.77-.87.04-1.93.58-2.56 1.31-.56.65-1.06 1.7-.93 2.7.97.08 1.97-.5 2.59-1.24z"/>' +
+  "</svg>";
+const GOOGLE_GLYPH =
+  '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' +
+  '<path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.34-.18-1.96H12v3.71h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.89-1.74 2.98-4.3 2.98-7.27z"/>' +
+  '<path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.61-2.43l-3.23-2.5c-.9.6-2.04.96-3.38.96-2.6 0-4.8-1.76-5.59-4.12H3.07v2.58A10 10 0 0 0 12 22z"/>' +
+  '<path fill="#FBBC05" d="M6.41 13.91a6 6 0 0 1 0-3.82V7.51H3.07a10 10 0 0 0 0 8.98l3.34-2.58z"/>' +
+  '<path fill="#EA4335" d="M12 5.96c1.47 0 2.79.5 3.83 1.5l2.86-2.86C16.95 2.98 14.7 2 12 2a10 10 0 0 0-8.93 5.51l3.34 2.58C7.2 7.73 9.4 5.96 12 5.96z"/>' +
+  "</svg>";
 
 export const DESIGN_PANEL_JS = /* js */ `
     /**
@@ -902,22 +944,28 @@ export const DESIGN_PANEL_JS = /* js */ `
             </div>
           </div>
 
-          <!-- The real thing, on a real phone. A title and three buttons: it
-               used to be one button that revealed three buttons, which is a
-               step whose only job was to hide the step after it. -->
-          <label class="sec" style="margin-top:18px">Add a test card\${info("Puts this card in your own wallet, or opens your sign-up page. It is a real card, but it never counts as a customer and never appears in your numbers. Each link lasts 30 minutes.")}</label>
+          <!-- The real thing, on a real phone. Deliberately NOT a .sec heading:
+               that class draws a rule and 28px of air above itself, which pushed
+               this away from the card and made it read as the start of a new
+               section rather than as something you do TO the card above it. The
+               rule it used to draw now belongs to the Design fold below. -->
           <div class="pvacts">
-            <button class="btn btn-ghost" data-a="test" data-w="apple">iPhone</button>
-            <button class="btn btn-ghost" data-a="test" data-w="google">Android</button>
-            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}">Sign-up page</a>
+            <span class="pvacts-t">Add a test card:\${info("Puts this card in your own wallet, or opens your printed poster. It is a real card, but it never counts as a customer and never appears in your numbers. Each link lasts 30 minutes.")}</span>
+            <button class="btn btn-ghost pvicon" data-a="test" data-w="apple" title="Add to Apple Wallet" aria-label="Add to Apple Wallet">${APPLE_GLYPH}</button>
+            <button class="btn btn-ghost pvicon" data-a="test" data-w="google" title="Add to Google Wallet" aria-label="Add to Google Wallet">${GOOGLE_GLYPH}</button>
+            <!-- A word, not a mark: there is no logo that means "your printed
+                 poster", and inventing one would be a symbol nobody can read. -->
+            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}/poster">Poster</a>
           </div>
           <div data-testout hidden></div>
         </div>
 
         <!-- Design sits directly under the preview it changes, folded away. It is
              one block: the logo belongs with the colours it feeds, not pulled out
-             on its own above them. -->
-        <details class="fold" style="margin-top:12px" \${env.designOpen ? "open" : ""}>
+             on its own above them. The rule above it is the one "Add a test card"
+             used to draw: the break belongs between looking at the card and
+             changing it, not between the card and the buttons that open it. -->
+        <details class="fold dfold" \${env.designOpen ? "open" : ""}>
         <summary>Design</summary>
 
         <!-- The switch, first thing. It cycles the preview above AND the one
@@ -936,12 +984,37 @@ export const DESIGN_PANEL_JS = /* js */ `
           <span class="thumb"></span>
         </div>
 
-        <!-- Shared next: the logo and the colours feed all three surfaces, so
-             they belong to none of the tabs. -->
+        <!-- EVERYTHING about the logo, in one place.
+             The upload was here, the "already includes my name" tick was inside
+             the iPhone pane, and the Android version was in a different tab
+             below the colours — three parts of one decision, in three places.
+             The tick governs the card, the poster AND the sign-up page now, so
+             it never belonged to a surface; the Android square is a variant of
+             THIS image, so it is nested rather than filed elsewhere. -->
         <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+        </div>
+        <label class="chk" style="margin-top:10px">
+          <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
+          <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo — on the card, on the poster or on your sign-up page. Leave it unticked if your logo is just a symbol, or nothing says whose card it is.")}</span>
+        </label>
+
+        <!-- The Android variant, in the Logo section and shown only on the
+             Android tab. Same data-pane mechanism as the panes below: the value
+             appearing twice is fine, showSurface hides both together. -->
+        <div class="dpane" data-pane="google" hidden style="margin-top:12px">
+          <!-- Says its piece only while a wide logo is standing in. With a square
+               one uploaded there is nothing to fix, and with no logo at all there
+               is nothing being cropped. -->
+          <p class="muted" data-marknote style="display:none;margin:0 0 6px;font-size:.84rem">
+            Android crops your logo to the circle above. Upload a square version and only Android uses it.
+          </p>
+          <div class="logorow">
+            <label class="btn btn-ghost" style="margin:0">Upload square version<input data-mark type="file" accept="image/*"></label>
+            <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
+          </div>
         </div>
 
         <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with. These colours are used on all three: the iPhone card, the Android card and your sign-up poster.")}</label>
@@ -965,28 +1038,19 @@ export const DESIGN_PANEL_JS = /* js */ `
              control and the sign-up page has none — they are there to be looked
              at, and the preview is doing that job above. -->
         <section class="dpane" data-pane="apple">
-        <!-- Apple prints the shop's name BESIDE the logo image, so a logo that
-             already contains the name said it twice. This drops that text and
-             lets the lockup own the band; the name still reaches the Add sheet
-             and every notification through organizationName. -->
-        <label class="chk" style="margin-top:14px">
-          <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
-          <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo, on the card or on the poster. Leave it unticked if your logo is just a symbol, or nothing says whose card it is.")}</span>
-        </label>
-
-        <label style="margin-top:14px">Stamps\${info("Plain dots, any emoji you paste in, or your own shape. Whatever you pick is drawn in your Stamps colour. iPhone only — Android is sent the count as text, so it shows dots whatever you choose here.")}</label>
-        <!-- One line. Two rows for three controls made the emoji field look like
-             a field you had to fill in, when it is one of three equal answers.
-             The button labels are short so the input still has somewhere to go
-             inside a 480px column; "Dots" is always shown because it is the only
-             way back, and a control that appears once you no longer need it is
-             no control at all. -->
+        <label style="margin-top:0">Stamps\${info("Plain dots, any emoji, or your own shape. Whatever you pick is drawn in your Stamps colour. iPhone only — Android is sent the count as text, so it shows dots whatever you choose here.")}</label>
+        <!-- Three buttons, one choice. It was a text field, a Use button, an
+             upload and a Dots button: four controls for three answers, and the
+             field read as something you had to fill in before anything would
+             work. The emoji moved into a popup, where a field is obviously a
+             field. "Default" is always shown because it is the only way back,
+             and a control that appears once you no longer need it is no control
+             at all. -->
         <div class="emojirow">
-          <input data-emoji maxlength="8" placeholder="Emoji" value="\${(c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom") ? c.stampStyle : ""}">
-          <button class="btn btn-ghost" data-a="useemoji">Use</button>
           <label class="btn btn-ghost" style="margin:0">Upload<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
-          <button class="btn btn-ghost" data-a="rmstamp">Dots</button>
-          \${info("A simple shape or symbol — not a photo. Upload it however you have it: a plain background is taken out and the empty space around it trimmed. Its own colours are ignored; it is filled with your stamp colour.")}
+          <button class="btn btn-ghost" data-a="emoji">Emoji</button>
+          <button class="btn btn-ghost" data-a="rmstamp">Default</button>
+          \${info("Upload a simple shape or symbol — not a photo — however you have it: a plain background is taken out and the empty space around it trimmed. Its own colours are ignored; it is filled with your stamp colour. Default is plain dots.")}
         </div>
         <!-- What is actually set. The rendered grid used to be the only signal,
              and the grid was exactly what went wrong — so an owner whose shape
@@ -998,19 +1062,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         <p class="err" data-stamperr style="display:none"></p>
         </section>
 
-        <section class="dpane" data-pane="google" hidden>
-        <label style="margin-top:0">Square logo\${info("Google Wallet puts your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Only Android uses it; your iPhone card and poster keep the main logo.")}</label>
-        <div class="logorow">
-          <label class="btn btn-ghost" style="margin:0">Upload square logo<input data-mark type="file" accept="image/*"></label>
-          <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
-        </div>
-        <!-- Shown only while Android is falling back to the wide logo. The mock
-             above now crops the way the phone does, so this names what the owner
-             is already looking at rather than warning about something invisible. -->
-        <p class="muted" data-marknote style="display:none;margin:8px 0 0;font-size:.84rem">
-          Android is cropping your main logo to fit the circle above.
-        </p>
-        </section>
+        <!-- Android has no section of its own down here any more: its one
+             control is the square logo, and that belongs beside the logo it is a
+             version of, not in a tab three sections away from it. -->
 
         <!-- Nothing of its own. One line rather than none, because a tab that
              shows an empty space reads as a tab that failed to load. -->
@@ -1971,13 +2025,40 @@ export const DESIGN_PANEL_JS = /* js */ `
       // they were six ways to do what the emoji field does, and every card
       // starts on dots anyway. Three routes remain — dots, any emoji, your own
       // shape — and each is a different kind of answer rather than a shortcut.
-      // Any emoji at all. The renderer already draws whatever glyph it is given,
-      // so this only has to hand it one — and exactly one: firstGrapheme keeps
-      // multi-code-point emoji (❤️, 🧑‍🍳) whole instead of slicing them in half.
-      q("[data-a=useemoji]").onclick = () => {
-        const one = firstGrapheme(q("[data-emoji]").value);
-        q("[data-emoji]").value = one;
-        applyStamps(one || "dot");
+      /**
+       * Any emoji at all — now asked for in a popup.
+       *
+       * It was a text input sitting between two buttons, which made one of three
+       * equal answers look like a field you had to fill in first. In a dialog a
+       * field is obviously a field, and the row above it is three buttons doing
+       * three comparable things.
+       *
+       * modal() resolves a boolean, not a value, so the input is grabbed
+       * SYNCHRONOUSLY: modal builds its DOM before it returns the promise, and
+       * closing removes the node while this reference keeps its value. That is
+       * why this does not await first — it could not find the field afterwards.
+       *
+       * The renderer draws whatever glyph it is handed, so this only has to hand
+       * it one — and exactly one: firstGrapheme keeps multi-code-point emoji
+       * (❤️, 🧑‍🍳) whole instead of slicing them in half.
+       */
+      q("[data-a=emoji]").onclick = async () => {
+        const current = (c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom")
+          ? c.stampStyle : "";
+        const asked = modal(
+          "Use an emoji as your stamp",
+          '<p class="muted" style="margin:0 0 10px;font-size:.86rem">Paste or type one. ' +
+            'It is drawn in your Stamps colour, on the iPhone card.</p>' +
+            '<input data-emoji maxlength="8" placeholder="e.g. ☕️" ' +
+            'style="font-size:1.6rem;text-align:center" value="' + esc(current) + '">',
+          "Use it",
+        );
+        const field = document.querySelector(".mdl [data-emoji]");
+        if (field && field.focus) field.focus();
+        if (!(await asked)) return;
+        const one = firstGrapheme(field ? field.value : "");
+        if (!one) return toast("No emoji in there — nothing changed");
+        applyStamps(one);
       };
       // Upload your own stamp icon → check it → STORE it → re-render the grid.
       //
@@ -2035,7 +2116,6 @@ export const DESIGN_PANEL_JS = /* js */ `
       // offer to draw a stamp the owner had just removed.
       q("[data-a=rmstamp]").onclick = async () => {
         q("[data-stamperr]").style.display = "none";
-        q("[data-emoji]").value = "";
         await api(P("/stamp-icon"), { method: "DELETE" });
         await loadStampIcon("");
         c.stampIconVersion = 0;

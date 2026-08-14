@@ -91,8 +91,25 @@ describe("the design panel, mounted", () => {
     const div = build(card(), h);
     await h.settle();
     expect(div.querySelector("[data-stampimg]")).not.toBeNull();
-    expect(div.querySelector("[data-emoji]")).not.toBeNull();
     expect(div.querySelector("[data-pv]")).not.toBeNull();
+  });
+
+  /**
+   * Stamps is three buttons, and the emoji field is not one of them.
+   *
+   * It was an input between two buttons — four controls for one choice of
+   * three — and the field read as something you had to fill in before anything
+   * would work. It moved into a dialog, where a field is obviously a field.
+   */
+  it("offers exactly three ways to set the stamp, and no field", () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    expect(div.querySelector("[data-emoji]")).toBeNull();
+    expect(div.querySelector("[data-a=emoji]")).not.toBeNull();
+    expect(div.querySelector("[data-stampimg]")).not.toBeNull();
+    // The way back, always present: a control that appears only once you no
+    // longer need it is no control at all.
+    expect(div.querySelector("[data-a=rmstamp]")!.textContent).toBe("Default");
   });
 
   /**
@@ -328,9 +345,17 @@ describe("the design panel, mounted", () => {
       await h.settle();
       const wallets = div.querySelectorAll("[data-a=test]").map((b) => b.dataset.w);
       expect(wallets).toEqual(["apple", "google"]);
-      // The sign-up page is a public page, so it is a plain link — pressing it
-      // mints nothing, and it needs no round trip to become pressable.
-      expect(div.querySelector('[data-a=test][data-w="apple"]')!.textContent).toBe("iPhone");
+      // Icon-only, so the name has to come from somewhere both a screen reader
+      // and a hover can reach — a button announced as "button" is not a control.
+      for (const b of div.querySelectorAll("[data-a=test]")) {
+        expect(b.attrs["aria-label"], b.dataset.w).toBeTruthy();
+        expect(b.attrs.title, b.dataset.w).toBe(b.attrs["aria-label"]);
+      }
+      // The poster is a public page, so it is a plain link — pressing it mints
+      // nothing and needs no round trip to become pressable.
+      const poster = div.querySelectorAll("a").find((a) => (a.attrs.href ?? "").endsWith("/poster"));
+      expect(poster, "a link to the printed poster").not.toBeUndefined();
+      expect(poster!.textContent).toBe("Poster");
       // Nothing revealed yet, and no stale QR sitting in the markup.
       expect(div.querySelector(".testqr")).toBeNull();
     });
@@ -357,6 +382,56 @@ describe("the design panel, mounted", () => {
 
       expect(h.navigated.href).toBe(links.apple);
       expect(div.querySelector(".testqr")).toBeNull();
+    });
+  });
+
+  /**
+   * Everything about the logo, in the Logo section.
+   *
+   * The upload was here, the "already includes my name" tick was inside the
+   * iPhone pane — though it governs the card, the poster AND the sign-up page —
+   * and the Android square was in a different tab below the colours. Three parts
+   * of one decision, in three places.
+   */
+  describe("the Logo section", () => {
+    /** Walk up from an element collecting the data-pane values it sits inside. */
+    const panesAround = (el: FakeEl): string[] => {
+      const out: string[] = [];
+      for (let n = el.parent; n; n = n.parent) if (n.dataset.pane) out.push(n.dataset.pane);
+      return out;
+    };
+
+    it("keeps the name tick out of any one surface's pane", () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      expect(panesAround(div.querySelector("[data-lname]")!)).toEqual([]);
+    });
+
+    /**
+     * The square upload is a variant of the logo, so it lives beside it — but
+     * only Android uses it, so it appears only on that tab. Both at once: in the
+     * Logo section, inside a google pane.
+     */
+    it("nests the square upload in Logo, shown on the Android tab alone", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const mark = div.querySelector("[data-mark]")!;
+      expect(panesAround(mark)).toEqual(["google"]);
+      // Beside the main upload, not in a section further down the panel.
+      const order = div.all();
+      expect(order.indexOf(mark)).toBeGreaterThan(order.indexOf(div.querySelector("[data-logo]")!));
+      expect(order.indexOf(mark)).toBeLessThan(order.indexOf(div.querySelector("[data-roles]")!));
+
+      let pane = mark.parent;
+      while (pane && !pane.dataset.pane) pane = pane.parent;
+      const tab = (name: string) =>
+        div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.tab === name)!;
+      expect(pane!.hidden).toBe(true); // iPhone is the opening tab
+      tab("google").onclick!();
+      expect(pane!.hidden).toBe(false);
+      tab("signup").onclick!();
+      expect(pane!.hidden).toBe(true);
     });
   });
 

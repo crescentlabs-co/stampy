@@ -43,7 +43,7 @@ export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0, markVersion 
 }
 
 /**
- * The two text modules the object sends that belong on the FRONT of the card.
+ * The three text modules the object sends that belong on the FRONT of the card.
  *
  * Named once because they are named twice: the object writes them
  * (buildLoyaltyPatch) and the class points at them by id
@@ -53,6 +53,22 @@ export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0, markVersion 
  */
 export const FRONT_STAMPS_MODULE = "stamps";
 export const FRONT_REWARD_MODULE = "reward";
+/**
+ * The count, as a text module rather than a reference to loyaltyPoints.
+ *
+ * The front row read "Stamps" with nothing after it on a real phone, because
+ * `FieldSelector.fields` is a FALLBACK CHAIN, not a label-and-value pair —
+ * Google displays the first reference that is not empty and stops. Listing
+ * `loyaltyPoints.label` and `loyaltyPoints.balance` together therefore renders
+ * the label and drops the number.
+ *
+ * Referencing the balance alone might carry its label along; it might equally
+ * render a bare "1/8". Guessing is what produced the bug, and each guess costs
+ * somebody a test on a real phone — so this uses the shape already proven on
+ * that phone: a text module renders its `header` as the small label above its
+ * `body`, which is exactly how the reward and the dots came out right.
+ */
+export const FRONT_COUNT_MODULE = "count";
 
 /**
  * What Android shows without scrolling.
@@ -63,9 +79,14 @@ export const FRONT_REWARD_MODULE = "reward";
  * three things a customer opens the card TO SEE — were all one screen away, and
  * the front was a title and a number.
  *
- * cardTemplateOverride REPLACES the default rows rather than adding to them,
- * which is why loyaltyPoints is listed here explicitly: leave it out and the
- * count itself disappears.
+ * cardTemplateOverride REPLACES the default rows rather than adding to them, so
+ * everything worth seeing has to be listed — including the count, which the
+ * default template used to show for free.
+ *
+ * Every `fields` array here holds exactly ONE path, and must keep doing so: it
+ * is a fallback chain (first non-empty wins), so a second entry is not a second
+ * thing displayed, it is a thing displayed only when the first is missing. That
+ * misreading is what left the card saying "Stamps" with no number.
  *
  * On the CLASS, so every object already issued inherits it — no existing card
  * has to be touched, and none of them is notified (a class PATCH carries no
@@ -73,25 +94,21 @@ export const FRONT_REWARD_MODULE = "reward";
  */
 function cardFrontTemplate(): Record<string, unknown> {
   const field = (path: string) => ({ firstValue: { fields: [{ fieldPath: path }] } });
+  const mod = (id: string) => field(`object.textModulesData['${id}']`);
   return {
     cardTemplateOverride: {
       cardRowTemplateInfos: [
+        // The same pairing the Apple card has read for a year: what you get on
+        // the right, how far along you are on the left.
         {
           twoItems: {
-            startItem: {
-              firstValue: {
-                fields: [
-                  { fieldPath: "object.loyaltyPoints.label" },
-                  { fieldPath: "object.loyaltyPoints.balance" },
-                ],
-              },
-            },
-            endItem: field(`object.textModulesData['${FRONT_REWARD_MODULE}']`),
+            startItem: mod(FRONT_COUNT_MODULE),
+            endItem: mod(FRONT_REWARD_MODULE),
           },
         },
         // Its own row, full width: the dots run to one character per stamp and a
         // 20-stamp card would be truncated in half a row.
-        { oneItem: { item: field(`object.textModulesData['${FRONT_STAMPS_MODULE}']`) } },
+        { oneItem: { item: mod(FRONT_STAMPS_MODULE) } },
       ],
     },
   };
@@ -211,14 +228,26 @@ export function buildLoyaltyPatch(
   business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
+  const progress = `${row.stamp_count}/${row.stamps_target}`;
   return {
+    // Nothing on the card front points at this any more — the count is drawn
+    // from the `count` text module below — and it must NOT be removed for that
+    // reason. `loyaltyPoints.balance` is the field whose change triggers
+    // Google's update notification; drop it and Android stops telling anyone a
+    // stamp landed, with every card still looking correct when opened by hand.
     loyaltyPoints: {
       label: "Stamps",
-      balance: { string: `${row.stamp_count}/${row.stamps_target}` },
+      balance: { string: progress },
     },
     textModulesData: [
-      // These two ids are pointed at by the class's cardTemplateOverride, which
-      // is what lifts them onto the front of the card — hence the constants.
+      // These three ids are pointed at by the class's cardTemplateOverride,
+      // which is what lifts them onto the front of the card — hence the
+      // constants.
+      {
+        id: FRONT_COUNT_MODULE,
+        header: "PROGRESS",
+        body: progress,
+      },
       {
         id: FRONT_STAMPS_MODULE,
         header: ready ? "REWARD READY 🎉" : "YOUR STAMPS",

@@ -259,8 +259,40 @@ describe("save-to-wallet JWT", () => {
      * one thing that was on the front to begin with.
      */
     it("keeps the stamp count, which the override would otherwise remove", () => {
-      expect(paths(rows())).toContain("object.loyaltyPoints.balance");
-      expect(paths(rows())).toContain("object.loyaltyPoints.label");
+      expect(paths(rows())).toContain("object.textModulesData['count']");
+      const count = (buildLoyaltyPatch(row({ stamp_count: 1, stamps_target: 8 }), card())
+        .textModulesData as { id: string; body: string }[]).find((m) => m.id === "count");
+      expect(count?.body).toBe("1/8");
+    });
+
+    /**
+     * The bug this whole round is about, in one assertion.
+     *
+     * `FieldSelector.fields` is a FALLBACK chain — Google renders the first
+     * reference that is not empty and stops. Written as
+     * `[loyaltyPoints.label, loyaltyPoints.balance]` in the belief it meant
+     * "label, then value", it rendered "Stamps" and dropped the number, and the
+     * card shipped to a real phone saying nothing about how many stamps anyone
+     * had. Any second entry in one of these arrays is either dead weight or the
+     * same misreading again.
+     */
+    it("never lists a second fieldPath, which would be a fallback and not a value", () => {
+      const selectors = JSON.stringify(rows()).match(/"fields":\[[^\]]*\]/g) ?? [];
+      expect(selectors.length).toBeGreaterThan(0);
+      for (const sel of selectors) {
+        expect((sel.match(/fieldPath/g) ?? []).length, sel).toBe(1);
+      }
+    });
+
+    /**
+     * Nothing on the front points at loyaltyPoints now, which makes it look
+     * deletable. It is not: its balance is the field whose change triggers
+     * Google's update notification, so removing it would end Android
+     * notifications while every card still looked right when opened by hand.
+     */
+    it("still sends loyaltyPoints, which is what makes a stamp notify", () => {
+      const patch = buildLoyaltyPatch(row({ stamp_count: 1, stamps_target: 8 }), card()) as any;
+      expect(patch.loyaltyPoints.balance.string).toBe("1/8");
     });
 
     /**
