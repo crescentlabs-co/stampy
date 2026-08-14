@@ -229,10 +229,10 @@ describe("save-to-wallet JWT", () => {
   it("names the programme after the shop, never after the card row", () => {
     const cls = buildLoyaltyClass(card({ name: "Pastry card" }), 0, 0, "Kopi Corner") as any;
     expect(cls.issuerName).toBe("Kopi Corner");
-    // The name alone. It read "Kopi Corner loyalty card" — a title spent saying
-    // what kind of thing you are holding, which the founder read as a
-    // placeholder we had forgotten to fill in.
-    expect(cls.programName).toBe("Kopi Corner");
+    // Google prints BOTH lines at the top, always. The shop's name on both said
+    // it twice; "Kopi Corner loyalty card" said it twice in one line. The name
+    // belongs on the issuer line, and this one says what the thing is.
+    expect(cls.programName).toBe("Loyalty card");
     expect(JSON.stringify(cls)).not.toContain("Pastry card");
   });
 
@@ -258,11 +258,43 @@ describe("save-to-wallet JWT", () => {
      * count has to be listed here or it vanishes from the card entirely — the
      * one thing that was on the front to begin with.
      */
-    it("keeps the stamp count, which the override would otherwise remove", () => {
-      expect(paths(rows())).toContain("object.textModulesData['count']");
-      const count = (buildLoyaltyPatch(row({ stamp_count: 1, stamps_target: 8 }), card())
-        .textModulesData as { id: string; body: string }[]).find((m) => m.id === "count");
-      expect(count?.body).toBe("1/8");
+    /**
+     * The override REPLACES the default rows, so the count has to be somewhere
+     * or it leaves the card entirely — it was the one thing the default template
+     * showed for free. It rides in the stamps HEADER rather than taking a column
+     * beside the dots: twenty large circles in half a row would wrap or clip.
+     */
+    it("keeps the stamp count, in the header the dots run under", () => {
+      const stamps = (buildLoyaltyPatch(row({ stamp_count: 1, stamps_target: 8 }), card())
+        .textModulesData as { id: string; header: string }[]).find((m) => m.id === "stamps");
+      expect(stamps?.header).toBe("YOUR STAMPS · 1/8");
+      expect(paths(rows())).toContain("object.textModulesData['stamps']");
+    });
+
+    /**
+     * "1 earned" / "3 left" / "Reward ready" — the line the iPhone carries in
+     * its top-right corner. Bound to the function the iPhone uses rather than to
+     * a copy of its wording, so the two cards cannot start disagreeing about
+     * when a card is "3 left" instead of "5 earned".
+     */
+    it("carries the iPhone's own earned line, from the iPhone's own function", async () => {
+      const { getHeaderFieldValue } = await import("../src/passModel.js");
+      expect(paths(rows())).toContain("object.textModulesData['earned']");
+      for (const [n, t] of [[1, 8], [6, 8], [8, 8], [0, 10]] as const) {
+        const earned = (buildLoyaltyPatch(row({ stamp_count: n, stamps_target: t }), card())
+          .textModulesData as { id: string; body: string }[]).find((m) => m.id === "earned");
+        expect(earned?.body, `${n}/${t}`).toBe(getHeaderFieldValue(n, t));
+      }
+    });
+
+    /**
+     * Reward on the left, where you are on the right — the order the Apple card
+     * reads in. It was the other way round, so a customer holding both had two
+     * cards to learn.
+     */
+    it("puts reward before progress, as the iPhone does", () => {
+      const first = JSON.stringify(rows()[0]);
+      expect(first.indexOf("'reward'")).toBeLessThan(first.indexOf("'earned'"));
     });
 
     /**

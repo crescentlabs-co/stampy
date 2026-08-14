@@ -999,12 +999,12 @@ export const DESIGN_PANEL_JS = /* js */ `
             <div class="pvg-prog" data-pvg-prog></div>
             <div class="pvg-row">
               <div>
-                <div class="pvg-lbl" data-pvg-clbl>PROGRESS</div>
-                <div class="pvg-val" data-pvg-bal></div>
-              </div>
-              <div>
                 <div class="pvg-lbl" data-pvg-rlbl>REWARD</div>
                 <div class="pvg-val" data-pvg-reward></div>
+              </div>
+              <div>
+                <div class="pvg-lbl" data-pvg-clbl>PROGRESS</div>
+                <div class="pvg-val" data-pvg-bal></div>
               </div>
             </div>
             <div class="pvg-rule"></div>
@@ -1434,23 +1434,31 @@ export const DESIGN_PANEL_JS = /* js */ `
         g.style.color = pickTextColor(f("bg").value);
         const name = f("shopName").value || "Your shop";
         q("[data-pvg-issuer]").textContent = name;
-        // The title is the shop's name, exactly as buildLoyaltyClass sends it.
-        // It said "<shop> loyalty card", which spent the one prominent line on
-        // the phone explaining what kind of thing you were holding.
-        q("[data-pvg-prog]").textContent = name;
-        q("[data-pvg-bal]").textContent = start + "/" + target;
+        // Google prints the issuer AND the programme name at the top, always, so
+        // putting the shop in both said it twice. The name is on the line above;
+        // this one says what the thing is — exactly as buildLoyaltyClass sends
+        // it, which is a fixed string and not the shop's.
+        q("[data-pvg-prog]").textContent = "Loyalty card";
         // The SAME characters stampDots sends (src/passModel.ts) — large circles,
         // because Android reads these as text at arm's length. Typed out rather
         // than imported: this is browser JS inside a template literal with no
         // module system. The mock-vs-payload test is what keeps the two in step.
         q("[data-pvg-dots]").textContent = "⬤".repeat(start) + "◯".repeat(target - start);
-        // The three captions and their copy come from buildLoyaltyPatch, headers
-        // included — a card at its target says REWARD READY 🎉 and tells the
-        // holder to show it, and a mock that only ever drew the ordinary state
-        // would hide the one moment the card exists for.
+        // Every caption and every value below comes from buildLoyaltyPatch,
+        // headers included — a card at its target says REWARD READY 🎉 and tells
+        // the holder to show it, and a mock that only ever drew the ordinary
+        // state would hide the one moment the card exists for.
         const ready = start >= target;
         const reward = f("reward").value || "Your reward";
-        q("[data-pvg-slbl]").textContent = ready ? "REWARD READY 🎉" : "YOUR STAMPS";
+        const progress = start + "/" + target;
+        // getHeaderFieldValue, transcribed: the iPhone's top-right line. Kept in
+        // step by the mock-vs-payload test, which reads both off the real
+        // function rather than off a second copy of these words.
+        const left = target - Math.max(0, Math.min(start, target));
+        q("[data-pvg-bal]").textContent = ready
+          ? "Reward ready"
+          : (left <= start ? left + " left" : start + " earned");
+        q("[data-pvg-slbl]").textContent = ready ? "REWARD READY 🎉" : "YOUR STAMPS · " + progress;
         q("[data-pvg-reward]").textContent = ready ? reward + " — show this to staff!" : reward;
         // The square mark if there is one, else the wide logo — the same
         // fallback logoUrl() applies when the class is built.

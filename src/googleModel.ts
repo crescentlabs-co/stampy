@@ -12,7 +12,7 @@
 import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
 import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
-import { isRewardReady, rewardTerms, stampDots } from "./passModel.js";
+import { getHeaderFieldValue, isRewardReady, rewardTerms, stampDots } from "./passModel.js";
 
 /** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
 export function classId(card: Pick<CardRow, "id">): string {
@@ -54,21 +54,20 @@ export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0, markVersion 
 export const FRONT_STAMPS_MODULE = "stamps";
 export const FRONT_REWARD_MODULE = "reward";
 /**
- * The count, as a text module rather than a reference to loyaltyPoints.
+ * "1 earned", "3 left", "Reward ready" — the line the iPhone card carries in its
+ * top-right corner, beside the logo, and the one thing a customer holding both
+ * cards would have had to learn twice.
  *
- * The front row read "Stamps" with nothing after it on a real phone, because
- * `FieldSelector.fields` is a FALLBACK CHAIN, not a label-and-value pair —
- * Google displays the first reference that is not empty and stops. Listing
- * `loyaltyPoints.label` and `loyaltyPoints.balance` together therefore renders
- * the label and drops the number.
+ * It cannot go beside the logo here. Everything above the template rows on a
+ * Google card — issuerName, programName, programLogo — is on the CLASS, which is
+ * per shop; anything that changes per customer has to be a row below the title.
+ * So it sits top-right of the first row, which is where the iPhone puts it
+ * anyway.
  *
- * Referencing the balance alone might carry its label along; it might equally
- * render a bare "1/8". Guessing is what produced the bug, and each guess costs
- * somebody a test on a real phone — so this uses the shape already proven on
- * that phone: a text module renders its `header` as the small label above its
- * `body`, which is exactly how the reward and the dots came out right.
+ * A string, and therefore free: the slow path on this card is IMAGES, which is
+ * why buildLoyaltyPatch sends none.
  */
-export const FRONT_COUNT_MODULE = "count";
+export const FRONT_EARNED_MODULE = "earned";
 
 /**
  * What Android shows without scrolling.
@@ -98,16 +97,19 @@ function cardFrontTemplate(): Record<string, unknown> {
   return {
     cardTemplateOverride: {
       cardRowTemplateInfos: [
-        // The same pairing the Apple card has read for a year: what you get on
-        // the right, how far along you are on the left.
+        // Reward on the left, where you are on the right — the order the Apple
+        // card has always read in (passModel's secondaryFields, and its header
+        // field in the top-right corner). It was the other way round here, so a
+        // customer holding both had two cards to learn.
         {
           twoItems: {
-            startItem: mod(FRONT_COUNT_MODULE),
-            endItem: mod(FRONT_REWARD_MODULE),
+            startItem: mod(FRONT_REWARD_MODULE),
+            endItem: mod(FRONT_EARNED_MODULE),
           },
         },
-        // Its own row, full width: the dots run to one character per stamp and a
-        // 20-stamp card would be truncated in half a row.
+        // Its own row, full width, with the count folded into its HEADER rather
+        // than given a column beside it: the dots are one character per stamp,
+        // and twenty large circles in half a row would wrap or clip.
         { oneItem: { item: mod(FRONT_STAMPS_MODULE) } },
       ],
     },
@@ -125,16 +127,17 @@ export function buildLoyaltyClass(
 ): Record<string, unknown> {
   const cls: Record<string, unknown> = {
     id: classId(card),
-    issuerName: business,
     // The shop's name, not the card's — same reason as Apple's description
     // (src/passModel.ts). `cards.name` is an internal label with no field in the
     // dashboard, so it can be years stale by the time a customer reads it.
+    issuerName: business,
+    // Google prints BOTH of these at the top and always has, so this carried the
+    // shop's name twice: small beside the logo, then large underneath. It also
+    // spent a year reading "<shop> loyalty card", which said the name twice in
+    // one line and read as a placeholder nobody had filled in.
     //
-    // The name ALONE. It read "<shop> loyalty card", which is the card's title
-    // on Android, and a title that explains what kind of thing you are looking
-    // at is a title doing no work — the founder read it as a placeholder we had
-    // forgotten to fill in.
-    programName: business,
+    // The name lives on the issuer line above. This one says what the thing is.
+    programName: "Loyalty card",
     programLogo: {
       sourceUri: { uri: logoUrl(card, logoVersion, markVersion) },
       contentDescription: {
@@ -244,13 +247,17 @@ export function buildLoyaltyPatch(
       // which is what lifts them onto the front of the card — hence the
       // constants.
       {
-        id: FRONT_COUNT_MODULE,
+        id: FRONT_EARNED_MODULE,
         header: "PROGRESS",
-        body: progress,
+        // The iPhone's own wording, from the iPhone's own function — not a
+        // second copy of the rule that decides between "earned" and "left".
+        body: getHeaderFieldValue(row.stamp_count, row.stamps_target),
       },
       {
         id: FRONT_STAMPS_MODULE,
-        header: ready ? "REWARD READY 🎉" : "YOUR STAMPS",
+        // The count rides in the HEADER rather than taking a column of its own
+        // beside the dots, which would halve the width they have to run in.
+        header: ready ? "REWARD READY 🎉" : `YOUR STAMPS · ${progress}`,
         body: stampDots(row.stamp_count, row.stamps_target),
       },
       {

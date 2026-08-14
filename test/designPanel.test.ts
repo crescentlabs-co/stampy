@@ -338,8 +338,10 @@ describe("the design panel, mounted", () => {
         // "PROGRESS".
         const pair = (lbl: string, val: string) =>
           div.querySelector(lbl)!.textContent + "|" + div.querySelector(val)!.textContent;
-        expect(pair("[data-pvg-clbl]", "[data-pvg-bal]")).toBe(sent.count);
+        expect(pair("[data-pvg-clbl]", "[data-pvg-bal]")).toBe(sent.earned);
         expect(pair("[data-pvg-rlbl]", "[data-pvg-reward]")).toBe(sent.reward);
+        // The count is inside this header ("YOUR STAMPS · 2/10"), so comparing
+        // the whole caption is what proves the mock has it too.
         expect(pair("[data-pvg-slbl]", "[data-pvg-dots]")).toBe(sent.stamps);
       });
 
@@ -358,6 +360,27 @@ describe("the design panel, mounted", () => {
           div.querySelector("[data-pvg-rlbl]")!.textContent + "|" +
             div.querySelector("[data-pvg-reward]")!.textContent,
         ).toBe(sent.reward);
+        // ...and the top-right line says so too, rather than counting on.
+        expect(
+          div.querySelector("[data-pvg-clbl]")!.textContent + "|" +
+            div.querySelector("[data-pvg-bal]")!.textContent,
+        ).toBe(sent.earned);
+      });
+
+      /**
+       * The mock transcribes getHeaderFieldValue rather than importing it —
+       * browser JS inside a template literal has no module system. So the rule
+       * that decides between "5 earned" and "3 left" exists twice, and this is
+       * what stops the two copies drifting apart.
+       */
+      it("matches the earned line at every stage of a card", async () => {
+        for (const [n, t] of [[0, 10], [1, 8], [6, 8], [8, 8]] as const) {
+          const h = makeHarness();
+          const div = build(card({ stampsStart: n, stampsTarget: t }), h);
+          await h.settle();
+          expect(div.querySelector("[data-pvg-bal]")!.textContent, `${n}/${t}`)
+            .toBe(headers(n, t).earned!.split("|")[1]);
+        }
       });
 
       /**
@@ -381,11 +404,14 @@ describe("the design panel, mounted", () => {
       const h = makeHarness();
       const div = build(card({ shopName: "Kopi Corner", reward: "Free coffee" }), h);
       await h.settle();
-      // Android is text dots and a balance — never the rendered grid, which it
+      // Android is text dots and text lines — never the rendered grid, which it
       // is never sent.
-      expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("2/10");
+      expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("2 earned");
+      expect(div.querySelector("[data-pvg-slbl]")!.textContent).toBe("YOUR STAMPS · 2/10");
       expect(div.querySelector("[data-pvg-dots]")!.textContent).toBe("⬤⬤◯◯◯◯◯◯◯◯");
+      // The shop's name once, on the issuer line; the title says what it is.
       expect(div.querySelector("[data-pvg-issuer]")!.textContent).toBe("Kopi Corner");
+      expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Loyalty card");
       // The poster headline falls back to the generated line, as posterPage does.
       expect(div.querySelector("[data-pvp-offer]")!.textContent)
         .toBe("Collect 10 stamps, get a free coffee.");
