@@ -2218,6 +2218,27 @@ async function main() {
 
   // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia, and each
   // version must be reachable from the other or only one of them is published.
+  // --- Support, and a marketing page a stranger can act on -----------------
+  //
+  // Google refused Wallet publishing access over exactly this: the contact
+  // buttons all pointed at #contact, the section they sat in, and nothing named
+  // the business. Both are valid HTML and neither could fail a test before.
+  const support = await get("/support");
+  expect(support.status === 200 && support.body.includes("Support"), "GET /support renders");
+  expect(
+    support.body.includes("delete the card") && support.body.includes("short card code"),
+    "...and tells a customer how to stop and how to ask about their data",
+  );
+  const home = (await get("/")).body;
+  expect(home.includes('href="/support"'), "the marketing footer links Support");
+  const closeBtns = /<div class="closebtns">([\s\S]*?)<\/div>/.exec(home);
+  expect(Boolean(closeBtns), "the marketing page still has a contact block");
+  expect(
+    !/#contact/.test(closeBtns![1]!),
+    "no contact button points back at the page it sits on",
+  );
+  expect(closeBtns![1]!.includes("instagram.com/punchme.my"), "Instagram link is real");
+
   const privBm = await get("/privacy?lang=bm");
   expect(
     privBm.status === 200 && privBm.body.includes("Dasar Privasi") && privBm.body.includes("PDPA"),

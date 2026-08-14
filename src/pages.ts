@@ -2538,7 +2538,13 @@ export function claimPage(
  * the demo-pass link, the six example cards, the contact details, and the hero
  * clip that will eventually replace the hero still.
  */
-export function marketingPage(): string {
+/**
+ * @param contactEmail the address the contact buttons and footer use. Threaded
+ *   in like privacyPage/termsPage rather than hard-coded: it is one value in
+ *   Railway, and a marketing page carrying a different address from the legal
+ *   pages is exactly the inconsistency a reviewer looks for.
+ */
+export function marketingPage(contactEmail = ""): string {
   const css = /* css */ `
     :root {
       --paper: var(--bg); --soft: var(--surface);
@@ -3205,7 +3211,12 @@ export function marketingPage(): string {
           who built it.</p>
       </div></div></section>
 
-      <!-- 8 · CLOSE. TODO(founder): real WhatsApp / Instagram / email / phone. -->
+      <!-- 8 · CLOSE. Every button here goes somewhere real. All three used to be
+           href="#contact" — the section they already sit in — so the page's whole
+           call to action did nothing when clicked. That is what cost us Google
+           Wallet publishing access: a reviewer checking "can I reach this
+           business" pressed Email and stayed exactly where they were. A button
+           with no destination is removed, never left in as decoration. -->
       <section class="band tight" id="contact"><div class="shell">
         <div class="close">
           <img src="/assets/img/shopfront-v1.jpg" alt="" width="1800" height="1170" loading="lazy">
@@ -3213,17 +3224,28 @@ export function marketingPage(): string {
           <p class="sup">Message us and we will set the whole thing up for you, card
             design included.</p>
           <div class="closebtns">
-            <a class="pbtn pbtn-neon" href="#contact">WhatsApp</a>
-            <a class="pbtn pbtn-pale" href="#contact">Instagram</a>
-            <a class="pbtn pbtn-pale" href="#contact">Email</a>
+            ${
+              contactEmail
+                ? `<a class="pbtn pbtn-neon" href="mailto:${esc(contactEmail)}">Email us</a>`
+                : ""
+            }
+            <a class="pbtn pbtn-pale" href="https://instagram.com/punchme.my"
+               target="_blank" rel="noopener">Instagram</a>
           </div>
           <p class="tel">We reply the same day</p>
         </div>
       </div></section>
 
+      <!-- Who this is and how to reach them, on the page a stranger lands on.
+           It used to say only "PunchMe · made in Kuala Lumpur" — a product and a
+           city, with no way to verify the name on our Google business profile
+           and nothing to write to. -->
       <div class="shell"><div class="foot">
-        <span>PunchMe &middot; made in Kuala Lumpur</span>
+        <span>PunchMe &middot; made in Kuala Lumpur${
+          contactEmail ? ` &middot; <a href="mailto:${esc(contactEmail)}">${esc(contactEmail)}</a>` : ""
+        }</span>
         <nav>
+          <a href="/support">Support</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
           <a href="/dashboard">Log in</a>
@@ -3256,6 +3278,62 @@ function contactLine(contactEmail: string): string {
 }
 
 const UPDATED = "28 July 2026";
+
+/**
+ * How to get help — the page a stranger should land on, and the one Google's
+ * business profile asks for as a customer support URL.
+ *
+ * It did not exist, so the support URL pointed at the Terms of Service, whose
+ * contact line is a footnote under six sections of legal text. Two audiences
+ * arrive here and want opposite things: an owner locked out of their dashboard,
+ * and a customer holding a card who wants the shop, not us. Answer both in the
+ * order they arrive, and hand the customer straight back to the shop — their
+ * stamps are not ours to settle.
+ */
+export function supportPage(contactEmail = ""): string {
+  const body = `<article class="legal">
+    <a class="back" href="/">&larr; Back to PunchMe</a>
+    <h1>Support</h1>
+    <p class="upd">We reply the same day, Malaysian business hours.</p>
+    <p>PunchMe makes the digital loyalty stamp cards that shops hand out through
+      Apple Wallet and Google Wallet. Whatever you need, ${contactLine(contactEmail)}.</p>
+
+    <h2>If you run a shop with PunchMe</h2>
+    <ul>
+      <li><strong>Can&rsquo;t log in?</strong> Use <a href="/dashboard">Forgot password</a> on the
+        login page. If no email arrives, write to us and we will reset it by hand and send you a
+        temporary password.</li>
+      <li><strong>Staff can&rsquo;t stamp?</strong> Your counter PIN is under <em>Shop</em> in your
+        dashboard, and you can replace it there. Changing it signs every staff phone out, which is
+        the point &mdash; do it if a phone goes missing.</li>
+      <li><strong>Want to change your card?</strong> Colours, logo, reward and the number of stamps
+        are all in your dashboard, and changes reach cards already in wallets by themselves.
+        Customers keep the deal they joined on until they claim it.</li>
+      <li><strong>Something looks wrong?</strong> Tell us what you saw and roughly when. We keep a
+        record of every stamp, so we can usually say exactly what happened.</li>
+    </ul>
+
+    <h2>If you have a loyalty card in your wallet</h2>
+    <ul>
+      <li><strong>Stamps, rewards and whether something counted</strong> are the shop&rsquo;s to
+        settle, not ours &mdash; they run the programme and we only run the card. Ask at the counter.</li>
+      <li><strong>To stop</strong>, delete the card from Apple Wallet or Google Wallet. That is the
+        whole opt-out: nothing further reaches you, and there is no account to close.</li>
+      <li><strong>Your data</strong> &mdash; we hold no name, email or phone number for you. To ask
+        what we hold, correct it or have it deleted, ${contactLine(contactEmail)} and quote the
+        short card code shown on your card, which is the only way we can find the right record.
+        See the <a href="/privacy">Privacy Policy</a>.</li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>However you found us, ${contactLine(contactEmail)}. Say which shop you mean and we will get
+      to it faster.</p>
+
+    <div class="note">PunchMe is in beta and free while we finish building it. If something is
+      broken, telling us is genuinely useful &mdash; it is how most of this got fixed.</div>
+  </article>`;
+  return page("PunchMe — Support", body, legalCss);
+}
 
 /**
  * The PDPA (s.7(3)) requires the notice in English AND Bahasa Malaysia, so

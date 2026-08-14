@@ -66,6 +66,7 @@ import {
   posterPage,
   privacyPage,
   privacyPageBm,
+  supportPage,
   termsPage,
 } from "../pages.js";
 
@@ -431,7 +432,7 @@ const merchantQr = (merchantId: string, res: import("express").Response) =>
   // simply count as unattributed.
   qrFor(`/j/${merchantId}?s=poster`, res);
 
-publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage()));
+publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage(config.contactEmail)));
 // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia. One route, one
 // query param, a plain <a> to switch — no JS, so the page stays script-free.
 publicRouter.get("/privacy", (req, res) =>
@@ -442,6 +443,9 @@ publicRouter.get("/privacy", (req, res) =>
     ),
 );
 publicRouter.get("/terms", (_req, res) => res.type("html").send(termsPage(config.contactEmail)));
+// How to get help. Also what Google's business profile wants as a support URL —
+// which used to point at /terms, whose contact line is a footnote under the law.
+publicRouter.get("/support", (_req, res) => res.type("html").send(supportPage(config.contactEmail)));
 /**
  * The merchant join link — the one that goes on a poster.
  *

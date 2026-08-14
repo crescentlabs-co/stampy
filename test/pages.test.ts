@@ -21,6 +21,7 @@ import {
   posterPage,
   privacyPage,
   privacyPageBm,
+  supportPage,
   resetPage,
   shopNotOpenPage,
   staffPage,
@@ -48,7 +49,7 @@ const POSTER_CARD = {
 } as never as Parameters<typeof posterPage>[0];
 
 const pages: [string, string][] = [
-  ["marketing", marketingPage()],
+  ["marketing", marketingPage("hello@punchme.test")],
   ["staff (signed out)", staffPage(false)],
   ["staff (signed in)", staffPage(true)],
   ["dashboard (email on)", dashboardPage(true, "hello@stampy.test")],
@@ -1400,6 +1401,59 @@ describe("palette maths", () => {
  * .pkpass. Renaming one is not a rename, it is an orphaning, and no deploy
  * repairs it. So it is a test rather than a paragraph.
  */
+/*
+ * Google refused Wallet publishing access with "please provide a valid website
+ * and company name". The cause was on the marketing page: WhatsApp, Instagram
+ * and Email were all href="#contact" — the section the reader was already in —
+ * so the page's entire call to action did nothing when clicked, and nothing on
+ * the page named the business behind it. A reviewer pressed Email, stayed put,
+ * and said no. None of that could fail a test, because a link to an anchor is
+ * perfectly valid HTML.
+ */
+describe("the marketing page can actually be contacted", () => {
+  const html = marketingPage("hello@punchme.test");
+
+  it("gives every contact button a destination off this page", () => {
+    // Scoped to the contact block, not the whole page: the nav's "Get started"
+    // legitimately scrolls to #contact, because it does not claim to BE a way of
+    // reaching us. These buttons do, and pointing them at the section they sit
+    // in is the precise shape of what got us rejected.
+    const block = /<div class="closebtns">([\s\S]*?)<\/div>/.exec(html);
+    expect(block, "the contact block moved — this test is now checking nothing").toBeTruthy();
+    const buttons = block![1]!.match(/<a\b[^>]*>/g) ?? [];
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const b of buttons) {
+      expect(b, `contact button goes nowhere: ${b}`).not.toContain("#contact");
+      expect(b, `contact button has no href: ${b}`).toMatch(/href="(mailto:|https?:)/);
+    }
+  });
+
+  it("offers a real mailto and a real Instagram link", () => {
+    expect(html).toContain('href="mailto:hello@punchme.test"');
+    expect(html).toContain("https://instagram.com/punchme.my");
+  });
+
+  // A button with nowhere to go is removed, not left in as decoration — that is
+  // what got us rejected. WhatsApp had no number, so it does not appear.
+  it("shows no WhatsApp button while there is no number for it", () => {
+    expect(html).not.toContain(">WhatsApp<");
+  });
+
+  it("names the business and its address in the footer, plus Support", () => {
+    expect(html).toContain("PunchMe");
+    expect(html).toContain("hello@punchme.test");
+    expect(html).toContain('href="/support"');
+  });
+
+  // With no CONTACT_EMAIL the email button must vanish rather than render a
+  // mailto: to nothing — a broken button is the thing being fixed here.
+  it("drops the email button entirely when no address is configured", () => {
+    const bare = marketingPage("");
+    expect(bare).not.toContain("mailto:");
+    expect(bare).toContain("https://instagram.com/punchme.my");
+  });
+});
+
 describe("the rebrand renamed the label, not the identifiers", () => {
   const surfaces = [
     marketingPage(),
@@ -1448,6 +1502,7 @@ describe("the rebrand renamed the label, not the identifiers", () => {
       ["claim (hand-over)", claimPage("tok", "Kopi Corner", named, 0)],
       ["privacy", privacyPage("hi@x.com")],
       ["privacy (BM)", privacyPageBm("hi@x.com")],
+      ["support", supportPage("hi@x.com")],
       ["terms", termsPage("hi@x.com")],
       ["staff signed out", staffPage(false)],
       ["staff signed in", staffPage(true)],
