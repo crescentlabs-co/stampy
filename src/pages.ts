@@ -754,10 +754,24 @@ export const DESIGN_PANEL_CSS = /* css */ `
        happen to have pictures in them. */
     .pvicon { padding: 8px; line-height: 0; min-width: 38px; display: inline-flex;
               align-items: center; justify-content: center; }
-    /* The separation that used to sit above "Add a test card". It belongs here:
-       between looking at the card and changing it, not between the card and the
-       three buttons that open it. */
-    .dfold { margin-top: 22px; border-top-width: 1px; }
+    /* Colours: a read-out first, the rows only on request. Uploading a logo
+       sets all five, so the resting state of this section is "here is what your
+       logo produced" rather than five things to fill in. */
+    .crhdr { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+    .crhdr label { flex: 1; }
+    .crtoggle { width: auto; padding: 7px 12px; font-size: .8rem; flex: none; }
+    .crtoggle.on { background: var(--ink); color: var(--surface-2, #fff); border-color: var(--ink); }
+    .swstrip { display: flex; gap: 6px; margin-top: 8px; }
+    .sw { width: 30px; height: 30px; border-radius: 8px; flex: none;
+          box-shadow: inset 0 0 0 1px rgba(32,33,29,.18); }
+    .crlist[hidden] { display: none; }
+    /* The Android square-logo row. Boxed, because it is conditional: it appears
+       only when the uploaded logo is wide enough for Google's circle to cut it,
+       and an unboxed row that comes and goes reads as the page glitching. */
+    .marknote { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px;
+                margin-top: 12px; background: var(--bg); }
+    .marknote[hidden] { display: none; }
+    .marknote p { margin: 0 0 8px; font-size: .84rem; color: var(--muted); line-height: 1.45; }
     /* Inline rejection notice (e.g. a stamp upload with no transparency) —
        stays on screen, unlike a toast, because it asks the owner to go and fix
        the file and come back. */
@@ -897,14 +911,15 @@ export const DESIGN_PANEL_JS = /* js */ `
      *   artUrl(kind, v)    where the stored logo / band PNG is served from
      *   customersPath      the live-customer count, or null when there is no
      *                      card to count yet
-     *   rulesNote          HTML above the rules block, or ""
+     *   rulesNote          HTML above the programme block, or ""
      *   onRulesSaved()     the caller's own follow-up
-     *   singleSave         one button instead of two. The owner gets two,
-     *                      because their look and their rules reach different
-     *                      people and cannot share one confirmation. The
-     *                      console sets no rules (showDetails is false), so
-     *                      there the second button could only ever change the
-     *                      name — two buttons for one job.
+     *   saveLabel          "Save changes" for an owner, "Save card" in the
+     *                      console. There is ONE save either way: two of them
+     *                      made a merchant sort their own change into the right
+     *                      half of the panel before they could keep it, and the
+     *                      look one lived inside a collapsed section. What the
+     *                      two buttons used to say separately is now the
+     *                      confirmation in front of the one.
      *   toast/modal/info   shared with MODAL_JS
      */
     function designPanel(c, env) {
@@ -919,7 +934,18 @@ export const DESIGN_PANEL_JS = /* js */ `
              sibling would sit in the wrong column. The box does not belong to a
              tab either — it is what every tab is editing, so it stays put. -->
         <div class="pvbox" data-pvbox>
-          <label class="sec first" style="display:block">Preview</label>
+          <!-- The tab strip lives HERE now, on the thing it switches. It used to
+               sit inside the editor and move the controls with it, because the
+               editor was organised by surface — one section per wallet. A
+               merchant has one brand and one programme that happen to appear in
+               three places, so the editor is organised that way instead and
+               these three are purely a way of looking. -->
+          <div class="seg dseg" data-surfaces role="tablist">
+            <button data-tab="apple" class="on">iPhone</button>
+            <button data-tab="google">Android</button>
+            <button data-tab="signup">Sign-up</button>
+            <span class="thumb"></span>
+          </div>
 
           <div class="pv" data-pv data-surface="apple">
             <div class="pv-top">
@@ -1008,37 +1034,14 @@ export const DESIGN_PANEL_JS = /* js */ `
           <div data-testout hidden></div>
         </div>
 
-        <!-- Design sits directly under the preview it changes, folded away. It is
-             one block: the logo belongs with the colours it feeds, not pulled out
-             on its own above them. The rule above it is the one "Add a test card"
-             used to draw: the break belongs between looking at the card and
-             changing it, not between the card and the buttons that open it. -->
-        <details class="fold dfold" \${env.designOpen ? "open" : ""}>
-        <summary>Design</summary>
+        <!-- ================= BRAND =================
+             Not "iPhone / Android / Sign-up". A merchant has one brand and one
+             programme; that they show up in three places is the previews' job to
+             say, not the editor's. Organised by surface, this asked somebody to
+             design the same logo three times and left the name tick filed under
+             a wallet it does not belong to. -->
+        <label class="sec first" style="display:block">Brand</label>
 
-        <!-- The switch, first thing. It cycles the preview above AND the one
-             surface-specific block below, so it is the frame everything else in
-             here is read inside — it cannot sit halfway down the panel. -->
-        <!-- data-tab, NOT data-surface. data-surface marks a preview PANE, and
-             showSurface hides every one that is not current — so while the
-             buttons carried it too, picking iPhone hid the Android and Sign-up
-             buttons and the strip collapsed to a single tab that appeared to do
-             nothing. Never label a control with the attribute used to hide the
-             thing it controls. -->
-        <div class="seg dseg" data-surfaces role="tablist">
-          <button data-tab="apple" class="on">iPhone</button>
-          <button data-tab="google">Android</button>
-          <button data-tab="signup">Sign-up</button>
-          <span class="thumb"></span>
-        </div>
-
-        <!-- EVERYTHING about the logo, in one place.
-             The upload was here, the "already includes my name" tick was inside
-             the iPhone pane, and the Android version was in a different tab
-             below the colours — three parts of one decision, in three places.
-             The tick governs the card, the poster AND the sign-up page now, so
-             it never belonged to a surface; the Android square is a variant of
-             THIS image, so it is nested rather than filed elsewhere. -->
         <label style="margin-top:6px">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
@@ -1049,44 +1052,20 @@ export const DESIGN_PANEL_JS = /* js */ `
           <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo — on the card, on the poster or on your sign-up page. Leave it unticked if your logo is just a symbol, or nothing says whose card it is.")}</span>
         </label>
 
-        <!-- The Android variant, in the Logo section and shown only on the
-             Android tab. Same data-pane mechanism as the panes below: the value
-             appearing twice is fine, showSurface hides both together. -->
-        <div class="dpane" data-pane="google" hidden style="margin-top:12px">
-          <!-- Says its piece only while a wide logo is standing in. With a square
-               one uploaded there is nothing to fix, and with no logo at all there
-               is nothing being cropped. -->
-          <p class="muted" data-marknote style="display:none;margin:0 0 6px;font-size:.84rem">
-            Android crops your logo to the circle above. Upload a square version and only Android uses it.
-          </p>
+        <!-- The Android square, surfaced by the SHAPE of the logo rather than by
+             which tab is open. It is not a second logo everyone has to supply:
+             a square-ish logo needs no version at all, and most merchants should
+             never see this row. Wide ones do, because Google crops to a circle
+             and takes both ends off. -->
+        <div class="marknote" data-markbox hidden>
+          <p data-marknote></p>
           <div class="logorow">
-            <label class="btn btn-ghost" style="margin:0">Upload square version<input data-mark type="file" accept="image/*"></label>
+            <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload square version</span><input data-mark type="file" accept="image/*"></label>
             <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
           </div>
         </div>
 
-        <label style="margin-top:14px">Colours\${info("Tap a part of the card, then tap a colour for it. The band is the strip across the middle that the stamps sit on; Stamps is what an earned stamp fills in with. These colours are used on all three: the iPhone card, the Android card and your sign-up poster.")}</label>
-        <div class="crlist" data-roles></div>
-        <!-- The five native pickers are the source of truth every other function
-             reads through f("bg"), f("bandColor") and so on, so they must exist
-             from the start — and must NOT live inside a tab pane, which is
-             hidden and re-rendered. They are PARKED here and MOVED into whichever
-             row is open, rather than hidden and clicked from a proxy: calling
-             .click() on a display:none colour input does not reliably open the
-             OS picker, so the owner has to be tapping the real thing. -->
-        <div class="colorpark" data-park>
-          <input data-f="bg" type="color" value="\${c.bg}">
-          <input data-f="fg" type="color" value="\${c.fg}">
-          <input data-f="label" type="color" value="\${c.label}">
-          <input data-f="accent" type="color" value="\${c.accent}">
-          <input data-f="bandColor" type="color" value="\${c.bandColor}">
-        </div>
-
-        <!-- Then only what actually differs between the three. Android has one
-             control and the sign-up page has none — they are there to be looked
-             at, and the preview is doing that job above. -->
-        <section class="dpane" data-pane="apple">
-        <label style="margin-top:0">Stamps\${info("Plain dots, any emoji, or your own shape. Whatever you pick is drawn in your Stamps colour. iPhone only — Android is sent the count as text, so it shows dots whatever you choose here.")}</label>
+        <label style="margin-top:16px">Stamp\${info("Plain dots, any emoji, or your own shape. Whatever you pick is drawn in your Stamps colour. iPhone only — Android is sent the count as text, so it shows dots whatever you choose here.")}</label>
         <!-- Three buttons, one choice. It was a text field, a Use button, an
              upload and a Dots button: four controls for three answers, and the
              field read as something you had to fill in before anything would
@@ -1108,28 +1087,36 @@ export const DESIGN_PANEL_JS = /* js */ `
           <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
         </p>
         <p class="err" data-stamperr style="display:none"></p>
-        </section>
 
-        <!-- Android has no section of its own down here any more: its one
-             control is the square logo, and that belongs beside the logo it is a
-             version of, not in a tab three sections away from it. -->
+        <!-- Colours are DERIVED, so they are shown before they are offered: a
+             strip of what the logo produced, and a way in for anyone who wants
+             to argue with it. Opening the rows is a choice, not the default —
+             most merchants want their logo's colours and nothing else. -->
+        <div class="crhdr">
+          <label style="margin:0">Colours\${info("Taken from your logo automatically, and used on all three: the iPhone card, the Android card and your sign-up poster. Open Customize to set any of them by hand — the band is the strip the stamps sit on, and Stamps is what an earned stamp fills in with.")}</label>
+          <button type="button" class="btn btn-ghost crtoggle" data-a="customise">Customize</button>
+        </div>
+        <div class="swstrip" data-swatches></div>
+        <div class="crlist" data-roles hidden></div>
+        <!-- The five native pickers are the source of truth every other function
+             reads through f("bg"), f("bandColor") and so on, so they must exist
+             from the start. They are PARKED here and MOVED into whichever row is
+             open, rather than hidden and clicked from a proxy: calling .click()
+             on a display:none colour input does not reliably open the OS picker,
+             so the owner has to be tapping the real thing. Closing Customize
+             therefore has to park every one of them again — see toggleRoles. -->
+        <div class="colorpark" data-park>
+          <input data-f="bg" type="color" value="\${c.bg}">
+          <input data-f="fg" type="color" value="\${c.fg}">
+          <input data-f="label" type="color" value="\${c.label}">
+          <input data-f="accent" type="color" value="\${c.accent}">
+          <input data-f="bandColor" type="color" value="\${c.bandColor}">
+        </div>
 
-        <!-- Nothing of its own. One line rather than none, because a tab that
-             shows an empty space reads as a tab that failed to load. -->
-        <section class="dpane" data-pane="signup" hidden>
-        <p class="muted" style="margin:0;font-size:.84rem">Nothing to set — it uses your logo and colours.</p>
-        </section>
-
-        <button class="btn btn-neon" style="margin-top:18px" data-a="savedesign">Save design</button>
-        </details>
-
-        <!-- No section headers here. Each .sec costs ~50px of rule and margin,
-             and two of them plus a full-width spend row were most of what stood
-             between the preview and the controls. What a change DOES now lives
-             in the Save popup, which is the moment it matters, rather than as
-             grey text nobody reads on the way past. -->
+        <!-- ================= LOYALTY PROGRAMME ================= -->
         \${env.rulesNote}
-        <label style="margin-top:16px">Shop name\${info("The name customers see on the card.")}</label>
+        <label class="sec" style="display:block\${env.showDetails ? "" : ";display:none"}">Loyalty programme</label>
+        <label style="margin-top:6px">Shop name\${info("The name customers see on the card.")}</label>
         <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
 
         <!-- The card's TERMS. Hidden rather than dropped when env.showDetails is
@@ -1150,7 +1137,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
         </div>
 
-        <button class="btn btn-dark" style="margin-top:14px" data-a="saverules">\${env.rulesSaveLabel}</button>\`;
+        <!-- ONE save. Two of them asked a merchant to know which half of the
+             panel a change belonged to before they could keep it — and the look
+             one lived inside a collapsed section, so it could be missed
+             entirely. The confirmation carries both consequences instead, since
+             they genuinely differ and one button is what now hides that. -->
+        <button class="btn btn-neon" style="margin-top:20px" data-a="save">\${env.saveLabel}</button>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -1397,7 +1389,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         // the phone explaining what kind of thing you were holding.
         q("[data-pvg-prog]").textContent = name;
         q("[data-pvg-bal]").textContent = start + "/" + target;
-        q("[data-pvg-dots]").textContent = "●".repeat(start) + "○".repeat(target - start);
+        // The SAME characters stampDots sends (src/passModel.ts) — large circles,
+        // because Android reads these as text at arm's length. Typed out rather
+        // than imported: this is browser JS inside a template literal with no
+        // module system. The mock-vs-payload test is what keeps the two in step.
+        q("[data-pvg-dots]").textContent = "⬤".repeat(start) + "◯".repeat(target - start);
         // The three captions and their copy come from buildLoyaltyPatch, headers
         // included — a card at its target says REWARD READY 🎉 and tells the
         // holder to show it, and a mock that only ever drew the ordinary state
@@ -1414,12 +1410,47 @@ export const DESIGN_PANEL_JS = /* js */ `
           im.src = env.artUrl(c.markVersion ? "mark" : "logo", v);
           im.style.display = "";
         } else im.style.display = "none";
-        // Only while a wide logo is standing in for a square one: with no logo
-        // at all there is nothing being cropped, and with a mark uploaded there
-        // is nothing to fix.
-        const note = q("[data-marknote]");
-        if (note) note.style.display = (!c.markVersion && c.logoVersion) ? "" : "none";
       }
+
+      /**
+       * The Android square logo, offered only when the logo actually needs one.
+       *
+       * It used to appear whenever the Android tab was open, which made it look
+       * like a second logo everyone has to supply. Google crops programLogo to a
+       * circle: a square-ish logo survives that untouched and its owner should
+       * never be asked for anything, while a wide lockup loses both ends and its
+       * owner should be told exactly that, once, next to the logo in question.
+       *
+       * The trigger is the shape of the image they already uploaded, measured in
+       * the browser — no new column, and no guessing.
+       */
+      let logoRatio = 0;
+      function updateMark() {
+        const box = q("[data-markbox]");
+        if (!box) return;
+        // Nothing uploaded, or not measured yet: say nothing. A row that appears
+        // and then vanishes once the image decodes is worse than a late one.
+        const wide = logoRatio > 1.25;
+        box.hidden = !c.logoVersion || (!wide && !c.markVersion);
+        if (box.hidden) return;
+        q("[data-markbtn]").textContent = c.markVersion ? "Replace square version" : "Upload square version";
+        q("[data-marknote]").textContent = c.markVersion
+          ? "Android is using your square logo. Everywhere else keeps the main one."
+          : "Google Wallet crops your logo to a circle, so a wide logo loses both ends. "
+            + "A square version fixes that — only Android uses it.";
+      }
+      // Measured off its own Image rather than the preview's: the preview logo
+      // is hidden on two of the three tabs, and a hidden img still decodes but
+      // this way nothing depends on which tab happens to be open.
+      if (c.logoVersion) {
+        const probe = new Image();
+        probe.onload = () => {
+          if (probe.naturalHeight > 0) logoRatio = probe.naturalWidth / probe.naturalHeight;
+          updateMark();
+        };
+        probe.src = env.artUrl("logo", c.logoVersion);
+      }
+      updateMark();
 
       /** The printed sheet. Same order and the same rules as posterPage. */
       function renderPoster() {
@@ -1678,6 +1709,14 @@ export const DESIGN_PANEL_JS = /* js */ `
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").style.display = "";
         lastLogoUrl = url;
+        // Re-measure: whether Android needs a square version is a fact about
+        // THIS image, so a new upload can turn that row on or off.
+        const probe = new Image();
+        probe.onload = () => {
+          if (probe.naturalHeight > 0) logoRatio = probe.naturalWidth / probe.naturalHeight;
+          updateMark();
+        };
+        probe.src = url;
         // One awaited sequence: read the palette, apply it, then check the logo
         // is still readable on the colour that came out of it.
         void applyLogoColours(url);
@@ -1692,6 +1731,8 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-pv-logo]").style.display = "none";
         q("[data-a=rmlogo]").style.display = "none";
         lastLogoUrl = "";
+        logoRatio = 0;
+        updateMark();
         toast("Logo removed");
       };
 
@@ -1703,12 +1744,19 @@ export const DESIGN_PANEL_JS = /* js */ `
       wireUpload("[data-mark]", "mark", 400, 400, () => {
         c.markVersion = 1;
         q("[data-a=rmmark]").style.display = "";
+        // The row stays, and changes what it says: with one uploaded it is no
+        // longer a warning, it is where you go to replace or remove it. Removing
+        // it silently would leave no way back.
+        updateMark();
+        renderPreview();
       }, "contain");
       q("[data-a=rmmark]").onclick = async () => {
         const { body } = await api(P("/mark"), { method: "DELETE" });
         if (!body.ok) return toast(body.error || "Couldn't remove it");
         c.markVersion = 0;
         q("[data-a=rmmark]").style.display = "none";
+        updateMark();
+        renderPreview();
         toast("Square logo removed — Android goes back to your main logo");
       };
 
@@ -1904,7 +1952,50 @@ export const DESIGN_PANEL_JS = /* js */ `
           }
           rolesHost.appendChild(row);
         }
+        drawSwatches();
       }
+
+      /**
+       * What the logo produced, before anyone is asked to argue with it.
+       *
+       * The colours are DERIVED — uploading a logo sets all five — so the
+       * default state of this section is a read-out, not five editable rows. The
+       * rows are still there behind Customize for the merchant who has a brand
+       * guide and a strong opinion about their band colour.
+       */
+      function drawSwatches() {
+        const strip = q("[data-swatches]");
+        if (!strip) return;
+        strip.innerHTML = "";
+        for (const r of ROLES) {
+          const sw = document.createElement("span");
+          sw.className = "sw";
+          sw.style.background = f(r.k).value;
+          // Named, because a bare row of colours cannot say which one is the
+          // band — and the band is the one people go looking for.
+          sw.title = r.name;
+          strip.appendChild(sw);
+        }
+      }
+
+      /**
+       * Open or close the five rows.
+       *
+       * Closing MUST go through drawRoles with no active role: the open row
+       * physically holds one of the five <input type="color"> elements, and
+       * every function in this panel reads its colours through f("bg") and
+       * friends. Hiding the list with a picker still inside it would leave those
+       * reads pointing at a node nobody can reach or open.
+       */
+      const rolesToggle = q("[data-a=customise]");
+      if (rolesToggle) rolesToggle.onclick = () => {
+        const opening = rolesHost.hidden;
+        activeRole = null;
+        drawRoles();
+        rolesHost.hidden = !opening;
+        rolesToggle.textContent = opening ? "Done" : "Customize";
+        rolesToggle.classList.toggle("on", opening);
+      };
       // The OS picker writes straight through. No rebuild here on purpose —
       // this fires on every frame of a drag, and rebuilding would move the very
       // input the picker is attached to.
@@ -2028,37 +2119,29 @@ export const DESIGN_PANEL_JS = /* js */ `
       });
 
       /**
-       * The tab switches what you edit AND what the preview shows.
+       * The tab switches which preview you are looking at. Nothing else.
        *
-       * One control for both, because they are one question: the reason to look
-       * at the Android card is that you are about to change something only
-       * Android sees. Two switches would let them disagree, and then the panel
-       * is showing you one surface while you edit another.
+       * It used to move the editor with it, because the editor was one section
+       * per wallet. Now that the editor is Brand and Loyalty programme, there is
+       * no such thing as "the Android controls" to switch to — the one thing
+       * only Android needs is the square logo, and that appears next to the logo
+       * it is a version of, when the logo's shape calls for it.
        */
       const surfaceSeg = q("[data-surfaces]");
       // Scoped to the preview box rather than the whole panel: hiding is a blunt
       // instrument, and searching the entire panel for data-surface is what let
-      // it reach the tab buttons. Inside the box the attribute can only mean a
-      // preview pane.
+      // it reach the tab buttons themselves once before.
       const pvbox = q("[data-pvbox]");
       function showSurface(name) {
         surfaceSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
         moveThumb(surfaceSeg);
-        div.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== name; });
         pvbox.querySelectorAll("[data-surface]").forEach((p) => { p.hidden = p.dataset.surface !== name; });
         renderPreview();
       }
       surfaceSeg.querySelectorAll("button").forEach((b) => {
         b.onclick = () => showSurface(b.dataset.tab);
       });
-      // A hidden .seg measures zero, so the thumb cannot be seated until the
-      // panel is on the page — and the owner's Design fold starts CLOSED, so
-      // the first seating always measured nothing and left a zero-width thumb
-      // under the tab it was meant to mark. Re-seat when the fold opens; that
-      // is the first moment the strip has a width at all.
       showSurface("apple");
-      const dfold = div.querySelector("details.fold");
-      if (dfold) dfold.addEventListener("toggle", () => { if (dfold.open) moveThumb(surfaceSeg); });
 
       /**
        * Say whether a shape is stored, and show it.
@@ -2224,66 +2307,50 @@ export const DESIGN_PANEL_JS = /* js */ `
         await saveBanner(bandPng(750, 246));
       }
 
-      // One button, not two, wherever the caller sets no rules. The one INSIDE
-      // the fold is what goes: a save you cannot see because the section it
-      // lives in is collapsed is worse than no save button at all.
-      if (env.singleSave) {
-        q("[data-a=savedesign]").remove();
-        // ...which would otherwise leave the panel with no primary at all.
-        // DESIGN.md rule 1: neon marks the next action, and exactly one thing
-        // on a screen is the next action. The console's single Save card button
-        // becomes it; the dashboard's stays on Save design, above the rules.
-        q("[data-a=saverules]").className = "btn btn-neon";
-      }
-
-      // The sentences that used to sit as grey subtext under these two buttons
-      // are now in front of the button. Same words, read this time.
-      const design = q("[data-a=savedesign]");
-      if (design) design.onclick = async () => {
-        const ok = await modal(
-          "Update the card everywhere?",
-          liveCustomers
-            ? "<p>The new look reaches all <strong>" + liveCustomers + "</strong> " + them() +
-              " who already hold your card, not just new ones. Their stamps and reward are untouched.</p>"
-            : "<p>This is how your card will look to everyone who takes one.</p>",
-          "Save design",
-        );
-        if (!ok) return;
-        await saveLook();
-      };
-
-      q("[data-a=saverules]").onclick = async () => {
-        // The rename is called out separately, because it is the one change here
-        // that reaches a card already in someone's wallet.
+      /**
+       * One save, and a confirmation that carries both blast radii.
+       *
+       * There were two buttons because the look and the rules reach different
+       * people, and that is still true — but it made the merchant sort their own
+       * change into the right half before they could keep it, and the look one
+       * sat inside a collapsed section where it could be missed entirely. So the
+       * distinction moves from the buttons into the sentence in front of the one
+       * button, which is the moment it actually matters:
+       *
+       *   the look  → everyone holding a card, right now
+       *   the rules → new cards, and existing ones when they next earn a reward
+       *   the name  → the one rules-side change that reaches a wallet today
+       */
+      q("[data-a=save]").onclick = async () => {
         const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
         const ok = await modal(
-          env.singleSave ? "Save this card?" : env.showDetails ? "Save these changes?" : "Save the shop name?",
-          // With the terms hidden the only thing this button can change is the
-          // name, so promising anything about rules would be a lie.
-          (env.singleSave
-            ? "<p>The look and the name are saved together." +
-              (liveCustomers
-                ? " The new look reaches all <strong>" + liveCustomers + "</strong> " + them() +
-                  " who already hold this card."
-                : "") +
-              " The reward and the stamp count are not touched — only the shop sets those.</p>"
-            : !env.showDetails
-            ? "<p>Only the name changes. The reward and the stamp count stay exactly as they are.</p>"
+          env.showDetails ? "Save these changes?" : "Save this card?",
+          // The look half is true on every path — the console sets no rules, but
+          // it very much sets colours.
+          "<p>Your new look reaches" +
+            (liveCustomers
+              ? " all <strong>" + liveCustomers + "</strong> " + them() + " who already hold a card"
+              : " everyone who takes a card") +
+            ". Their stamps and reward are untouched.</p>" +
+          // With the terms hidden the only other thing this button can change is
+          // the name, so promising anything about rules would be a lie.
+          (!env.showDetails
+            ? "<p style=\\"margin-top:8px\\">The reward and the stamp count are not touched — only the shop sets those.</p>"
             : liveCustomers
-            ? "<p>New cards use these rules straight away. Your <strong>" + liveCustomers + "</strong> existing " +
-              them() + " keep the reward and stamp count they were promised, and move onto the new rules " +
-              "the next time they earn a reward.</p>"
-            : "<p>These rules apply to every card from here on.</p>") +
+            ? '<p style="margin-top:8px">New cards use your rules straight away. Your <strong>' + liveCustomers +
+              "</strong> existing " + them() + " keep the reward and stamp count they were promised, and move " +
+              "onto the new ones the next time they earn a reward.</p>"
+            : '<p style="margin-top:8px">Your rules apply to every card from here on.</p>') +
           (renamed && liveCustomers
-            ? '<p style="margin-top:8px">The new shop name <strong>does</strong> reach cards already in a wallet — ' +
-              "it is the only thing here that does. Your old sign-up links keep working.</p>"
+            ? '<p style="margin-top:8px">The new shop name <strong>does</strong> reach cards already in a wallet. ' +
+              "Your old sign-up links keep working.</p>"
             : ""),
-          "Save",
+          "Save changes",
         );
         if (!ok) return;
-        // One button means one save, in the order the card is built: the look
-        // first (it re-renders the band PNG), then the name.
-        if (env.singleSave) await saveLook();
+        // In the order the card is built: the look first, because it re-renders
+        // the band PNG that the rest of the card is composited over.
+        await saveLook();
         await save({
           shopName: f("shopName").value,
           // The card's own name follows the shop's. It used to be a second field
@@ -4696,12 +4763,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
           customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
           rulesNote: "",
-          // Folded: for an owner, design is a set-it-once job and the rules are
-          // what they come back to. The console opens it, because there the
-          // design IS the job.
-          designOpen: false,
           showDetails: true,
-          rulesSaveLabel: "Save rules",
+          saveLabel: "Save changes",
           // Keep the card-picker chip labels in sync without resetting the form.
           onRulesSaved: () => {
             const pk = document.querySelector("[data-pick]");
@@ -5312,17 +5375,12 @@ export function adminPage(): string {
         artUrl: (kind, v) => "/c/" + card.id + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
         // A real card has real holders, and the save confirmation names them.
         customersPath: "/card/" + card.id + "/counts",
-        // Open, not folded: on the dashboard design is a set-it-once job behind
-        // the rules, but here the design IS the job.
-        designOpen: true,
         // The console does not set a card's TERMS. The fields still exist and
         // are seeded from the card — the preview and the stamp renderer read
         // them — but they are hidden and never editable, so a save can only
         // write them back unchanged. The shop name stays editable.
         showDetails: false,
-        // Which makes the second save button pointless here: see designPanel.
-        singleSave: true,
-        rulesSaveLabel: "Save card",
+        saveLabel: "Save card",
         rulesNote: "",
         onRulesSaved: () => { if (after) after(); },
       });

@@ -194,43 +194,46 @@ describe("the design panel, mounted", () => {
       expect(div.querySelector('[data-surface="apple"]')!.hidden).toBe(false);
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(true);
       expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(true);
-      expect(div.querySelector('[data-pane="apple"]')!.hidden).toBe(false);
-      expect(div.querySelector('[data-pane="google"]')!.hidden).toBe(true);
     });
 
     /**
-     * The strip is the first thing inside Design, above the logo and the
-     * colours. Below them it was three-quarters of the way down a scrolling
-     * panel, far from the preview it drives, so it read as a setting for the
-     * block beside it rather than as the frame for the whole panel.
+     * The strip belongs to the preview, not to the editor.
+     *
+     * It used to move the editor with it, because the editor was one section per
+     * wallet — which asked a merchant to design the same logo three times. The
+     * editor is Brand and Loyalty programme now, so there is nothing per-surface
+     * left for a tab to switch to.
      */
-    it("puts the strip at the top of the fold, above everything shared", async () => {
+    it("sits on the preview box, above the mocks and outside the editor", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
       const order = div.all();
       const at = (sel: string) => order.indexOf(div.querySelector(sel)!);
-      expect(at("[data-surfaces]")).toBeGreaterThan(at("summary"));
+      const seg = div.querySelector("[data-surfaces]")!;
+      let inBox = false;
+      for (let n = seg.parent; n; n = n.parent) if ("pvbox" in n.dataset) inBox = true;
+      expect(inBox, "the strip is inside the preview box").toBe(true);
+      expect(at("[data-surfaces]")).toBeLessThan(at("[data-pv]"));
       expect(at("[data-surfaces]")).toBeLessThan(at("[data-logo]"));
-      expect(at("[data-surfaces]")).toBeLessThan(at("[data-roles]"));
-      // And still inside the fold — outside it, it would scroll away from the
-      // panes it switches.
-      expect(at("[data-surfaces]")).toBeGreaterThan(at("details"));
     });
 
-    it("moves the editor and the preview together", async () => {
+    it("switches the preview and leaves the editor alone", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
       const tab = (name: string) =>
         div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.tab === name)!;
+      // Nothing in the editor is per-surface any more, so there is nothing for a
+      // tab to hide — and a stray [data-pane] would mean the split crept back.
+      expect(div.querySelectorAll("[data-pane]")).toEqual([]);
 
       tab("google").onclick!();
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(false);
-      expect(div.querySelector('[data-pane="google"]')!.hidden).toBe(false);
-      // ...and the one you are no longer editing is not still on screen.
       expect(div.querySelector('[data-surface="apple"]')!.hidden).toBe(true);
-      expect(div.querySelector('[data-pane="apple"]')!.hidden).toBe(true);
+      // The editor is untouched by the switch.
+      expect(div.querySelector("[data-logo]")).not.toBeNull();
+      expect(div.querySelector("[data-stampimg]")).not.toBeNull();
 
       tab("signup").onclick!();
       expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(false);
@@ -381,7 +384,7 @@ describe("the design panel, mounted", () => {
       // Android is text dots and a balance — never the rendered grid, which it
       // is never sent.
       expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("2/10");
-      expect(div.querySelector("[data-pvg-dots]")!.textContent).toBe("●●○○○○○○○○");
+      expect(div.querySelector("[data-pvg-dots]")!.textContent).toBe("⬤⬤◯◯◯◯◯◯◯◯");
       expect(div.querySelector("[data-pvg-issuer]")!.textContent).toBe("Kopi Corner");
       // The poster headline falls back to the generated line, as posterPage does.
       expect(div.querySelector("[data-pvp-offer]")!.textContent)
@@ -465,73 +468,107 @@ describe("the design panel, mounted", () => {
    * of one decision, in three places.
    */
   describe("the Logo section", () => {
-    /** Walk up from an element collecting the data-pane values it sits inside. */
-    const panesAround = (el: FakeEl): string[] => {
-      const out: string[] = [];
-      for (let n = el.parent; n; n = n.parent) if (n.dataset.pane) out.push(n.dataset.pane);
-      return out;
-    };
-
-    it("keeps the name tick out of any one surface's pane", () => {
+    it("keeps the name tick beside the logo, not inside a surface", () => {
       const h = makeHarness();
       const div = build(card(), h);
-      expect(panesAround(div.querySelector("[data-lname]")!)).toEqual([]);
+      const tick = div.querySelector("[data-lname]")!;
+      for (let n = tick.parent; n; n = n.parent) expect(n.dataset.pane).toBeUndefined();
+      // It governs the card, the poster and the sign-up page, so it sits with
+      // the logo it is about — between the upload and the colours.
+      const order = div.all();
+      const at = (sel: string) => order.indexOf(div.querySelector(sel)!);
+      expect(at("[data-lname]")).toBeGreaterThan(at("[data-logo]"));
+      expect(at("[data-lname]")).toBeLessThan(at("[data-roles]"));
     });
 
     /**
-     * The square upload is a variant of the logo, so it lives beside it — but
-     * only Android uses it, so it appears only on that tab. Both at once: in the
-     * Logo section, inside a google pane.
+     * The Android square is offered by the SHAPE of the logo, not by which tab
+     * is open.
+     *
+     * Tab-driven, it looked like a second logo everyone has to supply. Google
+     * crops programLogo to a circle: a square-ish logo comes through that
+     * untouched and its owner should never be asked for anything at all, while a
+     * wide lockup loses both ends and its owner should be told exactly that,
+     * once, beside the logo in question.
      */
-    it("nests the square upload in Logo, shown on the Android tab alone", async () => {
-      const h = makeHarness();
-      const div = build(card(), h);
-      await h.settle();
-      const mark = div.querySelector("[data-mark]")!;
-      expect(panesAround(mark)).toEqual(["google"]);
-      // Beside the main upload, not in a section further down the panel.
-      const order = div.all();
-      expect(order.indexOf(mark)).toBeGreaterThan(order.indexOf(div.querySelector("[data-logo]")!));
-      expect(order.indexOf(mark)).toBeLessThan(order.indexOf(div.querySelector("[data-roles]")!));
+    describe("the Android square logo", () => {
+      const box = async (c: Record<string, unknown>, imageSize: number | { w: number; h: number }) => {
+        const h = makeHarness({ imageSize });
+        const div = build(c, h);
+        await h.settle();
+        return div.querySelector("[data-markbox]")!;
+      };
 
-      let pane = mark.parent;
-      while (pane && !pane.dataset.pane) pane = pane.parent;
-      const tab = (name: string) =>
-        div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.tab === name)!;
-      expect(pane!.hidden).toBe(true); // iPhone is the opening tab
-      tab("google").onclick!();
-      expect(pane!.hidden).toBe(false);
-      tab("signup").onclick!();
-      expect(pane!.hidden).toBe(true);
+      it("is offered when the uploaded logo is wide enough to be cropped", async () => {
+        expect((await box(card({ logoVersion: 5 }), { w: 480, h: 120 })).hidden).toBe(false);
+      });
+
+      it("is never mentioned when the logo is already square", async () => {
+        expect((await box(card({ logoVersion: 5 }), { w: 200, h: 200 })).hidden).toBe(true);
+      });
+
+      it("stays away when there is no logo at all to crop", async () => {
+        expect((await box(card({ logoVersion: 0 }), 64)).hidden).toBe(true);
+      });
+
+      /**
+       * A square logo plus a square version already uploaded still has to show
+       * the row — otherwise the only way back from an upload disappears with it.
+       */
+      it("stays reachable once one is uploaded, whatever the logo's shape", async () => {
+        const b = await box(card({ logoVersion: 5, markVersion: 9 }), { w: 200, h: 200 });
+        expect(b.hidden).toBe(false);
+        expect(b.querySelector("[data-markbtn]")!.textContent).toBe("Replace square version");
+      });
+
+      it("explains why Google needs one, in the row itself", async () => {
+        const b = await box(card({ logoVersion: 5 }), { w: 480, h: 120 });
+        expect(b.querySelector("[data-marknote]")!.textContent).toContain("Google Wallet");
+        expect(b.querySelector("[data-marknote]")!.textContent).toContain("circle");
+      });
     });
   });
 
   /**
-   * Android crops the logo to a circle, and the mock now crops with it.
-   *
-   * The mock drew it `contain`, so a wide brand lockup shrank politely to fit
-   * and looked correct — while the phone was cutting both ends off. This note
-   * names what the owner is now looking at, and only while it is true: with no
-   * logo nothing is being cropped, and with a square mark uploaded there is
-   * nothing left to fix.
+   * Colours are DERIVED — a logo upload sets all five — so the section rests as
+   * a read-out and the editable rows are a choice.
    */
-  describe("the Android logo note", () => {
-    const shown = (c: Record<string, unknown>) => {
+  describe("Customize colours", () => {
+    const openIt = (div: FakeEl) => div.querySelector("[data-a=customise]")!.onclick!();
+
+    it("shows the palette and hides the rows until asked", async () => {
       const h = makeHarness();
-      const div = build(c, h);
-      return div.querySelector("[data-marknote]")!.style.display !== "none";
-    };
-
-    it("appears while a wide logo is standing in for a square one", () => {
-      expect(shown(card({ logoVersion: 5, markVersion: 0 }))).toBe(true);
+      const div = build(card(), h);
+      await h.settle();
+      expect(div.querySelector("[data-roles]")!.hidden).toBe(true);
+      expect(div.querySelectorAll("[data-swatches] .sw").length).toBe(5);
+      openIt(div);
+      expect(div.querySelector("[data-roles]")!.hidden).toBe(false);
     });
 
-    it("goes away once a square logo is uploaded", () => {
-      expect(shown(card({ logoVersion: 5, markVersion: 9 }))).toBe(false);
-    });
-
-    it("stays away when there is no logo at all to crop", () => {
-      expect(shown(card({ logoVersion: 0, markVersion: 0 }))).toBe(false);
+    /**
+     * The invariant this control could most plausibly break. The open row
+     * physically HOLDS one of the five <input type="color"> elements, and every
+     * function in the panel reads its colours through f("bg") and friends —
+     * so closing the list with a picker still inside it would leave those reads
+     * pointing at a node nobody can reach or open.
+     */
+    it("never loses a colour picker, opened or closed", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const keys = ["bg", "fg", "label", "accent", "bandColor"];
+      const present = () => keys.every((k) => div.querySelector('[data-f="' + k + '"]') !== null);
+      expect(present()).toBe(true);
+      openIt(div);
+      expect(present()).toBe(true);
+      // Open a role, so one picker is genuinely moved out of the park...
+      div.querySelectorAll("[data-roles] .crhead")[0]!.onclick!();
+      expect(present()).toBe(true);
+      // ...then close the whole thing on top of it.
+      openIt(div);
+      expect(present()).toBe(true);
+      expect(div.querySelector("[data-roles]")!.hidden).toBe(true);
     });
   });
 

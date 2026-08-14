@@ -8,8 +8,24 @@ import type { CardRow, PassRow } from "./db.js";
 /** "●●●○○○○○○○" — filled vs empty stamp slots. */
 export function stampDots(count: number, target: number): string {
   const filled = Math.max(0, Math.min(count, target));
-  return "●".repeat(filled) + "○".repeat(Math.max(0, target - filled));
+  return DOT_FULL.repeat(filled) + DOT_EMPTY.repeat(Math.max(0, target - filled));
 }
+
+/**
+ * The large circles, not ● and ○.
+ *
+ * These are read at arm's length on an Android card, where they are TEXT —
+ * Google renders textModulesData in its own typography and we cannot set a size
+ * or an alignment. Bigger characters are the only lever that costs nothing;
+ * bigger *and* centred would mean sending an image, which is what made a stamp
+ * take ~20s to reach a phone instead of 3-5s (see buildLoyaltyPatch).
+ *
+ * Deliberately NOT the emoji circles (⚫ ⚪), which are larger still but locked
+ * black-and-white by the emoji font — they ignore the card's text colour and
+ * all but disappear on a dark card.
+ */
+const DOT_FULL = "⬤";
+const DOT_EMPTY = "◯";
 
 export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target">): boolean {
   return row.stamp_count >= row.stamps_target;

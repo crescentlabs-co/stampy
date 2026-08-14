@@ -62,11 +62,21 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
 
 describe("stampDots", () => {
   it("renders filled and empty slots", () => {
-    expect(stampDots(3, 10)).toBe("●●●○○○○○○○");
+    expect(stampDots(3, 10)).toBe("⬤⬤⬤◯◯◯◯◯◯◯");
   });
   it("clamps below zero and above target", () => {
-    expect(stampDots(-2, 5)).toBe("○○○○○");
-    expect(stampDots(9, 5)).toBe("●●●●●");
+    expect(stampDots(-2, 5)).toBe("◯◯◯◯◯");
+    expect(stampDots(9, 5)).toBe("⬤⬤⬤⬤⬤");
+  });
+  /**
+   * Large circles, and monochrome ones. On Android these are TEXT in a field
+   * whose size and alignment Google owns, so the characters are the only lever
+   * there is. The emoji circles are bigger still and are the trap: the emoji
+   * font paints them black-and-white whatever the card colour is, so ⚫ on a
+   * dark brand card is a row of holes.
+   */
+  it("uses no emoji, which would ignore the card's colour", () => {
+    expect(stampDots(2, 4)).not.toMatch(/[⚫⚪]/);
   });
 });
 

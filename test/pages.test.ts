@@ -499,21 +499,30 @@ describe("one designer, two pages", () => {
    * affects. What is SHARED must stay out of the tabs: a pane is hidden, and
    * the five colour pickers are the source of truth every render reads.
    */
-  it("splits the design by surface, on both pages", () => {
+  /**
+   * The editor is Brand and Loyalty programme; the three surfaces are previews.
+   *
+   * It used to be one editor section per wallet, which asked a merchant to
+   * design the same logo three times and filed the "my logo has my name in it"
+   * tick under a wallet it does not belong to. A merchant has one brand and one
+   * programme that happen to show up in three places — so the tabs switch what
+   * you are LOOKING at, and nothing else.
+   */
+  it("organises the editor by brand and programme, not by wallet", () => {
     for (const html of [dash, admin]) {
       for (const name of ["apple", "google", "signup"]) {
         expect(html).toContain(`data-surface="${name}"`);
-        expect(html).toContain(`data-pane="${name}"`);
       }
-      // The switch moves the editor and the preview together — one control, so
-      // the panel can never show one surface while editing another.
+      expect(html).toContain(">Brand<");
+      expect(html).toContain(">Loyalty programme<");
+      // No per-surface editor sections left anywhere in the panel. (The console
+      // page has data-pane of its own for its two tabs, hence the slice.)
+      expect(panelOf(html)).not.toMatch(/data-pane="(apple|google|signup)"/);
       expect(html).toContain("function showSurface(name)");
       expect(html).toContain('showSurface("apple")');
       // A hidden .seg measures zero, so the thumb is seated after the pane shows.
       expect(html).toMatch(/showSurface[\s\S]{0,400}moveThumb\(surfaceSeg\)/);
-      // Shared, and outside every pane.
       expect(html).toContain('<div class="colorpark" data-park>');
-      expect(html).not.toMatch(/data-pane="[a-z]+"[\s\S]{0,600}data-park/);
     }
   });
 
@@ -534,12 +543,12 @@ describe("one designer, two pages", () => {
   // DESIGN.md rule 1: neon marks the next action, and one thing on a screen is
   // the next action. Both save buttons were .btn-dark, so the panel marked
   // nothing at all; making both neon would break the rule the other way.
+  // DESIGN.md rule 1: neon marks the next action, and exactly one thing on a
+  // screen is the next action. With one save there is one candidate, on both.
   it("marks exactly one next action in the designer", () => {
-    const panel = (html: string) =>
-      html.slice(html.indexOf("<summary>Design</summary>"), html.indexOf('data-a="saverules"'));
-    expect((panel(dash).match(/btn-neon/g) ?? []).length).toBe(1);
-    // The console removes Save design, so its Save card button is promoted.
-    expect(admin).toContain('q("[data-a=saverules]").className = "btn btn-neon"');
+    for (const html of [dash, admin]) {
+      expect((panelOf(html).match(/btn-neon/g) ?? []).length).toBe(1);
+    }
   });
 
   // Rule 9, which this panel was breaking by name: --ghost-bg on --surface is
@@ -695,16 +704,40 @@ describe("one designer, two pages", () => {
    * (showDetails is false), so there the second button could only rename the
    * shop: two buttons for one job.
    */
-  it("merges the two saves only where there are no rules to save", () => {
-    expect(admin).toContain("singleSave: true");
-    expect(admin).toContain('rulesSaveLabel: "Save card"');
-    expect(dash).not.toContain("singleSave: true");
-    expect(dash).toContain('rulesSaveLabel: "Save rules"');
-    // The panel itself keeps both buttons; only one of them is removed at mount.
+  /**
+   * One save, on both pages.
+   *
+   * There were two — Save design inside the collapsed section, Save rules
+   * outside it — because the look and the rules reach different people. They
+   * still do; that distinction moved into the confirmation, where it is read at
+   * the moment it matters, instead of asking a merchant to sort their own change
+   * into the right half of the panel before they could keep it.
+   */
+  it("saves the look and the rules with one button", () => {
+    expect(dash).toContain('saveLabel: "Save changes"');
+    expect(admin).toContain('saveLabel: "Save card"');
     for (const html of [dash, admin]) {
-      expect(html).toContain('data-a="savedesign"');
-      expect(html).toContain('q("[data-a=savedesign]").remove()');
+      const panel = panelOf(html);
+      expect(panel).not.toContain("savedesign");
+      expect(panel).not.toContain("saverules");
+      expect(panel).not.toContain("singleSave");
+      expect((panel.match(/data-a="save"/g) ?? []).length).toBe(1);
+      // The look first: it re-bakes the band PNG the rest of the card is
+      // composited over, so the order is not arbitrary.
+      expect(panel).toMatch(/await saveLook\(\);[\s\S]{0,120}await save\(\{/);
     }
+  });
+
+  /**
+   * Both halves of that one save have to name their own blast radius, because
+   * the button no longer does: the look reaches every card already in a wallet,
+   * the rules only reach new ones.
+   */
+  it("says in the confirmation what each half of a save reaches", () => {
+    const panel = panelOf(dash);
+    expect(panel).toContain("Their stamps and reward are untouched");
+    expect(panel).toContain("the next time they earn a reward");
+    expect(panel).toContain("does</strong> reach cards already in a wallet");
   });
 
   /**
@@ -736,16 +769,20 @@ describe("one designer, two pages", () => {
    * the handful it is documented to take from the page.
    */
   it("reads nothing from the page it does not declare", () => {
-    // Comments are stripped first: prose may mention a name the code must not use.
-    const panel = panelOf(dash)
+    // Comments are stripped ONLY for the must-not-appear half: prose may mention
+    // a name the code must not use. The stripper is crude — an accept="image/*"
+    // opens a block comment as far as it is concerned, and it duly swallowed the
+    // save button — so the must-appear half below reads the panel as written.
+    const stripped = panelOf(dash)
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
     for (const gone of [/\bbase\b/, /\bS\.cards\b/, /\bartBase\b/]) {
-      expect(gone.test(panel), `the panel still reads ${gone}`).toBe(false);
+      expect(gone.test(stripped), `the panel still reads ${gone}`).toBe(false);
     }
+    const panel = panelOf(dash);
     // Everything that leaves the panel goes through env. (onRulesSaved is the
     // sentinel panelOf slices at, so it sits just past the end by construction.)
-    for (const via of ["env.artUrl(", "env.path(", "env.customersPath", "env.designOpen", "env.showDetails"]) {
+    for (const via of ["env.artUrl(", "env.path(", "env.customersPath", "env.saveLabel", "env.showDetails"]) {
       expect(panel).toContain(via);
     }
   });
@@ -800,8 +837,8 @@ describe("the console says things once", () => {
    * thing on the page was the six business-type presets underneath it, and the
    * console read as though nothing had changed at all.
    */
-  it("puts the whole designer on screen, open", () => {
-    expect(html).toContain("designOpen: true");
+  it("puts the whole designer on screen", () => {
+    expect(html).toContain(">Brand<");
     expect(html).not.toContain("Name a design on the left");
   });
 
@@ -1103,7 +1140,6 @@ describe("dashboard information architecture", () => {
   // Subtext nobody reads became a popup on the action it describes, and an ⓘ
   // beside the field it explains. Tappable, not hover — this is used on a phone.
   it("moves what matters into the action and the rest behind an info button", () => {
-    expect(html).toContain("Update the card everywhere?");
     expect(html).toContain("Save these changes?");
     expect(html).toContain("function info(text)");
     expect(html).toContain("wireInfo(panel)");
@@ -1122,24 +1158,36 @@ describe("dashboard information architecture", () => {
     expect(html).toContain('data-f="shopName"');
   });
 
-  // Design is one folded block sitting directly under the preview it changes.
-  // The logo belongs inside it, with the colours it feeds — pulling it out on
-  // its own put half a section above the fold and half below.
-  it("keeps Design as one block under the preview, above the rules", () => {
-    expect(html).toContain("<summary>Design</summary>");
+  /**
+   * Brand, then the programme, then one Save.
+   *
+   * Inside Brand the order is what a merchant actually does: upload the logo,
+   * pick the stamp, and only then argue with the colours the logo produced —
+   * which is why Colours is last and starts as a read-out rather than five
+   * fields.
+   */
+  it("orders the editor brand-first, and the programme after it", () => {
     const at = (s: string) => html.indexOf(s);
-    expect(at("<summary>Design</summary>")).toBeLessThan(at("data-logo"));
-    expect(at("data-logo")).toBeLessThan(at("data-roles"));
-    expect(at('data-a="savedesign"')).toBeLessThan(at('data-f="shopName"'));
+    expect(at(">Brand<")).toBeLessThan(at("data-logo"));
+    expect(at("data-logo")).toBeLessThan(at("data-stampimg"));
+    expect(at("data-stampimg")).toBeLessThan(at("data-roles"));
+    expect(at("data-roles")).toBeLessThan(at(">Loyalty programme<"));
+    expect(at(">Loyalty programme<")).toBeLessThan(at('data-f="shopName"'));
+    expect(at('data-f="shopName"')).toBeLessThan(at('data-a="save"'));
+    // The old Design fold is gone entirely, tabs and all.
+    expect(html).not.toContain("<summary>Design</summary>");
   });
 
-  // Colours was a .sec — a bordered 1.1rem heading — while Band and Stamps were
-  // plain labels, so one of three peers looked like their parent.
-  it("gives every design section the same weight and a one-word name", () => {
-    const design = html.slice(html.indexOf("<summary>Design</summary>"), html.indexOf('data-a="savedesign"'));
-    expect(design).not.toContain('class="sec');
-    for (const name of ["Logo", "Colours", "Stamps"]) {
-      expect(design).toContain(`>${name}`);
+  // Two headings, one weight. Everything under them is a plain label, so a
+  // merchant reads one level of structure rather than three.
+  it("heads the two sections and nothing else", () => {
+    // From the end of the preview box to the save button: the editor exactly.
+    // Slicing from ">Brand<" would start AFTER that heading's own class
+    // attribute and quietly count one heading instead of two.
+    const editor = html.slice(html.indexOf("data-testout"), html.indexOf('data-a="save"'));
+    expect((editor.match(/class="sec/g) ?? []).length).toBe(2);
+    for (const name of ["Logo", "Colours", "Stamp"]) {
+      expect(editor).toContain(`>${name}`);
     }
     expect(html).not.toContain("Band texture");
     expect(html).not.toContain("Stamp icon");
@@ -1244,7 +1292,12 @@ describe("dashboard information architecture", () => {
     // alternative was matching a brand by eye in five colour pickers.
     expect(html).not.toContain("data-a=usepal");
     expect(html).not.toContain("Use these colours");
-    expect(html).not.toContain("data-swatches");
+    // The strip that DID come back is a read-out, not a control: it shows what
+    // the logo produced. The five editable rows sit behind Customize, because
+    // the palette is derived and most merchants want it left alone.
+    expect(html).toContain("data-swatches");
+    expect(html).toContain('class="crlist" data-roles hidden');
+    expect(html).toContain('data-a="customise"');
   });
 
   // Matching a shade by hand in a colour picker is the fiddliest thing on the

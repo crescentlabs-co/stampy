@@ -272,9 +272,17 @@ export interface Harness {
  * fail, which is how a missing stamp icon (404) is simulated.
  */
 export function makeHarness(
-  opts: { imageSize?: number; fetchJson?: unknown; userAgent?: string } = {},
+  opts: {
+    /** A number is a square decode; a pair lets a test give a WIDE logo, which
+     *  is the only thing that makes the Android square-logo row appear. 0 makes
+     *  every decode fail, as a 404 would. */
+    imageSize?: number | { w: number; h: number };
+    fetchJson?: unknown;
+    userAgent?: string;
+  } = {},
 ): Harness {
-  const size = opts.imageSize ?? 64;
+  const given = opts.imageSize ?? 64;
+  const size = typeof given === "number" ? { w: given, h: given } : given;
   const root = new FakeEl("body");
   /** Where the panel sent the browser, if it did. `href` is the whole record. */
   const navigated = { href: "" };
@@ -299,12 +307,12 @@ export function makeHarness(
       // that gap is precisely the bug this harness exists to catch.
       pending.push(new Promise<void>((resolve) => {
         setTimeout(() => {
-          if (size > 0) {
+          if (size.w > 0 && size.h > 0) {
             // width/height as well as natural*: a real decoded image has both,
             // and the panel reads the plain pair when it checks an SVG actually
             // carries a size.
-            this.naturalWidth = size; this.naturalHeight = size;
-            this.width = size; this.height = size;
+            this.naturalWidth = size.w; this.naturalHeight = size.h;
+            this.width = size.w; this.height = size.h;
             this.complete = true;
             this.onload?.();
           } else {
@@ -325,6 +333,14 @@ export function makeHarness(
 
   const document = {
     createElement: newEl,
+    // A text node is an element with only text as far as this harness is
+    // concerned — enough for appendChild and textContent, which is all the
+    // panel does with one ("Custom…" beside a colour swatch).
+    createTextNode: (text: string) => {
+      const el = new FakeEl("#text");
+      el.text = String(text);
+      return el;
+    },
     querySelector: (sel: string) => root.querySelector(sel),
     querySelectorAll: (sel: string) => root.querySelectorAll(sel),
     body: root,
