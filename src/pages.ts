@@ -666,25 +666,49 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pv-note { text-align: center; font-size: .72rem; margin-top: 6px; opacity: .75; }
 
     /* --- the Google card --- */
-    /* Google renders one colour, a near-square logo, the issuer above the
-       programme, a points row, and text modules. No band, no strip, no grid. */
-    .pvg-top { display: flex; align-items: center; gap: 10px; }
+    /* Laid out against a photograph of a real Android card, not from the API
+       docs. Google does not stack the issuer over the programme beside the logo,
+       and it does not put a label inline with its value: the header is a strip
+       of logo + issuer with a rule under it, the programme name is a heading on
+       its own line, and every value sits UNDER a small grey caption. The rows
+       and their order are decided by cardTemplateOverride (src/googleModel.ts)
+       — progress and reward paired, dots on their own full-width row — so this
+       mock has to follow that template, not an arrangement of its own. */
+    .pvg { padding-bottom: 0; }
+    .pvg-hdr { display: flex; align-items: center; gap: 9px; padding-bottom: 11px; }
     /* cover, not contain, and no padding: Google's logo slot is a circle and it
        CROPS to it. Drawn with contain, a wide lockup shrank politely to fit and
        the mock said everything was fine — while the phone was cutting both ends
        off. The mock has to lose them too, or there is no reason on screen to
-       upload the square version. */
-    .pvg-logo { width: 42px; height: 42px; border-radius: 999px; object-fit: cover;
-                background: rgba(255,255,255,.14); flex: none; }
-    .pvg-names { min-width: 0; }
-    .pvg-issuer { font-size: .72rem; letter-spacing: .04em; opacity: .8;
+       upload the square version. Small, because it is small on the phone: at
+       42px it read as the card's main image rather than as a favicon. */
+    .pvg-logo { width: 26px; height: 26px; border-radius: 999px; object-fit: cover;
+                background: rgba(127,127,127,.18); flex: none;
+                box-shadow: 0 0 0 1px currentColor; }
+    .pvg-issuer { font-size: .82rem; min-width: 0;
                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pvg-prog { font-weight: 700; font-size: 1rem;
-                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pvg-pts { display: flex; align-items: baseline; gap: 8px; margin-top: 14px; }
-    .pvg-bal { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; }
-    .pvg-dots { font-size: 1.05rem; letter-spacing: 2px; margin-top: 4px; opacity: .95; }
-    .pvg-mod { margin-top: 12px; }
+    /* The hairlines Google draws under the header and under the progress row.
+       currentColor at low opacity so they hold on any card colour — a fixed
+       grey vanishes on a dark card and shouts on a pale one. */
+    .pvg-rule { height: 1px; background: currentColor; opacity: .16; }
+    .pvg-prog { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em;
+                margin: 13px 0 14px; overflow-wrap: anywhere; }
+    .pvg-row { display: flex; align-items: flex-start; gap: 12px; padding-bottom: 13px; }
+    .pvg-row > div { min-width: 0; }
+    .pvg-row > div + div { margin-left: auto; text-align: right; }
+    .pvg-lbl { font-size: .66rem; letter-spacing: .07em; opacity: .65; text-transform: uppercase; }
+    .pvg-val { font-size: .95rem; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
+    .pvg-stamps { padding-top: 13px; }
+    .pvg-dots { font-size: .95rem; letter-spacing: 1px; margin-top: 3px; }
+    /* Centred, on white, rounded — Google draws its own plate behind the code
+       whatever the card colour is. */
+    .pvg-qr { width: 96px; height: 96px; margin: 16px auto 0; background: #fff;
+              border-radius: 12px; display: flex; align-items: center; justify-content: center;
+              color: #111; font-weight: 700; font-size: .78rem; letter-spacing: 1px; }
+    .pvg-code { text-align: center; font-size: .78rem; margin-top: 8px; }
+    /* The card does not end at the colour. Google leaves a white shelf below it,
+       and without one the mock looked like a shorter card than the real thing. */
+    .pvg-foot { background: #fff; height: 34px; margin: 16px -16px 0; }
 
     /* --- the printed sheet --- */
     /* White, because paper is. Only the head band and the QR frame are brand. */
@@ -700,7 +724,13 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pvp-qr { border: 4px solid var(--line); border-radius: 10px; width: 96px; height: 96px;
               margin: 0 auto; display: flex; align-items: center; justify-content: center;
               font-weight: 700; font-size: .72rem; color: #111; letter-spacing: 1px; }
-    .pvp-steps { color: #6b6b66; font-size: .68rem; line-height: 1.7; margin-top: 12px; text-align: left; }
+    /* Centred, and centred the same way posterPage's .psteps is — the offer,
+       the line above the code and the code itself are all centred, so a
+       left-flush block of steps was the one thing on the sheet hanging off the
+       edge. Changed in BOTH places in the same commit: this preview exists to
+       be trusted, and a fix applied to only one of them is how it stops being. */
+    .pvp-steps { color: #6b6b66; font-size: .68rem; line-height: 1.7; margin-top: 12px;
+                 text-align: center; }
 
     /* The surface switch. Smaller than the page-level tabs it borrows from —
        it is a control inside a panel, not the panel's own navigation. Mini on
@@ -912,19 +942,37 @@ export const DESIGN_PANEL_JS = /* js */ `
                rendered grid and no custom stamp shape, ever (see
                buildLoyaltyPatch). Showing the grid here would be a lie the
                owner only discovers on somebody else's phone. -->
+          <!-- The order and the pairing here are NOT a design choice: they are
+               cardTemplateOverride in src/googleModel.ts, rendered. Progress and
+               reward share a row because they are that template's twoItems row;
+               the dots have their own because that row is oneItem. Change the
+               template and this has to move with it, or the mock goes back to
+               describing a card nobody receives. -->
           <div class="pv pvg" data-pvg data-surface="google" hidden>
-            <div class="pvg-top">
+            <div class="pvg-hdr">
               <img class="pvg-logo" data-pvg-logo alt="" style="\${(c.markVersion || c.logoVersion) ? "" : "display:none"}">
-              <div class="pvg-names">
-                <div class="pvg-issuer" data-pvg-issuer></div>
-                <div class="pvg-prog" data-pvg-prog></div>
+              <span class="pvg-issuer" data-pvg-issuer></span>
+            </div>
+            <div class="pvg-rule"></div>
+            <div class="pvg-prog" data-pvg-prog></div>
+            <div class="pvg-row">
+              <div>
+                <div class="pvg-lbl" data-pvg-clbl>PROGRESS</div>
+                <div class="pvg-val" data-pvg-bal></div>
+              </div>
+              <div>
+                <div class="pvg-lbl" data-pvg-rlbl>REWARD</div>
+                <div class="pvg-val" data-pvg-reward></div>
               </div>
             </div>
-            <div class="pvg-pts"><span class="pv-lbl">STAMPS</span><span class="pvg-bal" data-pvg-bal></span></div>
-            <div class="pvg-dots" data-pvg-dots></div>
-            <div class="pvg-mod"><div class="pv-lbl">REWARD</div><div data-pvg-reward></div></div>
-            <div class="pv-qr">QR</div>
-            <div class="pv-note">Card ABC123</div>
+            <div class="pvg-rule"></div>
+            <div class="pvg-stamps">
+              <div class="pvg-lbl" data-pvg-slbl>YOUR STAMPS</div>
+              <div class="pvg-dots" data-pvg-dots></div>
+            </div>
+            <div class="pvg-qr">QR</div>
+            <div class="pvg-code">Code ABC123</div>
+            <div class="pvg-foot"></div>
           </div>
 
           <!-- The printed sheet, at a size you can judge. Not an iframe of the
@@ -1350,7 +1398,14 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-pvg-prog]").textContent = name;
         q("[data-pvg-bal]").textContent = start + "/" + target;
         q("[data-pvg-dots]").textContent = "●".repeat(start) + "○".repeat(target - start);
-        q("[data-pvg-reward]").textContent = f("reward").value || "Your reward";
+        // The three captions and their copy come from buildLoyaltyPatch, headers
+        // included — a card at its target says REWARD READY 🎉 and tells the
+        // holder to show it, and a mock that only ever drew the ordinary state
+        // would hide the one moment the card exists for.
+        const ready = start >= target;
+        const reward = f("reward").value || "Your reward";
+        q("[data-pvg-slbl]").textContent = ready ? "REWARD READY 🎉" : "YOUR STAMPS";
+        q("[data-pvg-reward]").textContent = ready ? reward + " — show this to staff!" : reward;
         // The square mark if there is one, else the wide logo — the same
         // fallback logoUrl() applies when the class is built.
         const im = q("[data-pvg-logo]");
@@ -4971,7 +5026,9 @@ export function posterPage(
     .pqr { border: 6px solid ${frame}; border-radius: 16px; padding: 12px; background: #fff;
            width: min(100%, 380px); margin: 0 auto; }
     .pqr img { display: block; width: 100%; height: auto; }
-    .psteps { text-align: left; max-width: 340px; margin: 22px auto 0; color: var(--muted);
+    /* Centred to match everything else on the sheet — see .pvp-steps, which is
+       the mock of this block and has to keep saying the same thing. */
+    .psteps { text-align: center; max-width: 340px; margin: 22px auto 0; color: var(--muted);
               font-size: .92rem; line-height: 1.8; }
     .pfoot { border-top: 1px solid var(--line); padding: 12px 28px; text-align: center;
              color: var(--muted); font-size: .76rem; letter-spacing: .02em; }

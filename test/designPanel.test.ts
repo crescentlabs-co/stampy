@@ -13,6 +13,7 @@
  * somebody uploads a stamp and then looks at their Customers list.
  */
 import { beforeAll, describe, expect, it } from "vitest";
+import { buildLoyaltyPatch } from "../src/googleModel.js";
 import { DESIGN_PANEL_JS, MODAL_JS, PALETTE_JS, SEG_JS } from "../src/pages.js";
 import { makeHarness, type FakeEl } from "./domHarness.js";
 
@@ -301,6 +302,76 @@ describe("the design panel, mounted", () => {
         while (node) { if ("pane" in node.dataset) inPane = true; node = node.parent; }
         expect(inPane, key + " is inside a tab pane").toBe(false);
       }
+    });
+
+    /**
+     * The Android mock says what the wire says.
+     *
+     * Its captions were invented here — "STAMPS" beside an inline balance, with
+     * the reward on a row of its own below the dots — while the card Google
+     * actually renders takes its rows, their order and their headers from
+     * cardTemplateOverride and textModulesData. Two people writing the same copy
+     * twice is how a preview drifts, so this compares the mock against the real
+     * payload rather than against a second list of strings.
+     */
+    describe("against the real Google payload", () => {
+      const headers = (stampCount: number, target: number): Record<string, string> =>
+        Object.fromEntries(
+          (buildLoyaltyPatch(
+            { stamp_count: stampCount, stamps_target: target, reward: "Free coffee", message: "" } as never,
+            { name: "Kopi Corner" } as never,
+          ).textModulesData as { id: string; header: string; body: string }[])
+            .map((m) => [m.id, m.header + "|" + m.body]),
+        );
+
+      it("uses the captions and values Android is actually sent", async () => {
+        const h = makeHarness();
+        const div = build(card({ stampsStart: 2, stampsTarget: 10, reward: "Free coffee" }), h);
+        await h.settle();
+        const sent = headers(2, 10);
+        // Both halves read off the DOM. Writing the caption into the assertion
+        // instead is the same duplication this test exists to prevent: it passed
+        // happily against a mock captioned "STAMPS" while the phone said
+        // "PROGRESS".
+        const pair = (lbl: string, val: string) =>
+          div.querySelector(lbl)!.textContent + "|" + div.querySelector(val)!.textContent;
+        expect(pair("[data-pvg-clbl]", "[data-pvg-bal]")).toBe(sent.count);
+        expect(pair("[data-pvg-rlbl]", "[data-pvg-reward]")).toBe(sent.reward);
+        expect(pair("[data-pvg-slbl]", "[data-pvg-dots]")).toBe(sent.stamps);
+      });
+
+      /**
+       * The one state the card exists for. The mock only ever drew the ordinary
+       * one, so the moment a customer earns something — the copy changing to
+       * REWARD READY and telling them to show it — could not be checked at all.
+       */
+      it("switches to the reward-ready copy at the target, as the payload does", async () => {
+        const h = makeHarness();
+        const div = build(card({ stampsStart: 6, stampsTarget: 6, reward: "Free coffee" }), h);
+        await h.settle();
+        const sent = headers(6, 6);
+        expect(div.querySelector("[data-pvg-slbl]")!.textContent).toBe(sent.stamps!.split("|")[0]);
+        expect(
+          div.querySelector("[data-pvg-rlbl]")!.textContent + "|" +
+            div.querySelector("[data-pvg-reward]")!.textContent,
+        ).toBe(sent.reward);
+      });
+
+      /**
+       * Progress and reward share a row because they are the template's twoItems
+       * row; the dots have their own because that row is oneItem. Get the
+       * grouping wrong and the mock is describing a layout Google will not
+       * produce, however right the words are.
+       */
+      it("pairs progress with reward, and gives the dots their own row", () => {
+        const h = makeHarness();
+        const div = build(card(), h);
+        const bal = div.querySelector("[data-pvg-bal]")!;
+        const reward = div.querySelector("[data-pvg-reward]")!;
+        expect(bal.parent!.parent).toBe(reward.parent!.parent);
+        const dots = div.querySelector("[data-pvg-dots]")!;
+        expect(dots.parent).not.toBe(bal.parent!.parent);
+      });
     });
 
     it("draws all three previews from the same inputs", async () => {
