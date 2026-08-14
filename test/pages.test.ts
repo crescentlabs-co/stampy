@@ -514,7 +514,11 @@ describe("one designer, two pages", () => {
         expect(html).toContain(`data-surface="${name}"`);
       }
       expect(html).toContain(">Design<");
-      expect(html).toContain(">Loyalty programme<");
+      // The second heading is named for what is under it, so it is a ternary in
+      // the source rather than a literal: the console cannot set the rules, and
+      // heading a lone shop-name field "Loyalty programme" there would promise
+      // something the page does not do.
+      expect(html).toContain('env.showDetails ? "Loyalty programme" : "Shop"');
       // No per-surface editor sections left anywhere in the panel. (The console
       // page has data-pane of its own for its two tabs, hence the slice.)
       expect(panelOf(html)).not.toMatch(/data-pane="(apple|google|signup)"/);
@@ -838,8 +842,31 @@ describe("the console says things once", () => {
    * console read as though nothing had changed at all.
    */
   it("puts the whole designer on screen", () => {
-    expect(html).toContain(">Design<");
+    expect(html).toContain("function designPanel(c, env)");
     expect(html).not.toContain("Name a design on the left");
+  });
+
+  /**
+   * The console mounts the panel in two places, and BOTH already sit under a
+   * heading that says "Design their card" — step 2 of New shop, and the summary
+   * on a shop's own row. The panel titling itself again put DESIGN directly
+   * under one of those, which is what a page looks like when it has not been
+   * updated.
+   */
+  it("does not title the designer twice", () => {
+    expect(html).toContain("titled: false");
+    expect(html).toContain("Design their card");
+  });
+
+  /**
+   * The console cannot set a card's terms, so the programme block is hidden —
+   * which left the shop's name as the one field on the panel with no heading
+   * over it, sitting between Colours and Save as though it were another colour.
+   */
+  it("still heads the shop name, even with the rules hidden", () => {
+    expect(html).toContain('env.showDetails ? "Loyalty programme" : "Shop"');
+    // Never display:none'd back out: that is what left it headingless.
+    expect(html).not.toContain('">Loyalty programme</label>');
   });
 
   /**
@@ -1171,8 +1198,7 @@ describe("dashboard information architecture", () => {
     expect(at(">Design<")).toBeLessThan(at("data-logo"));
     expect(at("data-logo")).toBeLessThan(at("data-stampimg"));
     expect(at("data-stampimg")).toBeLessThan(at("data-roles"));
-    expect(at("data-roles")).toBeLessThan(at(">Loyalty programme<"));
-    expect(at(">Loyalty programme<")).toBeLessThan(at('data-f="shopName"'));
+    expect(at("data-roles")).toBeLessThan(at('data-f="shopName"'));
     expect(at('data-f="shopName"')).toBeLessThan(at('data-a="save"'));
     // The old Design fold is gone entirely, tabs and all.
     expect(html).not.toContain("<summary>Design</summary>");

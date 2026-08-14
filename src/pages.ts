@@ -922,6 +922,9 @@ export const DESIGN_PANEL_JS = /* js */ `
      *                      card to count yet
      *   rulesNote          HTML above the programme block, or ""
      *   onRulesSaved()     the caller's own follow-up
+     *   titled             whether the panel prints its own "Design" heading.
+     *                      False in the console, where both mounts already sit
+     *                      under one that says "Design their card".
      *   saveLabel          "Save changes" for an owner, "Save card" in the
      *                      console. There is ONE save either way: two of them
      *                      made a merchant sort their own change into the right
@@ -1049,7 +1052,11 @@ export const DESIGN_PANEL_JS = /* js */ `
              say, not the editor's. Organised by surface, this asked somebody to
              design the same logo three times and left the name tick filed under
              a wallet it does not belong to. -->
-        <label class="sec dsec first" style="display:block">Design</label>
+        <!-- Titled only where nothing above it already is. The console mounts
+             this inside a step headed "Design their card" and inside a row whose
+             summary says the same, so printing DESIGN again straight underneath
+             read as a page that had not been updated. -->
+        \${env.titled ? '<label class="sec dsec first" style="display:block">Design</label>' : ""}
 
         <!-- THREE things, three rows, in the order they are decided: the logo
              itself, the square version Android crops to, and whether that logo
@@ -1144,7 +1151,13 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         <!-- ================= LOYALTY PROGRAMME ================= -->
         \${env.rulesNote}
-        <label class="sec dsec" style="display:block\${env.showDetails ? "" : ";display:none"}">Loyalty programme</label>
+        <!-- Always headed, and named for what is actually under it. Hidden in
+             the console, this left the shop's name as the one field on the panel
+             with no heading over it — sitting between Colours and Save as though
+             it were another colour. The console cannot set the programme's
+             rules, so calling it "Loyalty programme" there would be a promise
+             the page does not keep. -->
+        <label class="sec dsec" style="display:block">\${env.showDetails ? "Loyalty programme" : "Shop"}</label>
         <label class="dlbl">Shop name\${info("The name customers see on the card.")}</label>
         <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
 
@@ -4793,6 +4806,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
           rulesNote: "",
           showDetails: true,
+          // Nothing above the Card tab names this panel, so it names itself.
+          titled: true,
           saveLabel: "Save changes",
           // Keep the card-picker chip labels in sync without resetting the form.
           onRulesSaved: () => {
@@ -5409,6 +5424,9 @@ export function adminPage(): string {
         // them — but they are hidden and never editable, so a save can only
         // write them back unchanged. The shop name stays editable.
         showDetails: false,
+        // Both console mounts sit under a heading that already says "Design
+        // their card" — step 2 of New shop, and the shop row's own summary.
+        titled: false,
         saveLabel: "Save card",
         rulesNote: "",
         onRulesSaved: () => { if (after) after(); },
