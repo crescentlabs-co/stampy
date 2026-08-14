@@ -761,22 +761,24 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .dsec { margin: 18px 0 2px; padding-top: 14px; }
     .dsec.first { margin-top: 4px; padding-top: 0; border-top: none; }
     .dlbl { margin: 12px 0 4px; }
-    /* "Android", under Logo. Lower-case and lighter than a control label,
-       because it names a variant of the thing above it rather than a new
-       setting — and it replaced a bordered callout that cost four times the
-       height to say the same thing. */
-    .dlbl.sub { text-transform: none; letter-spacing: 0; font-size: .78rem;
-                font-weight: 600; opacity: .8; margin-top: 10px; }
+    /* The three logo rows, identical in shape so they read as three answers to
+       one question rather than one control with two things stuck to it. The
+       first label in a row loses its top margin: the row supplies the gap, and
+       both would stack into a hole between every pair. */
+    .lrow + .lrow { margin-top: 12px; }
+    .lrow .dlbl { margin-top: 0; }
+    .lrow .chk { margin-top: 0; }
+    .lrow[hidden] { display: none; }
     /* Colours: a read-out first, the rows only on request. Uploading a logo
        sets all five, so the resting state is "here is what your logo produced"
        rather than five things to fill in. All on ONE line — label, the way in,
        and the palette itself — which is the whole section in the height a
        heading used to take. */
-    .crhdr { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .crhdr { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
     .crtoggle { width: auto; padding: 6px 11px; font-size: .78rem; flex: none; }
     .crtoggle.on { background: var(--ink); color: var(--surface-2, #fff); border-color: var(--ink); }
-    .swstrip { display: flex; gap: 5px; margin-left: auto; }
-    .sw { width: 22px; height: 22px; border-radius: 6px; flex: none;
+    .swstrip { display: flex; gap: 6px; margin-top: 5px; }
+    .sw { width: 26px; height: 26px; border-radius: 7px; flex: none;
           box-shadow: inset 0 0 0 1px rgba(32,33,29,.18); }
     .crlist[hidden] { display: none; }
     /* Inline rejection notice (e.g. a stamp upload with no transparency) —
@@ -1049,31 +1051,40 @@ export const DESIGN_PANEL_JS = /* js */ `
              a wallet it does not belong to. -->
         <label class="sec dsec first" style="display:block">Design</label>
 
-        <label class="dlbl">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
-        <div class="logorow">
-          <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
-          <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+        <!-- THREE things, three rows, in the order they are decided: the logo
+             itself, the square version Android crops to, and whether that logo
+             already says the shop's name. They were interleaved — upload, tick,
+             then a differently-shaped Android block — so the tick looked like a
+             property of the upload above it and the square one like an
+             afterthought. Same shape each: a label with its ⓘ, then its
+             control. -->
+        <div class="lrow">
+          <label class="dlbl">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
+          <div class="logorow">
+            <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
+            <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+          </div>
         </div>
-        <label class="chk" style="margin-top:8px">
-          <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
-          <span>My logo already includes my business name\${info("Tick this and we will not print your name next to the logo — on the card, on the poster or on your sign-up page. Leave it unticked if your logo is just a symbol, or nothing says whose card it is.")}</span>
-        </label>
 
-        <!-- The Android square, surfaced by the SHAPE of the logo rather than by
-             which tab is open. It is not a second logo everyone has to supply:
-             a square-ish logo needs no version at all, and most merchants never
-             see this row at all. Wide ones do, because Google crops to a circle
-             and takes both ends off.
-             A sub-label under Logo rather than a bordered callout: it is a
-             variant of the logo above it, and a box around two lines read as a
-             warning about something broken while costing more height than the
-             control it contained. -->
-        <div data-markbox hidden>
-          <label class="dlbl sub"><span data-marknote>Android</span>\${info("Google Wallet shows your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Only Android uses it; your iPhone card, poster and sign-up page keep the main logo.")}</label>
+        <!-- Row two, and the only conditional one: Google crops programLogo to a
+             circle, so a square-ish logo needs no second version and its owner is
+             never asked for one. A wide logo loses both ends, and then this
+             appears. Shown by the SHAPE of the logo, measured in the browser —
+             not by which preview tab happens to be open. -->
+        <div class="lrow" data-markbox hidden>
+          <label class="dlbl">Square logo for Android\${info("Google Wallet shows your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Only Android uses it; your iPhone card, poster and sign-up page keep the main logo.")}</label>
           <div class="logorow">
             <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload square version</span><input data-mark type="file" accept="image/*"></label>
             <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
           </div>
+        </div>
+
+        <div class="lrow">
+          <label class="dlbl">Business name\${info("Your shop's name is printed next to the logo on the card, the poster and your sign-up page. Tick this when the logo already contains it, and we leave the printed one off so it is not said twice.")}</label>
+          <label class="chk">
+            <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
+            <span>My logo already includes it — don't print it again</span>
+          </label>
         </div>
 
         <label class="dlbl">Stamp\${info("Plain dots, any emoji, or your own shape. Whatever you pick is drawn in your Stamps colour. iPhone only — Android is sent the count as text, so it shows dots whatever you choose here.")}</label>
@@ -1109,8 +1120,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         <div class="crhdr">
           <label style="margin:0">Colours\${info("Taken from your logo automatically, and used on all three: the iPhone card, the Android card and your sign-up poster. Open Customize to set any of them by hand — the band is the strip the stamps sit on, and Stamps is what an earned stamp fills in with.")}</label>
           <button type="button" class="btn btn-ghost crtoggle" data-a="customise">Customize</button>
-          <span class="swstrip" data-swatches></span>
         </div>
+        <!-- The palette sits UNDER its label, like every other control here. On
+             the same line it was a fourth thing competing for one row and read
+             as decoration beside the button rather than as the answer to the
+             word above it. -->
+        <div class="swstrip" data-swatches></div>
         <div class="crlist" data-roles hidden></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
@@ -1447,13 +1462,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         const wide = logoRatio > 1.25;
         box.hidden = !c.logoVersion || (!wide && !c.markVersion);
         if (box.hidden) return;
+        // The row's label is fixed ("Square logo for Android") and the state
+        // lives on the button, which is where the state of the row above it
+        // lives too. A sentence describing the state as well would be a third
+        // way of saying the same thing.
         q("[data-markbtn]").textContent = c.markVersion ? "Replace square version" : "Upload square version";
-        // Short, because the why is one tap away in the ⓘ beside it. Two
-        // sentences in a bordered box said the same thing in four times the
-        // height, in the one section whose length is the complaint.
-        q("[data-marknote]").textContent = c.markVersion
-          ? "Android — using your square logo"
-          : "Android — needs a square logo";
       }
       // Measured off its own Image rather than the preview's: the preview logo
       // is hidden on two of the three tabs, and a hidden img still decodes but

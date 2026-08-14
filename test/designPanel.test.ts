@@ -468,6 +468,33 @@ describe("the design panel, mounted", () => {
    * of one decision, in three places.
    */
   describe("the Logo section", () => {
+    /**
+     * Three things, three rows, in the order they are decided: the logo, the
+     * square version Android crops to, and whether that logo already says the
+     * shop's name.
+     *
+     * They used to be interleaved — upload, then the tick, then a
+     * differently-shaped Android block — so the tick read as a property of the
+     * upload directly above it and the square one as an afterthought. Each row
+     * is now the same shape: a label, then its control.
+     */
+    it("lays the three logo decisions out as three rows, in order", () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      const rows = div.querySelectorAll(".lrow");
+      expect(rows.length).toBe(3);
+      // Each owns exactly one of the three, and in this order.
+      const owns = (row: FakeEl, sel: string) => row.querySelector(sel) !== null;
+      expect(owns(rows[0]!, "[data-logo]")).toBe(true);
+      expect(owns(rows[1]!, "[data-mark]")).toBe(true);
+      expect(owns(rows[2]!, "[data-lname]")).toBe(true);
+      // ...and none of them owns two, which is what interleaving looked like.
+      expect(owns(rows[0]!, "[data-lname]")).toBe(false);
+      expect(owns(rows[0]!, "[data-mark]")).toBe(false);
+      // Every row is a label and its control, so they read as peers.
+      for (const r of rows) expect(r.querySelector(".dlbl")).not.toBeNull();
+    });
+
     it("keeps the name tick beside the logo, not inside a surface", () => {
       const h = makeHarness();
       const div = build(card(), h);
@@ -500,7 +527,12 @@ describe("the design panel, mounted", () => {
       };
 
       it("is offered when the uploaded logo is wide enough to be cropped", async () => {
-        expect((await box(card({ logoVersion: 5 }), { w: 480, h: 120 })).hidden).toBe(false);
+        const b = await box(card({ logoVersion: 5 }), { w: 480, h: 120 });
+        expect(b.hidden).toBe(false);
+        // The row's state is on its button, exactly as the Logo row's is — not
+        // in a sentence beside it saying a third time what the label and the
+        // button already say.
+        expect(b.querySelector("[data-markbtn]")!.textContent).toBe("Upload square version");
       });
 
       it("is never mentioned when the logo is already square", async () => {
@@ -521,19 +553,6 @@ describe("the design panel, mounted", () => {
         expect(b.querySelector("[data-markbtn]")!.textContent).toBe("Replace square version");
       });
 
-      /**
-       * A sub-label under Logo, not a bordered callout. It names a variant of
-       * the logo above it; the box cost four times the height to say the same
-       * thing, in the one section whose length was the complaint. The WHY moved
-       * into the ⓘ beside it — asserted in pages.test.ts, where info() renders
-       * its real text rather than the empty stub this harness passes.
-       */
-      it("says which surface it is for, in one short line", async () => {
-        const wide = await box(card({ logoVersion: 5 }), { w: 480, h: 120 });
-        expect(wide.querySelector("[data-marknote]")!.textContent).toBe("Android — needs a square logo");
-        const done = await box(card({ logoVersion: 5, markVersion: 9 }), { w: 480, h: 120 });
-        expect(done.querySelector("[data-marknote]")!.textContent).toBe("Android — using your square logo");
-      });
     });
   });
 
