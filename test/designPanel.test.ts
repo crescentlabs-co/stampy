@@ -521,10 +521,18 @@ describe("the design panel, mounted", () => {
         expect(b.querySelector("[data-markbtn]")!.textContent).toBe("Replace square version");
       });
 
-      it("explains why Google needs one, in the row itself", async () => {
-        const b = await box(card({ logoVersion: 5 }), { w: 480, h: 120 });
-        expect(b.querySelector("[data-marknote]")!.textContent).toContain("Google Wallet");
-        expect(b.querySelector("[data-marknote]")!.textContent).toContain("circle");
+      /**
+       * A sub-label under Logo, not a bordered callout. It names a variant of
+       * the logo above it; the box cost four times the height to say the same
+       * thing, in the one section whose length was the complaint. The WHY moved
+       * into the ⓘ beside it — asserted in pages.test.ts, where info() renders
+       * its real text rather than the empty stub this harness passes.
+       */
+      it("says which surface it is for, in one short line", async () => {
+        const wide = await box(card({ logoVersion: 5 }), { w: 480, h: 120 });
+        expect(wide.querySelector("[data-marknote]")!.textContent).toBe("Android — needs a square logo");
+        const done = await box(card({ logoVersion: 5, markVersion: 9 }), { w: 480, h: 120 });
+        expect(done.querySelector("[data-marknote]")!.textContent).toBe("Android — using your square logo");
       });
     });
   });

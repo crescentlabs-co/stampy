@@ -513,7 +513,7 @@ describe("one designer, two pages", () => {
       for (const name of ["apple", "google", "signup"]) {
         expect(html).toContain(`data-surface="${name}"`);
       }
-      expect(html).toContain(">Brand<");
+      expect(html).toContain(">Design<");
       expect(html).toContain(">Loyalty programme<");
       // No per-surface editor sections left anywhere in the panel. (The console
       // page has data-pane of its own for its two tabs, hence the slice.)
@@ -838,7 +838,7 @@ describe("the console says things once", () => {
    * console read as though nothing had changed at all.
    */
   it("puts the whole designer on screen", () => {
-    expect(html).toContain(">Brand<");
+    expect(html).toContain(">Design<");
     expect(html).not.toContain("Name a design on the left");
   });
 
@@ -1159,16 +1159,16 @@ describe("dashboard information architecture", () => {
   });
 
   /**
-   * Brand, then the programme, then one Save.
+   * Design, then the programme, then one Save.
    *
-   * Inside Brand the order is what a merchant actually does: upload the logo,
+   * Inside Design the order is what a merchant actually does: upload the logo,
    * pick the stamp, and only then argue with the colours the logo produced —
    * which is why Colours is last and starts as a read-out rather than five
    * fields.
    */
-  it("orders the editor brand-first, and the programme after it", () => {
+  it("orders the editor design-first, and the programme after it", () => {
     const at = (s: string) => html.indexOf(s);
-    expect(at(">Brand<")).toBeLessThan(at("data-logo"));
+    expect(at(">Design<")).toBeLessThan(at("data-logo"));
     expect(at("data-logo")).toBeLessThan(at("data-stampimg"));
     expect(at("data-stampimg")).toBeLessThan(at("data-roles"));
     expect(at("data-roles")).toBeLessThan(at(">Loyalty programme<"));
@@ -1182,7 +1182,7 @@ describe("dashboard information architecture", () => {
   // merchant reads one level of structure rather than three.
   it("heads the two sections and nothing else", () => {
     // From the end of the preview box to the save button: the editor exactly.
-    // Slicing from ">Brand<" would start AFTER that heading's own class
+    // Slicing from ">Design<" would start AFTER that heading's own class
     // attribute and quietly count one heading instead of two.
     const editor = html.slice(html.indexOf("data-testout"), html.indexOf('data-a="save"'));
     expect((editor.match(/class="sec/g) ?? []).length).toBe(2);
@@ -1298,6 +1298,17 @@ describe("dashboard information architecture", () => {
     expect(html).toContain("data-swatches");
     expect(html).toContain('class="crlist" data-roles hidden');
     expect(html).toContain('data-a="customise"');
+  });
+
+  /**
+   * The Android sub-label is one line; the reason Google needs a square logo
+   * lives in the ⓘ beside it. It used to be two sentences in a bordered box,
+   * which cost four times the height to say the same thing — in the one section
+   * whose length was the complaint.
+   */
+  it("keeps the Android explanation behind its info button", () => {
+    expect(html).toContain("Google Wallet shows your logo in a small circle and crops to it");
+    expect(html).not.toContain('class="marknote"');
   });
 
   // Matching a shade by hand in a colour picker is the fiddliest thing on the
