@@ -768,7 +768,11 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .lrow + .lrow { margin-top: 12px; }
     .lrow .dlbl { margin-top: 0; }
     .lrow .chk { margin-top: 0; }
-    .lrow[hidden] { display: none; }
+    /* The one line that is conditional, rather than the whole row: it says
+       something is being lost right now, so it only belongs on screen when
+       something is. */
+    .mhint { margin: 6px 0 0; font-size: .8rem; color: #9a3412; }
+    .mhint[hidden] { display: none; }
     /* Colours: a read-out first, the rows only on request. Uploading a logo
        sets all five, so the resting state is "here is what your logo produced"
        rather than five things to fill in. All on ONE line — label, the way in,
@@ -1073,17 +1077,21 @@ export const DESIGN_PANEL_JS = /* js */ `
           </div>
         </div>
 
-        <!-- Row two, and the only conditional one: Google crops programLogo to a
-             circle, so a square-ish logo needs no second version and its owner is
-             never asked for one. A wide logo loses both ends, and then this
-             appears. Shown by the SHAPE of the logo, measured in the browser —
-             not by which preview tab happens to be open. -->
-        <div class="lrow" data-markbox hidden>
-          <label class="dlbl">Square logo for Android\${info("Google Wallet shows your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Only Android uses it; your iPhone card, poster and sign-up page keep the main logo.")}</label>
+        <!-- Row two. Always here, because it is one of the three things this
+             section is about and a row that is simply absent cannot be
+             understood — on a brand-new shop there is no logo yet, so the
+             condition that used to reveal it could not be true and the row
+             looked missing rather than not-yet-needed.
+             The RELEVANCE moved into the row instead: the line below appears
+             only once there is a wide logo to be cropped, which is the one state
+             where anything is actually being lost. -->
+        <div class="lrow" data-markbox>
+          <label class="dlbl">Square logo for Android\${info("Google Wallet shows your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Optional: skip it and Android keeps your main logo. Only Android uses it; your iPhone card, poster and sign-up page are unaffected.")}</label>
           <div class="logorow">
             <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload square version</span><input data-mark type="file" accept="image/*"></label>
             <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
           </div>
+          <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
         </div>
 
         <div class="lrow">
@@ -1468,18 +1476,14 @@ export const DESIGN_PANEL_JS = /* js */ `
        */
       let logoRatio = 0;
       function updateMark() {
-        const box = q("[data-markbox]");
-        if (!box) return;
-        // Nothing uploaded, or not measured yet: say nothing. A row that appears
-        // and then vanishes once the image decodes is worse than a late one.
-        const wide = logoRatio > 1.25;
-        box.hidden = !c.logoVersion || (!wide && !c.markVersion);
-        if (box.hidden) return;
-        // The row's label is fixed ("Square logo for Android") and the state
-        // lives on the button, which is where the state of the row above it
-        // lives too. A sentence describing the state as well would be a third
-        // way of saying the same thing.
+        const hint = q("[data-markhint]");
+        if (!hint) return;
+        // The row's label is fixed and its state lives on the button, which is
+        // where the state of the row above it lives too. The hint is the one
+        // extra thing, and only in the one state where something is actually
+        // being lost: a wide logo, and no square version to use instead.
         q("[data-markbtn]").textContent = c.markVersion ? "Replace square version" : "Upload square version";
+        hint.hidden = !(c.logoVersion && logoRatio > 1.25 && !c.markVersion);
       }
       // Measured off its own Image rather than the preview's: the preview logo
       // is hidden on two of the three tabs, and a hidden img still decodes but

@@ -509,48 +509,58 @@ describe("the design panel, mounted", () => {
     });
 
     /**
-     * The Android square is offered by the SHAPE of the logo, not by which tab
-     * is open.
+     * The row is always here; only its warning is conditional.
      *
-     * Tab-driven, it looked like a second logo everyone has to supply. Google
-     * crops programLogo to a circle: a square-ish logo comes through that
-     * untouched and its owner should never be asked for anything at all, while a
-     * wide lockup loses both ends and its owner should be told exactly that,
-     * once, beside the logo in question.
+     * It used to appear based on the shape of the logo, so that a merchant whose
+     * logo was already square was never asked for anything. That reads fine once
+     * there IS a logo — and not at all on a brand-new shop, where there is none,
+     * the condition cannot be true, and one of three rows the section promises
+     * is simply absent. Missing is not the same as not-yet-needed, and only one
+     * of those can be understood from the screen.
+     *
+     * So the relevance moved inside the row: the line appears only when there is
+     * a wide logo being cropped, which is the one state where anything is
+     * actually being lost.
      */
     describe("the Android square logo", () => {
-      const box = async (c: Record<string, unknown>, imageSize: number | { w: number; h: number }) => {
+      const mounted = async (c: Record<string, unknown>, imageSize: number | { w: number; h: number }) => {
         const h = makeHarness({ imageSize });
         const div = build(c, h);
         await h.settle();
-        return div.querySelector("[data-markbox]")!;
+        return div;
       };
 
-      it("is offered when the uploaded logo is wide enough to be cropped", async () => {
-        const b = await box(card({ logoVersion: 5 }), { w: 480, h: 120 });
-        expect(b.hidden).toBe(false);
-        // The row's state is on its button, exactly as the Logo row's is — not
-        // in a sentence beside it saying a third time what the label and the
-        // button already say.
-        expect(b.querySelector("[data-markbtn]")!.textContent).toBe("Upload square version");
+      it("is one of the three rows whatever state the logo is in", async () => {
+        for (const [c, size] of [
+          [card({ logoVersion: 0 }), 64],
+          [card({ logoVersion: 5 }), { w: 200, h: 200 }],
+          [card({ logoVersion: 5 }), { w: 480, h: 120 }],
+        ] as const) {
+          const div = await mounted(c, size);
+          expect(div.querySelector("[data-markbox]")!.hidden).toBe(false);
+        }
       });
 
-      it("is never mentioned when the logo is already square", async () => {
-        expect((await box(card({ logoVersion: 5 }), { w: 200, h: 200 })).hidden).toBe(true);
+      it("warns only while a wide logo is being cropped", async () => {
+        const wide = await mounted(card({ logoVersion: 5 }), { w: 480, h: 120 });
+        expect(wide.querySelector("[data-markhint]")!.hidden).toBe(false);
+        // Square logo: nothing is lost, so nothing is said.
+        const square = await mounted(card({ logoVersion: 5 }), { w: 200, h: 200 });
+        expect(square.querySelector("[data-markhint]")!.hidden).toBe(true);
+        // No logo yet — the row is offered, but there is nothing to crop.
+        const none = await mounted(card({ logoVersion: 0 }), 64);
+        expect(none.querySelector("[data-markhint]")!.hidden).toBe(true);
       });
 
-      it("stays away when there is no logo at all to crop", async () => {
-        expect((await box(card({ logoVersion: 0 }), 64)).hidden).toBe(true);
+      it("stops warning once a square version is there to use instead", async () => {
+        const div = await mounted(card({ logoVersion: 5, markVersion: 9 }), { w: 480, h: 120 });
+        expect(div.querySelector("[data-markhint]")!.hidden).toBe(true);
+        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Replace square version");
       });
 
-      /**
-       * A square logo plus a square version already uploaded still has to show
-       * the row — otherwise the only way back from an upload disappears with it.
-       */
-      it("stays reachable once one is uploaded, whatever the logo's shape", async () => {
-        const b = await box(card({ logoVersion: 5, markVersion: 9 }), { w: 200, h: 200 });
-        expect(b.hidden).toBe(false);
-        expect(b.querySelector("[data-markbtn]")!.textContent).toBe("Replace square version");
+      it("says on the button whether one is already there", async () => {
+        const div = await mounted(card({ logoVersion: 5 }), { w: 480, h: 120 });
+        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Upload square version");
       });
 
     });
