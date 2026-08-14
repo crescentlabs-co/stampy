@@ -256,6 +256,65 @@ describe("the printable sign-up poster", () => {
       landingPage({ ...own, name: "Kopi Corner" } as never, true, true, "default"),
     ).toContain("Ten kopis, one free.");
   });
+
+  /**
+   * The sign-up page follows the same name rule as the card and the poster.
+   *
+   * It did not, and it is the page a customer actually meets — the QR on the
+   * poster opens it — so a logo with the shop's name in it introduced the shop
+   * twice, in two different typefaces, at the one moment somebody is deciding
+   * whether to add the card.
+   */
+  describe("the sign-up page and a logo that already says the name", () => {
+    const page = (logoHasName: boolean, logoVersion: number) =>
+      landingPage(
+        { ...POSTER_CARD, name: "Kopi Corner", logo_has_name: logoHasName } as never,
+        true, true, "default", "Kopi Corner", logoVersion,
+      );
+
+    it("prints the name once when the logo carries it", () => {
+      const html = page(true, 7);
+      expect(html).toContain("art/logo.png?v=7");
+      expect(html).not.toContain("<h1>Kopi Corner</h1>");
+    });
+
+    it("still prints it when the logo is just a symbol", () => {
+      expect(page(false, 7)).toContain("<h1>Kopi Corner</h1>");
+    });
+
+    /**
+     * With no logo at all there is nothing carrying the name, so hiding it
+     * would leave the page anonymous — the tick is about a DUPLICATE, and
+     * without an image there is nothing to duplicate.
+     */
+    it("keeps the name when there is no logo, whatever the tick says", () => {
+      expect(page(true, 0)).toContain("<h1>Kopi Corner</h1>");
+    });
+  });
+});
+
+/**
+ * Handing somebody their shop is not a memory test.
+ *
+ * The claim page used to end on "your staff PIN — write it down now", which was
+ * the only moment it could ever be read: a PIN is stored as a scrypt hash and
+ * nothing can reverse it. So the one screen that welcomes a new owner also
+ * handed them something to lose. They pick their own under Shop instead, and
+ * the dashboard says the counter is waiting on it.
+ */
+describe("the claim page hands over a shop, not a PIN", () => {
+  const html = claimPage("tok", "Kopi Corner", null, 0);
+
+  it("never prints a PIN, or the machinery for showing one", () => {
+    expect(html).not.toContain("cl-pin");
+    expect(html).not.toContain("staffPin");
+    expect(html).not.toContain("write it down");
+  });
+
+  it("still creates the login, and points at the step that is left", () => {
+    expect(html).toContain("/finish");
+    expect(html).toContain("staff PIN");
+  });
 });
 
 // A <title> is RCDATA, so a script inside it does not run — but "</title>"

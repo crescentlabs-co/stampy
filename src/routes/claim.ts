@@ -22,12 +22,10 @@ import {
   cafeLogoVersion,
   cardsForMerchant,
   createOwner,
-  generateStaffPin,
   getOwnerByEmail,
   linkOwnerCard,
   logOwnerLogin,
   merchantByClaimToken,
-  setStaffPin,
 } from "../db.js";
 import { claimPage, notReadyPage } from "../pages.js";
 
@@ -99,14 +97,20 @@ claimRouter.post("/:token/finish", async (req, res) => {
   for (const card of await cardsForMerchant(merchant.id)) {
     await linkOwnerCard(owner.id, card.id);
   }
-  // The counter's PIN exists from this moment and not before: no owner meant no
-  // PIN, which is what kept the staff page unreachable while the shop was
-  // unclaimed. Only its hash is stored, so this response is the one chance to
-  // read it — the claim page shows it once and then it can only be replaced.
-  const staffPin = generateStaffPin();
-  await setStaffPin(owner.id, staffPin);
+  // NO staff PIN is minted here.
+  //
+  // One used to be, and shown once on the next screen with "write this down
+  // now". A PIN is stored only as a scrypt hash, so that screen was the single
+  // moment it could ever be read — which made handing someone their shop also
+  // a memory test, at the one point they are least ready for one.
+  //
+  // Minting it here without showing it would be worse than either: the owner
+  // would have a live PIN nobody on earth can read, `hasStaffPin` would be true,
+  // and the Shop tab's button would read "Reset" as though everything were set
+  // up. So the mint goes with the reveal. The owner types their own under Shop,
+  // and the dashboard says plainly that the counter cannot stamp until they do.
   clear(key);
   setSessionCookie(res, owner.id);
   void logOwnerLogin(owner.id);
-  res.json({ ok: true, staffPin });
+  res.json({ ok: true });
 });

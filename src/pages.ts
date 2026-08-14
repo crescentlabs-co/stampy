@@ -669,8 +669,13 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* Google renders one colour, a near-square logo, the issuer above the
        programme, a points row, and text modules. No band, no strip, no grid. */
     .pvg-top { display: flex; align-items: center; gap: 10px; }
-    .pvg-logo { width: 38px; height: 38px; border-radius: 999px; object-fit: contain;
-                background: rgba(255,255,255,.14); flex: none; padding: 3px; }
+    /* cover, not contain, and no padding: Google's logo slot is a circle and it
+       CROPS to it. Drawn with contain, a wide lockup shrank politely to fit and
+       the mock said everything was fine — while the phone was cutting both ends
+       off. The mock has to lose them too, or there is no reason on screen to
+       upload the square version. */
+    .pvg-logo { width: 42px; height: 42px; border-radius: 999px; object-fit: cover;
+                background: rgba(255,255,255,.14); flex: none; }
     .pvg-names { min-width: 0; }
     .pvg-issuer { font-size: .72rem; letter-spacing: .04em; opacity: .8;
                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -994,11 +999,17 @@ export const DESIGN_PANEL_JS = /* js */ `
         </section>
 
         <section class="dpane" data-pane="google" hidden>
-        <label style="margin-top:14px">Square logo\${info("Google Wallet puts your logo in a small, nearly square space, where a wide logo shrinks to a sliver. Upload a square version — just the symbol usually works. Skip it and Android keeps using your main logo.")}</label>
+        <label style="margin-top:0">Square logo\${info("Google Wallet puts your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Only Android uses it; your iPhone card and poster keep the main logo.")}</label>
         <div class="logorow">
           <label class="btn btn-ghost" style="margin:0">Upload square logo<input data-mark type="file" accept="image/*"></label>
           <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
         </div>
+        <!-- Shown only while Android is falling back to the wide logo. The mock
+             above now crops the way the phone does, so this names what the owner
+             is already looking at rather than warning about something invisible. -->
+        <p class="muted" data-marknote style="display:none;margin:8px 0 0;font-size:.84rem">
+          Android is cropping your main logo to fit the circle above.
+        </p>
         </section>
 
         <!-- Nothing of its own. One line rather than none, because a tab that
@@ -1279,7 +1290,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         g.style.color = pickTextColor(f("bg").value);
         const name = f("shopName").value || "Your shop";
         q("[data-pvg-issuer]").textContent = name;
-        q("[data-pvg-prog]").textContent = name + " loyalty card";
+        // The title is the shop's name, exactly as buildLoyaltyClass sends it.
+        // It said "<shop> loyalty card", which spent the one prominent line on
+        // the phone explaining what kind of thing you were holding.
+        q("[data-pvg-prog]").textContent = name;
         q("[data-pvg-bal]").textContent = start + "/" + target;
         q("[data-pvg-dots]").textContent = "●".repeat(start) + "○".repeat(target - start);
         q("[data-pvg-reward]").textContent = f("reward").value || "Your reward";
@@ -1291,6 +1305,11 @@ export const DESIGN_PANEL_JS = /* js */ `
           im.src = env.artUrl(c.markVersion ? "mark" : "logo", v);
           im.style.display = "";
         } else im.style.display = "none";
+        // Only while a wide logo is standing in for a square one: with no logo
+        // at all there is nothing being cropped, and with a mark uploaded there
+        // is nothing to fix.
+        const note = q("[data-marknote]");
+        if (note) note.style.display = (!c.markVersion && c.logoVersion) ? "" : "none";
       }
 
       /** The printed sheet. Same order and the same rules as posterPage. */
@@ -2317,10 +2336,20 @@ export function landingPage(
       <div class="lhero">
         ${
           logoVersion
-            ? `<img src="${base}/art/logo.png?v=${logoVersion}" alt="">`
+            ? `<img src="${base}/art/logo.png?v=${logoVersion}" alt="${esc(business)}">`
             : `<div class="emoji">☕️</div>`
         }
-        <h1>${esc(business)}</h1>
+        ${
+          // The same rule the card and the poster follow: a logo that already
+          // contains the shop's name must not have it printed again underneath.
+          // This page never learned it, so a lockup read its own name twice —
+          // and it was the page the founder saw most, because it is what the
+          // sign-up QR opens. Only when a logo is actually shown: with no logo
+          // there is nothing carrying the name, and hiding it would leave the
+          // page anonymous. It stays in <title> either way, which is a browser
+          // tab, not a line beside the mark.
+          logoVersion && card.logo_has_name ? "" : `<h1>${esc(business)}</h1>`
+        }
         <p class="sub">${signupLine(card)}</p>
       </div>
       <p class="sub">Your card lives in your phone’s wallet — no app needed.</p>
@@ -2459,9 +2488,6 @@ export function claimPage(
                letter-spacing: -.02em; margin: 0; }
     .cl-reward { color: var(--muted); margin: 8px 0 0; }
     .cl-done { text-align: center; }
-    .cl-pin { font-family: ui-monospace, Menlo, monospace; font-size: 2rem; font-weight: 700;
-              letter-spacing: .12em; background: var(--ghost-bg); border-radius: 12px;
-              padding: 14px; margin: 12px 0 4px; }
     ${MODAL_CSS}
   `;
   const js = /* js */ `
@@ -2489,14 +2515,14 @@ export function claimPage(
           : body.error === "too-many-attempts" ? "Too many tries — wait a few minutes."
           : "Couldn’t finish. Try again.");
       }
-      // The PIN can be read exactly once. It is shown on its own screen rather
-      // than toasted away, because the counter cannot work without it and there
-      // is no way to look it up later — only to replace it.
+      // No PIN here any more. This screen used to print one under "write it
+      // down now" — the only moment it could ever be read, since only a hash is
+      // stored — which made handing somebody their shop a memory test at the
+      // exact moment they are least ready for one. They pick their own under
+      // Shop, and the dashboard tells them the counter is waiting on it.
       $("#app").innerHTML =
         '<div class="cl-done"><h1>You’re in ✅</h1>' +
-        '<p class="sub">Your staff PIN — write it down now. It can’t be shown again, only replaced.</p>' +
-        '<div class="cl-pin">' + body.staffPin + "</div>" +
-        '<p class="muted" style="font-size:.82rem">Staff type this once on the stamper, on each phone.</p>' +
+        '<p class="sub">Your shop is yours. Next: pick a staff PIN so your counter can start stamping.</p>' +
         '<button class="btn btn-dark" style="margin-top:16px" id="dash">Go to my dashboard</button></div>';
       $("#dash").onclick = () => { location.href = "/dashboard"; };
     };
@@ -4055,6 +4081,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .cn { width: auto; padding: 7px 14px; font-size: .82rem; }
     .cmeta { color: var(--muted); font-size: .8rem; margin-top: 3px; }
     .warn { color: #9a3412; font-weight: 600; }
+    /* "Your counter can't stamp yet." Its own class, not .warn: that one is a
+       colour applied to a word inside a row, and giving it a box here would put
+       a box round every one of them. Amber rather than red — nothing is broken,
+       a step is outstanding — and the button is ghost, because the neon one on
+       the page belongs to whatever the owner came here to do (DESIGN.md 1). */
+    .pinwarn { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+               background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
+               border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;
+               font-size: .88rem; line-height: 1.45; }
+    .pinwarn p { margin: 0; flex: 1; min-width: 200px; }
+    .pinwarn .btn { width: auto; padding: 8px 14px; font-size: .82rem; flex: none;
+                    background: #fff; border-color: #d9a441; color: #7c2d12; }
     /* --- Customers: one standalone row per lapse cohort (not a collapsible) --- */
     .bucket { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
               margin-bottom: 8px; background: var(--surface); }
@@ -4617,6 +4655,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           'they each need to sign in again with the new one.</div>';
         div.querySelector("[data-pinlabel]").textContent = "Reset staff PIN";
         div.querySelector("[data-setpin]").textContent = "Reset";
+        // The first PIN also clears the banner above. Without this it sits there
+        // contradicting the confirmation directly beneath it until a reload.
+        S.hasStaffPin = true;
+        renderPinWarning();
       };
       div.querySelector("[data-setpin]").onclick = () => {
         const el = div.querySelector("[data-pin]");
@@ -4707,11 +4749,34 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           <button data-tab="shop">Shop</button>
           <span class="thumb"></span>
         </div>
+        <div id="pinwarn"></div>
         <div id="panel"></div>\`;
       $("#tabs").querySelectorAll("button").forEach((b) => {
         b.onclick = () => go(b.dataset.tab);
       });
-      renderTabs(); renderPanel();
+      renderTabs(); renderPinWarning(); renderPanel();
+    }
+
+    /**
+     * The counter cannot stamp until a PIN exists, and nothing used to say so.
+     *
+     * No PIN is minted at signup or at claim any more — an owner picks their own
+     * under Shop. That is the right trade (a PIN can only ever be read once, and
+     * a "write this down now" screen is a memory test at the worst moment), but
+     * it leaves a real gap: verifyPassword refuses an empty hash, so every staff
+     * sign-in fails, and it fails looking exactly like a wrong PIN. Above the
+     * panels, on every tab, because the tab it sends you to is not the one an
+     * owner opens first.
+     */
+    function renderPinWarning() {
+      const box = $("#pinwarn");
+      if (!box) return;
+      if (S.hasStaffPin) { box.innerHTML = ""; return; }
+      box.innerHTML =
+        '<div class="pinwarn"><p><strong>Your counter can’t stamp yet.</strong> ' +
+        'Staff sign in to the stamper with a PIN, and you haven’t picked one.</p>' +
+        '<button class="btn btn-ghost" id="gopin">Set a staff PIN</button></div>';
+      $("#gopin").onclick = () => go("shop");
     }
 
     /** Switch tabs from anywhere (the tab bar, or a link inside a panel). */

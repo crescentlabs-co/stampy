@@ -152,9 +152,15 @@ dashboardRouter.post("/api/signup", async (req, res) => {
 
   const isFirstOwner = (await countOwners()) === 0;
   const owner = await createOwner(randomUUID(), email, hashPassword(password));
-  // One staff PIN per owner, random from the start — never the shared,
-  // guessable "1234". They see it under Shop and can replace it there.
-  await setStaffPin(owner.id, generateStaffPin());
+  // No staff PIN. One used to be minted here at random, with a comment saying
+  // the owner could see it under Shop — they could not, and never could: the
+  // Shop tab deliberately never paints a PIN back (src/pages.ts, accountPanel),
+  // because only a scrypt hash is stored. So every self-signup owner has been
+  // carrying a live PIN that nothing on earth could read, while `hasStaffPin`
+  // said they were set up and the button offered to "Reset" it.
+  //
+  // They set their own under Shop. Until they do, the dashboard says the counter
+  // cannot stamp — which is true, and used to be true silently.
   // The business, distinct from the card it runs. Its id is what the /j/ poster
   // QR encodes, so it is minted here and never changes. The first owner on a
   // deployment claims the env-seeded card, so take its name rather than a

@@ -229,8 +229,66 @@ describe("save-to-wallet JWT", () => {
   it("names the programme after the shop, never after the card row", () => {
     const cls = buildLoyaltyClass(card({ name: "Pastry card" }), 0, 0, "Kopi Corner") as any;
     expect(cls.issuerName).toBe("Kopi Corner");
-    expect(cls.programName).toBe("Kopi Corner loyalty card");
+    // The name alone. It read "Kopi Corner loyalty card" — a title spent saying
+    // what kind of thing you are holding, which the founder read as a
+    // placeholder we had forgotten to fill in.
+    expect(cls.programName).toBe("Kopi Corner");
     expect(JSON.stringify(cls)).not.toContain("Pastry card");
+  });
+
+  /**
+   * The front of the Android card.
+   *
+   * Google's default template shows programName, loyaltyPoints and the barcode,
+   * and files every textModulesData entry in a details view. So the dots, the
+   * reward and "REWARD READY" — everything a customer opens the card to see —
+   * were one screen away, and the designer's Android preview drew them on the
+   * front, promising a card Google does not render.
+   */
+  describe("the card front template", () => {
+    const rows = (): any[] =>
+      ((buildLoyaltyClass(card()) as any).classTemplateInfo.cardTemplateOverride
+        .cardRowTemplateInfos as any[]);
+
+    const paths = (node: unknown): string[] =>
+      JSON.stringify(node).match(/"fieldPath":"([^"]+)"/g)?.map((s) => s.slice(13, -1)) ?? [];
+
+    /**
+     * The override REPLACES the default rows rather than adding to them, so the
+     * count has to be listed here or it vanishes from the card entirely — the
+     * one thing that was on the front to begin with.
+     */
+    it("keeps the stamp count, which the override would otherwise remove", () => {
+      expect(paths(rows())).toContain("object.loyaltyPoints.balance");
+      expect(paths(rows())).toContain("object.loyaltyPoints.label");
+    });
+
+    /**
+     * The binding that cannot be checked anywhere else. Google accepts a
+     * fieldPath naming a module that does not exist and renders an empty row —
+     * so a renamed id loses the reward line on every Android card with nothing
+     * failing, here or on the wire. This asserts the class points only at ids
+     * the object actually writes.
+     */
+    it("points only at text modules the object really sends", () => {
+      const sent = new Set(
+        (buildLoyaltyPatch(row(), card()).textModulesData as { id: string }[]).map((m) => m.id),
+      );
+      const referenced = paths(rows())
+        .map((p) => /^object\.textModulesData\['(.+)'\]$/.exec(p)?.[1])
+        .filter((id): id is string => Boolean(id));
+      expect(referenced.length).toBeGreaterThan(0);
+      for (const id of referenced) expect(sent, `class points at "${id}"`).toContain(id);
+    });
+
+    // The dots are one character per stamp; a 20-stamp card sharing a row would
+    // be cut in half.
+    it("gives the dots a row to themselves", () => {
+      const dotRow = rows().find((r) =>
+        paths(r).includes("object.textModulesData['stamps']"),
+      );
+      expect(dotRow.oneItem).toBeDefined();
+    });
   });
 });
 

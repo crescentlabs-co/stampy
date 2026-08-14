@@ -136,8 +136,13 @@ async function main() {
   // hand back — the dashboard can set or replace it, never read it.
   expect(ov2nd.cards[0].staffPin === undefined, "the overview API never returns a staff PIN");
   // The PIN belongs to the OWNER now — one counter, one PIN, however many cards.
+  // Signing up does NOT mint one. It used to mint a random PIN nobody could
+  // ever read (only a hash is stored, and the Shop tab never paints one back),
+  // so every new owner started with a live counter credential that existed only
+  // as a hash — while the dashboard reported them as set up.
   const secondOwner = (await getOwnerByEmail("second@card.my"))!;
-  expect(secondOwner.staff_pin_hash.startsWith("scrypt$"), "a new owner's PIN is stored hashed, never in plaintext");
+  expect(secondOwner.staff_pin_hash === "", "signing up mints no staff PIN — the owner picks one");
+  expect(ov2nd.hasStaffPin === false, "...and the dashboard says so, so the banner shows");
   expect(!verifyStaffPin(secondOwner, "1234"), "a new owner gets a random PIN, not the shared default");
   const starter = (await getCard(ov2nd.cards[0].id))!;
   expect(starter.staff_pin === "" && starter.staff_pin_hash === "", "a card carries no PIN of its own");
@@ -1137,7 +1142,13 @@ async function main() {
   expect(taken.status === 409, "claiming with an email that already has an account is refused");
   const claimed = await finish(claimToken, "nasi@lemak.my");
   const claimOut = JSON.parse(await claimed.text());
-  expect(claimed.status === 200 && claimOut.staffPin, "the claim creates the login and mints a staff PIN");
+  // No PIN comes back, and none is minted. It used to be printed on the next
+  // screen under "write it down now" — the only moment it could ever be read,
+  // since only a scrypt hash is stored. Minting one WITHOUT showing it would be
+  // worse than either: hasStaffPin true, the Shop button offering to "Reset",
+  // and a live counter credential nobody can read.
+  expect(claimed.status === 200 && claimOut.ok === true, "the claim creates the login");
+  expect(claimOut.staffPin === undefined, "...and hands back no staff PIN");
   let claimCookie = claimed.headers.get("set-cookie")?.split(";")[0] ?? "";
   expect(claimCookie.startsWith("stampy_session="), "...and signs them straight in");
   // Single use. A forwarded DM must not hand the shop over twice.
@@ -1155,9 +1166,31 @@ async function main() {
   const claimedOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: claimCookie } })).body);
   expect(claimedOv.cards.length === 1 && claimedOv.cards[0].id === dfyOut.cardId,
     "the claimed dashboard already holds the card we built");
-  expect(claimedOv.hasStaffPin === true, "...with a staff PIN already set");
+  expect(claimedOv.hasStaffPin === false, "...and no staff PIN yet, which is what the banner is for");
   expect(claimedOv.cards[0].reward === "Free plate", "...and the reward we configured");
   expect(Boolean(claimedOv.joinRef), "...and a join link ready for the poster");
+
+  // The step the banner sends them to. Until it happens the counter genuinely
+  // cannot sign in — verifyPassword refuses an empty hash — and it fails looking
+  // exactly like a wrong PIN, which is the whole reason the banner exists.
+  const claimPin = "834192";
+  {
+    const tooEarly = await fetch(base + "/staff/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-card-id": dfyOut.cardId },
+      body: JSON.stringify({ pin: claimPin }),
+    });
+    expect(tooEarly.status !== 200, "before a PIN is set, no PIN signs the counter in");
+
+    const setPin = await fetch(base + "/dashboard/api/staff-pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", cookie: claimCookie },
+      body: JSON.stringify({ pin: claimPin }),
+    });
+    expect(setPin.status === 200, "the owner sets their own PIN under Shop");
+    const afterOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: claimCookie } })).body);
+    expect(afterOv.hasStaffPin === true, "...and the dashboard stops warning them");
+  }
 
   // And now the shop is open to customers.
   const postLanding = await get("/c/" + dfyOut.cardId);
@@ -1194,7 +1227,7 @@ async function main() {
     const staffIn = await fetch(base + "/staff/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-card-id": dfyOut.cardId },
-      body: JSON.stringify({ pin: claimOut.staffPin }),
+      body: JSON.stringify({ pin: claimPin }),
     });
     const staffCookie = staffIn.headers.get("set-cookie")?.split(";")[0] ?? "";
     expect(staffIn.status === 200 && staffCookie.length > 0, "the wrong owner's counter is signed in");

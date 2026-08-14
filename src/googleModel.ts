@@ -42,6 +42,61 @@ export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0, markVersion 
   return markVersion ? artUrl(card, "mark", markVersion) : artUrl(card, "logo", logoVersion);
 }
 
+/**
+ * The two text modules the object sends that belong on the FRONT of the card.
+ *
+ * Named once because they are named twice: the object writes them
+ * (buildLoyaltyPatch) and the class points at them by id
+ * (cardTemplateOverride). A rename in one place alone is silent — Google accepts
+ * a fieldPath naming a module that does not exist and simply renders an empty
+ * row, so the card would lose its reward line with nothing failing anywhere.
+ */
+export const FRONT_STAMPS_MODULE = "stamps";
+export const FRONT_REWARD_MODULE = "reward";
+
+/**
+ * What Android shows without scrolling.
+ *
+ * Google's default loyalty template puts programName, loyaltyPoints and the
+ * barcode on the front and everything in textModulesData in a details view you
+ * have to go looking for. So the dots, the reward and "REWARD READY 🎉" — the
+ * three things a customer opens the card TO SEE — were all one screen away, and
+ * the front was a title and a number.
+ *
+ * cardTemplateOverride REPLACES the default rows rather than adding to them,
+ * which is why loyaltyPoints is listed here explicitly: leave it out and the
+ * count itself disappears.
+ *
+ * On the CLASS, so every object already issued inherits it — no existing card
+ * has to be touched, and none of them is notified (a class PATCH carries no
+ * notifyPreference).
+ */
+function cardFrontTemplate(): Record<string, unknown> {
+  const field = (path: string) => ({ firstValue: { fields: [{ fieldPath: path }] } });
+  return {
+    cardTemplateOverride: {
+      cardRowTemplateInfos: [
+        {
+          twoItems: {
+            startItem: {
+              firstValue: {
+                fields: [
+                  { fieldPath: "object.loyaltyPoints.label" },
+                  { fieldPath: "object.loyaltyPoints.balance" },
+                ],
+              },
+            },
+            endItem: field(`object.textModulesData['${FRONT_REWARD_MODULE}']`),
+          },
+        },
+        // Its own row, full width: the dots run to one character per stamp and a
+        // 20-stamp card would be truncated in half a row.
+        { oneItem: { item: field(`object.textModulesData['${FRONT_STAMPS_MODULE}']`) } },
+      ],
+    },
+  };
+}
+
 export function buildLoyaltyClass(
   card: CardRow,
   logoVersion = 0,
@@ -57,7 +112,12 @@ export function buildLoyaltyClass(
     // The shop's name, not the card's — same reason as Apple's description
     // (src/passModel.ts). `cards.name` is an internal label with no field in the
     // dashboard, so it can be years stale by the time a customer reads it.
-    programName: `${business} loyalty card`,
+    //
+    // The name ALONE. It read "<shop> loyalty card", which is the card's title
+    // on Android, and a title that explains what kind of thing you are looking
+    // at is a title doing no work — the founder read it as a placeholder we had
+    // forgotten to fill in.
+    programName: business,
     programLogo: {
       sourceUri: { uri: logoUrl(card, logoVersion, markVersion) },
       contentDescription: {
@@ -67,6 +127,7 @@ export function buildLoyaltyClass(
     hexBackgroundColor: rgbToHex(card.background_color),
     countryCode: "MY",
     reviewStatus: "UNDER_REVIEW",
+    classTemplateInfo: cardFrontTemplate(),
     // Terms live on the CLASS, not the object, for two reasons: they are the
     // same for every customer of this café, and class data renders on every
     // object already issued — so existing Android cards pick this up without
@@ -156,13 +217,15 @@ export function buildLoyaltyPatch(
       balance: { string: `${row.stamp_count}/${row.stamps_target}` },
     },
     textModulesData: [
+      // These two ids are pointed at by the class's cardTemplateOverride, which
+      // is what lifts them onto the front of the card — hence the constants.
       {
-        id: "stamps",
+        id: FRONT_STAMPS_MODULE,
         header: ready ? "REWARD READY 🎉" : "YOUR STAMPS",
         body: stampDots(row.stamp_count, row.stamps_target),
       },
       {
-        id: "reward",
+        id: FRONT_REWARD_MODULE,
         header: "REWARD",
         body: ready ? `${row.reward} — show this to staff!` : row.reward,
       },

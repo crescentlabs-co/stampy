@@ -360,6 +360,35 @@ describe("the design panel, mounted", () => {
     });
   });
 
+  /**
+   * Android crops the logo to a circle, and the mock now crops with it.
+   *
+   * The mock drew it `contain`, so a wide brand lockup shrank politely to fit
+   * and looked correct — while the phone was cutting both ends off. This note
+   * names what the owner is now looking at, and only while it is true: with no
+   * logo nothing is being cropped, and with a square mark uploaded there is
+   * nothing left to fix.
+   */
+  describe("the Android logo note", () => {
+    const shown = (c: Record<string, unknown>) => {
+      const h = makeHarness();
+      const div = build(c, h);
+      return div.querySelector("[data-marknote]")!.style.display !== "none";
+    };
+
+    it("appears while a wide logo is standing in for a square one", () => {
+      expect(shown(card({ logoVersion: 5, markVersion: 0 }))).toBe(true);
+    });
+
+    it("goes away once a square logo is uploaded", () => {
+      expect(shown(card({ logoVersion: 5, markVersion: 9 }))).toBe(false);
+    });
+
+    it("stays away when there is no logo at all to crop", () => {
+      expect(shown(card({ logoVersion: 0, markVersion: 0 }))).toBe(false);
+    });
+  });
+
   /** The state readout that was missing entirely — the grid was the only signal. */
   it("says on screen when a stored shape is in use", async () => {
     const h = makeHarness();
