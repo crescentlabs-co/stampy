@@ -2720,6 +2720,153 @@ export async function platformRetention(): Promise<AdminRetentionRow> {
   return res.rows[0]!;
 }
 
+// ------------------------------------------------------------ time series ----
+//
+// Everything else the console reports is a snapshot: what is true right now, or
+// a count over a trailing window. That answers "how is it" and never "which
+// way is it going", which is the only question worth asking in the first
+// months. The console's one time comparison was this week vs last week — two
+// numbers, which is a difference, not a direction.
+//
+// Derived by query off the append-only log, like every other metric here. There
+// is no stored weekly aggregate and there must not be: a cache that drifts from
+// the log is exactly what made the Home headline disagree with the list under it.
+
+export interface WeekRow {
+  /** Monday 00:00 of the bucket, in the database's timezone. */
+  week: Date;
+  /** Net of undos, the NET_STAMPS_SQL rule, floored at zero. */
+  stamps: number;
+  /** Distinct people stamped that week — per PERSON, invariant 5. */
+  active_customers: number;
+  rewards: number;
+}
+
+export interface PlatformWeekRow extends WeekRow {
+  /** Shops that gave at least one stamp that week. */
+  active_merchants: number;
+  new_merchants: number;
+  /** Shops whose FIRST EVER stamp landed that week — the activation moment. */
+  activated: number;
+}
+
+export interface MerchantWeekRow extends WeekRow {
+  /** People whose first stamp at this shop landed that week. */
+  new_customers: number;
+}
+
+/**
+ * The week buckets themselves, empty ones included.
+ *
+ * generate_series, not a GROUP BY over the events: a week nobody stamped has no
+ * rows to group, so grouping alone silently closes the gap up and draws a flat
+ * line through a dead fortnight.
+ */
+const weeksCte = (param: string) => `weeks AS (
+       SELECT generate_series(
+                date_trunc('week', now()) - (${param}::int - 1) * interval '1 week',
+                date_trunc('week', now()),
+                interval '1 week') AS week
+     )`;
+
+/**
+ * One row per week of events, joined up to the shop that owns them.
+ *
+ * The join runs through `cards.merchant_id` rather than `events.merchant_id`:
+ * the column is backfilled, but the join is true of every row regardless of when
+ * it was written, which the backfill cannot promise about rows that predate it.
+ *
+ * `NOT e.is_test` for the reason every counting query says it — a card the owner
+ * added to their own wallet writes real events, and this is the report used to
+ * decide whether the product works.
+ */
+const eventWeeksCte = (scope: string) => `ev AS (
+       SELECT date_trunc('week', e.created_at) AS week,
+              e.type,
+              c.merchant_id,
+              COALESCE(p.customer_id, p.serial) AS person
+         FROM events e
+         JOIN cards c ON c.id = e.card_id
+         LEFT JOIN passes p ON p.serial = e.serial
+        WHERE NOT e.is_test
+          AND e.created_at >= (SELECT min(week) FROM weeks)
+          AND ${scope}
+     )`;
+
+const WEEK_COLUMNS_SQL = `COALESCE((SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
+                                    - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
+                        FROM ev e WHERE e.week = w.week), 0) AS stamps,
+            COALESCE((SELECT count(DISTINCT e.person)::int FROM ev e
+                       WHERE e.week = w.week AND e.type = 'stamp'), 0) AS active_customers,
+            COALESCE((SELECT count(*)::int FROM ev e
+                       WHERE e.week = w.week AND e.type = 'redeem'), 0) AS rewards`;
+
+/**
+ * The whole book, week by week.
+ *
+ * Archived shops are left out throughout — the same exclusion platformRetention
+ * makes, for the same reason: a closed account is not evidence about the
+ * product, and leaving it in drags every line down for a reason that has nothing
+ * to do with whether the thing works.
+ */
+export async function platformSeries(weeks = 26): Promise<PlatformWeekRow[]> {
+  const live = `EXISTS (SELECT 1 FROM merchants mm
+                         WHERE mm.id = c.merchant_id AND mm.archived_at IS NULL)`;
+  const res = await getPool().query<PlatformWeekRow>(
+    `WITH ${weeksCte("$1")},
+          ${eventWeeksCte(live)},
+          -- Their first stamp ever, not their first this window: a shop that
+          -- activated last year must not activate again inside a 12-week chart.
+          activated AS (
+            SELECT date_trunc('week', min(e.created_at)) AS week
+              FROM events e
+              JOIN cards c ON c.id = e.card_id
+             WHERE e.type = 'stamp' AND NOT e.is_test AND ${live}
+             GROUP BY c.merchant_id
+          ),
+          signups AS (
+            SELECT date_trunc('week',
+                     LEAST(m.created_at, COALESCE(o.created_at, m.created_at))) AS week
+              FROM merchants m
+              LEFT JOIN owners o ON o.id = m.owner_id
+             WHERE m.archived_at IS NULL
+          )
+     SELECT w.week,
+            ${WEEK_COLUMNS_SQL},
+            COALESCE((SELECT count(DISTINCT e.merchant_id)::int FROM ev e
+                       WHERE e.week = w.week AND e.type = 'stamp'), 0) AS active_merchants,
+            (SELECT count(*)::int FROM signups s WHERE s.week = w.week) AS new_merchants,
+            (SELECT count(*)::int FROM activated a WHERE a.week = w.week) AS activated
+       FROM weeks w
+      ORDER BY w.week`,
+    [Math.max(2, Math.min(104, Math.round(weeks)))],
+  );
+  return res.rows;
+}
+
+/** The same shape for one shop. Archived or not — you asked for this one. */
+export async function merchantSeries(merchantId: string, weeks = 26): Promise<MerchantWeekRow[]> {
+  const res = await getPool().query<MerchantWeekRow>(
+    `WITH ${weeksCte("$1")},
+          ${eventWeeksCte("c.merchant_id = $2")},
+          joined AS (
+            SELECT date_trunc('week', min(e.created_at)) AS week
+              FROM events e
+              JOIN cards c ON c.id = e.card_id
+              LEFT JOIN passes p ON p.serial = e.serial
+             WHERE e.type = 'stamp' AND NOT e.is_test AND c.merchant_id = $2
+             GROUP BY COALESCE(p.customer_id, p.serial)
+          )
+     SELECT w.week,
+            ${WEEK_COLUMNS_SQL},
+            (SELECT count(*)::int FROM joined j WHERE j.week = w.week) AS new_customers
+       FROM weeks w
+      ORDER BY w.week`,
+    [Math.max(2, Math.min(104, Math.round(weeks))), merchantId],
+  );
+  return res.rows;
+}
+
 export interface AdminStaffRow {
   /** MERCHANT id. There is one staff PIN per owner covering every card they
    *  run, so a counter phone was never card-scoped — grouping by card split one

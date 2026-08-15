@@ -5217,46 +5217,73 @@ export function posterPage(
  * heading they explain, so the page is numbers and the words are one tap away.
  */
 export function adminPage(): string {
+  // Every problem the console can raise, keyed the way `triage` keys its flags.
+  // The rules used to sit in a table on the page — fourteen rows of prose under
+  // a list that was usually three lines long. Same words, moved behind the chip
+  // they explain, where you read them at the moment you are asking.
+  const flagHelp = JSON.stringify(
+    Object.fromEntries(FLAG_GUIDE.map((g) => [g.key, `${g.rule}. ${g.why}`])),
+  );
   const css = /* css */ `
     body { max-width: none; }
-    .awrap { width: 100%; max-width: 1000px; }
+    .awrap { width: 100%; max-width: 1040px; }
     .purpose { color: var(--muted); font-size: .88rem; margin: 2px 0 0; }
-    /* --- how everyone is doing: four lenses on the whole book --- */
-    /* Four hero numbers used to sit here — stamping this week, stamps 7d, cards
-       in wallets, need attention. None of them answered a question worth asking
-       before opening a shop. These four panels do: health, performance, value,
-       retention, each a few numbers rather than one. */
-    .pstrip { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 16px 0 30px; }
-    @media (min-width: 700px) { .pstrip { grid-template-columns: 1fr 1fr; } }
-    .ppanel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px; }
-    .ppanel h3 { margin: 0 0 12px; font-size: .68rem; text-transform: uppercase; letter-spacing: .07em;
-                 color: var(--muted); font-family: inherit; font-weight: 700; }
-    .ppanel dl { display: grid; grid-template-columns: 1fr auto; gap: 7px 14px; margin: 0; font-size: .9rem; }
-    .ppanel dt { color: var(--muted); }
-    .ppanel dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .ppanel dd.big { font-family: var(--display); font-size: 1.25rem; line-height: 1.1; letter-spacing: -.01em; }
-    .ppanel dd.up { color: #15803d; }
-    .ppanel dd.down { color: #9a3412; }
-    .ppanel .foot { color: var(--muted); font-size: .74rem; margin: 10px 0 0; line-height: 1.45; }
-    /* The lifecycle bar: where the whole book sits, in one line. */
-    .lifebar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; margin: 2px 0 12px;
-               background: var(--ghost-bg); }
+    /* --- the one number the console leads with ------------------------------
+       Four hero numbers used to sit at the top, then four panels of them. Both
+       made you read everything to find the one thing that mattered. There is
+       exactly ONE hero on this page, and the rest is a trend. */
+    .lead { display: grid; gap: 20px; margin: 18px 0 8px; grid-template-columns: 1fr; }
+    @media (min-width: 760px) { .lead { grid-template-columns: auto 1fr; gap: 40px; align-items: center; } }
+    .leadlab { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+               color: var(--muted); display: flex; align-items: center; gap: 5px; }
+    /* Proportional figures, not tabular: equal-width digits give every number
+       the width of a 0, and at this size that makes 12 look loose. */
+    .hero { font-family: var(--display); font-weight: 800; font-size: 3.6rem; line-height: 1;
+            letter-spacing: -.045em; margin: 6px 0 0; }
+    .heroof { display: block; color: var(--muted); font-size: .86rem; font-family: var(--body);
+              font-weight: 400; letter-spacing: 0; margin-top: 6px; }
+    /* Where the whole book sits, in one line. */
+    .lifebar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; margin: 0 0 12px;
+               background: var(--ghost-bg); gap: 2px; }
     .lifebar i { display: block; }
-    .lifebar i.live { background: #15803d; }
-    .lifebar i.quiet { background: #b45309; }
-    .lifebar i.dead { background: #9a3412; }
-    .lifekey { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .82rem; }
+    .lifekey { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .82rem; }
     .lifekey span { display: flex; align-items: center; gap: 6px; color: var(--muted); }
     .lifekey b { color: var(--ink); font-variant-numeric: tabular-nums; }
-    .lifekey i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
-    .lifekey i.live { background: #15803d; }
-    .lifekey i.quiet { background: #b45309; }
-    .lifekey i.dead { background: #9a3412; }
-    /* --- who needs a call today --- */
-    /* ONE line per shop, not one per problem: a shop with four things wrong used
-       to take four cards and push everything else off the screen. */
+    .lifekey i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; flex: none; }
+    .lifebar i.paid, .lifekey i.paid { background: var(--ink); }
+    .lifebar i.live, .lifekey i.live { background: #15803d; }
+    .lifebar i.quiet, .lifekey i.quiet { background: #b45309; }
+    .lifebar i.dead, .lifekey i.dead { background: #9a3412; }
+    .lifebar i.new, .lifekey i.new { background: var(--field-border); }
+    /* --- the weekly lines ---------------------------------------------------
+       One series per tile — small multiples rather than six lines fighting on
+       one plot, which is also why there is no categorical palette here and
+       nothing to mistake for anything else. */
+    .rangerow { display: flex; align-items: baseline; justify-content: space-between;
+                gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
+    .rangerow .seg { margin: 0; }
+    .tiles { display: grid; gap: 12px; grid-template-columns: 1fr; }
+    @media (min-width: 640px) { .tiles { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 940px) { .tiles { grid-template-columns: 1fr 1fr 1fr; } }
+    .tile { border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px 11px;
+            background: var(--surface); }
+    .tile .tl { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+                color: var(--muted); display: flex; align-items: center; gap: 5px; }
+    .tile .tv { font-family: var(--display); font-weight: 800; font-size: 1.7rem; line-height: 1.15;
+                letter-spacing: -.03em; margin-top: 4px; }
+    .tile .td { font-family: var(--body); font-size: .78rem; font-weight: 700; letter-spacing: 0;
+                margin-left: 8px; color: var(--muted); }
+    .tile .td.up { color: #15803d; }
+    .tile .td.down { color: #9a3412; }
+    .tile .tn { color: var(--muted); font-size: .73rem; margin-top: 2px; }
+    .tile svg { display: block; width: 100%; height: auto; margin-top: 9px; }
+    /* --- a rate that has too few people behind it is not a rate ------------- */
+    .nodata { color: var(--muted); font-size: .86rem; line-height: 1.5; }
+    /* --- who needs a call today ---------------------------------------------
+       ONE line per shop, not one per problem: a shop with four things wrong
+       used to take four cards and push everything else off the screen. */
     .triage { border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
-              margin-bottom: 12px; overflow: hidden; }
+              margin-bottom: 10px; overflow: hidden; }
     .trow { display: grid; grid-template-columns: 1fr; gap: 2px 14px; padding: 11px 14px;
             border-left: 4px solid transparent; }
     .trow + .trow { border-top: 1px solid var(--line); }
@@ -5268,28 +5295,59 @@ export function adminPage(): string {
     .trow .taction { color: var(--muted); font-size: .85rem; }
     .tclear { border: 1px dashed var(--line); border-radius: 14px; padding: 18px; text-align: center;
               color: var(--muted); margin-bottom: 12px; }
-    .legend td { font-size: .84rem; }
-    .legend td:first-child { white-space: nowrap; }
-    /* Severity chips, reused in the table's Flags column. */
-    .chipf { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px;
-             border-radius: 999px; margin: 1px 3px 1px 0; white-space: nowrap; }
+    /* Severity chips, reused in the table's Problems column. */
+    .chipf { display: inline-flex; align-items: center; gap: 3px; font-size: .7rem; font-weight: 700;
+             padding: 2px 8px; border-radius: 999px; margin: 1px 3px 1px 0; white-space: nowrap; }
     .chipf.critical { background: #fdeaea; color: #9a3412; }
     .chipf.warn { background: #fef3c7; color: #92400e; }
     .chipf.info { background: var(--ghost-bg); color: var(--muted); }
-    /* --- the one table, and what opens under a row --- */
+    /* Where a shop is in its life, as a word rather than a colour alone. */
+    .stage { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px;
+             border-radius: 999px; white-space: nowrap; background: var(--ghost-bg); color: var(--muted); }
+    .stage.paid { background: var(--ink); color: var(--on-slab); }
+    .stage.active { background: #dcfce7; color: #15803d; }
+    .stage.claimed { background: #fef3c7; color: #92400e; }
+    /* --- the table ---------------------------------------------------------- */
+    table { border-collapse: collapse; width: 100%; font-size: .9rem; margin-top: 12px; }
+    th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase;
+         letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
     .mrow { cursor: pointer; }
     .mrow:hover td { background: var(--ghost-bg); }
-    .mname { font-weight: 700; }
-    /* NOT var(--ghost-bg). Painting the whole drill-down grey made the most
-       detailed part of the console read as disabled. It is content; it gets a
-       surface and a rule down its left edge to show what it belongs to. */
-    .mdetail > td { background: var(--surface); border-left: 3px solid var(--accent); padding: 16px 18px; }
+    .mrow .mname { font-weight: 700; }
+    .mrow .mname::after { content: " ›"; color: var(--muted); font-weight: 400; }
+    .flags { font-size: .78rem; color: var(--muted); }
+    /* Something that needs a phone call. */
+    .bad { color: #9a3412; font-weight: 600; }
+    .tw { overflow-x: auto; }
+    /* --- one shop, on its own page ------------------------------------------ */
+    .back { margin: 2px 0 14px; }
+    .dhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+             flex-wrap: wrap; margin-bottom: 6px; }
+    .dhead h1 { margin-bottom: 4px; }
+    /* One menu, not nine loose buttons across three boxes. Everything that acts
+       on a shop lives here, including the two that were unreachable before. */
+    .menu { position: relative; }
+    .menu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center;
+                      gap: 8px; padding: 11px 18px; border-radius: 999px; background: var(--ink);
+                      color: var(--on-slab); font-weight: 700; font-size: .92rem; }
+    .menu > summary::-webkit-details-marker { display: none; }
+    .menu[open] > summary { background: var(--accent-dark); }
+    .menu .sheet { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 268px;
+                   background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
+                   box-shadow: var(--shadow); padding: 6px; }
+    .menu .sheet button, .menu .sheet a { display: block; width: 100%; text-align: left; background: none;
+                   border: none; font: inherit; font-size: .92rem; color: var(--ink); padding: 10px 12px;
+                   border-radius: 10px; cursor: pointer; text-decoration: none; }
+    .menu .sheet button:hover, .menu .sheet a:hover { background: var(--surface); }
+    .menu .sheet button.armed { background: #9a3412; color: #fff; }
+    .menu .sheet hr { border: none; border-top: 1px solid var(--line); margin: 6px 4px; }
+    .menu .sheet .danger { color: #9a3412; font-weight: 600; }
     .dgrid { display: grid; gap: 14px; grid-template-columns: 1fr; }
     @media (min-width: 760px) { .dgrid { grid-template-columns: 1fr 1fr; } }
     .dpanel { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--bg); }
     .dpanel h4 { margin: 0 0 8px; font-size: .74rem; text-transform: uppercase; letter-spacing: .06em;
                  color: var(--muted); }
-    .dpanel h4 .qn { color: var(--accent-dark); font-variant-numeric: tabular-nums; margin-right: 6px; }
     .dpanel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: .88rem; }
     .dpanel dt { color: var(--muted); }
     .dpanel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
@@ -5308,22 +5366,15 @@ export function adminPage(): string {
        answer is no, which is most of the time. */
     .okline { color: var(--muted); font-size: .82rem; margin-top: 12px; }
     .badline { color: #9a3412; font-weight: 600; font-size: .85rem; margin-top: 12px; }
-    table { border-collapse: collapse; width: 100%; font-size: .9rem; margin-top: 12px; }
-    th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-    td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-    .flags { font-size: .78rem; color: var(--muted); }
-    /* Something that needs a phone call. */
-    .bad { color: #9a3412; font-weight: 600; }
-    .tw { overflow-x: auto; }
     .rst { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: end; }
     .rst select { width: auto; }
     .rst .btn { width: auto; padding: 10px 14px; }
-    .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 8px 10px; border-radius: 8px; margin-top: 10px; }
-    /* A value shown exactly once, inside the tinted drill-down: white, or the
-       one thing on the row that must be read is the one that blends in. */
-    .mdetail .temp { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
-    /* Was .nfc, and never had anything to do with NFC — it is the monospace
-       treatment for an id or a URL shown verbatim. */
+    .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: 8px 10px;
+            border-radius: 8px; margin-top: 10px; }
+    /* A value shown inside a tinted box goes white, or the one thing that has to
+       be read is the one that blends in (DESIGN.md rule 9). */
+    .fold .temp, .dpanel .temp { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
+    /* The monospace treatment for an id or a URL shown verbatim. */
     .mono { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
     .cbtn, .dbtn { width: auto; padding: 5px 10px; font-size: .78rem; margin-top: 4px; }
     .arch { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
@@ -5335,8 +5386,7 @@ export function adminPage(): string {
     .dsempty { color: var(--muted); font-size: .88rem; padding: 26px 14px; text-align: center; }
     /* --- New shop: three steps, numbered because they ARE a sequence --------
        The number is not decoration here: you cannot design a card for a shop
-       that does not exist, and you cannot hand over one you have not designed.
-       That is the whole complaint this pane answers. */
+       that does not exist, and you cannot hand over one you have not designed. */
     .steps { list-style: none; margin: 0; padding: 0; counter-reset: none; }
     .step { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-top: 14px; }
     .step h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px;
@@ -5368,6 +5418,17 @@ export function adminPage(): string {
     const esc = (s) => String(s == null ? "" : s)
       .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
 
+    // What each problem means, moved off the page and behind the chip that
+    // raises it. Keyed on the flag's KEY, never its label — half the labels are
+    // templated ("3 rewards owed") and would never match a fixed string.
+    const FLAG_HELP = ${flagHelp};
+
+    // A rate over a handful of people is noise dressed as a measurement. Below
+    // this the console says how many there are instead of inventing a
+    // percentage — COALESCE(…, 0) rendered a confident 0% for a shop nobody
+    // had ever stamped, which is the most misleading thing a console can do.
+    const RET_FLOOR = 10;
+
     // Two-tap confirmation, same idiom as the stamper and the dashboard: a
     // browser dialog can be suppressed, after which confirm() returns false and
     // the action silently stops working. First tap relabels, second within 4s
@@ -5389,6 +5450,36 @@ export function adminPage(): string {
       };
     }
 
+    // ------------------------------------------------------- where we are ----
+    // One document, two addresses. /admin/m/:id opens straight onto a shop, and
+    // clicking into one pushes that address, so back, refresh and a pasted link
+    // all do what a browser does everywhere else. A shop's detail used to
+    // unfold inside its own table row: it could not be linked, survived neither
+    // a refresh nor a re-render, and browser-back left the console entirely.
+    const MPATH = "/admin/m/";
+    const openMerchant = () => location.pathname.indexOf(MPATH) === 0
+      ? decodeURIComponent(location.pathname.slice(MPATH.length))
+      : null;
+    // Which tab to come back to. Not in the URL: it is where you were, not what
+    // you are looking at, and it must survive a trip into a shop and out again.
+    let pane = "overview";
+    // How many weeks the charts show. The server sends the longest range once,
+    // so this is a slice rather than a round trip — a range switch that waits
+    // on the network stops being something you flick between.
+    let range = 12;
+    let rerender = () => {};
+    addEventListener("popstate", () => rerender());
+
+    // A menu that stays open after a tap somewhere else is a menu you have to
+    // close twice. Delegated from the document once, rather than re-bound every
+    // time a shop's page renders — the two-tap arm lives inside this menu, so a
+    // tap on one of its OWN buttons must not count as outside.
+    document.addEventListener("click", (e) => {
+      document.querySelectorAll("details.menu[open]").forEach((d) => {
+        if (!d.contains(e.target)) { d.open = false; disarmBtn(); }
+      });
+    });
+
     // ---------------------------------------------------- the card designer ----
     // The SAME panel the owner dashboard renders (DESIGN_PANEL_JS), pointed at a
     // merchant's live card. The console used to carry its own smaller designer
@@ -5396,14 +5487,11 @@ export function adminPage(): string {
     // "business type" presets in the signup form. Both are gone: there is one
     // way to design a card, and it is the one owners use.
     //
-    // It also used to offer a second target — a saved design, mocked up before a
-    // shop existed and pushed onto its card later. That went with the rework:
-    // the shop is built first now, so there is always a real card to design
-    // straight onto, and the switcher plus the push box were most of what made
-    // this section hard to read.
-    //
     // It mounts in two places, both through mountDesigner: step 2 of New shop,
-    // and inside a merchant's own row on Shops.
+    // and a fold on the shop's own page. Neither the panel nor this mount
+    // changed when the console was rebuilt around it — only the box it opens
+    // in, which on a page rather than inside a table cell is wide enough for
+    // the two columns it wants.
 
     /**
      * Mount the shared panel on a card, in the console's two-column layout.
@@ -5437,7 +5525,7 @@ export function adminPage(): string {
         // write them back unchanged. The shop name stays editable.
         showDetails: false,
         // Both console mounts sit under a heading that already says "Design
-        // their card" — step 2 of New shop, and the shop row's own summary.
+        // their card" — step 2 of New shop, and the fold on the shop's page.
         titled: false,
         saveLabel: "Save card",
         rulesNote: "",
@@ -5470,6 +5558,122 @@ export function adminPage(): string {
         'The code sends people to your shop, so it keeps working if you rename or add a second card.</p>';
     }
 
+    // ------------------------------------------------------------- charts ----
+    // Hand-rolled SVG, because the app has no build step and no browser
+    // framework, and a sparkline is forty lines of geometry.
+
+    const weekOf = (d) => new Date(d).toLocaleDateString([], { day: "numeric", month: "short" });
+    const int = (v) => v == null ? "—" : Math.round(v).toLocaleString();
+    const one = (v) => v == null ? "—" : Number(v).toFixed(1);
+
+    /**
+     * One weekly column sparkline: every bucket in the range, the most recent
+     * one carrying the emphasis.
+     *
+     * Emphasis is WEIGHT, not colour. DESIGN.md rule 1 gives the neon exactly
+     * one job — marking the next thing to press — so a lime bar in a chart is
+     * decoration, and rule 2 says weight comes from the near-black. The weeks
+     * behind sit in the field grey; the week being read is ink.
+     *
+     * Every bucket is drawn, empty ones included, and a zero week keeps a 2px
+     * stub against the baseline: a gap you cannot see is indistinguishable from
+     * a week that was never in the data. A null — an average over no shops at
+     * all — draws nothing, because that is not the same as zero.
+     */
+    function spark(rows, key, fmt) {
+      const W = 300, H = 44, r = 3;
+      const n = rows.length;
+      if (!n) return "";
+      const slot = W / n;
+      const w = Math.max(3, Math.min(24, slot - 2));
+      const vals = rows.map((x) => x[key]).filter((v) => v != null);
+      const top = Math.max(1, ...vals);
+      const marks = rows.map((row, i) => {
+        const v = row[key];
+        const x = i * slot + (slot - w) / 2;
+        // A full-height transparent slot, so the hover target is the column and
+        // not a 9px bar you have to land on dead-centre.
+        const hit = '<rect x="' + (i * slot).toFixed(1) + '" y="0" width="' + slot.toFixed(1) +
+          '" height="' + H + '" fill="transparent"><title>Week of ' + esc(weekOf(row.week)) +
+          " — " + esc(v == null ? "no shops stamped" : fmt(v)) + "</title></rect>";
+        if (v == null) return hit;
+        const h = Math.max(2, (v / top) * (H - 4));
+        const y = H - h;
+        const c = Math.min(r, w / 2, h);
+        // Square at the baseline, rounded at the data end — a bar grows from
+        // one edge and should only be soft at the edge that carries the value.
+        const d = "M" + x.toFixed(1) + " " + H + " V" + (y + c).toFixed(1) +
+          " Q" + x.toFixed(1) + " " + y.toFixed(1) + " " + (x + c).toFixed(1) + " " + y.toFixed(1) +
+          " H" + (x + w - c).toFixed(1) +
+          " Q" + (x + w).toFixed(1) + " " + y.toFixed(1) + " " + (x + w).toFixed(1) + " " + (y + c).toFixed(1) +
+          " V" + H + " Z";
+        return '<path d="' + d + '" fill="' + (i === n - 1 ? "var(--ink)" : "var(--field-border)") + '"></path>' + hit;
+      }).join("");
+      return '<svg viewBox="0 0 ' + W + " " + (H + 1) + '" role="img" aria-label="' + n +
+        ' weeks, most recent last">' + marks +
+        '<line x1="0" y1="' + (H + 0.5) + '" x2="' + W + '" y2="' + (H + 0.5) +
+        '" stroke="var(--line)" stroke-width="1"></line></svg>';
+    }
+
+    /**
+     * A stat tile: label, value, change against the week before, and the line
+     * behind it. One series each, which is what makes six of them readable
+     * where six lines on one plot would not be.
+     */
+    function tile(rows, def) {
+      const fmt = def.dp ? one : int;
+      const cur = rows.length ? rows[rows.length - 1] : null;
+      const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+      const v = cur ? cur[def.key] : null;
+      const p = prev ? prev[def.key] : null;
+      // No percentage off a zero base and none off a missing one. The note
+      // underneath carries the previous value either way, so the comparison is
+      // always readable even when the ratio is not defined.
+      let delta = "";
+      if (v != null && p != null && p !== 0) {
+        const pc = Math.round(((v - p) / p) * 100);
+        delta = '<span class="td ' + (pc >= 0 ? "up" : "down") + '">' +
+          (pc >= 0 ? "▲ " : "▼ ") + Math.abs(pc) + "%</span>";
+      }
+      return '<div class="tile"><div class="tl">' + esc(def.label) + info(def.help) + "</div>" +
+        '<div class="tv">' + esc(fmt(v)) + delta + "</div>" +
+        '<div class="tn">' + (prev ? "from " + esc(fmt(p)) + " the week before" : "no earlier week") + "</div>" +
+        spark(rows, def.key, fmt) + "</div>";
+    }
+
+    /**
+     * Every week as numbers.
+     *
+     * A tooltip is never the only way to read a value — hover is not available
+     * on a phone and does not answer to a keyboard. This is the same data, and
+     * it is the reason the bars can stay unlabelled.
+     */
+    function seriesTable(rows, defs) {
+      return '<div class="tw"><table><tr><th>Week of</th>' +
+        defs.map((d) => "<th>" + esc(d.label) + "</th>").join("") + "</tr>" +
+        [...rows].reverse().map((row) => "<tr><td>" + esc(weekOf(row.week)) + "</td>" +
+          defs.map((d) => '<td style="font-variant-numeric:tabular-nums">' +
+            esc((d.dp ? one : int)(row[d.key])) + "</td>").join("") + "</tr>").join("") +
+        "</table></div>";
+    }
+
+    /** The range control. One row above everything it scopes, never per chart. */
+    function rangeRow(note) {
+      return '<div class="rangerow"><p class="dnote" style="margin:0;max-width:52ch">' + note + "</p>" +
+        '<div class="seg" data-range role="tablist">' +
+        [4, 12, 26].map((n) => '<button data-weeks="' + n + '"' + (n === range ? ' class="on"' : "") +
+          ">" + n + "w</button>").join("") +
+        '<span class="thumb"></span></div></div>';
+    }
+
+    // The shop being set up in New shop, held OUTSIDE load() so that saving its
+    // card — which re-reads the whole console — does not throw away the step you
+    // were standing on.
+    // { merchantId, cardId, name, merchant } — it carries the merchant ROW, not
+    // just a name, because step 3 renders the same claim panel the shop's own
+    // page does and that panel reads the link state off the row.
+    let building = null;
+
     async function load() {
       const { status, body } = await api("/overview");
       if (status === 403) {
@@ -5496,6 +5700,8 @@ export function adminPage(): string {
       const merchants = body.merchants || [];
       const live = merchants.filter((m) => !m.archived_at);
       const money = (m, n) => m.currency + Math.round(n).toLocaleString();
+      const byMerchant = new Map(merchants.map((m) => [m.id, m]));
+      const retById = new Map((body.retention || []).map((r) => [r.id, r]));
 
       // Worst first, not alphabetical. A console sorted by name makes you read
       // every row to find the one that needs you, which is this page's job.
@@ -5506,45 +5712,70 @@ export function adminPage(): string {
       });
       const needing = ranked.filter((m) => m.flags.length && !m.archived_at);
       const archivedMerchants = ranked.filter((m) => m.archived_at);
-      const chips = (m) => m.flags
-        .map((f) => '<span class="chipf ' + f.severity + '">' + esc(f.label) + "</span>").join("");
-
-      const merchantRow = (m) => {
-        const left = m.trialLeft;
-        const v = m.value;
-        return \`
-        <tr class="mrow" data-m="\${m.id}">
-          <td>
-            <span class="mname">\${esc(m.name)}</span>\${m.archived_at ? ' <span class="arch">archived</span>' : ""}
-            <br><span class="flags">\${esc(m.owners || "no owner")}</span>
-          </td>
-          <td>\${m.stage === "unclaimed" ? '<span class="chipf info">not claimed</span>'
-            : !m.first_stamp_at ? '<span class="flags">not started</span>'
-            : left < 0 ? '<span class="bad">ended ' + Math.abs(left) + "d ago</span>"
-            : "day " + m.trial_day + "/${TRIAL_DAYS}"}</td>
-          <td class="\${m.first_stamp_at ? "" : "bad"}">
-            \${m.first_stamp_at ? ago(m.first_stamp_at) : "not yet"}
-            \${m.first_stamp_at ? "" : '<br><span class="flags">' + m.trial_day + "d waiting</span>"}
-          </td>
-          <td class="\${stale(m.last_stamp_at, 7) ? "bad" : ""}">\${ago(m.last_stamp_at)}</td>
-          <td>\${m.customers}<br><span class="flags">\${m.active_7d} this week</span></td>
-          <td>\${m.stamps_7d} / \${m.stamps_30d}
-            <br><span class="flags">\${m.stamps_prev_7d ? (m.stamps_7d >= m.stamps_prev_7d ? "▲" : "▼") + " vs " + m.stamps_prev_7d : "—"}</span></td>
-          <td>\${v.hasBasket ? money(m, v.spendThroughCard) : "—"}
-            <br><span class="flags">\${m.redemptions} reward\${m.redemptions === 1 ? "" : "s"}</span></td>
-          <td class="\${stale(m.last_owner_login, 30) ? "bad" : ""}">\${ago(m.last_owner_login)}</td>
-          <td>\${chips(m) || '<span class="flags">—</span>'}</td>
-        </tr>
-        <tr class="mdetail" data-d="\${m.id}" style="display:none"><td colspan="9"></td></tr>\`;
+      // Each chip carries its own rule, so the fourteen-row guide that used to
+      // sit under the list is read where the question is actually asked.
+      const chips = (m, help) => m.flags.map((f) =>
+        '<span class="chipf ' + f.severity + '">' + esc(f.label) +
+        (help && FLAG_HELP[f.key] ? info(FLAG_HELP[f.key]) : "") + "</span>").join("");
+      const stageChip = (m) => {
+        const label = { unclaimed: "not claimed", claimed: "not started", active: "stamping",
+                        paid: "paying", closed: "archived" }[m.stage] || m.stage;
+        return '<span class="stage ' + m.stage + '">' + label + "</span>";
       };
 
-      const MERCHANT_HEAD = \`<tr>
-        <th>Shop</th><th>Trial</th><th>Activated</th><th>Last stamp</th>
-        <th>Customers</th><th>Stamps 7d/30d</th><th>Value</th><th>Owner seen</th><th>Problems</th>
-      </tr>\`;
+      // ---- the weekly lines ---------------------------------------------------
+      // An average over no shops at all is not zero, so it is null and the bar
+      // is simply absent for that week.
+      const derive = (rows) => (rows || []).map((r) => ({ ...r,
+        per_shop: r.active_merchants ? r.stamps / r.active_merchants : null }));
+      const allWeeks = derive(body.series);
+      // The week we are standing in is a PART week — it has run for a day or
+      // for six — so putting it beside full ones draws a crash every Monday
+      // morning. It is held out of every chart and reported as itself.
+      const doneWeeks = allWeeks.slice(0, -1);
+      const partWeek = allWeeks.length ? allWeeks[allWeeks.length - 1] : null;
+      const shownWeeks = () => doneWeeks.slice(-range);
 
-      // ---- one merchant, four questions in the order you would ask them ------
-      const retById = new Map((body.retention || []).map((r) => [r.id, r]));
+      const P_TILES = [
+        { key: "stamps", label: "Stamps",
+          help: "Stamps given at counters that week, net of undos: a staff undo corrects a mis-scan, so it comes back off. Free welcome stamps have never been in it — one stamp is one real visit." },
+        { key: "active_merchants", label: "Shops stamping",
+          help: "Shops that gave at least one stamp that week. The adoption number: a shop that signed up and never stamps is not using the product, whatever else it does." },
+        { key: "active_customers", label: "Customers stamped",
+          help: "Distinct PEOPLE stamped that week. Someone holding an Apple and a Google card at one shop is one person, not two." },
+        { key: "per_shop", label: "Stamps per stamping shop", dp: 1,
+          help: "Depth rather than reach: how hard the shops that ARE using it are using it. Blank in a week no shop stamped — an average over nobody is not zero." },
+        { key: "new_merchants", label: "New shops",
+          help: "Shops signed up that week, archived ones excluded. Counted from the earlier of the shop being built and its owner's account, so a done-for-you setup dates from when we built it." },
+        { key: "rewards", label: "Rewards given",
+          help: "Cards completed and handed over that week. The only event in the product that costs a merchant real money, so it is the closest thing to proof the loop closed." },
+      ];
+      const M_TILES = [
+        { key: "stamps", label: "Stamps", help: "Stamps at this shop that week, net of undos." },
+        { key: "active_customers", label: "Customers stamped",
+          help: "Distinct people stamped that week, counted per person across both wallets." },
+        { key: "new_customers", label: "New customers",
+          help: "People whose FIRST stamp at this shop landed that week — new demand rather than repeat." },
+        { key: "rewards", label: "Rewards given", help: "Cards completed and handed over that week." },
+      ];
+
+      /** Retention, or the reason there isn't any yet. Never a confident 0%. */
+      function retentionHtml(r, what) {
+        const started = (r && r.started) || 0;
+        if (started < RET_FLOOR) {
+          return '<p class="nodata">Not enough data yet — ' + started + " customer" +
+            (started === 1 ? " has" : "s have") + " ever been stamped " + what +
+            ". A rate over fewer than " + RET_FLOOR + " people is noise, so it is not shown.</p>";
+        }
+        return "<dl>" +
+          "<dt>Customers ever stamped</dt><dd>" + started + "</dd>" +
+          "<dt>Came back a 2nd time</dt><dd>" + pct(r.second_visit_rate) + "</dd>" +
+          "<dt>…a 3rd</dt><dd>" + pct(r.third_visit_rate) + "</dd>" +
+          "<dt>Finished a card</dt><dd>" + pct(r.completion_rate) + "</dd>" +
+          "<dt>Days between visits</dt><dd>" + num(r.median_gap_days, 1) + "</dd>" +
+          "<dt>Still active 30/60/90</dt><dd>" + pct(r.alive_30) + " · " + pct(r.alive_60) +
+            " · " + pct(r.alive_90) + "</dd></dl>";
+      }
 
       /**
        * The sign-up funnel as a funnel: a bar per step, and the DROP between
@@ -5572,15 +5803,32 @@ export function adminPage(): string {
               ' <span class="fd' + (drop >= 50 ? " bad" : "") + '">−' + drop + "%</span>") + "</span>";
         }).join("") + "</div>";
       }
+
+      // ---- the shop table -----------------------------------------------------
+      // Seven columns, each one a question you would actually ask. It had nine,
+      // most of them two numbers stacked in one cell, and clicking a row unfolded
+      // a second dashboard inside it.
+      const MERCHANT_HEAD = "<tr><th>Shop</th><th>Stage</th><th>Last stamp</th><th>Customers</th>" +
+        "<th>Stamps 30d</th><th>Owner seen</th><th>Problems</th></tr>";
+      const merchantRow = (m) => '<tr class="mrow" data-m="' + esc(m.id) + '">' +
+        '<td><span class="mname">' + esc(m.name) + "</span>" +
+          (m.archived_at ? ' <span class="arch">archived</span>' : "") +
+          '<br><span class="flags">' + esc(m.owners || "no owner") + "</span></td>" +
+        "<td>" + stageChip(m) + "</td>" +
+        '<td class="' + (stale(m.last_stamp_at, 7) ? "bad" : "") + '">' + ago(m.last_stamp_at) + "</td>" +
+        "<td>" + m.customers + '<br><span class="flags">' + m.active_7d + " this week</span></td>" +
+        "<td>" + m.stamps_30d + "</td>" +
+        '<td class="' + (stale(m.last_owner_login, 30) ? "bad" : "") + '">' + ago(m.last_owner_login) + "</td>" +
+        "<td>" + (chips(m) || '<span class="flags">—</span>') + "</td></tr>";
+
+      // ---- one shop, on its own page ------------------------------------------
       function detailHtml(m) {
         const v = m.value;
         const ret = retById.get(m.id) || {};
         const staffRows = (body.staff || []).filter((s) => s.merchant_id === m.id);
         const cards = (body.cards || []).filter((c) => m.card_ids.includes(c.id));
         const liveCards = cards.filter((c) => !c.archived_at);
-        // Silent when nothing is wrong, which is most of the time. The old
-        // "Counter & engagement" panel listed these eight numbers whether or not
-        // any of them meant anything.
+        // Silent when nothing is wrong, which is most of the time.
         const wrong = [];
         if (m.pin_failed_24h) wrong.push(m.pin_failed_24h + " failed staff PINs today");
         if (m.lookup_failed_7d >= 5) wrong.push(m.lookup_failed_7d + " codes matched nothing this week");
@@ -5588,507 +5836,163 @@ export function adminPage(): string {
         if (m.staff_devices === 1 && m.stamps >= 20) wrong.push("only one staff phone has ever stamped");
         if (m.unclaimed_rewards >= 3) wrong.push(m.unclaimed_rewards + " rewards earned and not handed over");
         const noFunnel = new Date(m.signed_up_at) < new Date("${FUNNEL_SINCE}");
-        return \`
-        <div class="dgrid">
-          <div class="dpanel">
-            <h4><span class="qn">1</span>Did they start?\${info("Activated means the first stamp given to a real customer at the counter — not signing up, not issuing a card. Nothing else on this page means anything until it says yes.")}</h4>
-            <dl>
-              <dt>Signed up</dt><dd>\${ago(m.signed_up_at)}</dd>
-              <dt>Activated</dt><dd class="\${m.first_stamp_at ? "" : "bad"}">\${m.first_stamp_at ? ago(m.first_stamp_at) : "never"}</dd>
-              <dt>Took</dt><dd>\${days(m.signed_up_at, m.first_stamp_at)}</dd>
-              <dt>Poster opened</dt><dd class="\${m.poster_views ? "" : "bad"}">\${m.poster_views ? m.poster_views + "×" : "never"}</dd>
-              <dt>Counter visits</dt><dd>\${m.stamps}</dd>
-              <dt>Last stamp</dt><dd class="\${stale(m.last_stamp_at, 7) ? "bad" : ""}">\${ago(m.last_stamp_at)}</dd>
-            </dl>
-          </div>
+        const left = m.trialLeft;
 
-          <div class="dpanel">
-            <h4><span class="qn">2</span>Are people signing up?\${info("This is acquisition, not health — it names WHICH step is losing people. A drop from opened to tapped is the sign-up page; from made to landed is the wallet's own Add sheet. A QR scan and a tapped link both arrive as an ordinary page view, so the split comes from a tag on the poster QR and the share link; anything untagged, including posters printed before the tag existed, counts as untagged rather than lost.")}</h4>
-            \${funnelHtml(m)}
-            <dl style="margin-top:10px">
-              <dt style="padding-left:12px" class="flags">poster · link · untagged</dt>
-              <dd class="flags">\${m.opened_poster} · \${m.opened_link} · \${m.opened_other}</dd>
-              <dt>Deleted / dropped</dt><dd>\${m.removed} / \${m.dropped}</dd>
-            </dl>
-            \${noFunnel ? \`<p class="dnote"><strong>Predates the funnel.</strong> Page opens and Add
-              taps have only been recorded since ${FUNNEL_SINCE_LABEL}, so cards issued before then
-              show as zeroes above. Missing history, not a broken flow.</p>\` : ""}
-          </div>
+        // Everything that acts on this shop, in one place. They used to be nine
+        // buttons spread over three boxes, two of them repeating what a third
+        // already did — and "mark paid" existed as a route with no button at
+        // all, which is why the delete refusal told you to do something the
+        // console could not do.
+        const actions = '<details class="menu"><summary>Actions ▾</summary><div class="sheet">' +
+          '<button data-copy="' + origin + "/j/" + esc(m.id) + '">Copy sign-up link</button>' +
+          liveCards.map((c) => '<a target="_blank" href="/c/' + esc(c.id) + '/poster">Print poster' +
+            (liveCards.length > 1 ? " · " + esc(c.name) : "") + "</a>").join("") +
+          (m.has_owner
+            ? '<hr><button data-resetpw="' + esc(m.owner_id) + '">Reset their password</button>' +
+              // The way back from a link that reached the wrong person. The shop
+              // returns to unclaimed keeping its card id, its slug and its /j/
+              // QR — rebuilding it would mint a new card id, and a card id is
+              // printed on posters and baked into every Android card ever
+              // issued from it.
+              '<button data-unclaim="' + esc(m.id) + '">Hand it to someone else</button>'
+            : "") +
+          '<hr><button data-paid="' + esc(m.id) + '" data-now="' + (m.paid_at ? "1" : "") + '">' +
+            (m.paid_at ? "Mark as not paying" : "Mark as paying") + "</button>" +
+          (m.archived_at
+            ? '<button data-munarchive="' + esc(m.id) + '">Restore shop</button>'
+            : '<button data-marchive="' + esc(m.id) + '">Archive shop</button>') +
+          '<button class="danger" data-showdelete>Delete this shop…</button>' +
+          "</div></details>";
 
-          <div class="dpanel">
-            <h4><span class="qn">3</span>Do customers come back?\${info("Retention, counted per PERSON and per net stamp: someone holding an Apple and a Google card is one customer, and a staff undo takes its visit back off. This is the number a renewal turns on — a shop whose customers never return a second time is paying for a card nobody uses.")}</h4>
-            <dl>
-              <dt>Customers who ever got a stamp</dt><dd>\${ret.started ?? 0}</dd>
-              <dt>Came back a 2nd time</dt><dd>\${pct(ret.second_visit_rate)}</dd>
-              <dt>…a 3rd</dt><dd>\${pct(ret.third_visit_rate)}</dd>
-              <dt>Finished a card</dt><dd>\${pct(ret.completion_rate)}</dd>
-              <dt>Days between visits</dt><dd>\${num(ret.median_gap_days, 1)}</dd>
-              <dt>Still active 30/60/90</dt><dd>\${pct(ret.alive_30)} · \${pct(ret.alive_60)} · \${pct(ret.alive_90)}</dd>
-              <dt>Nudged → came back</dt><dd>\${m.nudged ? m.nudge_returned + " of " + m.nudged : "—"}</dd>
-            </dl>
-          </div>
+        return '<p class="back"><button class="rlink" data-back>← All shops</button></p>' +
+          '<div class="dhead"><div><h1>' + esc(m.name) +
+            (m.archived_at ? ' <span class="arch">archived</span>' : "") + "</h1>" +
+            '<p class="purpose">' + stageChip(m) + " · " + esc(m.owners || "no owner") +
+            " · signed up " + ago(m.signed_up_at) +
+            (m.paid_at ? "" : left < 0 ? ' · <span class="bad">trial ended ' + Math.abs(left) + "d ago</span>"
+              : m.first_stamp_at ? " · day " + m.trial_day + " of ${TRIAL_DAYS}" : "") +
+            "</p></div>" + actions + "</div>" +
+          '<div data-pwout></div>' +
 
-          <div class="dpanel">
-            <h4><span class="qn">4</span>Is it worth anything?\${info("Counter visits × the shop's OWN self-reported average basket. A countable number times one assumption — and deliberately not incremental: some of these people would have come in anyway, and there is no way to see the counterfactual. Free welcome stamps and the reset after a reward emit no event, so they have never been in it. Blank means they never told us their basket.")}</h4>
-            <dl>
-              <dt>Spend through the card</dt><dd>\${v.hasBasket ? money(m, v.spendThroughCard) : "no basket set"}</dd>
-              <dt>Spend per reward</dt><dd>\${v.hasBasket ? money(m, v.spendPerReward) : "—"}</dd>
-              <dt>Rewards given</dt><dd>\${v.rewardsGiven}</dd>
-              <dt>Rewards owed</dt><dd class="\${m.unclaimed_rewards >= 3 ? "bad" : ""}">\${m.unclaimed_rewards}</dd>
-              <dt>Owner logins (30d)</dt><dd>\${m.logins_30d}</dd>
-              <dt>Made it theirs\${info("Whether the owner has ever changed their own card. Unprompted configuration is the clearest evidence a merchant considers the thing theirs, and it is the closest signal to willingness-to-pay there is before money changes hands.")}</dt>
-              <dd>\${m.card_edits ? m.card_edits + " edits, last " + ago(m.last_card_edit_at) : "never touched it"}</dd>
-            </dl>
-          </div>
-        </div>
+          (m.flags.length
+            ? '<div class="triage" style="margin-top:14px">' + m.flags.map((f) =>
+                '<div class="trow ' + f.severity + '"><div><span class="tname">' + esc(f.label) +
+                (FLAG_HELP[f.key] ? info(FLAG_HELP[f.key]) : "") + "</span></div>" +
+                '<div><div>' + esc(f.detail) + '</div><div class="taction">' + esc(f.action) +
+                "</div></div></div>").join("") + "</div>"
+            : '<div class="tclear" style="margin-top:14px">Nothing needs you about this shop.</div>') +
 
-        \${wrong.length
-          ? '<p class="badline">Wrong right now: ' + wrong.map(esc).join(" · ") + "</p>"
-          : '<p class="okline">Nothing broken: staff can sign in, codes match, messages arrive.</p>'}
+          (m.stage === "unclaimed" ? '<div class="dpanel" style="margin-top:14px">' +
+            claimPanelHtml(m) + "</div>" : "") +
 
-        \${staffRows.length ? \`<details class="fold" style="margin-top:12px">
-          <summary>Counter phones (\${staffRows.length})\${info("A PHONE, not a person — signing out and back in mints a new id, and changing the PIN resets them all. Rewards is flagged when one phone hands out rewards on more than 30% of the stamps it adds; that is the shape free-coffee-for-friends takes.")}</summary>
-          <div class="tw"><table>
-            <tr><th>Phone</th><th>Stamps</th><th>Rewards</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>
-            \${staffRows.map((s) => \`<tr>
-              <td class="mono">\${esc(s.actor.replace("staff:", ""))}</td><td>\${s.stamps}</td>
-              <td class="\${s.stamps >= 10 && s.redeems / s.stamps > 0.3 ? "bad" : ""}">\${s.redeems}</td>
-              <td>\${s.undos}</td><td>\${s.forced}</td><td>\${ago(s.last_seen)}</td>
-            </tr>\`).join("")}
-          </table></div>
-        </details>\` : ""}
+          '<h2>Did they start?' + info("Activated means the first stamp given to a real customer at the counter — not signing up, not issuing a card. Nothing else on this page means anything until it says yes.") + "</h2>" +
+          '<div class="dgrid"><div class="dpanel"><dl>' +
+            "<dt>Signed up</dt><dd>" + ago(m.signed_up_at) + "</dd>" +
+            '<dt>Activated</dt><dd class="' + (m.first_stamp_at ? "" : "bad") + '">' +
+              (m.first_stamp_at ? ago(m.first_stamp_at) : "never") + "</dd>" +
+            "<dt>Took</dt><dd>" + days(m.signed_up_at, m.first_stamp_at) + "</dd>" +
+            '<dt>Poster opened</dt><dd class="' + (m.poster_views ? "" : "bad") + '">' +
+              (m.poster_views ? m.poster_views + "×" : "never") + "</dd>" +
+            "<dt>Counter visits</dt><dd>" + m.stamps + "</dd>" +
+            '<dt>Last stamp</dt><dd class="' + (stale(m.last_stamp_at, 7) ? "bad" : "") + '">' +
+              ago(m.last_stamp_at) + "</dd>" +
+          "</dl></div>" +
+          '<div class="dpanel"><dl>' +
+            "<dt>Owner logins (30d)</dt><dd>" + m.logins_30d + "</dd>" +
+            "<dt>Owner last seen</dt><dd>" + ago(m.last_owner_login) + "</dd>" +
+            "<dt>Counter phones</dt><dd>" + m.staff_devices + "</dd>" +
+            "<dt>Rewards given</dt><dd>" + v.rewardsGiven + "</dd>" +
+            '<dt>Rewards owed</dt><dd class="' + (m.unclaimed_rewards >= 3 ? "bad" : "") + '">' +
+              m.unclaimed_rewards + "</dd>" +
+            "<dt>Made it theirs" + info("Whether the owner has ever changed their own card. Unprompted configuration is the clearest evidence a merchant considers the thing theirs, and it is the closest signal to willingness-to-pay there is before money changes hands.") + "</dt><dd>" +
+              (m.card_edits ? m.card_edits + " edits" : "never touched it") + "</dd>" +
+          "</dl></div></div>" +
 
-        <details class="fold" style="margin-top:10px">
-          <summary>Every change they have made (\${m.card_edits})</summary>
-          <div data-edits="\${m.id}" class="flags">Loading…</div>
-        </details>
+          (wrong.length
+            ? '<p class="badline">Wrong right now: ' + wrong.map(esc).join(" · ") + "</p>"
+            : '<p class="okline">Nothing broken: staff can sign in, codes match, messages arrive.</p>') +
 
-        \${m.stage === "unclaimed"
-          ? '<div class="dpanel" style="margin-top:14px">' + claimPanelHtml(m) + "</div>"
-          : ""}
+          '<h2 style="margin-top:26px">This shop, week by week</h2>' +
+          '<div data-mseries><p class="nodata">Loading…</p></div>' +
 
-        \${liveCards.length ? \`<details class="fold" style="margin-top:10px" data-designfold="\${m.id}">
-          <summary>Design their card\${info("The same designer the owner gets. It sets how the card LOOKS and the shop's name — never the reward or the stamp count, which are the shop's own to set. A saved change reaches every card already in a wallet.")}</summary>
-          <div data-designhost="\${m.id}"></div>
-        </details>\` : ""}
+          '<h2 style="margin-top:26px">Are people signing up?' + info("This is acquisition, not health — it names WHICH step is losing people. A drop from opened to tapped is the sign-up page; from made to landed is the wallet's own Add sheet. A QR scan and a tapped link both arrive as an ordinary page view, so the split comes from a tag on the poster QR and the share link; anything untagged, including posters printed before the tag existed, counts as untagged rather than lost.") + "</h2>" +
+          '<div class="dpanel">' + funnelHtml(m) +
+            '<dl style="margin-top:10px">' +
+            '<dt style="padding-left:12px" class="flags">poster · link · untagged</dt>' +
+            '<dd class="flags">' + m.opened_poster + " · " + m.opened_link + " · " + m.opened_other + "</dd>" +
+            "<dt>Deleted / dropped</dt><dd>" + m.removed + " / " + m.dropped + "</dd></dl>" +
+            (noFunnel ? '<p class="dnote"><strong>Predates the funnel.</strong> Page opens and Add taps have only been recorded since ${FUNNEL_SINCE_LABEL}, so cards issued before then show as zeroes above. Missing history, not a broken flow.</p>' : "") +
+          "</div>" +
 
-        <div class="dpanel" style="margin-top:14px">
-          <h4>Contact &amp; actions</h4>
-          <div class="flags" style="margin-bottom:8px">
-            Sign-up link: <span class="mono">\${origin}/j/\${m.id}</span>
-          </div>
-          <div class="rst" style="margin-top:0">
-            <button class="btn btn-ghost cbtn" data-copy="\${origin}/j/\${m.id}">Copy link</button>
-            \${
-              // LIVE cards only, and named when there is more than one. Built
-              // from every card the shop had ever held, an archived programme
-              // left a dead poster on the row looking exactly like the working
-              // one beside it.
-              liveCards.map((c) => {
-                const tag = liveCards.length > 1 ? " · " + esc(c.name) : "";
-                return '<a class="btn btn-ghost cbtn" target="_blank" href="/c/' + c.id + '/poster">Print poster' + tag + "</a>";
-              }).join("")
-            }
-            \${m.has_owner
-              ? '<button class="btn btn-ghost cbtn" data-resetpw="' + m.owner_id + '">Reset their password</button>' +
-                // The way back from a link that reached the wrong person. The
-                // shop returns to unclaimed keeping its card id, its slug and
-                // its /j/ QR — rebuilding it would mint a new card id, and a
-                // card id is printed on posters and baked into every Android
-                // card ever issued from it.
-                '<button class="btn btn-ghost dbtn" data-unclaim="' + m.id + '">Hand it to someone else</button>'
-              : ""}
-            \${m.archived_at
-              ? '<button class="btn btn-ghost dbtn" data-munarchive="' + m.id + '">Restore shop</button>'
-              : '<button class="btn btn-ghost dbtn" data-marchive="' + m.id + '">Archive shop</button>'}
-          </div>
-          <div data-pwout="\${m.id}"></div>
-          <!-- The only irreversible button in the console, and the only way to
-               free an email address that is stuck: login refuses an archived
-               owner and the claim form refuses an existing one, so an address
-               can be locked out of both with nothing else to unstick it.
-               It also deletes shops that HAVE traded, because setting the same
-               onboarding flow up repeatedly issues cards every time. A paid
-               shop is refused server-side; nothing else is. -->
-          <details class="fold" style="margin-top:10px">
-            <summary>Delete this shop permanently</summary>
-            <p class="muted" style="margin:8px 0">Everything goes: the shop, its programme, its login, its customers and its whole history. \${m.customers ? "<strong>" + m.customers + " customer(s) hold a card from this shop. Their cards stop working and cannot be restored.</strong> " : ""}Archive instead unless you are certain — that keeps every card working and can be undone.</p>
-            <label style="margin-top:4px">Type <strong>\${esc(m.name)}</strong> to confirm</label>
-            <input data-delname="\${m.id}" placeholder="\${esc(m.name)}" autocomplete="off">
-            <button class="btn btn-ghost dbtn" data-mdelete="\${m.id}" style="margin-top:8px" disabled>Delete shop</button>
-            <div data-delout="\${m.id}"></div>
-          </details>
-          <label style="margin-top:12px">Phone</label>
-          <input data-phone="\${m.id}" value="\${esc(m.contact_phone)}" placeholder="Who to ring">
-          <label style="margin-top:8px">Notes</label>
-          <input data-note="\${m.id}" value="\${esc(m.contact_note)}" placeholder="Anything worth remembering">
-          <button class="btn btn-ghost cbtn" data-savecontact="\${m.id}" style="margin-top:8px">Save contact</button>
-          <!-- The NFC sticker URL and its Copy button lived here. NFC is not V1
-               and the row said so in three places; what is NOT going is the
-               archive control beside it, which is the console's only way to
-               retire a card and would otherwise have stranded two routes. -->
-          \${cards.length ? \`<div class="flags" style="margin-top:12px">
-            Programme\${cards.length === 1 ? "" : "s"}\${info("A card id is printed on posters and baked into every Android card ever issued from it, so archiving is the only safe retirement — nothing is deleted and cards already in wallets keep stamping.")}
-            \${cards.map((c) => '<div style="margin-top:6px"><span class="mono">' + esc(c.name) + "</span> " +
-              (c.archived_at
-                ? '<button class="btn btn-ghost dbtn" data-unarchive="' + c.id + '">Restore</button>'
-                : '<button class="btn btn-ghost dbtn" data-archive="' + c.id + '">Archive</button>') + "</div>").join("")}
-          </div>\` : ""}
-        </div>\`;
-      }
+          '<h2 style="margin-top:26px">Do customers come back?' + info("Retention, counted per PERSON and per net stamp: someone holding an Apple and a Google card is one customer, and a staff undo takes its visit back off. This is the number a renewal turns on — a shop whose customers never return a second time is paying for a card nobody uses.") + "</h2>" +
+          '<div class="dpanel">' + retentionHtml(ret, "here") +
+            (m.nudged ? '<p class="dnote">Nudged → came back: ' + m.nudge_returned + " of " + m.nudged + "</p>" : "") +
+          "</div>" +
 
-      // Shops built but not yet handed over. Step 1 of New shop lists them, so
-      // a setup begun on Monday can be finished on Tuesday without hunting the
-      // table for a name you half remember.
-      const unclaimed = live.filter((m) => m.stage === "unclaimed");
+          '<h2 style="margin-top:26px">Is it worth anything?' + info("Counter visits × the shop's OWN self-reported average basket. A countable number times one assumption — and deliberately not incremental: some of these people would have come in anyway, and there is no way to see the counterfactual. Free welcome stamps and the reset after a reward emit no event, so they have never been in it.") + "</h2>" +
+          '<div class="dpanel">' + (v.hasBasket
+            ? "<dl><dt>Spend through the card</dt><dd>" + money(m, v.spendThroughCard) + "</dd>" +
+              "<dt>Spend per reward</dt><dd>" + money(m, v.spendPerReward) + "</dd>" +
+              "<dt>Their average basket</dt><dd>" + money(m, m.basket_cents / 100) + "</dd></dl>"
+            : '<p class="nodata">They have never told us their average basket, so there is no money figure — one would be a guess times a guess. It is a field in their own dashboard.</p>') +
+          "</div>" +
 
-      // ---- how everyone is doing --------------------------------------------
-      // Summed over LIVE shops only: an archived account is closed, not broken,
-      // and leaving it in would drag every portfolio figure down for a reason
-      // that has nothing to do with the product.
-      const sum = (k) => live.reduce((a, m) => a + (m[k] || 0), 0);
-      // The three states a shop can be in, and they are mutually exclusive.
-      const never = live.filter((m) => !m.first_stamp_at);
-      const quiet = live.filter((m) => m.first_stamp_at && m.stamps_7d === 0);
-      const active = live.filter((m) => m.stamps_7d > 0);
-      const pctOf = (n) => live.length ? (n / live.length) * 100 : 0;
-      const s7 = sum("stamps_7d"), sPrev = sum("stamps_prev_7d");
-      const trend = sPrev ? Math.round(((s7 - sPrev) / sPrev) * 100) : null;
-      const newShops = live.filter((m) => Date.now() - new Date(m.signed_up_at).getTime() < 30 * 86400000).length;
-      // Money only counts shops that actually told us their basket — averaging
-      // in a zero from everyone else would understate it and look like a bug.
-      const withBasket = live.filter((m) => m.value.hasBasket);
-      const spend = withBasket.reduce((a, m) => a + m.value.spendThroughCard, 0);
-      const cur = live[0] ? live[0].currency : "RM";
-      const perShop = withBasket.length
-        ? [...withBasket].map((m) => m.value.spendThroughCard).sort((a, b) => a - b)[Math.floor(withBasket.length / 2)]
-        : 0;
-      const plat = body.platform || {};
+          (staffRows.length ? '<details class="fold" style="margin-top:18px"><summary>Counter phones (' +
+            staffRows.length + ")" + info("A PHONE, not a person — signing out and back in mints a new id, and changing the PIN resets them all. Rewards is flagged when one phone hands out rewards on more than 30% of the stamps it adds; that is the shape free-coffee-for-friends takes.") + "</summary>" +
+            '<div class="tw"><table><tr><th>Phone</th><th>Stamps</th><th>Rewards</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>' +
+            staffRows.map((s) => '<tr><td class="mono">' + esc(s.actor.replace("staff:", "")) + "</td><td>" +
+              s.stamps + '</td><td class="' + (s.stamps >= 10 && s.redeems / s.stamps > 0.3 ? "bad" : "") + '">' +
+              s.redeems + "</td><td>" + s.undos + "</td><td>" + s.forced + "</td><td>" + ago(s.last_seen) +
+              "</td></tr>").join("") + "</table></div></details>" : "") +
 
-      // Two panes, because the console does two unrelated jobs. Shops is the
-      // book you read; New shop is a sequence you walk. They used to share one
-      // page, which is how setting a shop up came to mean visiting four
-      // sections in an order nothing on screen told you.
-      $("#app").innerHTML = \`
-        <h1>Merchant health</h1>
-        <p class="purpose">Get every shop from signed up → stamping → still stamping in 30 days → paying.</p>
-        <div class="seg" id="atabs" role="tablist" style="margin:16px 0 6px">
-          <button data-pane="shops" class="on">Shops</button>
-          <button data-pane="new">New shop</button>
-          <span class="thumb"></span>
-        </div>
-        <div id="pane-shops">
-        <h2 style="margin-top:22px">How everyone is doing\${info("The whole book on four lenses, before any single shop. Archived shops are left out of all four — a closed account is not evidence about the product.")}</h2>
-        <div class="pstrip">
-          <div class="ppanel">
-            <h3>Health\${info("Where every live shop sits. Never started means not one stamp has ever been given at their counter. Gone quiet means they were stamping and have not this week — the single best predictor of churn.")}</h3>
-            <div class="lifebar">
-              <i class="live" style="width:\${pctOf(active.length)}%"></i>
-              <i class="quiet" style="width:\${pctOf(quiet.length)}%"></i>
-              <i class="dead" style="width:\${pctOf(never.length)}%"></i>
-            </div>
-            <div class="lifekey">
-              <span><i class="live"></i><b>\${active.length}</b> stamping now</span>
-              <span><i class="quiet"></i><b>\${quiet.length}</b> gone quiet</span>
-              <span><i class="dead"></i><b>\${never.length}</b> never started</span>
-            </div>
-            <p class="foot">\${live.length} live shop\${live.length === 1 ? "" : "s"}\${needing.length ? " · " + needing.length + " need you today" : " · nothing needs you"}</p>
-          </div>
+          '<details class="fold" style="margin-top:10px"><summary>Every change they have made (' +
+            m.card_edits + ")</summary>" +
+            '<div data-edits class="flags">Loading…</div></details>' +
 
-          <div class="ppanel">
-            <h3>Performance\${info("Counter activity across the book. Stamps are net of undos, and free welcome stamps have never been in them — one stamp is one real visit.")}</h3>
-            <dl>
-              <dt>Stamps this week</dt><dd class="big">\${s7}</dd>
-              <dt>vs last week</dt>
-              <dd class="\${trend === null ? "" : trend >= 0 ? "up" : "down"}">\${trend === null ? sPrev : (trend >= 0 ? "▲ " : "▼ ") + Math.abs(trend) + "% (" + sPrev + ")"}</dd>
-              <dt>Customers active this week</dt><dd>\${sum("active_7d")}</dd>
-              <dt>Cards in wallets</dt><dd>\${live.reduce((a, m) => a + Math.max(0, m.landed - m.removed), 0)}</dd>
-              <dt>New shops (30d)</dt><dd>\${newShops}</dd>
-            </dl>
-          </div>
+          (liveCards.length ? '<details class="fold" style="margin-top:10px" data-designfold><summary>Design their card' +
+            info("The same designer the owner gets. It sets how the card LOOKS and the shop's name — never the reward or the stamp count, which are the shop's own to set. A saved change reaches every card already in a wallet.") +
+            '</summary><div data-designhost></div></details>' : "") +
 
-          <div class="ppanel">
-            <h3>Value\${info("What the book delivered, in money: counter visits times each shop's OWN self-reported basket. A countable number times one assumption, and not incremental — some of these people would have come anyway.")}</h3>
-            <dl>
-              <dt>Spend through cards</dt><dd class="big">\${cur}\${Math.round(spend).toLocaleString()}</dd>
-              <dt>Median per shop</dt><dd>\${cur}\${Math.round(perShop).toLocaleString()}</dd>
-              <dt>Rewards given</dt><dd>\${sum("redemptions")}</dd>
-              <dt>Rewards owed</dt><dd class="\${sum("unclaimed_rewards") ? "down" : ""}">\${sum("unclaimed_rewards")}</dd>
-            </dl>
-            <p class="foot">\${withBasket.length} of \${live.length} shop\${live.length === 1 ? "" : "s"} set a basket; the rest are not in the money figures.</p>
-          </div>
+          (m.stage !== "unclaimed" ? '<details class="fold" style="margin-top:10px"><summary>Claim link</summary>' +
+            '<div class="dpanel">' + claimPanelHtml(m) + "</div></details>" : "") +
 
-          <div class="ppanel">
-            <h3>Retention\${info("Recomputed across every live shop's customers at once, not averaged from the per-shop rates — a rate over 3 customers and a rate over 300 do not average into anything. Counted per person, and per net stamp.")}</h3>
-            <dl>
-              <dt>Came back a 2nd time</dt><dd class="big">\${pct(plat.second_visit_rate)}</dd>
-              <dt>…a 3rd</dt><dd>\${pct(plat.third_visit_rate)}</dd>
-              <dt>Finished a card</dt><dd>\${pct(plat.completion_rate)}</dd>
-              <dt>Still active 30/60/90</dt><dd>\${pct(plat.alive_30)} · \${pct(plat.alive_60)} · \${pct(plat.alive_90)}</dd>
-            </dl>
-            <p class="foot">Across \${plat.started || 0} people who have ever been stamped.</p>
-          </div>
-        </div>
+          '<details class="fold" style="margin-top:10px"><summary>Contact, links and programmes</summary>' +
+            '<div class="flags">Sign-up link: <span class="mono">' + origin + "/j/" + esc(m.id) + "</span></div>" +
+            '<label style="margin-top:12px">Phone</label>' +
+            '<input data-phone value="' + esc(m.contact_phone) + '" placeholder="Who to ring">' +
+            '<label style="margin-top:8px">Notes</label>' +
+            '<input data-note value="' + esc(m.contact_note) + '" placeholder="Anything worth remembering">' +
+            '<button class="btn btn-ghost cbtn" data-savecontact style="margin-top:8px">Save contact</button>' +
+            (cards.length ? '<div class="flags" style="margin-top:14px">Programme' +
+              (cards.length === 1 ? "" : "s") +
+              info("A card id is printed on posters and baked into every Android card ever issued from it, so archiving is the only safe retirement — nothing is deleted and cards already in wallets keep stamping.") +
+              cards.map((c) => '<div style="margin-top:6px"><span class="mono">' + esc(c.name) + "</span> " +
+                (c.archived_at
+                  ? '<button class="btn btn-ghost dbtn" data-unarchive="' + esc(c.id) + '">Restore</button>'
+                  : '<button class="btn btn-ghost dbtn" data-archive="' + esc(c.id) + '">Archive</button>') +
+                "</div>").join("") + "</div>" : "") +
+          "</details>" +
 
-        <h2>Needs you today\${info("Only shops with something actually wrong, worst first. The line under each name is the single most urgent thing to do about it. A healthy shop is not listed at all — that is the point.")}</h2>
-        \${needing.length ? \`<div class="triage">
-          \${needing.map((m) => \`
-            <div class="trow \${m.flags[0].severity}">
-              <div><span class="tname">\${esc(m.name)}</span></div>
-              <div>
-                <div>\${chips(m)}</div>
-                <div class="taction">\${esc(m.flags[0].action)}</div>
-              </div>
-            </div>\`).join("")}
-        </div>\`
-          : '<div class="tclear">Nothing needs you today.</div>'}
-        <details class="fold" style="margin:0 0 26px"><summary>What these problems mean</summary>
-          <div class="tw"><table class="legend">
-            <tr><th>Problem</th><th>Fires when</th><th>Why it matters</th></tr>
-            ${FLAG_GUIDE.map((g) => `<tr><td><span class="chipf warn">${esc(g.label)}</span></td><td>${esc(g.rule)}</td><td>${esc(g.why)}</td></tr>`).join("")}
-          </table></div>
-        </details>
-
-        <h2>Every shop\${info("Worst first, never alphabetical. Click any row for that shop in full. Trial counts from the account's own signup date. Value is counter visits times their self-reported basket.")}</h2>
-        <div class="tw"><table>
-          \${MERCHANT_HEAD}
-          \${ranked.filter((m) => !m.archived_at).map(merchantRow).join("")}
-        </table></div>
-        \${archivedMerchants.length ? \`<details class="fold" style="margin-top:12px">
-          <summary>Archived shops (\${archivedMerchants.length})\${info("Closed accounts. Nothing is deleted and every card already in a wallet keeps working — they are just out of the working list, raise no problems, and are left out of the tiles above. Restore one from inside its row.")}</summary>
-          <div class="tw"><table>\${MERCHANT_HEAD}\${archivedMerchants.map(merchantRow).join("")}</table></div>
-        </details>\` : ""}
-
-        <details class="fold" style="margin-top:22px">
-          <summary>Maintenance</summary>
-          <p class="muted" style="margin:8px 0">Press this after the public address changes. Android cards load
-            their logo, banner and stamp images from that address, and the link Google calls back on is stored
-            with each shop — none of it moves by itself. iPhone cards need nothing. It notifies nobody and
-            cannot change anyone's stamps, so it is safe to press twice.</p>
-          <button class="btn btn-ghost" id="gresync">Resync Google Wallet</button>
-          <div id="gresync-out"></div>
-        </details>
-        </div>
-
-        <div id="pane-new" hidden>
-          <ol class="steps">
-            <li class="step" data-step="1">
-              <h3><span class="sn">1</span>Name it\${info("Creates the business and a plain card with NO login attached — that is the point. Nothing a customer can reach exists until they claim it: their sign-up page stays closed and no card can be issued.")}</h3>
-              <div class="rst" style="margin-top:0">
-                <div style="flex:1;min-width:200px"><input id="dfy-name" placeholder="e.g. Nasi Lemak House"></div>
-                <button class="btn btn-dark" id="dfy-create">Build it</button>
-              </div>
-              <div id="dfy-out"></div>
-              \${unclaimed.length ? '<div class="resume">or pick up one you started: ' + unclaimed.map((m) =>
-                '<button type="button" class="rlink" data-resume="' + m.id + '">' + esc(m.name) + "</button>").join("") + "</div>" : ""}
-            </li>
-            <li class="step" data-step="2">
-              <h3><span class="sn">2</span>Design their card\${info("The same designer the owner gets — upload their logo and we read the colours out of it. It never sets the reward or the stamp count; only the shop does that, from their own dashboard.")}</h3>
-              <p class="dnote" style="margin:0 0 10px">Press <strong>Save card</strong> before you hand it over,
-                or they open a card with no design on it. You can keep changing it afterwards either way.</p>
-              <div id="ds-editor"><div class="dsempty">Build a shop above, or pick one up, and the designer opens here.</div></div>
-            </li>
-            <li class="step" data-step="3">
-              <h3><span class="sn">3</span>Hand it over\${info("Sending this hands the shop over: whoever opens it makes the login. It works once, lasts 7 days, and is shown here only when it is minted — we store a hash, so it can never be read back. Sending a new one replaces the old, which is also how you withdraw one that went to the wrong person.")}</h3>
-              <div id="dfy-claim"><div class="dsempty">The claim link appears once there is a shop to hand over.</div></div>
-            </li>
-          </ol>
-        </div>\`;
-
-      // Re-send every shop's Google class. Sequential on the server, so this can
-      // take a few seconds on a long list — say so rather than look hung.
-      const gr = $("#gresync");
-      if (gr) gr.onclick = async () => {
-        const out = $("#gresync-out");
-        gr.disabled = true;
-        gr.textContent = "Resyncing…";
-        out.innerHTML = "";
-        const { body: r } = await api("/google-resync", { method: "POST" });
-        gr.disabled = false;
-        gr.textContent = "Resync Google Wallet";
-        if (!r.ok) {
-          out.innerHTML = '<p class="muted" style="margin:8px 0 0">' + (r.error === "google-not-configured"
-            ? "Google Wallet isn’t set up in Railway, so there is nothing to resync."
-            : "Couldn’t resync — " + esc(String(r.error || "unknown"))) + "</p>";
-          return;
-        }
-        // Name the failures. "3 of 10 failed" with no names is a message you
-        // cannot act on, and this is the screen you act from.
-        const bad = (r.results || []).filter((x) => !x.ok);
-        out.innerHTML = '<p class="muted" style="margin:8px 0 0">' +
-          (r.failed
-            ? esc(r.failed + " of " + r.total + " failed: ") +
-              bad.map((x) => esc(x.name) + " (" + esc(x.reason) + ")").join(", ")
-            : esc(r.total + " shop" + (r.total === 1 ? "" : "s") + " resynced ✓")) + "</p>";
-      };
-
-      // ---- panes ------------------------------------------------------------
-      $("#atabs").querySelectorAll("button").forEach((b) => {
-        b.onclick = () => {
-          $("#atabs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-          moveThumb($("#atabs"));
-          $("#pane-shops").hidden = b.dataset.pane !== "shops";
-          $("#pane-new").hidden = b.dataset.pane !== "new";
-          // A hidden .seg measures zero, so the thumb has to be re-seated after
-          // the pane it lives in is shown — not before.
-          window.scrollTo(0, 0);
-        };
-      });
-      moveThumb($("#atabs"));
-
-      // Delegated from #app, which contains the drill-downs and the designer
-      // too — so one call covers markup rendered later. Once only: #app itself
-      // survives every re-render, and wiring it per load stacks duplicate
-      // listeners on the same element.
-      if (!$("#app").dataset.infoRoot) { $("#app").dataset.infoRoot = "1"; wireInfo($("#app")); }
-
-      // ---- merchant row: expand, and the actions inside it -------------------
-      // The detail is built on first open and left in the DOM, so re-opening a
-      // row is instant and the contact fields keep whatever was typed into them.
-      const byMerchant = new Map(merchants.map((m) => [m.id, m]));
-      document.querySelectorAll("[data-m]").forEach((tr) => {
-        tr.onclick = async (e) => {
-          // Anything clickable inside the detail must not toggle the row shut.
-          if (e.target.closest("button, a, input, label, summary")) return;
-          const id = tr.dataset.m;
-          const row = document.querySelector('[data-d="' + id + '"]');
-          const cell = row.firstElementChild;
-          const opening = row.style.display === "none";
-          row.style.display = opening ? "" : "none";
-          if (opening && !cell.innerHTML) {
-            cell.innerHTML = detailHtml(byMerchant.get(id));
-            wireDetail(id);
-            // The edit history is the only thing here that needs its own trip.
-            const { body: ed } = await api("/merchant/" + id + "/edits");
-            const host = cell.querySelector('[data-edits="' + id + '"]');
-            if (!host) return;
-            host.innerHTML = (ed.edits || []).length
-              ? ed.edits.map((x) => {
-                  const what = Object.entries(x.changed || {})
-                    .map(([k, ch]) => k + ": " + esc(String(ch.from)) + " → " + esc(String(ch.to)))
-                    .join(" · ");
-                  return "<div>" + ago(x.created_at) + " — " + (what || "design") + "</div>";
-                }).join("")
-              : "Nothing changed since setup.";
-          }
-        };
-      });
-
-      /** Buttons inside a merchant's drill-down, wired when it is first built. */
-      function wireDetail(id) {
-        const scope = document.querySelector('[data-d="' + id + '"]');
-        scope.querySelectorAll("[data-copy]").forEach((b) => {
-          b.onclick = () => { navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied ✓"; };
-        });
-        const save = scope.querySelector("[data-savecontact]");
-        if (save) save.onclick = async () => {
-          await api("/merchant/" + id + "/contact", { method: "POST", body: JSON.stringify({
-            phone: scope.querySelector("[data-phone]").value,
-            note: scope.querySelector("[data-note]").value,
-          })});
-          save.textContent = "Saved ✓";
-        };
-        wireClaim(scope, byMerchant.get(id));
-        // Taking a shop back off an owner. Two taps, like archiving: the cost
-        // lands on somebody else, who loses their dashboard mid-sentence.
-        const hand = scope.querySelector("[data-unclaim]");
-        if (hand) armBtn(hand, "Tap again — they lose it", async () => {
-          const { body: r } = await api("/merchant/" + id + "/unclaim", { method: "POST" });
-          if (r.ok) return void load();
-          hand.textContent = r.error === "not-claimed" ? "Nobody holds it" : "Failed";
-        });
-        const arch = scope.querySelector("[data-marchive]");
-        if (arch) armBtn(arch, "Tap again to archive", async () => {
-          await api("/merchant/" + id + "/archive", { method: "POST" });
-          load();
-        });
-        const un = scope.querySelector("[data-munarchive]");
-        if (un) un.onclick = async () => {
-          await api("/merchant/" + id + "/unarchive", { method: "POST" });
-          load();
-        };
-        // Delete. The typed name is the real gate — arm() guards a mis-click,
-        // not a wrong row, and this is the one action with nothing behind it.
-        const delName = scope.querySelector("[data-delname]");
-        const delBtn = scope.querySelector("[data-mdelete]");
-        if (delName && delBtn) {
-          const shopName = (byMerchant.get(id).name || "").trim().toLowerCase();
-          delName.oninput = () => {
-            delBtn.disabled = delName.value.trim().toLowerCase() !== shopName;
-          };
-          armBtn(delBtn, "Tap again — this cannot be undone", async () => {
-            const out = scope.querySelector('[data-delout="' + id + '"]');
-            const { body: r } = await api("/merchant/" + id, {
-              method: "DELETE", body: JSON.stringify({ name: delName.value }),
-            });
-            if (r.ok) {
-              // No row to go back to, so re-read the whole console.
-              return void load();
-            }
-            const why = {
-              "paid-shop": "This shop is paying. Mark it unpaid first if you really mean it.",
-              "name-mismatch": "That name doesn't match.",
-            }[r.error] || "Couldn't delete it.";
-            out.innerHTML = '<p class="muted" style="margin:8px 0 0">' + esc(why) + "</p>";
-          });
-        }
-        // The designer opens IN the row, on first open, not by scrolling you to
-        // a section elsewhere on the page — you are already looking at the shop.
-        // Mounted lazily: it is a second request per shop and the row must not
-        // wait on it to show the numbers, which are what the row is for.
-        const dfold = scope.querySelector("[data-designfold]");
-        if (dfold) dfold.addEventListener("toggle", () => {
-          const host = scope.querySelector('[data-designhost="' + id + '"]');
-          if (!dfold.open || host.dataset.mounted) return;
-          host.dataset.mounted = "1";
-          const m = byMerchant.get(id);
-          const card = (body.cards || []).find((c) => m.card_ids.includes(c.id) && !c.archived_at);
-          if (card) mountDesigner(host, card.id, cardLinks(card, id, origin), load);
-        });
-        // Passwords are one-way scrypt hashes: there is nothing to look up, so
-        // this REPLACES the hash with a fresh temporary password, shown once.
-        // It used to be a section of its own at the foot of the page with a
-        // dropdown of every owner on the platform — a second list to pick a
-        // shop out of, to act on the shop already open in front of you.
-        const pw = scope.querySelector("[data-resetpw]");
-        if (pw) armBtn(pw, "Tap again to reset", async () => {
-          const out = scope.querySelector('[data-pwout="' + id + '"]');
-          const { body: r } = await api("/owner/" + pw.dataset.resetpw + "/reset-password", { method: "POST" });
-          out.innerHTML = r.ok
-            ? '<div class="temp">New password for <strong>' + esc(r.email) + "</strong>: <strong>" +
-              r.tempPassword + "</strong><br>Give it to them; they can change it in their dashboard.</div>"
-            : "";
-          if (!r.ok) out.textContent = r.error || "Failed";
-        });
-        // Archiving a programme is always safe — nothing is destroyed and it is
-        // reversible — so the only refusal left is taking a shop's last card.
-        const WHY = { "last-card": "Their only card — kept", "no-such-card": "Not found", already: "Already archived" };
-        scope.querySelectorAll("[data-archive]").forEach((b) => {
-          armBtn(b, "Tap again to archive", async () => {
-            b.disabled = true;
-            const { body: r } = await api("/card/" + b.dataset.archive + "/archive", { method: "POST" });
-            if (r.ok) return void load();
-            b.disabled = false;
-            b.textContent = WHY[r.error] || "Failed";
-          });
-        });
-        // Restoring needs no confirmation: it puts back something still there.
-        scope.querySelectorAll("[data-unarchive]").forEach((b) => {
-          b.onclick = async () => {
-            b.disabled = true;
-            const { body: r } = await api("/card/" + b.dataset.unarchive + "/unarchive", { method: "POST" });
-            if (r.ok) return void load();
-            b.disabled = false;
-            b.textContent = "Failed";
-          };
-        });
+          // The only irreversible button in the console, and the only way to
+          // free an email address that is stuck: login refuses an archived owner
+          // and the claim form refuses an existing one, so an address can be
+          // locked out of both with nothing else to unstick it. A paid shop is
+          // refused server-side; nothing else is.
+          '<details class="fold" style="margin-top:10px" data-deletefold><summary>Delete this shop permanently</summary>' +
+            '<p class="muted" style="margin:8px 0">Everything goes: the shop, its programme, its login, its customers and its whole history. ' +
+            (m.customers ? "<strong>" + m.customers + " customer(s) hold a card from this shop. Their cards stop working and cannot be restored.</strong> " : "") +
+            "Archive instead unless you are certain — that keeps every card working and can be undone.</p>" +
+            '<label style="margin-top:4px">Type <strong>' + esc(m.name) + "</strong> to confirm</label>" +
+            '<input data-delname placeholder="' + esc(m.name) + '" autocomplete="off">' +
+            '<button class="btn btn-ghost dbtn" data-mdelete style="margin-top:8px" disabled>Delete shop</button>' +
+            "<div data-delout></div></details>";
       }
 
       // ---- the claim link, in the one place it is written ---------------------
-      // Rendered by the shop's row on Shops AND by step 3 of New shop. It was two
-      // implementations of one thing, which is exactly why they disagreed: the
-      // row knew a link was out and the pane did not, and neither said that
-      // minting again kills the link already sitting in the merchant's DM.
+      // Rendered by the shop's own page AND by step 3 of New shop. It was two
+      // implementations of one thing, which is exactly why they disagreed: one
+      // knew a link was out and the other did not, and neither said that minting
+      // again kills the link already sitting in the merchant's DM.
       //
       // The link is readable here because it is stored readable — see
       // src/claim.ts for that trade and what bounds it.
@@ -6163,72 +6067,454 @@ export function adminPage(): string {
         });
       }
 
+      // ---- getting about -------------------------------------------------------
+      function goMerchant(id) {
+        history.pushState({}, "", MPATH + encodeURIComponent(id));
+        render();
+      }
+      function goConsole(to) {
+        if (to) pane = to;
+        history.pushState({}, "", "/admin");
+        render();
+      }
+      /** A .seg measures zero while hidden, so only seat the ones on screen. */
+      function seatSegs() {
+        document.querySelectorAll(".seg").forEach((s) => { if (s.offsetParent) moveThumb(s); });
+      }
+
+      function render() {
+        const id = openMerchant();
+        if (id) {
+          const m = byMerchant.get(id);
+          if (m) return void renderDetail(m);
+          $("#app").innerHTML = '<p class="back"><button class="rlink" data-back>← All shops</button></p>' +
+            '<h1>No such shop</h1><p class="sub">Nothing here has that id. It may have been deleted.</p>';
+          $("[data-back]").onclick = () => goConsole();
+          return;
+        }
+        renderConsole();
+      }
+
+      // ---- the console ---------------------------------------------------------
+      function renderConsole() {
+        // Summed over LIVE shops only: an archived account is closed, not
+        // broken, and leaving it in would drag every figure down for a reason
+        // that has nothing to do with the product.
+        const active = live.filter((m) => m.stamps_7d > 0);
+        // The five states a live shop can be in, straight off stageOf, and
+        // mutually exclusive by construction — so the bar always adds to 100%.
+        // "Active" splits into stamping and gone quiet because those two want
+        // completely different phone calls.
+        const paid = live.filter((m) => m.stage === "paid");
+        const stamping = live.filter((m) => m.stage === "active" && m.stamps_7d > 0);
+        const quiet = live.filter((m) => m.stage === "active" && m.stamps_7d === 0);
+        const never = live.filter((m) => m.stage === "claimed");
+        const unclaimed = live.filter((m) => m.stage === "unclaimed");
+        const wide = (n) => live.length ? (n / live.length) * 100 : 0;
+        const seg = (cls, list) => list.length
+          ? '<i class="' + cls + '" style="width:' + wide(list.length) + '%"></i>' : "";
+        const key = (cls, list, label) => list.length
+          ? '<span><i class="' + cls + '"></i><b>' + list.length + "</b> " + label + "</span>" : "";
+        const rows = shownWeeks();
+
+        $("#app").innerHTML =
+          "<h1>Merchant health</h1>" +
+          '<p class="purpose">Get every shop from signed up → stamping → still stamping in 30 days → paying.</p>' +
+          '<div class="seg" id="atabs" role="tablist" style="margin:16px 0 6px">' +
+            '<button data-pane="overview"' + (pane === "overview" ? ' class="on"' : "") + ">Overview</button>" +
+            '<button data-pane="merchants"' + (pane === "merchants" ? ' class="on"' : "") + ">Merchants</button>" +
+            '<button data-pane="new"' + (pane === "new" ? ' class="on"' : "") + ">New shop</button>" +
+            '<span class="thumb"></span></div>' +
+
+          // ============================ OVERVIEW ============================
+          '<div id="pane-overview"' + (pane === "overview" ? "" : " hidden") + ">" +
+            '<div class="lead"><div>' +
+              '<p class="leadlab">Shops stamping this week' +
+                info("Shops that have given at least one stamp in the last 7 days — a rolling week, not a calendar one, so it never drops to zero every Monday morning. This is the adoption number: a shop that signed up and never stamps is not using the product, whatever else it does.") +
+              "</p>" +
+              '<p class="hero">' + active.length +
+                '<span class="heroof">of ' + live.length + " live shop" + (live.length === 1 ? "" : "s") +
+                (needing.length ? " · " + needing.length + " need you today" : " · nothing needs you") +
+                "</span></p>" +
+            "</div><div>" +
+              '<div class="lifebar">' + seg("paid", paid) + seg("live", stamping) + seg("quiet", quiet) +
+                seg("dead", never) + seg("new", unclaimed) + "</div>" +
+              '<div class="lifekey">' + key("paid", paid, "paying") + key("live", stamping, "stamping") +
+                key("quiet", quiet, "gone quiet") + key("dead", never, "never started") +
+                key("new", unclaimed, "not claimed") + "</div>" +
+            "</div></div>" +
+
+            '<h2 style="margin-top:26px">Week by week' +
+              info("Whole weeks, Monday to Sunday, off the event log. Archived shops are left out of every line — a closed account is not evidence about the product.") + "</h2>" +
+            rangeRow("Whole weeks only. This week is still running" +
+              (partWeek ? " — " + int(partWeek.stamps) + " stamps so far, at " + int(partWeek.active_merchants) + " shops" : "") +
+              ", so it is reported here rather than drawn beside finished ones.") +
+            '<div class="tiles">' + P_TILES.map((d) => tile(rows, d)).join("") + "</div>" +
+            '<details class="fold" style="margin-top:12px"><summary>Every week, as numbers</summary>' +
+              seriesTable(rows, P_TILES) + "</details>" +
+
+            '<h2 style="margin-top:26px">Do customers come back?' +
+              info("Recomputed across every live shop's customers at once, not averaged from the per-shop rates — a rate over 3 customers and a rate over 300 do not average into anything. Counted per person, and per net stamp.") + "</h2>" +
+            '<div class="dpanel">' + retentionHtml(body.platform || {}, "anywhere") + "</div>" +
+
+            '<h2 style="margin-top:26px">Needs you today' +
+              info("Only shops with something actually wrong, worst first. The line under each name is the single most urgent thing to do about it. A healthy shop is not listed at all — that is the point.") + "</h2>" +
+            (needing.length
+              ? '<div class="triage">' + needing.slice(0, 5).map((m) =>
+                  '<div class="trow ' + m.flags[0].severity + '" data-go="' + esc(m.id) + '">' +
+                  '<div><span class="tname">' + esc(m.name) + "</span></div><div><div>" + chips(m, true) +
+                  '</div><div class="taction">' + esc(m.flags[0].action) + "</div></div></div>").join("") +
+                "</div>" +
+                (needing.length > 5
+                  ? '<p class="dnote"><button class="rlink" data-allshops>' + (needing.length - 5) +
+                    " more shop" + (needing.length - 5 === 1 ? "" : "s") + " with something wrong</button></p>"
+                  : "")
+              : '<div class="tclear">Nothing needs you today.</div>') +
+
+            '<details class="fold" style="margin-top:26px"><summary>Maintenance</summary>' +
+              '<p class="dnote" style="margin:8px 0">Press this after the public address changes. Android cards load their logo, banner and stamp images from that address, and the link Google calls back on is stored with each shop — none of it moves by itself. iPhone cards need nothing. It notifies nobody and cannot change anyone’s stamps, so it is safe to press twice.</p>' +
+              '<button class="btn btn-ghost" id="gresync">Resync Google Wallet</button><div id="gresync-out"></div>' +
+            "</details>" +
+          "</div>" +
+
+          // =========================== MERCHANTS ============================
+          '<div id="pane-merchants"' + (pane === "merchants" ? "" : " hidden") + ">" +
+            '<h2>Every shop' + info("Worst first, never alphabetical. Open any shop for the whole picture: its problems, its weekly lines, its funnel, its card and everything you can do to it.") + "</h2>" +
+            '<div class="tw"><table>' + MERCHANT_HEAD +
+              ranked.filter((m) => !m.archived_at).map(merchantRow).join("") + "</table></div>" +
+            (archivedMerchants.length
+              ? '<details class="fold" style="margin-top:12px"><summary>Archived shops (' +
+                archivedMerchants.length + ")" +
+                info("Closed accounts. Nothing is deleted and every card already in a wallet keeps working — they are just out of the working list, raise no problems, and are left out of everything on Overview. Restore one from its own page.") +
+                '</summary><div class="tw"><table>' + MERCHANT_HEAD +
+                archivedMerchants.map(merchantRow).join("") + "</table></div></details>"
+              : "") +
+          "</div>" +
+
+          // =========================== NEW SHOP =============================
+          // Untouched by the rework: the same three steps, in the same order,
+          // against the same shared designer and the same shared claim panel.
+          '<div id="pane-new"' + (pane === "new" ? "" : " hidden") + ">" +
+            '<ol class="steps">' +
+              '<li class="step" data-step="1"><h3><span class="sn">1</span>Name it' +
+                info("Creates the business and a plain card with NO login attached — that is the point. Nothing a customer can reach exists until they claim it: their sign-up page stays closed and no card can be issued.") +
+                '</h3><div class="rst" style="margin-top:0">' +
+                '<div style="flex:1;min-width:200px"><input id="dfy-name" placeholder="e.g. Nasi Lemak House"></div>' +
+                '<button class="btn btn-dark" id="dfy-create">Build it</button></div><div id="dfy-out"></div>' +
+                (unclaimed.length
+                  ? '<div class="resume">or pick up one you started: ' + unclaimed.map((m) =>
+                      '<button type="button" class="rlink" data-resume="' + esc(m.id) + '">' + esc(m.name) +
+                      "</button>").join("") + "</div>"
+                  : "") +
+              "</li>" +
+              '<li class="step" data-step="2"><h3><span class="sn">2</span>Design their card' +
+                info("The same designer the owner gets — upload their logo and we read the colours out of it. It never sets the reward or the stamp count; only the shop does that, from their own dashboard.") +
+                '</h3><p class="dnote" style="margin:0 0 10px">Press <strong>Save card</strong> before you hand it over, or they open a card with no design on it. You can keep changing it afterwards either way.</p>' +
+                '<div id="ds-editor"><div class="dsempty">Build a shop above, or pick one up, and the designer opens here.</div></div></li>' +
+              '<li class="step" data-step="3"><h3><span class="sn">3</span>Hand it over' +
+                info("Sending this hands the shop over: whoever opens it makes the login. It works once, lasts 7 days, and is shown here only when it is minted. Sending a new one replaces the old, which is also how you withdraw one that went to the wrong person.") +
+                '</h3><div id="dfy-claim"><div class="dsempty">The claim link appears once there is a shop to hand over.</div></div></li>' +
+            "</ol>" +
+          "</div>";
+
+        wireConsole();
+      }
+
+      function wireConsole() {
+        $("#atabs").querySelectorAll("button").forEach((b) => {
+          b.onclick = () => {
+            pane = b.dataset.pane;
+            $("#atabs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+            ["overview", "merchants", "new"].forEach((p) => { $("#pane-" + p).hidden = p !== pane; });
+            seatSegs();
+            window.scrollTo(0, 0);
+          };
+        });
+        // One filter row for every chart it scopes, never one per chart.
+        const rr = $("[data-range]");
+        if (rr) rr.querySelectorAll("button").forEach((b) => {
+          b.onclick = () => { range = Number(b.dataset.weeks); renderConsole(); };
+        });
+        document.querySelectorAll("[data-m]").forEach((tr) => {
+          tr.onclick = () => goMerchant(tr.dataset.m);
+        });
+        document.querySelectorAll("[data-go]").forEach((el) => {
+          el.style.cursor = "pointer";
+          el.onclick = (e) => { if (!e.target.closest("button")) goMerchant(el.dataset.go); };
+        });
+        const more = $("[data-allshops]");
+        if (more) more.onclick = () => {
+          pane = "merchants";
+          renderConsole();
+        };
+        wireResync();
+        wireNewShop();
+        seatSegs();
+        if (building) drawSteps();
+      }
+
+      function wireResync() {
+        // Re-send every shop's Google class. Sequential on the server, so this
+        // can take a few seconds on a long list — say so rather than look hung.
+        const gr = $("#gresync");
+        if (!gr) return;
+        gr.onclick = async () => {
+          const out = $("#gresync-out");
+          gr.disabled = true;
+          gr.textContent = "Resyncing…";
+          out.innerHTML = "";
+          const { body: r } = await api("/google-resync", { method: "POST" });
+          gr.disabled = false;
+          gr.textContent = "Resync Google Wallet";
+          if (!r.ok) {
+            out.innerHTML = '<p class="dnote" style="margin:8px 0 0">' + (r.error === "google-not-configured"
+              ? "Google Wallet isn’t set up in Railway, so there is nothing to resync."
+              : "Couldn’t resync — " + esc(String(r.error || "unknown"))) + "</p>";
+            return;
+          }
+          // Name the failures. "3 of 10 failed" with no names is a message you
+          // cannot act on, and this is the screen you act from.
+          const bad = (r.results || []).filter((x) => !x.ok);
+          out.innerHTML = '<p class="dnote" style="margin:8px 0 0">' +
+            (r.failed
+              ? esc(r.failed + " of " + r.total + " failed: ") +
+                bad.map((x) => esc(x.name) + " (" + esc(x.reason) + ")").join(", ")
+              : esc(r.total + " shop" + (r.total === 1 ? "" : "s") + " resynced ✓")) + "</p>";
+        };
+      }
+
+      // ---- one shop, on its own page ------------------------------------------
+      async function renderDetail(m) {
+        $("#app").innerHTML = detailHtml(m);
+        window.scrollTo(0, 0);
+        wireDetail(m);
+        // Two extra trips, neither of which the page waits on: the numbers are
+        // what the page is for and they are already on screen.
+        api("/merchant/" + m.id + "/edits").then(({ body: ed }) => {
+          const host = $("[data-edits]");
+          if (!host) return;
+          host.innerHTML = (ed.edits || []).length
+            ? ed.edits.map((x) => {
+                const what = Object.entries(x.changed || {})
+                  .map(([k, ch]) => k + ": " + esc(String(ch.from)) + " → " + esc(String(ch.to)))
+                  .join(" · ");
+                return "<div>" + ago(x.created_at) + " — " + (what || "design") + "</div>";
+              }).join("")
+            : "Nothing changed since setup.";
+        });
+        api("/merchant/" + m.id + "/series").then(({ body: s }) => {
+          const host = $("[data-mseries]");
+          if (!host) return;
+          const weeks = (s.series || []).slice(0, -1).slice(-range);
+          host.innerHTML = weeks.length
+            ? rangeRow("Whole weeks only; the week now running is left out.") +
+              '<div class="tiles">' + M_TILES.map((d) => tile(weeks, d)).join("") + "</div>" +
+              '<details class="fold" style="margin-top:12px"><summary>Every week, as numbers</summary>' +
+              seriesTable(weeks, M_TILES) + "</details>"
+            : '<p class="nodata">Nothing has happened here yet.</p>';
+          const rr = host.querySelector("[data-range]");
+          if (rr) {
+            rr.querySelectorAll("button").forEach((b) => {
+              b.onclick = () => { range = Number(b.dataset.weeks); renderDetail(m); };
+            });
+            seatSegs();
+          }
+        });
+      }
+
+      /** Everything you can do to a shop, wired where its page renders it. */
+      function wireDetail(m) {
+        const scope = $("#app");
+        const id = m.id;
+        $("[data-back]").onclick = () => goConsole("merchants");
+        scope.querySelectorAll("[data-copy]").forEach((b) => {
+          b.onclick = () => { navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied ✓"; };
+        });
+        const menu = scope.querySelector(".menu");
+        const save = scope.querySelector("[data-savecontact]");
+        if (save) save.onclick = async () => {
+          await api("/merchant/" + id + "/contact", { method: "POST", body: JSON.stringify({
+            phone: scope.querySelector("[data-phone]").value,
+            note: scope.querySelector("[data-note]").value,
+          })});
+          save.textContent = "Saved ✓";
+        };
+        wireClaim(scope, m);
+        // Taking a shop back off an owner. Two taps, like archiving: the cost
+        // lands on somebody else, who loses their dashboard mid-sentence.
+        const hand = scope.querySelector("[data-unclaim]");
+        if (hand) armBtn(hand, "Tap again — they lose it", async () => {
+          const { body: r } = await api("/merchant/" + id + "/unclaim", { method: "POST" });
+          if (r.ok) return void load();
+          hand.textContent = r.error === "not-claimed" ? "Nobody holds it" : "Failed";
+        });
+        // Whether they are paying. It had a route and no button, so the delete
+        // refusal told you to mark a shop unpaid with nothing anywhere to do it.
+        const paid = scope.querySelector("[data-paid]");
+        if (paid) armBtn(paid, "Tap again to confirm", async () => {
+          await api("/merchant/" + id + "/paid", {
+            method: "POST", body: JSON.stringify({ paid: !paid.dataset.now }),
+          });
+          load();
+        });
+        const arch = scope.querySelector("[data-marchive]");
+        if (arch) armBtn(arch, "Tap again to archive", async () => {
+          await api("/merchant/" + id + "/archive", { method: "POST" });
+          load();
+        });
+        const un = scope.querySelector("[data-munarchive]");
+        if (un) un.onclick = async () => {
+          await api("/merchant/" + id + "/unarchive", { method: "POST" });
+          load();
+        };
+        // Delete is a menu item that OPENS the gate, never one that fires it:
+        // the typed name is the real guard, and arm() only covers a mis-click.
+        const showDel = scope.querySelector("[data-showdelete]");
+        const fold = scope.querySelector("[data-deletefold]");
+        if (showDel && fold) showDel.onclick = () => {
+          if (menu) menu.open = false;
+          fold.open = true;
+          fold.scrollIntoView({ block: "center" });
+          fold.querySelector("[data-delname]").focus();
+        };
+        const delName = scope.querySelector("[data-delname]");
+        const delBtn = scope.querySelector("[data-mdelete]");
+        if (delName && delBtn) {
+          const shopName = (m.name || "").trim().toLowerCase();
+          delName.oninput = () => {
+            delBtn.disabled = delName.value.trim().toLowerCase() !== shopName;
+          };
+          armBtn(delBtn, "Tap again — this cannot be undone", async () => {
+            const { body: r } = await api("/merchant/" + id, {
+              method: "DELETE", body: JSON.stringify({ name: delName.value }),
+            });
+            // Nothing left to go back to, so leave the shop's address behind.
+            if (r.ok) { history.replaceState({}, "", "/admin"); pane = "merchants"; return void load(); }
+            const why = {
+              "paid-shop": "This shop is paying. Mark it as not paying first if you really mean it.",
+              "name-mismatch": "That name doesn't match.",
+            }[r.error] || "Couldn't delete it.";
+            scope.querySelector("[data-delout]").innerHTML =
+              '<p class="dnote" style="margin:8px 0 0">' + esc(why) + "</p>";
+          });
+        }
+        // Mounted lazily: it is a second request per shop and the page must not
+        // wait on it to show the numbers, which are what the page is for.
+        const dfold = scope.querySelector("[data-designfold]");
+        if (dfold) dfold.addEventListener("toggle", () => {
+          const host = scope.querySelector("[data-designhost]");
+          if (!dfold.open || host.dataset.mounted) return;
+          host.dataset.mounted = "1";
+          const card = (body.cards || []).find((c) => m.card_ids.includes(c.id) && !c.archived_at);
+          if (card) mountDesigner(host, card.id, cardLinks(card, id, origin), load);
+        });
+        // Passwords are one-way scrypt hashes: there is nothing to look up, so
+        // this REPLACES the hash with a fresh temporary password, shown once.
+        const pw = scope.querySelector("[data-resetpw]");
+        if (pw) armBtn(pw, "Tap again to reset", async () => {
+          const out = scope.querySelector("[data-pwout]");
+          const { body: r } = await api("/owner/" + pw.dataset.resetpw + "/reset-password", { method: "POST" });
+          if (menu) menu.open = false;
+          out.innerHTML = r.ok
+            ? '<div class="temp">New password for <strong>' + esc(r.email) + "</strong>: <strong>" +
+              r.tempPassword + "</strong><br>Give it to them; they can change it in their dashboard.</div>"
+            : '<div class="temp">' + esc(r.error || "Failed") + "</div>";
+        });
+        // Archiving a programme is always safe — nothing is destroyed and it is
+        // reversible — so the only refusal left is taking a shop's last card.
+        const WHY = { "last-card": "Their only card — kept", "no-such-card": "Not found", already: "Already archived" };
+        scope.querySelectorAll("[data-archive]").forEach((b) => {
+          armBtn(b, "Tap again to archive", async () => {
+            b.disabled = true;
+            const { body: r } = await api("/card/" + b.dataset.archive + "/archive", { method: "POST" });
+            if (r.ok) return void load();
+            b.disabled = false;
+            b.textContent = WHY[r.error] || "Failed";
+          });
+        });
+        // Restoring needs no confirmation: it puts back something still there.
+        scope.querySelectorAll("[data-unarchive]").forEach((b) => {
+          b.onclick = async () => {
+            b.disabled = true;
+            const { body: r } = await api("/card/" + b.dataset.unarchive + "/unarchive", { method: "POST" });
+            if (r.ok) return void load();
+            b.disabled = false;
+            b.textContent = "Failed";
+          };
+        });
+      }
+
       // ---- New shop: name it, design it, hand it over -------------------------
-      // One sequence in one place. It used to be three sections at three heights
-      // of a long page — Build a shop at the bottom, the designer above it, and
-      // the claim link inside the shop's row further up still — with nothing on
-      // screen saying that was the order.
-      //
-      // No design choices here. Building used to pick from six hard-coded
-      // business-type presets, which was a second, worse designer hiding inside
-      // a signup form. It makes a plain card and step 2 opens the real one on it.
-      // { merchantId, cardId, name, merchant } — the shop in hand. It carries
-      // the merchant ROW, not just a name, because step 3 renders the same
-      // claim panel the shop own row does and that panel reads the link state
-      // off the row. A shop just built has no link out, hence the stub below.
-      let building = null;
+      // One sequence in one place, and the rework did not touch it. It used to
+      // be three sections at three heights of a long page — Build a shop at the
+      // bottom, the designer above it, and the claim link on the shop's row
+      // further up still — with nothing on screen saying that was the order.
 
       /** Draw steps 2 and 3 for whatever shop is in hand, or reset them. */
       async function drawSteps() {
         const ed = $("#ds-editor"), cl = $("#dfy-claim");
+        if (!ed || !cl) return;
         if (!building) {
           ed.innerHTML = '<div class="dsempty">Build a shop above, or pick one up, and the designer opens here.</div>';
           cl.innerHTML = '<div class="dsempty">The claim link appears once there is a shop to hand over.</div>';
           return;
         }
-        // The same panel the shop's own row renders, against the same merchant
+        // Re-read the row every time: a claim link minted a minute ago is on
+        // the fresh one and not on the copy this step was started with.
+        const fresh = byMerchant.get(building.merchantId);
+        if (fresh) building.merchant = fresh;
+        // The same panel the shop's own page renders, against the same merchant
         // row — so the two can never know different things about one link.
         cl.innerHTML = claimPanelHtml(building.merchant);
         wireInfo(cl);
         wireClaim(cl, building.merchant);
-        // No rail: "Copy sign-up link" and "Print poster" are for handing a
-        // shop over, and this one does not exist for anybody yet. The same
-        // links sit on its row the moment it does. It refreshes on save now,
-        // which the shops-tab mount always did and this one never has.
+        // No rail: "Copy sign-up link" and "Print poster" are for handing a shop
+        // over, and this one does not exist for anybody yet. The same links sit
+        // on its page the moment it does.
         await mountDesigner(ed, building.cardId, "", load);
       }
 
-      $("#dfy-create").onclick = async () => {
-        const cafeName = $("#dfy-name").value.trim();
-        if (!cafeName) return void ($("#dfy-out").textContent = "Enter a shop name.");
-        $("#dfy-create").disabled = true; $("#dfy-out").textContent = "Building…";
-        const { body: r } = await api("/card", { method: "POST", body: JSON.stringify({ cafeName }) });
-        $("#dfy-create").disabled = false;
-        if (!r.ok) return void ($("#dfy-out").textContent = r.error || "Failed");
-        // No email, no password, no PIN — there is no account yet, and that is
-        // deliberate. They make their own when they claim it.
-        $("#dfy-out").innerHTML = '<div class="temp">Built <strong>' + esc(cafeName) + "</strong>.</div>";
-        $("#dfy-name").value = "";
-        building = {
-          merchantId: r.merchantId, cardId: r.cardId, name: cafeName,
-          // Freshly built: no link has ever been out for it.
-          merchant: { id: r.merchantId, name: cafeName, claim_expires: null, claim_token: null },
-        };
-        drawSteps();
-      };
-
-      // Picking one up mid-way is the same three steps against a shop that
-      // already exists — a link sent on Monday and a design finished on Tuesday
-      // is the normal case, not an edge one.
-      $("#pane-new").querySelectorAll("[data-resume]").forEach((b) => {
-        b.onclick = () => {
-          const m = byMerchant.get(b.dataset.resume);
-          const card = (body.cards || []).find((c) => m.card_ids.includes(c.id) && !c.archived_at);
-          if (!card) return void toast("That shop has no live card");
-          building = { merchantId: m.id, cardId: card.id, name: m.name, merchant: m };
+      function wireNewShop() {
+        const create = $("#dfy-create");
+        if (!create) return;
+        create.onclick = async () => {
+          const cafeName = $("#dfy-name").value.trim();
+          if (!cafeName) return void ($("#dfy-out").textContent = "Enter a shop name.");
+          create.disabled = true; $("#dfy-out").textContent = "Building…";
+          const { body: r } = await api("/card", { method: "POST", body: JSON.stringify({ cafeName }) });
+          create.disabled = false;
+          if (!r.ok) return void ($("#dfy-out").textContent = r.error || "Failed");
+          // No email, no password, no PIN — there is no account yet, and that is
+          // deliberate. They make their own when they claim it.
+          $("#dfy-out").innerHTML = '<div class="temp">Built <strong>' + esc(cafeName) + "</strong>.</div>";
+          $("#dfy-name").value = "";
+          building = {
+            merchantId: r.merchantId, cardId: r.cardId, name: cafeName,
+            // Freshly built: no link has ever been out for it.
+            merchant: { id: r.merchantId, name: cafeName, claim_expires: null, claim_token: null },
+          };
           drawSteps();
         };
-      });
+        // Picking one up mid-way is the same three steps against a shop that
+        // already exists — a link sent on Monday and a design finished on
+        // Tuesday is the normal case, not an edge one.
+        $("#pane-new").querySelectorAll("[data-resume]").forEach((b) => {
+          b.onclick = () => {
+            const m = byMerchant.get(b.dataset.resume);
+            const card = (body.cards || []).find((c) => m.card_ids.includes(c.id) && !c.archived_at);
+            if (!card) return void toast("That shop has no live card");
+            building = { merchantId: m.id, cardId: card.id, name: m.name, merchant: m };
+            drawSteps();
+          };
+        });
+      }
+
+      // Delegated from #app, which contains every view this page has — so one
+      // call covers markup rendered later. Once only: #app itself survives every
+      // re-render, and wiring it per load stacks duplicate listeners on it.
+      if (!$("#app").dataset.infoRoot) { $("#app").dataset.infoRoot = "1"; wireInfo($("#app")); }
+      rerender = render;
+      render();
     }
     load();
   `;

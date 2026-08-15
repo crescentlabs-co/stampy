@@ -5,7 +5,9 @@
  * whole console is closed (403).
  *
  *   GET    /admin                          the console page
+ *   GET    /admin/m/:id                    the same page, opened on one shop
  *   GET    /admin/api/overview             every café + owner email(s) + metrics
+ *   GET    /admin/api/merchant/:id/series  that shop, week by week
  *   POST   /admin/api/card/:id/archive     retire a card (reversible; nothing deleted)
  *   POST   /admin/api/card/:id/unarchive   put it back
  *   POST   /admin/api/card                 build a shop with NO login attached
@@ -45,7 +47,9 @@ import {
   getCard,
   merchantEdits,
   merchantHealth,
+  merchantSeries,
   platformRetention,
+  platformSeries,
   setMerchantArchived,
   setMerchantContact,
   getOwner,
@@ -72,6 +76,9 @@ import { adminPage } from "../pages.js";
 
 export const adminRouter = Router();
 
+/** The widest range the console's switch offers; every shorter one is a slice. */
+const SERIES_WEEKS = 26;
+
 interface AdminRequest extends Request {
   admin?: OwnerRow;
 }
@@ -88,6 +95,21 @@ async function requireAdmin(req: AdminRequest, res: Response, next: NextFunction
 }
 
 adminRouter.get("/", (_req, res) => {
+  res.type("html").send(adminPage());
+});
+
+/**
+ * One shop, on its own address.
+ *
+ * The SAME page — the console reads `location.pathname` on load and pushes
+ * state thereafter, so there is one document to maintain rather than two that
+ * drift. A shop's detail used to unfold inside its own table row, which meant it
+ * could not be linked, bookmarked or reopened after a refresh, and browser-back
+ * left the console entirely.
+ *
+ * An unknown id still serves the page; the browser says so once it has the list.
+ */
+adminRouter.get("/m/:id", (_req, res) => {
   res.type("html").send(adminPage());
 });
 
@@ -114,7 +136,7 @@ adminRouter.get("/", (_req, res) => {
  * and are unit-tested without a browser or a database.
  */
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [merchants, cards, owners, retention, platform, staff] = await Promise.all([
+  const [merchants, cards, owners, retention, platform, staff, series] = await Promise.all([
     merchantHealth(),
     allCardsWithStats(),
     allOwners(),
@@ -124,6 +146,11 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     // average into anything meaningful.
     platformRetention(),
     adminStaffAudit(),
+    // The longest range the console offers, fetched once. 26 rows of six small
+    // integers is nothing on the wire, and the 4w/12w switch is then a slice
+    // rather than a round trip — a range control that waits on the network
+    // stops being something you flick between.
+    platformSeries(SERIES_WEEKS),
   ]);
   const withFlags = merchants.map((m) => ({
     ...m,
@@ -134,7 +161,12 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     // paid_at, because nothing else in the database implies it.
     stage: stageOf(m),
   }));
-  res.json({ merchants: withFlags, cards, owners, retention, platform, staff });
+  res.json({ merchants: withFlags, cards, owners, retention, platform, staff, series });
+});
+
+/** One shop's own weekly lines. Fetched when its page opens, not with the list. */
+adminRouter.get("/api/merchant/:id/series", requireAdmin, async (req, res) => {
+  res.json({ series: await merchantSeries(req.params.id!, SERIES_WEEKS) });
 });
 
 /** What this merchant has changed about their card — the WTP signal. */

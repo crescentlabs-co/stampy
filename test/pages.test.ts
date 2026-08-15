@@ -875,11 +875,12 @@ describe("the console says things once", () => {
    * at four heights of one page, in an order nothing on screen told you.
    */
   it("splits the book you read from the sequence you walk", () => {
-    expect(html).toContain('data-pane="shops"');
-    expect(html).toContain('data-pane="new"');
-    // Shops is what you land on: the console is opened to check, not to build.
-    expect(html).toMatch(/data-pane="shops" class="on"/);
-    expect(html).toContain('id="pane-new" hidden');
+    for (const p of ["overview", "merchants", "new"]) {
+      expect(html).toContain('data-pane="' + p + '"');
+      expect(html).toContain('id="pane-' + p + '"');
+    }
+    // Overview is what you land on: the console is opened to check, not to build.
+    expect(html).toContain('let pane = "overview"');
   });
 
   it("walks New shop in the only order that works", () => {
@@ -911,7 +912,7 @@ describe("the console says things once", () => {
     expect(html.match(/function wireClaim\(scope, m, done\)/g)!.length).toBe(1);
     // Step 3 and the row both go through it.
     expect(html).toContain("cl.innerHTML = claimPanelHtml(building.merchant)");
-    expect(html).toContain("wireClaim(scope, byMerchant.get(id))");
+    expect(html).toContain("wireClaim(scope, m)");
     // And nothing mints outside it.
     expect(html.match(/\/claim-link", \{ method: "POST" \}/g)!.length).toBe(1);
   });
@@ -949,14 +950,15 @@ describe("the console says things once", () => {
   });
 
   /**
-   * A shop's row carries everything about that shop. Posters and counter sheets
-   * were built from every card it had EVER held, unnamed — so an archived
-   * programme left a dead poster and a dead counter sheet looking exactly like
-   * the working pair beside them. That is what "why are there two?" was.
+   * A shop's page carries everything about that shop. Posters and counter
+   * sheets were built from every card it had EVER held, unnamed — so an
+   * archived programme left a dead poster and a dead counter sheet looking
+   * exactly like the working pair beside them. That is what "why are there
+   * two?" was.
    */
-  it("builds a row's links from live cards only", () => {
+  it("builds a shop's links from live cards only", () => {
     expect(html).toContain("const liveCards = cards.filter((c) => !c.archived_at)");
-    expect(html).toMatch(/liveCards\.map\(\(c\) => \{/);
+    expect(html).toMatch(/liveCards\.map\(\(c\) => '<a target="_blank" href="\/c\/'/);
     expect(html).not.toMatch(/cards\.map\(\(c\) => '<a class="btn btn-ghost cbtn" target="_blank" href="\/c\/'/);
     // And resetting a password happens on the shop you already have open.
     expect(html).toContain("data-resetpw=");
@@ -975,15 +977,19 @@ describe("the console says things once", () => {
     expect(html).toContain('data-f="shopName"');
   });
 
-  it("opens on the portfolio, not on four hero numbers", () => {
-    expect(html).toContain("How everyone is doing");
-    for (const panel of ["Health", "Performance", "Value", "Retention"]) {
-      expect(html).toContain(">" + panel);
-    }
+  /**
+   * Exactly one hero, and it is a question about adoption. There were four
+   * hero numbers, then four panels of numbers under them — both made you read
+   * everything to find the one thing that mattered.
+   */
+  it("opens on one number and a trend, not on a wall of them", () => {
+    expect(html).toContain("Shops stamping this week");
+    expect(html.match(/class="hero"/g)!.length).toBe(1);
     expect(html).toContain("lifebar");
-    // The old strip.
-    expect(html).not.toContain("stamping this week</span>");
-    expect(html).not.toContain("cards in wallets</span>");
+    // The four panels the numbers used to live in.
+    expect(html).not.toContain("How everyone is doing");
+    expect(html).not.toContain('class="pstrip"');
+    expect(html).not.toContain("Spend through cards");
   });
 
   it("draws the sign-up funnel as a funnel", () => {
@@ -991,8 +997,105 @@ describe("the console says things once", () => {
     expect(html).toContain("function funnelHtml(m)");
   });
 
-  it("documents every problem it can raise", () => {
-    expect(html.match(/class="chipf warn"/g)!.length).toBe(FLAG_GUIDE.length);
+  /**
+   * The fourteen-row rule table came off the page. The rules did not go with
+   * it — every one is behind the chip that raises it, keyed on the flag's KEY
+   * rather than its label, because half the labels are templated ("3 rewards
+   * owed") and would never match a fixed string.
+   */
+  /**
+   * A shop opens at its own address instead of unfolding inside its own table
+   * row. The row version could not be linked or bookmarked, did not survive a
+   * refresh or a re-render, and browser-back left the console entirely.
+   */
+  it("gives a shop its own address rather than a row that unfolds", () => {
+    expect(html).toContain('const MPATH = "/admin/m/"');
+    expect(html).toContain("history.pushState");
+    expect(html).toContain('addEventListener("popstate"');
+    // The row is now a link to that address, and nothing expands in place.
+    expect(html).toContain("tr.onclick = () => goMerchant(tr.dataset.m)");
+    expect(html).not.toContain('class="mdetail"');
+    expect(html).not.toContain("row.style.display = opening");
+  });
+
+  /**
+   * Nine loose buttons across three boxes became one menu — and it closed a
+   * hole while it was at it: "mark paid" was a route with no button anywhere,
+   * so the delete refusal told you to do something the console could not do.
+   */
+  it("puts every action on a shop behind one menu", () => {
+    expect(html.match(/<details class="menu">/g)!.length).toBe(1);
+    for (const act of ["Reset their password", "Hand it to someone else",
+                       "Mark as paying", "Archive shop", "Delete this shop…"]) {
+      expect(html, `${act} is missing from the menu`).toContain(act);
+    }
+    // Two taps, never a browser dialog: a suppressed confirm() returns false
+    // and the button silently stops working (invariant 8).
+    expect(html).toContain('armBtn(paid, "Tap again to confirm"');
+    expect(html).toContain('armBtn(arch, "Tap again to archive"');
+    // Delete OPENS the gate; the typed name is what actually fires it.
+    expect(html).toContain("data-showdelete");
+    expect(html).toContain("delBtn.disabled = delName.value.trim().toLowerCase() !== shopName");
+  });
+
+  /**
+   * A rate over a handful of people is noise dressed as a measurement.
+   * COALESCE(…, 0) rendered a confident 0% for a shop nobody had ever stamped,
+   * which was the single most misleading thing on the page.
+   */
+  it("says how few there are rather than inventing a 0%", () => {
+    expect(html).toContain("const RET_FLOOR = 10");
+    expect(html).toContain("if (started < RET_FLOOR)");
+    expect(html).toContain("Not enough data yet");
+    expect(html).toContain("is noise, so it is not shown");
+  });
+
+  /**
+   * The week we are standing in has run for a day or for six. Drawn beside
+   * finished weeks it draws a crash every Monday morning, so it is held out of
+   * every chart and reported as itself.
+   */
+  it("keeps the part-week out of the charts", () => {
+    expect(html).toContain("const doneWeeks = allWeeks.slice(0, -1)");
+    expect(html).toContain("This week is still running");
+    // An average over no shops at all is not zero.
+    expect(html).toContain("r.active_merchants ? r.stamps / r.active_merchants : null");
+    expect(html).toContain("no shops stamped");
+  });
+
+  /**
+   * Emphasis is weight, not colour. DESIGN.md rule 1 gives the neon exactly one
+   * job — marking the next thing to press — so a lime bar in a chart is
+   * decoration, and rule 2 says weight comes from the near-black.
+   */
+  it("draws its charts in ink and grey, never in the accent", () => {
+    const spark = html.slice(html.indexOf("function spark(rows, key, fmt)"),
+                             html.indexOf("function tile(rows, def)"));
+    expect(spark).toContain('i === n - 1 ? "var(--ink)" : "var(--field-border)"');
+    expect(spark).not.toContain("var(--accent)");
+    // Hairline, solid — a dashed grid reads as a threshold when it is a grid.
+    expect(spark).toContain('stroke="var(--line)" stroke-width="1"');
+    expect(spark).not.toContain("stroke-dasharray");
+    // A tooltip is never the only way to read a value: hover does not exist on
+    // a phone and does not answer to a keyboard, so the numbers are also a table.
+    expect(html).toContain("function seriesTable(rows, defs)");
+    expect(html).toContain("Every week, as numbers");
+    // One range control for everything it scopes, never one per chart.
+    expect(html.match(/data-range/g)!.length).toBeGreaterThan(0);
+    expect(html).toContain("function rangeRow(note)");
+  });
+
+  it("explains every problem it can raise, behind the chip that raises it", () => {
+    expect(html).not.toContain("What these problems mean");
+    expect(html).not.toContain("<th>Fires when</th>");
+    const at = html.indexOf("const FLAG_HELP = ");
+    expect(at).toBeGreaterThan(-1);
+    const help = JSON.parse(html.slice(html.indexOf("{", at), html.indexOf(";\n", at)));
+    for (const g of FLAG_GUIDE) {
+      expect(help[g.key], `${g.key} has no explanation`).toContain(g.rule);
+      expect(help[g.key]).toContain(g.why);
+    }
+    expect(Object.keys(help).length).toBe(FLAG_GUIDE.length);
   });
 });
 

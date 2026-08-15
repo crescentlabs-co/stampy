@@ -97,6 +97,16 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   the weight renders at 400 and reads as body text.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
+- **Charts** are hand-rolled inline SVG — there is no chart library and no build
+  step to add one. Emphasis is **weight, not colour**: the period being read is
+  `--ink`, the context behind it is `--field-border`, and the baseline is a
+  solid `--line` hairline (never dashed). **The accent never appears in a
+  chart** — rule 1 gives it one job, so a neon bar is decoration. Bars cap at
+  24px with a 2px gap, square at the baseline and 3–4px rounded at the data
+  end. One series per chart: six small multiples beat six lines on one plot,
+  and sidestep needing a second palette. Never a number on every point — the
+  hover title carries it and a table view underneath carries all of them,
+  because hover does not exist on a phone.
 
 ## Where the aesthetic came from
 

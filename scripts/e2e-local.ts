@@ -826,6 +826,80 @@ async function main() {
     );
   }
 
+  // --- Week by week: the one thing the console could never show ---
+  // Everything else it reports is a snapshot. The only time comparison was this
+  // week vs last week, which is a difference, not a direction.
+  {
+    const s = adminOk.series;
+    expect(Array.isArray(s) && s.length === 26, `the console gets 26 weekly buckets (got ${s && s.length})`);
+    // generate_series, not a GROUP BY: a week nobody stamped has no rows to
+    // group, so grouping alone silently closes the gap and draws a flat line
+    // through a dead fortnight. A fresh test database is mostly empty weeks,
+    // which makes this the case that matters here.
+    const empty = s.filter((w: any) => w.stamps === 0);
+    expect(empty.length > 0, "empty weeks are rows of zeroes, not missing rows");
+    expect(
+      s.every((w: any) =>
+        typeof w.stamps === "number" && typeof w.active_merchants === "number" &&
+        typeof w.active_customers === "number" && typeof w.rewards === "number" &&
+        typeof w.new_merchants === "number" && typeof w.activated === "number"),
+      "every bucket carries all six counts",
+    );
+    // Strictly weekly and in order, so the browser can slice the tail off for a
+    // shorter range and trust that the last row is the week now running.
+    const gaps = s.slice(1).map((w: any, i: number) =>
+      new Date(w.week).getTime() - new Date(s[i].week).getTime());
+    expect(gaps.every((g: number) => g === 7 * 86400000), "buckets are exactly one week apart, ascending");
+    // This run stamped real customers, so the live week has to see them.
+    const total = s.reduce((a: number, w: any) => a + w.stamps, 0);
+    expect(total > 0, `the series counts the stamps this run gave (${total})`);
+    // is_test never leaks in: the designer's own test pass writes real events
+    // against a real card, and they are not demand.
+    expect(
+      s.reduce((a: number, w: any) => a + w.active_customers, 0) > 0 &&
+        JSON.stringify(s).indexOf("NaN") === -1,
+      "customers are counted per person, with no NaN from an empty week",
+    );
+  }
+
+  // One shop's own lines, on its own endpoint — fetched when its page opens,
+  // not dragged along with the list.
+  {
+    const own = (await ownerMerchant((await getOwnerByEmail("owner@test.my"))!.id))!;
+    const ms = JSON.parse(
+      (await get("/admin/api/merchant/" + own.id + "/series", { headers: { cookie: cookieNow } })).body,
+    ).series;
+    expect(Array.isArray(ms) && ms.length === 26, "a shop's series is 26 weeks too");
+    expect(
+      ms.every((w: any) => typeof w.new_customers === "number"),
+      "a shop's series says how many customers were NEW that week",
+    );
+    expect(
+      ms.reduce((a: number, w: any) => a + w.stamps, 0) > 0,
+      "a shop that has been stamped has stamps in its own series",
+    );
+    // Scoped: one shop's line cannot exceed the platform's in any week.
+    expect(
+      ms.every((w: any, i: number) => w.stamps <= adminOk.series[i].stamps),
+      "a shop's weekly stamps never exceed the platform's for the same week",
+    );
+  }
+
+  // A shop has its own address. The detail used to unfold inside its table row,
+  // where it could not be linked, bookmarked or survive a refresh.
+  {
+    const own = (await ownerMerchant((await getOwnerByEmail("owner@test.my"))!.id))!;
+    const page = await get("/admin/m/" + own.id, { headers: { cookie: cookieNow } });
+    expect(page.status === 200 && page.body.includes("Merchant health"),
+      "/admin/m/:id serves the console");
+    // The same document, so there is only one to maintain — the browser reads
+    // the path and renders the shop.
+    expect(page.body === (await get("/admin", { headers: { cookie: cookieNow } })).body,
+      "/admin/m/:id is the SAME page as /admin, opened on a shop");
+    const missing = await get("/admin/m/no-such-shop-at-all", { headers: { cookie: cookieNow } });
+    expect(missing.status === 200, "an unknown shop id still serves the console rather than 404ing");
+  }
+
   // --- The console is keyed by MERCHANT, and the rollup adds up ---
   // The regression this re-keying invites: a merchant total that quietly
   // disagrees with the cards underneath it. Checked against the card-keyed
