@@ -5953,8 +5953,15 @@ export function adminPage(): string {
             info("The same designer the owner gets. It sets how the card LOOKS and the shop's name — never the reward or the stamp count, which are the shop's own to set. A saved change reaches every card already in a wallet.") +
             '</summary><div data-designhost></div></details>' : "") +
 
-          (m.stage !== "unclaimed" ? '<details class="fold" style="margin-top:10px"><summary>Claim link</summary>' +
-            '<div class="dpanel">' + claimPanelHtml(m) + "</div></details>" : "") +
+          // A claimed shop gets NO claim panel. It briefly had one, folded shut,
+          // and it was wrong twice over: the copy says "nobody has claimed this
+          // shop" whatever the shop's state, and the server refuses the only
+          // button on it with already-claimed, because a link that mints a
+          // login cannot be handed out for a login that exists. The way back
+          // from a link that reached the wrong person is Actions → Hand it to
+          // someone else, which returns the shop to unclaimed keeping its card
+          // id — and the panel then appears in full, unfolded, where it means
+          // something.
 
           '<details class="fold" style="margin-top:10px"><summary>Contact, links and programmes</summary>' +
             '<div class="flags">Sign-up link: <span class="mono">' + origin + "/j/" + esc(m.id) + "</span></div>" +
@@ -6339,7 +6346,8 @@ export function adminPage(): string {
           })});
           save.textContent = "Saved ✓";
         };
-        wireClaim(scope, m);
+        // Only where there is a panel to wire — see the note in detailHtml.
+        if (m.stage === "unclaimed") wireClaim(scope, m);
         // Taking a shop back off an owner. Two taps, like archiving: the cost
         // lands on somebody else, who loses their dashboard mid-sentence.
         const hand = scope.querySelector("[data-unclaim]");

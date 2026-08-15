@@ -940,6 +940,23 @@ describe("the console says things once", () => {
     for (const dialog of ["confirm(", "alert("]) expect(claim).not.toContain(dialog);
   });
 
+  /**
+   * A claim link is only ever offered for a shop with no login. It briefly
+   * appeared, folded shut, on claimed shops too — where the panel said "nobody
+   * has claimed this shop" under an owner's own email address, and its one
+   * button was refused by the server with already-claimed. A link that mints a
+   * login cannot be handed out for a login that already exists.
+   */
+  it("offers a claim link only where there is nobody holding the shop", () => {
+    expect(html).toContain('m.stage === "unclaimed"');
+    expect(html).toContain('if (m.stage === "unclaimed") wireClaim(scope, m)');
+    // Never behind a fold on a shop that has an owner.
+    expect(html).not.toContain('m.stage !== "unclaimed"');
+    expect(html).not.toContain("<summary>Claim link</summary>");
+    // The one copy line that assumes it, rendered in the one place that holds.
+    expect(html.match(/Nobody has claimed this shop/g)!.length).toBe(1);
+  });
+
   /** The way back from a link that reached the wrong person. */
   it("can hand a claimed shop to somebody else", () => {
     expect(html).toContain("data-unclaim=");
