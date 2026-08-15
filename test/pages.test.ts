@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { FLAG_GUIDE } from "../src/health.js";
+import { CHURN_DAYS, FLAG_GUIDE } from "../src/health.js";
 import {
   adminPage,
   cardPickerPage,
@@ -819,14 +819,28 @@ describe("the console says things once", () => {
     expect(html).toContain("data-info=");
   });
 
-  it("asks the four questions in the order you would ask them", () => {
-    const order = ["Did they start?", "Are people signing up?", "Do customers come back?", "Is it worth anything?"];
-    let at = -1;
+  /**
+   * A shop's page runs in the order you would ask: is anything broken, how far
+   * did they get, are they using it, are people signing up, do those people
+   * come back, and is any of it worth money. Four of those are the three
+   * questions this console exists for; the rest is context for them.
+   */
+  it("asks its questions in the order you would ask them", () => {
+    const order = [
+      "How far did they get?", "This shop, week by week", "Are people signing up?",
+      "Do customers come back?", "Customer value",
+    ];
+    let at = html.indexOf("function detailHtml(m)");
+    expect(at).toBeGreaterThan(-1);
     for (const q of order) {
-      const i = html.indexOf(q);
-      expect(i).toBeGreaterThan(at);
+      const i = html.indexOf(q, at);
+      expect(i, `${q} is missing or out of order`).toBeGreaterThan(at);
       at = i;
     }
+    // The framings that went with the six-rate retention block.
+    expect(html).not.toContain("Is it worth anything?");
+    expect(html).not.toContain("Still active 30/60/90");
+    expect(html).not.toContain("second_visit_rate");
   });
 
   it("does not paint the drill-down as disabled", () => {
@@ -948,10 +962,10 @@ describe("the console says things once", () => {
    * login cannot be handed out for a login that already exists.
    */
   it("offers a claim link only where there is nobody holding the shop", () => {
-    expect(html).toContain('m.stage === "unclaimed"');
-    expect(html).toContain('if (m.stage === "unclaimed") wireClaim(scope, m)');
+    expect(html).toContain('m.stage === "not-claimed"');
+    expect(html).toContain('if (m.stage === "not-claimed") wireClaim(scope, m)');
     // Never behind a fold on a shop that has an owner.
-    expect(html).not.toContain('m.stage !== "unclaimed"');
+    expect(html).not.toContain('m.stage !== "not-claimed"');
     expect(html).not.toContain("<summary>Claim link</summary>");
     // The one copy line that assumes it, rendered in the one place that holds.
     expect(html.match(/Nobody has claimed this shop/g)!.length).toBe(1);
@@ -1000,13 +1014,75 @@ describe("the console says things once", () => {
    * everything to find the one thing that mattered.
    */
   it("opens on one number and a trend, not on a wall of them", () => {
-    expect(html).toContain("Shops stamping this week");
+    // The hero, the stage chips and the Churning flag all read CHURN_DAYS, so
+    // the console can never quote three different silence thresholds.
+    expect(html).toContain("Shops stamping in the last ");
+    expect(html).toContain(`const CHURN_DAYS = ${CHURN_DAYS}`);
     expect(html.match(/class="hero"/g)!.length).toBe(1);
     expect(html).toContain("lifebar");
     // The four panels the numbers used to live in.
     expect(html).not.toContain("How everyone is doing");
     expect(html).not.toContain('class="pstrip"');
     expect(html).not.toContain("Spend through cards");
+  });
+
+  /**
+   * Four words about USE, and paying is not one of them. It used to be a stage
+   * ranked above everything else, so a paying shop that had not stamped in a
+   * month read as the healthiest state on the board — the one shop whose
+   * silence matters most was the one the console could not report.
+   */
+  it("says what stage a shop is at, and counts paying separately", () => {
+    for (const s of ["Not claimed", "Activated", "Stamping", "Churning"]) {
+      expect(html, `${s} is missing from the stage vocabulary`).toContain(s);
+    }
+    expect(html).toContain("const STAGE_LABEL = ");
+    expect(html).toContain('m.paid_at ? \'<span class="paypill">Paying</span>\'');
+    // The old vocabulary, gone from the browser entirely.
+    expect(html).not.toContain('.stage.paid {');
+    expect(html).not.toContain('m.stage === "active"');
+  });
+
+  /**
+   * One rate, and a comparison computed the same way. Six retention rates
+   * behind a gate is five more than "are customers becoming loyal?" needs.
+   */
+  it("answers loyalty with one rate and its direction", () => {
+    expect(html).toContain("function returningHtml(r, where)");
+    expect(html).toContain("pts vs four weeks ago");
+    expect(html).toContain("first stamp was 14+ days ago");
+    // Percentage POINTS, not a percent change: 20% to 25% is five points, and
+    // calling that "+25%" is the oldest way there is to overstate a rate.
+    expect(html).toContain("Math.round((r.rate - r.prev_rate) * 100)");
+    // The comparison is held to the SAME floor as the rate. A shop four weeks
+    // younger had a handful of eligible customers, and "▲ 5 pts" off a base of
+    // four is the very thing the gate exists to stop, laundered through the
+    // word "trend".
+    expect(html).toContain("r.prev_eligible >= RET_FLOOR");
+    expect(html).toContain("too few customers four weeks ago to compare");
+    expect(html).not.toContain("function retentionHtml");
+    expect(html).not.toContain("Came back a 2nd time");
+  });
+
+  /** Deleted is a subtraction from Landed, not a further step down the funnel. */
+  it("draws the deleted bar without calling it a funnel drop", () => {
+    expect(html).toContain('["Deleted again", m.removed + m.dropped]');
+    expect(html).toContain("const last = i === steps.length - 1");
+    expect(html).toContain("const drop = !last && prev");
+  });
+
+  /** The first step that is missing is the answer, so it is dashed, not red. */
+  it("shows how far a shop got as four steps in order", () => {
+    const order = ["Signed up", "Activated", "First customer", "First stamp"];
+    let at = html.indexOf("How far did they get?");
+    expect(at).toBeGreaterThan(-1);
+    for (const step of order) {
+      const i = html.indexOf('tstep("' + step, at);
+      expect(i, `${step} is missing or out of order`).toBeGreaterThan(at);
+      at = i;
+    }
+    expect(html).toContain('class="tstep todo"');
+    expect(html).toContain(".tstep.todo { border-style: dashed; }");
   });
 
   it("draws the sign-up funnel as a funnel", () => {
@@ -1062,7 +1138,7 @@ describe("the console says things once", () => {
    */
   it("says how few there are rather than inventing a 0%", () => {
     expect(html).toContain("const RET_FLOOR = 10");
-    expect(html).toContain("if (started < RET_FLOOR)");
+    expect(html).toContain("if (eligible < RET_FLOOR)");
     expect(html).toContain("Not enough data yet");
     expect(html).toContain("is noise, so it is not shown");
   });
@@ -1075,9 +1151,23 @@ describe("the console says things once", () => {
   it("keeps the part-week out of the charts", () => {
     expect(html).toContain("const doneWeeks = allWeeks.slice(0, -1)");
     expect(html).toContain("This week is still running");
-    // An average over no shops at all is not zero.
-    expect(html).toContain("r.active_merchants ? r.stamps / r.active_merchants : null");
+    // An average over nobody at all is not zero.
+    expect(html).toContain("r.active_customers ? r.stamps / r.active_customers : null");
     expect(html).toContain("no shops stamped");
+  });
+
+  /** The six tiles, and only these six. Each answers one of the three questions. */
+  it("carries the six weekly measures and nothing else", () => {
+    const at = html.indexOf("const P_TILES = [");
+    const tiles = html.slice(at, html.indexOf("const M_TILES = [", at));
+    for (const label of ["Stamps", "Customers stamped", "Stamping shops",
+                         "Stamps per customer", "New shops", "Rewards given"]) {
+      expect(tiles, `${label} is missing`).toContain(`label: "${label}"`);
+    }
+    expect(tiles.match(/key: "/g)!.length).toBe(6);
+    // The one it replaced, and the series column nothing reads any more.
+    expect(html).not.toContain("Stamps per stamping shop");
+    expect(html).not.toContain("per_shop");
   });
 
   /**

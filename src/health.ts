@@ -15,6 +15,20 @@ import { TRIAL_DAYS, type MerchantHealthRow } from "./db.js";
 
 const DAY = 86_400_000;
 
+/**
+ * How long a counter can be silent before we call it churning.
+ *
+ * Written in exactly one place because three things read it and they must never
+ * disagree: the console's hero (shops stamping in the last N days), `stageOf`
+ * (stamping vs churning) and the Churning flag below. It was 7, and 7 is a week
+ * — a shop that stamps every Saturday looked identical to one that had stopped.
+ *
+ * It is deliberately tight. A café that closes Sunday and Monday and has a
+ * quiet Tuesday WILL appear here. On a portfolio this size that is the right
+ * trade; if the list starts crying wolf, this is the one line to change.
+ */
+export const CHURN_DAYS = 3;
+
 export type Severity = "critical" | "warn" | "info";
 
 export interface Flag {
@@ -33,10 +47,22 @@ const RANK: Record<Severity, number> = { critical: 0, warn: 1, info: 2 };
 /**
  * Every flag this file can raise, with the exact rule that fires it.
  *
- * Exported as DATA so the console's legend is generated from the same list the
+ * Exported as DATA so the console's help is generated from the same list the
  * rules are keyed on — a definitions table written as prose in the page would
  * drift the first time a threshold moved, and a threshold you cannot look up is
  * a number you cannot trust. A test asserts every key raised below appears here.
+ *
+ * SIX rules, down from fourteen. The eight that went were not wrong; they were
+ * answering questions the console no longer asks, and a list that fires on
+ * everybody trains you to ignore it. Each of them is still reported where it
+ * belongs — unclaimed and never-activated are what the Stage column SAYS;
+ * one-phone, codes-failing and rewards-owed are on a shop's "Wrong right now"
+ * line; signup-leak is the drop its funnel draws; and both trial rules are
+ * printed in a shop's own header. Nothing was hidden, only stopped shouting.
+ *
+ * What survives is: two things that are actively BROKEN, and four that say the
+ * loop is failing — the shop stopping, the shop slowing, cards not reaching a
+ * wallet, and customers throwing them away.
  */
 export const FLAG_GUIDE: { key: string; label: string; rule: string; why: string }[] = [
   { key: "locked-out", label: "Staff locked out",
@@ -45,42 +71,24 @@ export const FLAG_GUIDE: { key: string; label: string; rule: string; why: string
   { key: "messages-failing", label: "Messages not arriving",
     rule: "Any nudge recorded as undelivered",
     why: "They think they are reaching customers and are not." },
-  { key: "unclaimed", label: "Never claimed",
-    rule: "Built 3+ days ago and the claim link has not been used",
-    why: "Nothing else can happen until they claim it — no login, no staff PIN, and their sign-up page stays closed so no customer can be issued a card nobody could stamp." },
-  { key: "never-activated", label: "Never set up / No stamps yet",
-    rule: "Zero stamps ever, claimed, and 3+ days old",
-    why: "Reads 'Never set up' when they have never opened their poster — nothing is on the counter — and 'No stamps yet' when they have." },
-  { key: "went-quiet", label: "Went quiet",
-    rule: "Has stamped before, but nothing in the last 7 days",
-    why: "The single best predictor of churn." },
+  // NOTE: this key is `went-quiet` and its label is "Churning", while the key
+  // `churning` below is labelled "Customers deleting". That is not a mix-up and
+  // must not be "fixed": this one is the SHOP going silent, that one is
+  // CUSTOMERS deleting the card. The keys are what FLAG_HELP, the console's
+  // info dots and every test are keyed on, so they stay put; only the words a
+  // human reads changed.
+  { key: "went-quiet", label: "Churning",
+    rule: `Has stamped before, but nothing in the last ${CHURN_DAYS} days`,
+    why: "The single best predictor of churn, and the whole reason to open this page." },
   { key: "slowing", label: "Slowing down",
     rule: "5+ stamps last week, and this week is less than half of it",
     why: "Caught before it becomes a dead counter." },
-  { key: "one-phone", label: "One phone only",
-    rule: "20+ stamps, all from a single staff device",
-    why: "If that person leaves or their phone dies, the programme stops." },
-  { key: "codes-failing", label: "Codes not matching",
-    rule: "5+ typed codes matched nothing in 7 days",
-    why: "Usually a worn poster or staff typing the wrong thing." },
-  { key: "signup-leak", label: "Scans not converting",
-    rule: "10+ join pages opened, and under 30% tapped Add",
-    why: "The poster is working and the sign-up page is losing them." },
   { key: "not-landing", label: "Cards not landing",
     rule: "10+ cards made, and under 40% confirmed in a wallet",
     why: "The wallet's own Add sheet is failing. Apple-only figure — Google only reports since the issuer callback was set up." },
   { key: "churning", label: "Customers deleting",
     rule: "5+ cards landed, and over 30% later removed or dropped",
     why: "'Removed' is the wallet telling us it was deleted; 'dropped' is Apple answering 410 for a device that no longer holds it." },
-  { key: "rewards-owed", label: "N rewards owed",
-    rule: "3+ customers sitting at their target un-redeemed",
-    why: "Staff are missing the reward banner. These customers did everything asked and got nothing, so they are the likeliest of all to give up." },
-  { key: "trial-ending", label: "Nd of trial left",
-    rule: "7 or fewer days left of the 30, counted from their FIRST STAMP",
-    why: "The advice differs by whether they are actually stamping: one is a sale, the other is a decision." },
-  { key: "trial-expired", label: "Trial ended Nd ago",
-    rule: "Past 30 days from their first stamp",
-    why: "The clock starts when they first serve a customer, not when they sign up — a shop that has never stamped has not begun, and raises 'Never set up' instead." },
 ];
 
 function daysSince(d: Date | string | null, now: number): number | null {
@@ -132,7 +140,6 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
   const out: Flag[] = [];
   const add = (f: Flag) => out.push(f);
   const sinceStamp = daysSince(m.last_stamp_at, now);
-  const left = trialDaysLeft(m);
 
   // Archived merchants are not problems to solve; they are closed accounts.
   if (m.archived_at) return [];
@@ -163,43 +170,28 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
     });
   }
 
-  // --- never got going ------------------------------------------------------
-
-  if (m.stamps === 0 && m.days_since_signup >= 3 && m.has_owner) {
-    // Distinguish "no poster on the counter" from "poster up, nobody scanning".
-    // Same symptom, completely different conversation.
-    const noPoster = m.poster_views === 0;
-    add({
-      key: "never-activated",
-      severity: "critical",
-      label: noPoster ? "Never set up" : "No stamps yet",
-      detail: noPoster
-        ? `${m.days_since_signup} days in and they have never even opened their poster.`
-        : `${m.days_since_signup} days in, poster opened, still not one stamp.`,
-      action: noPoster
-        ? "Nothing is on their counter. Print it and take it to them."
-        : "The poster is up but nobody is stamping — walk the staff through it.",
-    });
-  }
-
   // --- was working, then stopped --------------------------------------------
 
   // Both branches are gated on the merchant having stamped at ALL. Without that
   // guard, a merchant with no history could be reported as "slowing down" —
-  // you cannot slow down from a standstill, and it would push a never-activated
-  // merchant into the wrong conversation entirely.
+  // you cannot slow down from a standstill, and a shop that has never started
+  // is a different conversation entirely. That one has no flag any more: its
+  // Stage says "Activated", which is precisely the statement that they have a
+  // login and have never used it.
   if (m.stamps > 0) {
-    if (m.stamps_7d === 0) {
+    if (sinceStamp === null || sinceStamp >= CHURN_DAYS) {
+      // Off the LAST STAMP, not off a 7-day bucket. The bucket meant a shop
+      // that stamped last Saturday and nothing since read as healthy all week.
       add({
         key: "went-quiet",
         severity: "critical",
-        label: "Went quiet",
+        label: "Churning",
         detail: `Was stamping, nothing for ${Math.floor(sinceStamp ?? 0)} days.`,
-        action: "The one that predicts churn. Call before the trial runs out.",
+        action: "The one that predicts churn. Ring them today.",
       });
     } else if (m.stamps_prev_7d >= 5 && m.stamps_7d * 2 < m.stamps_prev_7d) {
-      // Quiet and slowing are the same story at different stages, so they are
-      // mutually exclusive — raising both double-counts one merchant.
+      // Churning and slowing are the same story at different stages, so they
+      // are mutually exclusive — raising both double-counts one merchant.
       add({
         key: "slowing",
         severity: "warn",
@@ -208,40 +200,6 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
         action: "Worth a check-in before it becomes a quiet counter.",
       });
     }
-  }
-
-  // --- the counter is fragile ----------------------------------------------
-
-  if (m.staff_devices === 1 && m.stamps >= 20) {
-    add({
-      key: "one-phone",
-      severity: "warn",
-      label: "One phone only",
-      detail: `All ${m.stamps} stamps came from a single staff phone.`,
-      action: "If that person leaves or their phone dies, the programme stops.",
-    });
-  }
-
-  if (m.lookup_failed_7d >= 5) {
-    add({
-      key: "codes-failing",
-      severity: "warn",
-      label: "Codes not matching",
-      detail: `${m.lookup_failed_7d} typed codes matched nothing this week.`,
-      action: "Usually a worn poster or staff typing the wrong thing.",
-    });
-  }
-
-  // --- sign-up leaks --------------------------------------------------------
-
-  if (m.scanned >= 10 && m.clicked / m.scanned < 0.3) {
-    add({
-      key: "signup-leak",
-      severity: "warn",
-      label: "Scans not converting",
-      detail: `${m.scanned} scans, only ${m.clicked} tapped Add.`,
-      action: "The poster is working and the sign-up page is losing them.",
-    });
   }
 
   // Apple reports pass_added reliably; Google only since the issuer callback was
@@ -267,83 +225,55 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
     });
   }
 
-  // --- the merchant is not delivering on their side -------------------------
-
-  // Not an accounting line: these are customers who did everything asked and
-  // got nothing, which makes them the likeliest of all to give up.
-  if (m.unclaimed_rewards >= 3) {
-    add({
-      key: "rewards-owed",
-      severity: "warn",
-      label: `${m.unclaimed_rewards} rewards owed`,
-      detail: `${m.unclaimed_rewards} customers are sitting at their target un-redeemed.`,
-      action: "Staff are missing the reward banner. Those customers are about to churn.",
-    });
-  }
-
-  // --- the clock ------------------------------------------------------------
-
-  // No first stamp, no trial — there is nothing to run out. Without this gate
-  // an unstarted shop would read as "trial ended 0d ago" on the day it was
-  // built, which is the opposite of true.
-  if (!m.first_stamp_at) {
-    // Built, sent, and never opened. The one thing that stalls before any of
-    // the usage flags can apply.
-    if (!m.has_owner && m.days_since_signup >= 3) {
-      add({
-        key: "unclaimed",
-        severity: "warn",
-        label: "Never claimed",
-        detail: `Built ${m.days_since_signup} days ago and the claim link has not been used.`,
-        action: m.claim_expires && new Date(m.claim_expires).getTime() < now
-          ? "Their link has expired. Issue a new one and send it again."
-          : "Chase the DM — nothing can happen until they claim it.",
-      });
-    }
-  } else if (left < 0) {
-    add({
-      key: "trial-expired",
-      severity: "info",
-      label: `Trial ended ${Math.abs(left)}d ago`,
-      detail: `Signed up ${m.trial_day} days ago.`,
-      action: m.stamps_7d > 0 ? "Still stamping — this is the conversion call." : "Not stamping. Decide whether to chase.",
-    });
-  } else if (left <= 7) {
-    add({
-      key: "trial-ending",
-      severity: "info",
-      label: `${left}d of trial left`,
-      detail: `${m.stamps_7d} stamps this week, ${m.customers} customers.`,
-      action: m.stamps_7d > 0 ? "Going well — make the ask now." : "Fix the usage before the clock runs out.",
-    });
-  }
+  // Nothing about the trial clock is raised here any more. It was two `info`
+  // flags on every shop in its final week, which is a calendar, not a problem —
+  // and a shop's own header already prints "day N of 30" and "trial ended Nd
+  // ago", where it is read next to whether they are actually stamping.
 
   return out.sort((a, b) => RANK[a.severity] - RANK[b.severity]);
 }
 
 /**
- * Where this shop is in the funnel, derived rather than stored.
+ * Where this shop is in its life, derived rather than stored.
  *
- * Every one of these except `paid` is already a fact in the database — no
- * owner, an owner, a first stamp, an archived_at — so a status column would be
- * a second source of truth that drifts the moment one write is missed. That is
+ * Every one of these is already a fact in the database — no owner, an owner, a
+ * first stamp, a last stamp, an archived_at — so a status column would be a
+ * second source of truth that drifts the moment one write is missed. That is
  * the failure this codebase already has scar tissue from: a stored aggregate
  * disagreeing with the log it was meant to summarise.
  *
- * `paid` is stored (`merchants.paid_at`) because nothing else implies it. There
- * is no billing here yet, so it is an operator's assertion.
+ * **`paid` is deliberately NOT one of these.** It used to be, ranked above
+ * everything else, which meant a paying shop that had not stamped in a month
+ * still read as the healthiest state on the board — the one shop whose silence
+ * matters most was the one the console could not report. Paying is a separate
+ * boolean (`paid_at`) shown beside the stage, because a shop can be paying AND
+ * churning and that pair is the most useful thing this page can tell you.
+ *
+ * "Activated" means the LOGIN EXISTS. It used to mean the first stamp, which
+ * left no word at all for the state in between — claimed, able to stamp, and
+ * never having done it — even though that is the single most common place for a
+ * new shop to stall.
  */
-export type Stage = "unclaimed" | "claimed" | "active" | "paid" | "closed";
+export type Stage = "not-claimed" | "activated" | "stamping" | "churning" | "closed";
 
-export function stageOf(m: MerchantHealthRow): Stage {
+export function stageOf(m: MerchantHealthRow, now = Date.now()): Stage {
   if (m.archived_at) return "closed";
-  if (m.paid_at) return "paid";
-  if (m.first_stamp_at) return "active";
   // Owner presence, not claimed_at: an account made by signup or by the
   // first-owner bootstrap never used a claim link, and is not unclaimed.
-  if (m.has_owner) return "claimed";
-  return "unclaimed";
+  if (!m.has_owner) return "not-claimed";
+  if (!m.first_stamp_at) return "activated";
+  const since = daysSince(m.last_stamp_at, now);
+  return since !== null && since < CHURN_DAYS ? "stamping" : "churning";
 }
+
+/** The stage as a human reads it. One place, so the table and a shop agree. */
+export const STAGE_LABEL: Record<Stage, string> = {
+  "not-claimed": "Not claimed",
+  activated: "Activated",
+  stamping: "Stamping",
+  churning: "Churning",
+  closed: "Archived",
+};
 
 /** Sort key for the table: worst first, then the loudest, then quietest merchant. */
 export function triageScore(flags: Flag[]): number {

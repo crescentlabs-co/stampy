@@ -6,7 +6,9 @@
  * `now` is injected, so none of this depends on the wall clock.
  */
 import { describe, expect, it } from "vitest";
-import { FLAG_GUIDE, triage, triageScore, trialDaysLeft, value } from "../src/health.js";
+import {
+  CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL, stageOf, triage, triageScore, trialDaysLeft, value,
+} from "../src/health.js";
 import type { MerchantHealthRow } from "../src/db.js";
 
 const NOW = Date.UTC(2026, 7, 1, 12, 0, 0);
@@ -22,10 +24,11 @@ function healthy(over: Partial<MerchantHealthRow> = {}): MerchantHealthRow {
     claim_token: null, unclaimed_at: null, paid_at: null,
     trial_day: 9, days_since_signup: 10,
     cards: 1, card_ids: ["c1"], basket_cents: 450, currency: "RM", stamps_target: 10,
-    first_stamp_at: daysAgo(9), first_redeem_at: daysAgo(2), poster_views: 3,
+    first_stamp_at: daysAgo(9), first_redeem_at: daysAgo(2), first_customer_at: daysAgo(9),
+    poster_views: 3,
     last_stamp_at: daysAgo(0), last_owner_login: daysAgo(1), logins_30d: 6,
     stamps: 120, stamps_7d: 40, stamps_30d: 120, stamps_prev_7d: 38,
-    customers: 30, active_7d: 18, redemptions: 6, unclaimed_rewards: 1,
+    customers: 30, active_7d: 18, active_30d: 26, redemptions: 6, unclaimed_rewards: 1,
     scanned: 60, opened_poster: 45, opened_link: 10, opened_other: 5,
     clicked: 40, made: 35, landed: 30, removed: 2, dropped: 0,
     card_edits: 3, last_card_edit_at: daysAgo(4), nudges: 2, nudged: 2, nudge_returned: 1,
@@ -90,45 +93,37 @@ describe("the signals that mean intervene now", () => {
     expect(keys(healthy({ pin_failed_24h: 5 }))).not.toContain("locked-out");
   });
 
-  it("separates 'never set up' from 'set up but nobody stamping'", () => {
-    const noPoster = triage(healthy({ trial_day: 6, stamps: 0, stamps_7d: 0, poster_views: 0 }), NOW);
-    expect(noPoster[0]!.label).toBe("Never set up");
-    expect(noPoster[0]!.action).toContain("counter");
-
-    const posterSeen = triage(healthy({ trial_day: 6, stamps: 0, stamps_7d: 0, poster_views: 4 }), NOW);
-    expect(posterSeen[0]!.label).toBe("No stamps yet");
-    expect(posterSeen[0]!.action).toContain("staff");
-  });
-
+  // The key is `went-quiet` and the label is "Churning". That is not a mix-up:
+  // this is the SHOP going silent, and `churning` below is CUSTOMERS deleting
+  // the card. The keys are what the console's help and these tests are keyed
+  // on, so they stay put whatever the words say.
   it("catches a merchant that was working and stopped", () => {
-    expect(keys(healthy({ stamps_7d: 0, last_stamp_at: daysAgo(12) }))).toContain("went-quiet");
+    const f = triage(healthy({ stamps_7d: 0, last_stamp_at: daysAgo(12) }), NOW);
+    expect(f.map((x) => x.key)).toContain("went-quiet");
+    expect(f.find((x) => x.key === "went-quiet")!.label).toBe("Churning");
   });
 
-  // Quiet and slowing are the same story at different stages; raising both would
-  // double-count one merchant in the work list.
-  it("reports slowing OR quiet, never both", () => {
+  // Off the LAST STAMP, not off a 7-day bucket. A shop that stamped last
+  // Saturday and nothing since used to read as healthy for the rest of the week.
+  it("calls it churning after three silent days, not seven", () => {
+    expect(CHURN_DAYS).toBe(3);
+    expect(keys(healthy({ last_stamp_at: daysAgo(CHURN_DAYS) }))).toContain("went-quiet");
+    expect(keys(healthy({ last_stamp_at: daysAgo(CHURN_DAYS - 1) }))).not.toContain("went-quiet");
+  });
+
+  // Churning and slowing are the same story at different stages; raising both
+  // would double-count one merchant in the work list.
+  it("reports slowing OR churning, never both", () => {
     const k = keys(healthy({ stamps_7d: 0, last_stamp_at: daysAgo(9), stamps_prev_7d: 38 }));
     expect(k).toContain("went-quiet");
     expect(k).not.toContain("slowing");
-  });
-
-  it("notices a whole programme running on one phone", () => {
-    expect(keys(healthy({ staff_devices: 1 }))).toContain("one-phone");
-    expect(keys(healthy({ staff_devices: 1, stamps: 5 }))).not.toContain("one-phone");
   });
 
   it("notices customers walking away from a card that landed", () => {
     expect(keys(healthy({ landed: 20, removed: 8, dropped: 2 }))).toContain("churning");
   });
 
-  // Not an accounting line: these people did everything asked and got nothing.
-  it("notices rewards nobody is handing over", () => {
-    const f = triage(healthy({ unclaimed_rewards: 7 }), NOW);
-    expect(f.find((x) => x.key === "rewards-owed")!.label).toBe("7 rewards owed");
-  });
-
-  it("splits a sign-up leak from a wallet-add failure", () => {
-    expect(keys(healthy({ scanned: 100, clicked: 12 }))).toContain("signup-leak");
+  it("notices cards that never reach a wallet", () => {
     expect(keys(healthy({ made: 40, landed: 6 }))).toContain("not-landing");
   });
 
@@ -137,28 +132,73 @@ describe("the signals that mean intervene now", () => {
     const f = triage(healthy({ made: 40, landed: 6 }), NOW);
     expect(f.find((x) => x.key === "not-landing")!.action).toContain("Apple-only");
   });
+
+  /**
+   * Eight rules were cut, and every one of them is still reported somewhere it
+   * belongs — as a stage, on a shop's "wrong right now" line, in its funnel, or
+   * in its header. What must not happen is them coming back to the work list:
+   * fourteen flags meant the list was never empty, and a list that is never
+   * empty is a list nobody reads.
+   */
+  it("no longer raises the eight that were only ever restating something else", () => {
+    const gone = ["unclaimed", "never-activated", "one-phone", "codes-failing",
+                  "signup-leak", "rewards-owed", "trial-ending", "trial-expired"];
+    const loud = healthy({
+      has_owner: false, claimed_at: null, first_stamp_at: null, last_stamp_at: null,
+      stamps: 0, stamps_7d: 0, stamps_prev_7d: 0, days_since_signup: 40, trial_day: 44,
+      poster_views: 0, staff_devices: 1, lookup_failed_7d: 22, scanned: 200, clicked: 4,
+      unclaimed_rewards: 12,
+    });
+    for (const key of gone) expect(keys(loud), `${key} came back`).not.toContain(key);
+  });
 });
 
 describe("the trial clock", () => {
+  // It still counts — a shop's own header prints it — it just no longer files
+  // itself as a problem. Two info flags on every shop in its final week is a
+  // calendar, not a work list.
   it("counts down from signup", () => {
     expect(trialDaysLeft({ trial_day: 10 })).toBe(20);
     expect(trialDaysLeft({ trial_day: 34 })).toBe(-4);
   });
 
-  // The advice has to differ: a busy merchant at day 25 is a sale, a dead one
-  // is a decision about whether to spend any more time on them.
-  it("says something different depending on whether they are actually using it", () => {
-    const busy = triage(healthy({ trial_day: 25 }), NOW).find((f) => f.key === "trial-ending")!;
-    expect(busy.action).toContain("make the ask");
-    const dead = triage(healthy({ trial_day: 25, stamps_7d: 0, last_stamp_at: daysAgo(9) }), NOW)
-      .find((f) => f.key === "trial-ending")!;
-    expect(dead.action).not.toContain("make the ask");
+  it("raises nothing on its own", () => {
+    expect(keys(healthy({ trial_day: 27 }))).toEqual([]);
+    expect(keys(healthy({ trial_day: 44 }))).toEqual([]);
+  });
+});
+
+/**
+ * One word, one meaning. `paid` used to be a stage ranked above everything
+ * else, so a paying shop that had not stamped in a month read as the healthiest
+ * state on the board — the one shop whose silence matters most was the one the
+ * console could not report.
+ */
+describe("what stage a shop is at", () => {
+  it("names the four states of a live shop", () => {
+    expect(stageOf(healthy({ has_owner: false }), NOW)).toBe("not-claimed");
+    expect(stageOf(healthy({ first_stamp_at: null, last_stamp_at: null }), NOW)).toBe("activated");
+    expect(stageOf(healthy(), NOW)).toBe("stamping");
+    expect(stageOf(healthy({ last_stamp_at: daysAgo(9) }), NOW)).toBe("churning");
+    expect(stageOf(healthy({ archived_at: daysAgo(1) }), NOW)).toBe("closed");
   });
 
-  it("keeps the clock as info, never above something broken", () => {
-    const f = triage(healthy({ trial_day: 28, pin_failed_24h: 4, last_stamp_at: daysAgo(2) }), NOW);
-    expect(f[0]!.key).toBe("locked-out");
-    expect(f[f.length - 1]!.key).toBe("trial-ending");
+  // The bug the old axis hid, now a test.
+  it("still calls a paying shop churning when it has stopped stamping", () => {
+    const paying = healthy({ paid_at: daysAgo(30), last_stamp_at: daysAgo(9) });
+    expect(stageOf(paying, NOW)).toBe("churning");
+    expect(paying.paid_at).not.toBeNull();
+  });
+
+  it("uses the same silence threshold as the Churning flag", () => {
+    expect(stageOf(healthy({ last_stamp_at: daysAgo(CHURN_DAYS - 1) }), NOW)).toBe("stamping");
+    expect(stageOf(healthy({ last_stamp_at: daysAgo(CHURN_DAYS) }), NOW)).toBe("churning");
+  });
+
+  it("has a human label for every stage it can return", () => {
+    for (const s of ["not-claimed", "activated", "stamping", "churning", "closed"] as const) {
+      expect(STAGE_LABEL[s].length).toBeGreaterThan(3);
+    }
   });
 });
 
@@ -190,22 +230,10 @@ describe("every flag is documented", () => {
     const cases: Partial<MerchantHealthRow>[] = [
       { pin_failed_24h: 9, last_stamp_at: daysAgo(4) },
       { messages_failed: 3 },
-      { stamps: 0, stamps_7d: 0, stamps_prev_7d: 0, days_since_signup: 9, poster_views: 0,
-        first_stamp_at: null, trial_day: 0 },
-      // Built, sent, never claimed — the stall that happens before any usage
-      // rule can apply.
-      { has_owner: false, claimed_at: null, first_stamp_at: null, trial_day: 0, days_since_signup: 9,
-        stamps: 0, stamps_7d: 0, stamps_prev_7d: 0 },
       { stamps_7d: 0, last_stamp_at: daysAgo(11) },
       { stamps_7d: 3, stamps_prev_7d: 40 },
-      { staff_devices: 1 },
-      { lookup_failed_7d: 22 },
-      { scanned: 200, clicked: 4 },
       { made: 90, landed: 3 },
       { landed: 30, removed: 20, dropped: 4 },
-      { unclaimed_rewards: 12 },
-      { trial_day: 27, first_stamp_at: daysAgo(27) },
-      { trial_day: 44, first_stamp_at: daysAgo(44) },
     ];
     for (const c of cases) for (const f of triage(healthy(c), NOW)) raised.add(f.key);
     for (const key of raised) expect(documented, `${key} is undocumented`).toContain(key);
@@ -224,7 +252,7 @@ describe("every flag is documented", () => {
 describe("sorting the work list", () => {
   it("puts broken merchants above quiet ones and healthy ones last", () => {
     const broken = triageScore(triage(healthy({ pin_failed_24h: 4, last_stamp_at: daysAgo(2) }), NOW));
-    const warned = triageScore(triage(healthy({ staff_devices: 1 }), NOW));
+    const warned = triageScore(triage(healthy({ made: 40, landed: 6 }), NOW));
     const fine = triageScore(triage(healthy(), NOW));
     expect(broken).toBeLessThan(warned);
     expect(warned).toBeLessThan(fine);

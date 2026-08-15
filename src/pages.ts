@@ -3,7 +3,7 @@
  * nothing for the founder to compile. Mobile-first (staff use their phones).
  */
 import { contrastRatio, contrastText, rgbToHex } from "./color.js";
-import { FLAG_GUIDE } from "./health.js";
+import { CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL } from "./health.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
 import { DEFAULT_CARD_ID, FUNNEL_SINCE, FUNNEL_SINCE_LABEL, TRIAL_DAYS } from "./db.js";
@@ -5224,6 +5224,10 @@ export function adminPage(): string {
   const flagHelp = JSON.stringify(
     Object.fromEntries(FLAG_GUIDE.map((g) => [g.key, `${g.rule}. ${g.why}`])),
   );
+  // The stage vocabulary, from the one file that defines it. Written here rather
+  // than retyped in the browser so the table, a shop's header and `stageOf`
+  // cannot end up calling the same state three different things.
+  const stageLabels = JSON.stringify(STAGE_LABEL);
   const css = /* css */ `
     body { max-width: none; }
     .awrap { width: 100%; max-width: 1040px; }
@@ -5301,12 +5305,42 @@ export function adminPage(): string {
     .chipf.critical { background: #fdeaea; color: #9a3412; }
     .chipf.warn { background: #fef3c7; color: #92400e; }
     .chipf.info { background: var(--ghost-bg); color: var(--muted); }
-    /* Where a shop is in its life, as a word rather than a colour alone. */
+    /* Where a shop is in its life, as a word rather than a colour alone. Four
+       states about USE; paying is a separate pill beside it, because a shop can
+       be paying and churning at once and that pair is the thing worth knowing. */
     .stage { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px;
              border-radius: 999px; white-space: nowrap; background: var(--ghost-bg); color: var(--muted); }
-    .stage.paid { background: var(--ink); color: var(--on-slab); }
-    .stage.active { background: #dcfce7; color: #15803d; }
-    .stage.claimed { background: #fef3c7; color: #92400e; }
+    .stage.stamping { background: #dcfce7; color: #15803d; }
+    .stage.activated { background: #fef3c7; color: #92400e; }
+    .stage.churning { background: #fdeaea; color: #9a3412; }
+    .paypill { display: inline-block; font-size: .7rem; font-weight: 700; padding: 2px 8px;
+               border-radius: 999px; white-space: nowrap; background: var(--ink); color: var(--on-slab);
+               margin-left: 4px; }
+    /* --- the activation timeline -------------------------------------------
+       Four steps in one row, not a two-panel grid of eight numbers. It answers
+       one question — how far did this shop actually get — and the first step
+       that is missing is the answer. */
+    .tline { display: grid; gap: 10px; grid-template-columns: 1fr; margin-top: 4px; }
+    @media (min-width: 640px) { .tline { grid-template-columns: repeat(4, 1fr); } }
+    .tstep { border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; background: var(--bg);
+             position: relative; }
+    .tstep .sl { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+                 color: var(--muted); display: flex; align-items: center; gap: 5px; }
+    .tstep .sv { font-family: var(--display); font-weight: 800; font-size: 1.05rem; letter-spacing: -.02em;
+                 margin-top: 3px; }
+    .tstep .sw { font-size: .74rem; color: var(--muted); margin-top: 1px; }
+    /* The step they never reached. Not red — most shops are simply mid-journey,
+       and colouring every unreached step as a failure is how a list stops
+       being read. It is the ABSENCE that carries the meaning. */
+    .tstep.todo { border-style: dashed; }
+    .tstep.todo .sv { color: var(--muted); font-family: var(--body); font-weight: 400; font-size: .9rem; }
+    /* --- the one loyalty number -------------------------------------------- */
+    .bigrate { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .bigrate .rv { font-family: var(--display); font-weight: 800; font-size: 2.4rem; line-height: 1;
+                   letter-spacing: -.035em; }
+    .bigrate .rd { font-size: .84rem; font-weight: 700; color: var(--muted); }
+    .bigrate .rd.up { color: #15803d; }
+    .bigrate .rd.down { color: #9a3412; }
     /* --- the table ---------------------------------------------------------- */
     table { border-collapse: collapse; width: 100%; font-size: .9rem; margin-top: 12px; }
     th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase;
@@ -5422,6 +5456,10 @@ export function adminPage(): string {
     // raises it. Keyed on the flag's KEY, never its label — half the labels are
     // templated ("3 rewards owed") and would never match a fixed string.
     const FLAG_HELP = ${flagHelp};
+    const STAGE_LABEL = ${stageLabels};
+    // How many silent days make a shop churning. From src/health.ts, so the
+    // hero, the stage chip and the flag can never quote three different numbers.
+    const CHURN_DAYS = ${CHURN_DAYS};
 
     // A rate over a handful of people is noise dressed as a measurement. Below
     // this the console says how many there are instead of inventing a
@@ -5666,6 +5704,47 @@ export function adminPage(): string {
         '<span class="thumb"></span></div></div>';
     }
 
+    /**
+     * Do customers come back? One rate, and whether it is moving.
+     *
+     * This replaced six — second visit, third visit, completion, median gap,
+     * median days to reward, still-alive at 30/60/90. Every one was real and
+     * together they answered nothing, because nobody reads six rates to decide
+     * one thing.
+     *
+     * Two honesty rules do the work, and both live in the query (returningRate,
+     * src/db.ts): somebody stamped this week is in NEITHER number, because they
+     * have not had the chance to come back; and the comparison is the same
+     * arithmetic on a cutoff four weeks old, not a number kept from last month.
+     */
+    function returningHtml(r, where) {
+      const eligible = (r && r.eligible) || 0;
+      if (eligible < RET_FLOOR) {
+        return '<p class="nodata">Not enough data yet — ' + eligible + " customer" +
+          (eligible === 1 ? "" : "s") + " " + where +
+          " had a first stamp long enough ago to count. A rate over fewer than " +
+          RET_FLOOR + " people is noise, so it is not shown.</p>";
+      }
+      // The comparison is held to the SAME floor as the rate itself. Four weeks
+      // ago a young shop had a handful of eligible customers, and "▲ 5 pts"
+      // against a base of four is the very thing the gate above exists to stop
+      // — it would just have been laundered through the word "trend".
+      const comparable = r.prev_rate !== null && r.prev_eligible >= RET_FLOOR;
+      // Percentage POINTS, not a percent change: 20% to 25% is five points, and
+      // calling it "+25%" is the oldest way there is to overstate a rate.
+      const pts = comparable ? Math.round((r.rate - r.prev_rate) * 100) : null;
+      return '<div class="bigrate"><span class="rv">' + Math.round(r.rate * 100) + "%</span>" +
+        (pts === null
+          ? '<span class="rd">too few customers four weeks ago to compare</span>'
+          : '<span class="rd ' + (pts >= 0 ? "up" : "down") + '">' + (pts >= 0 ? "▲ " : "▼ ") +
+            Math.abs(pts) + " pts vs four weeks ago</span>") +
+        "</div>" +
+        '<p class="dnote">' + r.returned + " of " + eligible +
+        " customers whose first stamp was 14+ days ago have been back at least once" +
+        (comparable ? " · was " + Math.round(r.prev_rate * 100) + "% of " + r.prev_eligible : "") +
+        ".</p>";
+    }
+
     // The shop being set up in New shop, held OUTSIDE load() so that saving its
     // card — which re-reads the whole console — does not throw away the step you
     // were standing on.
@@ -5701,7 +5780,6 @@ export function adminPage(): string {
       const live = merchants.filter((m) => !m.archived_at);
       const money = (m, n) => m.currency + Math.round(n).toLocaleString();
       const byMerchant = new Map(merchants.map((m) => [m.id, m]));
-      const retById = new Map((body.retention || []).map((r) => [r.id, r]));
 
       // Worst first, not alphabetical. A console sorted by name makes you read
       // every row to find the one that needs you, which is this page's job.
@@ -5717,17 +5795,19 @@ export function adminPage(): string {
       const chips = (m, help) => m.flags.map((f) =>
         '<span class="chipf ' + f.severity + '">' + esc(f.label) +
         (help && FLAG_HELP[f.key] ? info(FLAG_HELP[f.key]) : "") + "</span>").join("");
-      const stageChip = (m) => {
-        const label = { unclaimed: "not claimed", claimed: "not started", active: "stamping",
-                        paid: "paying", closed: "archived" }[m.stage] || m.stage;
-        return '<span class="stage ' + m.stage + '">' + label + "</span>";
-      };
+      // Four words about USE, plus a separate pill for paying — a shop can be
+      // paying AND churning, and squeezing both onto one axis is what let a
+      // paying shop that had stopped stamping read as the healthiest state
+      // on the board.
+      const stageChip = (m) =>
+        '<span class="stage ' + m.stage + '">' + (STAGE_LABEL[m.stage] || m.stage) + "</span>" +
+        (m.paid_at ? '<span class="paypill">Paying</span>' : "");
 
       // ---- the weekly lines ---------------------------------------------------
-      // An average over no shops at all is not zero, so it is null and the bar
-      // is simply absent for that week.
+      // An average over nobody at all is not zero, so it is null and the bar is
+      // simply absent for that week.
       const derive = (rows) => (rows || []).map((r) => ({ ...r,
-        per_shop: r.active_merchants ? r.stamps / r.active_merchants : null }));
+        per_customer: r.active_customers ? r.stamps / r.active_customers : null }));
       const allWeeks = derive(body.series);
       // The week we are standing in is a PART week — it has run for a day or
       // for six — so putting it beside full ones draws a crash every Monday
@@ -5739,12 +5819,12 @@ export function adminPage(): string {
       const P_TILES = [
         { key: "stamps", label: "Stamps",
           help: "Stamps given at counters that week, net of undos: a staff undo corrects a mis-scan, so it comes back off. Free welcome stamps have never been in it — one stamp is one real visit." },
-        { key: "active_merchants", label: "Shops stamping",
-          help: "Shops that gave at least one stamp that week. The adoption number: a shop that signed up and never stamps is not using the product, whatever else it does." },
         { key: "active_customers", label: "Customers stamped",
           help: "Distinct PEOPLE stamped that week. Someone holding an Apple and a Google card at one shop is one person, not two." },
-        { key: "per_shop", label: "Stamps per stamping shop", dp: 1,
-          help: "Depth rather than reach: how hard the shops that ARE using it are using it. Blank in a week no shop stamped — an average over nobody is not zero." },
+        { key: "active_merchants", label: "Stamping shops",
+          help: "Shops that gave at least one stamp that week. The adoption number: a shop that signed up and never stamps is not using the product, whatever else it does." },
+        { key: "per_customer", label: "Stamps per customer", dp: 1,
+          help: "How hard the people who ARE using their card use it — depth rather than reach, and the number that says whether the loyalty loop is turning at all. Blank in a week nobody was stamped: an average over nobody is not zero." },
         { key: "new_merchants", label: "New shops",
           help: "Shops signed up that week, archived ones excluded. Counted from the earlier of the shop being built and its owner's account, so a done-for-you setup dates from when we built it." },
         { key: "rewards", label: "Rewards given",
@@ -5756,26 +5836,10 @@ export function adminPage(): string {
           help: "Distinct people stamped that week, counted per person across both wallets." },
         { key: "new_customers", label: "New customers",
           help: "People whose FIRST stamp at this shop landed that week — new demand rather than repeat." },
+        { key: "per_customer", label: "Stamps per customer", dp: 1,
+          help: "How often the people using their card came in that week. Blank in a week nobody was stamped." },
         { key: "rewards", label: "Rewards given", help: "Cards completed and handed over that week." },
       ];
-
-      /** Retention, or the reason there isn't any yet. Never a confident 0%. */
-      function retentionHtml(r, what) {
-        const started = (r && r.started) || 0;
-        if (started < RET_FLOOR) {
-          return '<p class="nodata">Not enough data yet — ' + started + " customer" +
-            (started === 1 ? " has" : "s have") + " ever been stamped " + what +
-            ". A rate over fewer than " + RET_FLOOR + " people is noise, so it is not shown.</p>";
-        }
-        return "<dl>" +
-          "<dt>Customers ever stamped</dt><dd>" + started + "</dd>" +
-          "<dt>Came back a 2nd time</dt><dd>" + pct(r.second_visit_rate) + "</dd>" +
-          "<dt>…a 3rd</dt><dd>" + pct(r.third_visit_rate) + "</dd>" +
-          "<dt>Finished a card</dt><dd>" + pct(r.completion_rate) + "</dd>" +
-          "<dt>Days between visits</dt><dd>" + num(r.median_gap_days, 1) + "</dd>" +
-          "<dt>Still active 30/60/90</dt><dd>" + pct(r.alive_30) + " · " + pct(r.alive_60) +
-            " · " + pct(r.alive_90) + "</dd></dl>";
-      }
 
       /**
        * The sign-up funnel as a funnel: a bar per step, and the DROP between
@@ -5786,16 +5850,25 @@ export function adminPage(): string {
       function funnelHtml(m) {
         const steps = [
           ["Opened sign-up", m.scanned],
-          ["Tapped Add", m.clicked],
+          ["Add tapped", m.clicked],
           ["Card made", m.made],
           ["Landed in wallet", m.landed],
+          // The fifth bar is the one that was missing: cards that reached a
+          // wallet and were thrown away. It sat under the funnel as "Deleted /
+          // dropped" in a list, where nobody read it against the bar above it.
+          ["Deleted again", m.removed + m.dropped],
         ];
         const top = Math.max(1, ...steps.map((x) => x[1]));
         return '<div class="fnl">' + steps.map(([label, n], i) => {
           const prev = i ? steps[i - 1][1] : null;
           // Only a drop is worth naming, and only when there was enough at the
           // step above to mean anything — "−100%" off a single visitor is noise.
-          const drop = prev && prev >= 5 && n < prev ? Math.round((1 - n / prev) * 100) : null;
+          // NEVER on the last bar: deleted is a subtraction FROM landed, not a
+          // further step down the funnel, and "−60%" there would read as a loss
+          // when it is the opposite — a small number is the good outcome.
+          const last = i === steps.length - 1;
+          const drop = !last && prev && prev >= 5 && n < prev
+            ? Math.round((1 - n / prev) * 100) : null;
           return '<span class="fl">' + label + "</span>" +
             '<span><span class="fb ' + (n ? "" : "zero") + '" style="width:' +
               Math.max(2, Math.round((n / top) * 100)) + '%"></span></span>' +
@@ -5805,26 +5878,50 @@ export function adminPage(): string {
       }
 
       // ---- the shop table -----------------------------------------------------
-      // Seven columns, each one a question you would actually ask. It had nine,
-      // most of them two numbers stacked in one cell, and clicking a row unfolded
-      // a second dashboard inside it.
-      const MERCHANT_HEAD = "<tr><th>Shop</th><th>Stage</th><th>Last stamp</th><th>Customers</th>" +
-        "<th>Stamps 30d</th><th>Owner seen</th><th>Problems</th></tr>";
-      const merchantRow = (m) => '<tr class="mrow" data-m="' + esc(m.id) + '">' +
-        '<td><span class="mname">' + esc(m.name) + "</span>" +
-          (m.archived_at ? ' <span class="arch">archived</span>' : "") +
-          '<br><span class="flags">' + esc(m.owners || "no owner") + "</span></td>" +
-        "<td>" + stageChip(m) + "</td>" +
-        '<td class="' + (stale(m.last_stamp_at, 7) ? "bad" : "") + '">' + ago(m.last_stamp_at) + "</td>" +
-        "<td>" + m.customers + '<br><span class="flags">' + m.active_7d + " this week</span></td>" +
-        "<td>" + m.stamps_30d + "</td>" +
-        '<td class="' + (stale(m.last_owner_login, 30) ? "bad" : "") + '">' + ago(m.last_owner_login) + "</td>" +
-        "<td>" + (chips(m) || '<span class="flags">—</span>') + "</td></tr>";
+      // Seven columns, every one of them about whether the shop is being USED.
+      // "Owner seen" came off: an owner who never logs in but whose counter
+      // stamps all day is a success, and the column implied the opposite. It is
+      // still on the shop's own page, where it is context rather than a verdict.
+      const MERCHANT_HEAD = "<tr><th>Shop</th><th>Stage</th><th>Last stamp</th>" +
+        "<th>Customers 30d</th><th>Stamps 30d</th><th>Stamps/customer</th><th>Problems</th></tr>";
+      const merchantRow = (m) => {
+        const perCust = m.active_30d ? (m.stamps_30d / m.active_30d).toFixed(1) : "—";
+        return '<tr class="mrow" data-m="' + esc(m.id) + '">' +
+          '<td><span class="mname">' + esc(m.name) + "</span>" +
+            (m.archived_at ? ' <span class="arch">archived</span>' : "") +
+            '<br><span class="flags">' + esc(m.owners || "no owner") + "</span></td>" +
+          "<td>" + stageChip(m) + "</td>" +
+          '<td class="' + (stale(m.last_stamp_at, CHURN_DAYS) ? "bad" : "") + '">' +
+            ago(m.last_stamp_at) + "</td>" +
+          "<td>" + m.active_30d + "</td>" +
+          "<td>" + m.stamps_30d + "</td>" +
+          '<td style="font-variant-numeric:tabular-nums">' + perCust + "</td>" +
+          "<td>" + (chips(m) || '<span class="flags">—</span>') + "</td></tr>";
+      };
 
       // ---- one shop, on its own page ------------------------------------------
+      /**
+       * One step of the activation timeline.
+       *
+       * A step they never reached is DASHED, not red. Most shops are simply
+       * partway along, and painting every unreached step as a failure is how a
+       * page stops being read — the absence is what carries the meaning, and
+       * the third argument says what that absence means rather than just
+       * "never".
+       */
+      function tstep(label, at, missing) {
+        if (!at) {
+          return '<div class="tstep todo"><div class="sl">' + esc(label) + "</div>" +
+            '<div class="sv">' + esc(missing || "not yet") + "</div></div>";
+        }
+        return '<div class="tstep"><div class="sl">' + esc(label) + "</div>" +
+          '<div class="sv">' + esc(ago(at)) + "</div>" +
+          '<div class="sw">' + esc(new Date(at).toLocaleDateString([], {
+            day: "numeric", month: "short", year: "numeric" })) + "</div></div>";
+      }
+
       function detailHtml(m) {
         const v = m.value;
-        const ret = retById.get(m.id) || {};
         const staffRows = (body.staff || []).filter((s) => s.merchant_id === m.id);
         const cards = (body.cards || []).filter((c) => m.card_ids.includes(c.id));
         const liveCards = cards.filter((c) => !c.archived_at);
@@ -5882,59 +5979,49 @@ export function adminPage(): string {
                 "</div></div></div>").join("") + "</div>"
             : '<div class="tclear" style="margin-top:14px">Nothing needs you about this shop.</div>') +
 
-          (m.stage === "unclaimed" ? '<div class="dpanel" style="margin-top:14px">' +
+          (m.stage === "not-claimed" ? '<div class="dpanel" style="margin-top:14px">' +
             claimPanelHtml(m) + "</div>" : "") +
-
-          '<h2>Did they start?' + info("Activated means the first stamp given to a real customer at the counter — not signing up, not issuing a card. Nothing else on this page means anything until it says yes.") + "</h2>" +
-          '<div class="dgrid"><div class="dpanel"><dl>' +
-            "<dt>Signed up</dt><dd>" + ago(m.signed_up_at) + "</dd>" +
-            '<dt>Activated</dt><dd class="' + (m.first_stamp_at ? "" : "bad") + '">' +
-              (m.first_stamp_at ? ago(m.first_stamp_at) : "never") + "</dd>" +
-            "<dt>Took</dt><dd>" + days(m.signed_up_at, m.first_stamp_at) + "</dd>" +
-            '<dt>Poster opened</dt><dd class="' + (m.poster_views ? "" : "bad") + '">' +
-              (m.poster_views ? m.poster_views + "×" : "never") + "</dd>" +
-            "<dt>Counter visits</dt><dd>" + m.stamps + "</dd>" +
-            '<dt>Last stamp</dt><dd class="' + (stale(m.last_stamp_at, 7) ? "bad" : "") + '">' +
-              ago(m.last_stamp_at) + "</dd>" +
-          "</dl></div>" +
-          '<div class="dpanel"><dl>' +
-            "<dt>Owner logins (30d)</dt><dd>" + m.logins_30d + "</dd>" +
-            "<dt>Owner last seen</dt><dd>" + ago(m.last_owner_login) + "</dd>" +
-            "<dt>Counter phones</dt><dd>" + m.staff_devices + "</dd>" +
-            "<dt>Rewards given</dt><dd>" + v.rewardsGiven + "</dd>" +
-            '<dt>Rewards owed</dt><dd class="' + (m.unclaimed_rewards >= 3 ? "bad" : "") + '">' +
-              m.unclaimed_rewards + "</dd>" +
-            "<dt>Made it theirs" + info("Whether the owner has ever changed their own card. Unprompted configuration is the clearest evidence a merchant considers the thing theirs, and it is the closest signal to willingness-to-pay there is before money changes hands.") + "</dt><dd>" +
-              (m.card_edits ? m.card_edits + " edits" : "never touched it") + "</dd>" +
-          "</dl></div></div>" +
 
           (wrong.length
             ? '<p class="badline">Wrong right now: ' + wrong.map(esc).join(" · ") + "</p>"
             : '<p class="okline">Nothing broken: staff can sign in, codes match, messages arrive.</p>') +
 
+          // How far did they actually get? Four steps in one row, and the first
+          // one that is missing is the answer. This replaced two panels of
+          // eight numbers that between them never said it plainly.
+          '<h2 style="margin-top:26px">How far did they get?' + info("The four things that have to happen in order, and the first one missing is where they are stuck. Activated means the LOGIN exists — they claimed the shop. First customer is the first card ever issued. First stamp is somebody actually being served at the counter, which is the only one that proves the thing works.") + "</h2>" +
+          '<div class="tline">' +
+            tstep("Signed up", m.signed_up_at, "") +
+            tstep("Activated", m.claimed_at || (m.has_owner ? m.signed_up_at : null), "no login yet") +
+            tstep("First customer", m.first_customer_at, "nobody has signed up") +
+            tstep("First stamp", m.first_stamp_at,
+              m.poster_views ? "poster opened, nobody stamped" : "poster never opened") +
+          "</div>" +
+
           '<h2 style="margin-top:26px">This shop, week by week</h2>' +
           '<div data-mseries><p class="nodata">Loading…</p></div>' +
 
-          '<h2 style="margin-top:26px">Are people signing up?' + info("This is acquisition, not health — it names WHICH step is losing people. A drop from opened to tapped is the sign-up page; from made to landed is the wallet's own Add sheet. A QR scan and a tapped link both arrive as an ordinary page view, so the split comes from a tag on the poster QR and the share link; anything untagged, including posters printed before the tag existed, counts as untagged rather than lost.") + "</h2>" +
+          '<h2 style="margin-top:26px">Are people signing up?' + info("This is acquisition, not health — it names WHICH step is losing people. A drop from opened to tapped is the sign-up page; from made to landed is the wallet's own Add sheet. The last bar is not a further step: it is how many of the cards that DID land were later thrown away, so a small number there is the good outcome. A QR scan and a tapped link both arrive as an ordinary page view, so the split comes from a tag on the poster QR and the share link; anything untagged, including posters printed before the tag existed, counts as untagged rather than lost.") + "</h2>" +
           '<div class="dpanel">' + funnelHtml(m) +
-            '<dl style="margin-top:10px">' +
-            '<dt style="padding-left:12px" class="flags">poster · link · untagged</dt>' +
-            '<dd class="flags">' + m.opened_poster + " · " + m.opened_link + " · " + m.opened_other + "</dd>" +
-            "<dt>Deleted / dropped</dt><dd>" + m.removed + " / " + m.dropped + "</dd></dl>" +
+            '<p class="dnote">Opened via poster ' + m.opened_poster + " · link " + m.opened_link +
+              " · untagged " + m.opened_other + "</p>" +
             (noFunnel ? '<p class="dnote"><strong>Predates the funnel.</strong> Page opens and Add taps have only been recorded since ${FUNNEL_SINCE_LABEL}, so cards issued before then show as zeroes above. Missing history, not a broken flow.</p>' : "") +
           "</div>" +
 
-          '<h2 style="margin-top:26px">Do customers come back?' + info("Retention, counted per PERSON and per net stamp: someone holding an Apple and a Google card is one customer, and a staff undo takes its visit back off. This is the number a renewal turns on — a shop whose customers never return a second time is paying for a card nobody uses.") + "</h2>" +
-          '<div class="dpanel">' + retentionHtml(ret, "here") +
-            (m.nudged ? '<p class="dnote">Nudged → came back: ' + m.nudge_returned + " of " + m.nudged + "</p>" : "") +
-          "</div>" +
+          '<h2 style="margin-top:26px">Do customers come back?' + info("Of the customers here whose first stamp was at least 14 days ago, how many have been stamped more than once. Counted per PERSON and per net stamp: someone holding an Apple and a Google card is one customer, and a staff undo takes its visit back off. Somebody stamped this week is in neither number — they have not had the chance to come back yet.") + "</h2>" +
+          '<div class="dpanel" data-mret><p class="nodata">Loading…</p></div>' +
 
-          '<h2 style="margin-top:26px">Is it worth anything?' + info("Counter visits × the shop's OWN self-reported average basket. A countable number times one assumption — and deliberately not incremental: some of these people would have come in anyway, and there is no way to see the counterfactual. Free welcome stamps and the reset after a reward emit no event, so they have never been in it.") + "</h2>" +
-          '<div class="dpanel">' + (v.hasBasket
-            ? "<dl><dt>Spend through the card</dt><dd>" + money(m, v.spendThroughCard) + "</dd>" +
-              "<dt>Spend per reward</dt><dd>" + money(m, v.spendPerReward) + "</dd>" +
-              "<dt>Their average basket</dt><dd>" + money(m, m.basket_cents / 100) + "</dd></dl>"
-            : '<p class="nodata">They have never told us their average basket, so there is no money figure — one would be a guess times a guess. It is a field in their own dashboard.</p>') +
+          '<h2 style="margin-top:26px">Customer value' + info("Counter visits × the shop's OWN self-reported average basket. A countable number times one assumption — and deliberately not incremental: some of these people would have come in anyway, and there is no way to see the counterfactual. Free welcome stamps and the reset after a reward emit no event, so they have never been in it.") + "</h2>" +
+          '<div class="dpanel"><dl>' +
+            "<dt>Estimated spend through the card</dt><dd>" +
+              (v.hasBasket ? money(m, v.spendThroughCard) : "no basket set") + "</dd>" +
+            "<dt>Their average basket</dt><dd>" +
+              (v.hasBasket ? money(m, m.basket_cents / 100) : "never told us") + "</dd>" +
+            "<dt>Customers</dt><dd>" + m.customers + "</dd>" +
+            "<dt>Stamps</dt><dd>" + m.stamps + "</dd>" +
+          "</dl>" + (v.hasBasket
+            ? '<p class="dnote">Stamps and customers are counted. The spend is those stamps times a basket they typed in themselves, so it is an estimate — there is no tracked spend in this product.</p>'
+            : '<p class="dnote">They have never told us their average basket, so there is no money figure — one would be a guess times a guess. It is a field in their own dashboard.</p>') +
           "</div>" +
 
           (staffRows.length ? '<details class="fold" style="margin-top:18px"><summary>Counter phones (' +
@@ -6107,16 +6194,15 @@ export function adminPage(): string {
         // Summed over LIVE shops only: an archived account is closed, not
         // broken, and leaving it in would drag every figure down for a reason
         // that has nothing to do with the product.
-        const active = live.filter((m) => m.stamps_7d > 0);
-        // The five states a live shop can be in, straight off stageOf, and
+        // The four states a live shop can be in, straight off stageOf, and
         // mutually exclusive by construction — so the bar always adds to 100%.
-        // "Active" splits into stamping and gone quiet because those two want
-        // completely different phone calls.
-        const paid = live.filter((m) => m.stage === "paid");
-        const stamping = live.filter((m) => m.stage === "active" && m.stamps_7d > 0);
-        const quiet = live.filter((m) => m.stage === "active" && m.stamps_7d === 0);
-        const never = live.filter((m) => m.stage === "claimed");
-        const unclaimed = live.filter((m) => m.stage === "unclaimed");
+        // Paying is NOT one of them; it is counted separately underneath,
+        // because a shop can be paying and churning at the same time.
+        const stamping = live.filter((m) => m.stage === "stamping");
+        const churning = live.filter((m) => m.stage === "churning");
+        const never = live.filter((m) => m.stage === "activated");
+        const unclaimed = live.filter((m) => m.stage === "not-claimed");
+        const paid = live.filter((m) => m.paid_at);
         const wide = (n) => live.length ? (n / live.length) * 100 : 0;
         const seg = (cls, list) => list.length
           ? '<i class="' + cls + '" style="width:' + wide(list.length) + '%"></i>' : "";
@@ -6136,19 +6222,21 @@ export function adminPage(): string {
           // ============================ OVERVIEW ============================
           '<div id="pane-overview"' + (pane === "overview" ? "" : " hidden") + ">" +
             '<div class="lead"><div>' +
-              '<p class="leadlab">Shops stamping this week' +
-                info("Shops that have given at least one stamp in the last 7 days — a rolling week, not a calendar one, so it never drops to zero every Monday morning. This is the adoption number: a shop that signed up and never stamps is not using the product, whatever else it does.") +
+              '<p class="leadlab">Shops stamping in the last ' + CHURN_DAYS + " days" +
+                info("Shops that have given at least one stamp in the last " + CHURN_DAYS + " days — the same threshold that makes a shop 'churning', so this number and the stage chips can never disagree. It is deliberately tight: a shop closed for a long weekend will drop out of it, and on a portfolio this small that is the right trade. This is the adoption number, and the one thing worth checking every morning.") +
               "</p>" +
-              '<p class="hero">' + active.length +
+              '<p class="hero">' + stamping.length +
                 '<span class="heroof">of ' + live.length + " live shop" + (live.length === 1 ? "" : "s") +
                 (needing.length ? " · " + needing.length + " need you today" : " · nothing needs you") +
                 "</span></p>" +
             "</div><div>" +
-              '<div class="lifebar">' + seg("paid", paid) + seg("live", stamping) + seg("quiet", quiet) +
+              '<div class="lifebar">' + seg("live", stamping) + seg("quiet", churning) +
                 seg("dead", never) + seg("new", unclaimed) + "</div>" +
-              '<div class="lifekey">' + key("paid", paid, "paying") + key("live", stamping, "stamping") +
-                key("quiet", quiet, "gone quiet") + key("dead", never, "never started") +
+              '<div class="lifekey">' + key("live", stamping, "stamping") +
+                key("quiet", churning, "churning") + key("dead", never, "activated, no stamps") +
                 key("new", unclaimed, "not claimed") + "</div>" +
+              (paid.length ? '<p class="dnote" style="margin-top:8px">' + paid.length + " paying" +
+                info("Kept off the bar on purpose. Paying is not a stage: a shop can be paying AND churning, and that pair is the most useful thing this page can tell you — so it travels beside the stage rather than replacing it.") + "</p>" : "") +
             "</div></div>" +
 
             '<h2 style="margin-top:26px">Week by week' +
@@ -6161,8 +6249,8 @@ export function adminPage(): string {
               seriesTable(rows, P_TILES) + "</details>" +
 
             '<h2 style="margin-top:26px">Do customers come back?' +
-              info("Recomputed across every live shop's customers at once, not averaged from the per-shop rates — a rate over 3 customers and a rate over 300 do not average into anything. Counted per person, and per net stamp.") + "</h2>" +
-            '<div class="dpanel">' + retentionHtml(body.platform || {}, "anywhere") + "</div>" +
+              info("Of everyone whose first stamp was at least 14 days ago, how many have been stamped more than once. Recomputed across every live shop's customers at once, never averaged from per-shop rates — a rate over 3 customers and a rate over 300 do not average into anything. Counted per person and per net stamp, and somebody stamped this week is in neither number, because they have not had the chance to come back.") + "</h2>" +
+            '<div class="dpanel">' + returningHtml(body.returning, "anywhere") + "</div>" +
 
             '<h2 style="margin-top:26px">Needs you today' +
               info("Only shops with something actually wrong, worst first. The line under each name is the single most urgent thing to do about it. A healthy shop is not listed at all — that is the point.") + "</h2>" +
@@ -6309,10 +6397,16 @@ export function adminPage(): string {
               }).join("")
             : "Nothing changed since setup.";
         });
+        // One trip carries both this shop's weekly lines and its own returning
+        // rate — they answer two of the three questions this console exists for
+        // and there is no reason to make the page wait twice.
         api("/merchant/" + m.id + "/series").then(({ body: s }) => {
+          const ret = $("[data-mret]");
+          if (ret) ret.innerHTML = returningHtml(s.returning, "here") +
+            (m.nudged ? '<p class="dnote">Nudged → came back: ' + m.nudge_returned + " of " + m.nudged + "</p>" : "");
           const host = $("[data-mseries]");
           if (!host) return;
-          const weeks = (s.series || []).slice(0, -1).slice(-range);
+          const weeks = derive(s.series).slice(0, -1).slice(-range);
           host.innerHTML = weeks.length
             ? rangeRow("Whole weeks only; the week now running is left out.") +
               '<div class="tiles">' + M_TILES.map((d) => tile(weeks, d)).join("") + "</div>" +
@@ -6347,7 +6441,7 @@ export function adminPage(): string {
           save.textContent = "Saved ✓";
         };
         // Only where there is a panel to wire — see the note in detailHtml.
-        if (m.stage === "unclaimed") wireClaim(scope, m);
+        if (m.stage === "not-claimed") wireClaim(scope, m);
         // Taking a shop back off an owner. Two taps, like archiving: the cost
         // lands on somebody else, who loses their dashboard mid-sentence.
         const hand = scope.querySelector("[data-unclaim]");

@@ -31,7 +31,6 @@ import {
   allCardsWithStats,
   allOwners,
   createCard,
-  adminRetention,
   adminStaffAudit,
   businessNameForCard,
   cardCounts,
@@ -48,8 +47,8 @@ import {
   merchantEdits,
   merchantHealth,
   merchantSeries,
-  platformRetention,
   platformSeries,
+  returningRate,
   setMerchantArchived,
   setMerchantContact,
   getOwner,
@@ -136,17 +135,17 @@ adminRouter.get("/m/:id", (_req, res) => {
  * and are unit-tested without a browser or a database.
  */
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [merchants, cards, owners, retention, platform, staff, series] = await Promise.all([
+  const [merchants, cards, owners, returning, staff, series] = await Promise.all([
     merchantHealth(),
     allCardsWithStats(),
     allOwners(),
-    adminRetention(),
-    // The portfolio figure, recomputed over everyone rather than averaged from
-    // the rows above — a rate over 3 customers and a rate over 300 do not
-    // average into anything meaningful.
-    platformRetention(),
+    // ONE rate, recomputed over everyone rather than averaged from per-shop
+    // rows — a rate over 3 customers and a rate over 300 do not average into
+    // anything meaningful. It replaced six rates that between them answered no
+    // question anybody was asking.
+    returningRate(),
     adminStaffAudit(),
-    // The longest range the console offers, fetched once. 26 rows of six small
+    // The longest range the console offers, fetched once. 26 rows of five small
     // integers is nothing on the wire, and the 4w/12w switch is then a slice
     // rather than a round trip — a range control that waits on the network
     // stops being something you flick between.
@@ -157,16 +156,21 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     flags: triage(m),
     value: value(m),
     trialLeft: trialDaysLeft(m),
-    // Derived, never stored — see stageOf. The only stored lifecycle fact is
-    // paid_at, because nothing else in the database implies it.
+    // Derived, never stored — see stageOf. Paying is NOT part of the stage:
+    // paid_at travels on its own, because a shop can be paying and churning at
+    // the same time and that pair is the whole point of this page.
     stage: stageOf(m),
   }));
-  res.json({ merchants: withFlags, cards, owners, retention, platform, staff, series });
+  res.json({ merchants: withFlags, cards, owners, returning, staff, series });
 });
 
-/** One shop's own weekly lines. Fetched when its page opens, not with the list. */
+/** One shop's own weekly lines and its own returning rate, when its page opens. */
 adminRouter.get("/api/merchant/:id/series", requireAdmin, async (req, res) => {
-  res.json({ series: await merchantSeries(req.params.id!, SERIES_WEEKS) });
+  const [series, returning] = await Promise.all([
+    merchantSeries(req.params.id!, SERIES_WEEKS),
+    returningRate(req.params.id!),
+  ]);
+  res.json({ series, returning });
 });
 
 /** What this merchant has changed about their card — the WTP signal. */

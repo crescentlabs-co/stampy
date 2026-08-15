@@ -72,7 +72,7 @@ async function reconcile(needle: string): Promise<number> {
     await sql.end();
     return 1;
   }
-  const ret = (await db.adminRetention()).find((r) => r.id === m.id);
+  const ret = await db.returningRate(m.id);
   const one = async (text: string): Promise<number> => {
     const r = await sql.query<{ n: string }>(text, [m.card_ids]);
     return Number(r.rows[0]?.n ?? 0);
@@ -102,8 +102,8 @@ async function reconcile(needle: string): Promise<number> {
     { figure: "Tapped Add", console: m.clicked, log: `${await evt("wallet_click")} wallet_click events` },
     { figure: "Card made", console: m.made, log: `${await evt("enroll")} enroll events` },
     { figure: "Landed in wallet", console: m.landed, log: `${await evt("pass_added")} pass_added (Apple always, Google since the callback)` },
-    { figure: "Came back a 2nd time", console: ret ? Math.round(ret.second_visit_rate * 100) + "%" : "—",
-      log: ret ? `of ${ret.started} people who ever got a stamp` : "no retention row" },
+    { figure: "Returning customers", console: ret.rate === null ? "—" : Math.round(ret.rate * 100) + "%",
+      log: `${ret.returned} of ${ret.eligible} people whose first stamp is 14+ days old` },
   ]);
 
   // The two figures that are not a plain count, spelled out rather than assumed.

@@ -2285,9 +2285,11 @@ export interface MerchantHealthRow {
   stamps_target: number;
 
   // --- activation ---
-  /** First staff stamp anywhere on this merchant. Null = never activated. */
+  /** First staff stamp anywhere on this merchant. Null = never stamped. */
   first_stamp_at: Date | null;
   first_redeem_at: Date | null;
+  /** First card issued to any real customer. Null = nobody has ever signed up. */
+  first_customer_at: Date | null;
   /** Has the owner ever opened their printable poster? Nothing can happen before this. */
   poster_views: number;
 
@@ -2304,6 +2306,8 @@ export interface MerchantHealthRow {
   stamps_prev_7d: number;
   customers: number;
   active_7d: number;
+  /** Distinct people stamped in 30 days — the window the merchant table reads. */
+  active_30d: number;
   redemptions: number;
   unclaimed_rewards: number;
 
@@ -2404,6 +2408,13 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             (SELECT min(e.created_at) FROM events e
               WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
                 AND e.type = 'redeem') AS first_redeem_at,
+            -- The first card ever issued to anybody. Sits between the login
+            -- existing and the first stamp on the activation timeline, and it
+            -- is the step that separates "nobody has scanned the poster" from
+            -- "people are signing up and staff are not stamping them".
+            (SELECT min(e.created_at) FROM events e
+              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND e.type = 'enroll' AND NOT e.is_test) AS first_customer_at,
             ${ev("e.type = 'poster_view'")} AS poster_views,
 
             (SELECT max(e.created_at) FROM events e
@@ -2430,6 +2441,15 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
                 AND ${REAL_PASS_SQL}
                 AND ${LAST_VISIT_SQL} > now() - interval '7 days'
                 AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_7d,
+            -- The same figure over 30 days, which is the window the merchant
+            -- table reads: a week is short enough that a shop open four days a
+            -- week reads as half-dead, and stamps_30d had no customer count
+            -- beside it to divide by.
+            (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
+              WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+                AND ${REAL_PASS_SQL}
+                AND ${LAST_VISIT_SQL} > now() - interval '30 days'
+                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'stamp')) AS active_30d,
             ${ev("e.type = 'redeem'")} AS redemptions,
             (SELECT count(*)::int FROM passes p
               WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
@@ -2589,133 +2609,101 @@ export async function logOwnerLogin(ownerId: string): Promise<void> {
   }
 }
 
-export interface AdminRetentionRow {
-  /** MERCHANT id, not a card. One business, however many programmes it runs. */
-  id: string;
-  name: string;
-  /** People who ever got a stamp — the denominator for the two rates below. */
-  started: number;
-  /** Of customers who ever got a stamp, the share who came back a second / third time. */
-  second_visit_rate: number;
-  third_visit_rate: number;
-  /** Median days between consecutive visits, across customers who came more than once. */
-  median_gap_days: number | null;
-  /** Of started cards, the share that reached a reward — and how long that took. */
-  completion_rate: number;
-  median_days_to_reward: number | null;
-  /** Time to value: median days from joining to the first stamp. */
-  median_days_to_first_stamp: number | null;
-  /** Of customers old enough to judge, the share still visiting. Retention, plainly. */
-  alive_30: number;
-  alive_60: number;
-  alive_90: number;
+// -------------------------------------------------------- returning rate ----
+//
+// This replaced six rates: second visit, third visit, completion, median gap,
+// median days to reward, and still-alive at 30/60/90. They were all real, and
+// together they answered nothing — six numbers behind a "not enough data" gate
+// is five more than the question needs. The question is one question: **do
+// customers come back?**
+//
+// Two rules make the answer honest, and both were missing before:
+//
+//   - **Eligibility.** Somebody stamped yesterday has not failed to return;
+//     they have not had the chance. Only people whose FIRST stamp is at least
+//     RETURNING_ELIGIBLE_DAYS old are counted, so the denominator is people who
+//     could have come back rather than everyone who ever walked in. Without
+//     this the rate falls every time a shop has a good week for new sign-ups,
+//     which is the exact opposite of what it should do.
+//   - **A comparison computed the same way.** The rate as it stood
+//     TREND_DAYS ago, from the same CTE with a different cutoff — not a
+//     different query, and not a stored number from last month.
+//
+// Per PERSON (invariant 5) and net of undos, like every other customer figure.
+
+/**
+ * How long ago somebody's first stamp has to be before they count either way.
+ *
+ * NOT the same thing as `RETURN_WINDOW_DAYS` further down this file, which is
+ * 7 and gates the OWNER dashboard's return rate on the age of the CARD. This
+ * one gates the console's rate on the age of the first STAMP. Two windows, two
+ * questions, two names — do not merge them.
+ */
+const RETURNING_ELIGIBLE_DAYS = 14;
+/** How far back the comparison rate is taken. Four weeks: long enough to move. */
+const TREND_DAYS = 28;
+
+export interface ReturningRate {
+  /** People whose first stamp is old enough to judge. */
+  eligible: number;
+  /** Of those, how many have been stamped 2+ times. */
+  returned: number;
+  /** returned / eligible, 0..1. Null when nobody is eligible — not zero. */
+  rate: number | null;
+  /** The same three, as they stood TREND_DAYS ago. */
+  prev_eligible: number;
+  prev_returned: number;
+  prev_rate: number | null;
 }
 
 /**
- * The questions a merchant's survival actually turns on: do people come back a
- * second time, do they finish a card, and how long does any of it take.
+ * Do customers come back? Platform-wide, or for one shop.
  *
- * Everything here is derived from `events` — no new tracking. Rates are 0..1 and
- * medians are null when there isn't enough history to say, which the UI renders
- * as "—" rather than inventing a zero.
+ * With no argument this is recomputed across every LIVE merchant's customers at
+ * once — never averaged from per-shop rates, because a rate over 3 customers
+ * and a rate over 300 do not average into anything. Archived shops are out: a
+ * closed account's customers are not evidence about whether the product works.
  */
-// One row per PERSON per MERCHANT, not per pass per card. Both changes fix real
-// under-counting:
-//
-//   - Keyed on COALESCE(customer_id, serial) like every other customer figure
-//     (invariant 5). Keyed on the pass, someone holding an Apple and a Google
-//     card at one shop read as two customers who each came once and never came
-//     back — which is how a shop with regulars could show a 2nd-visit rate of
-//     zero.
-//   - Visits are NET stamps, so an `undo` correcting a mis-scan takes its stamp
-//     back off. Counting raw stamp events made a scan-then-undo look like a
-//     returning customer.
-//
-// Shared verbatim by the per-merchant rows and the platform total below. The
-// platform figure cannot be averaged from the merchant rows — a rate over 3
-// customers and a rate over 300 do not average — so it is recomputed over
-// everyone, and this constant is what stops the two definitions drifting.
-const RETENTION_CTE = `WITH person AS (
-       SELECT c.merchant_id,
-              ${PERSON_KEY_SQL} AS person,
-              min(p.created_at) AS joined,
-              GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
-                     - count(*) FILTER (WHERE e.type = 'undo'), 0)::int AS n,
-              min(e.created_at) FILTER (WHERE e.type = 'stamp') AS first_stamp,
-              max(e.created_at) FILTER (WHERE e.type = 'stamp') AS last_stamp,
-              min(e.created_at) FILTER (WHERE e.type = 'redeem') AS first_redeem
+export async function returningRate(merchantId?: string): Promise<ReturningRate> {
+  const scope = merchantId
+    ? `c.merchant_id = $1`
+    : `EXISTS (SELECT 1 FROM merchants mm WHERE mm.id = c.merchant_id AND mm.archived_at IS NULL)`;
+  // Net stamps as of a cutoff: the same count(stamp) - count(undo) rule as
+  // NET_STAMPS_SQL, with the clock wound back. Both windows come off one pass
+  // over the events so the rate and its comparison cannot drift apart.
+  const netBy = (cutoff: string) =>
+    `GREATEST(count(*) FILTER (WHERE e.type = 'stamp' AND e.created_at <= ${cutoff})
+            - count(*) FILTER (WHERE e.type = 'undo'  AND e.created_at <= ${cutoff}), 0)`;
+  const rate = (eligible: string, returned: string) =>
+    `CASE WHEN count(*) FILTER (${eligible}) = 0 THEN NULL
+          ELSE count(*) FILTER (${returned})::float8
+             / count(*) FILTER (${eligible}) END`;
+
+  const then = `now() - interval '${TREND_DAYS} days'`;
+  const eligibleNow = `WHERE first_stamp <= now() - interval '${RETURNING_ELIGIBLE_DAYS} days'`;
+  const eligibleThen =
+    `WHERE first_stamp <= ${then} - interval '${RETURNING_ELIGIBLE_DAYS} days'`;
+
+  const res = await getPool().query<ReturningRate>(
+    `WITH person AS (
+       SELECT min(e.created_at) FILTER (WHERE e.type = 'stamp') AS first_stamp,
+              ${netBy("now()")} AS n_now,
+              ${netBy(then)} AS n_then
          FROM passes p
          JOIN cards c ON c.id = p.card_id
          LEFT JOIN events e ON e.serial = p.serial
-        WHERE ${REAL_PASS_SQL}
+        WHERE ${REAL_PASS_SQL} AND ${scope}
         GROUP BY c.merchant_id, ${PERSON_KEY_SQL}
      ),
-     started AS (SELECT * FROM person WHERE n > 0)`;
-
-/**
- * The retention columns, over whichever population `scope` selects.
- *
- * `scope` is SQL this file writes, never anything a caller supplies — it is
- * either "s.merchant_id = m.id" for one business or a live-merchant filter for
- * the platform.
- */
-function retentionColumnsSql(scope: string, aliveScope: string): string {
-  const rate = (filter: string) =>
-    `COALESCE((SELECT count(*) FILTER (${filter})::numeric / NULLIF(count(*), 0)
-                 FROM started s WHERE ${scope}), 0)::float8`;
-  const alive = (days: number) => `COALESCE((
-       SELECT count(*) FILTER (WHERE s.last_stamp > now() - interval '${days} days')::numeric
-              / NULLIF(count(*), 0)
-         FROM person s
-        WHERE ${aliveScope} AND s.joined < now() - interval '${days} days'
-     ), 0)::float8`;
-  return `(SELECT count(*)::int FROM started s WHERE ${scope}) AS started,
-            ${rate("WHERE n >= 2")} AS second_visit_rate,
-            ${rate("WHERE n >= 3")} AS third_visit_rate,
-            (SELECT percentile_cont(0.5) WITHIN GROUP (
-                      ORDER BY extract(epoch FROM (last_stamp - first_stamp)) / 86400.0 / (n - 1))
-               FROM started s WHERE ${scope} AND n >= 2)::float8 AS median_gap_days,
-            ${rate("WHERE first_redeem IS NOT NULL")} AS completion_rate,
-            (SELECT percentile_cont(0.5) WITHIN GROUP (
-                      ORDER BY extract(epoch FROM (first_redeem - s.joined)) / 86400.0)
-               FROM started s WHERE ${scope} AND first_redeem IS NOT NULL)::float8 AS median_days_to_reward,
-            (SELECT percentile_cont(0.5) WITHIN GROUP (
-                      ORDER BY extract(epoch FROM (first_stamp - s.joined)) / 86400.0)
-               FROM started s WHERE ${scope})::float8 AS median_days_to_first_stamp,
-            ${alive(30)} AS alive_30,
-            ${alive(60)} AS alive_60,
-            ${alive(90)} AS alive_90`;
-}
-
-/**
- * Retention per merchant. Grouped by business because that is the unit you act
- * on, and because rates and medians cannot be merged across cards afterwards.
- */
-export async function adminRetention(): Promise<AdminRetentionRow[]> {
-  const res = await getPool().query<AdminRetentionRow>(
-    `${RETENTION_CTE}
-     SELECT m.id, m.name,
-            ${retentionColumnsSql("s.merchant_id = m.id", "s.merchant_id = m.id")}
-       FROM merchants m
-      ORDER BY m.created_at DESC`,
-  );
-  return res.rows;
-}
-
-/**
- * The same figures across every LIVE merchant at once — the portfolio view.
- *
- * Archived shops are excluded: a closed account's customers are not evidence
- * about whether the product retains people, and leaving them in would drag the
- * platform number down for a reason that has nothing to do with the product.
- */
-export async function platformRetention(): Promise<AdminRetentionRow> {
-  const live = `EXISTS (SELECT 1 FROM merchants mm
-                         WHERE mm.id = s.merchant_id AND mm.archived_at IS NULL)`;
-  const res = await getPool().query<AdminRetentionRow>(
-    `${RETENTION_CTE}
-     SELECT 'platform'::text AS id, 'Everyone'::text AS name,
-            ${retentionColumnsSql(live, live)}`,
+     started AS (SELECT * FROM person WHERE first_stamp IS NOT NULL)
+     SELECT count(*) FILTER (${eligibleNow})::int AS eligible,
+            count(*) FILTER (${eligibleNow} AND n_now >= 2)::int AS returned,
+            ${rate(eligibleNow, `${eligibleNow} AND n_now >= 2`)} AS rate,
+            count(*) FILTER (${eligibleThen})::int AS prev_eligible,
+            count(*) FILTER (${eligibleThen} AND n_then >= 2)::int AS prev_returned,
+            ${rate(eligibleThen, `${eligibleThen} AND n_then >= 2`)} AS prev_rate
+       FROM started`,
+    merchantId ? [merchantId] : [],
   );
   return res.rows[0]!;
 }
@@ -2746,8 +2734,6 @@ export interface PlatformWeekRow extends WeekRow {
   /** Shops that gave at least one stamp that week. */
   active_merchants: number;
   new_merchants: number;
-  /** Shops whose FIRST EVER stamp landed that week — the activation moment. */
-  activated: number;
 }
 
 export interface MerchantWeekRow extends WeekRow {
@@ -2815,15 +2801,6 @@ export async function platformSeries(weeks = 26): Promise<PlatformWeekRow[]> {
   const res = await getPool().query<PlatformWeekRow>(
     `WITH ${weeksCte("$1")},
           ${eventWeeksCte(live)},
-          -- Their first stamp ever, not their first this window: a shop that
-          -- activated last year must not activate again inside a 12-week chart.
-          activated AS (
-            SELECT date_trunc('week', min(e.created_at)) AS week
-              FROM events e
-              JOIN cards c ON c.id = e.card_id
-             WHERE e.type = 'stamp' AND NOT e.is_test AND ${live}
-             GROUP BY c.merchant_id
-          ),
           signups AS (
             SELECT date_trunc('week',
                      LEAST(m.created_at, COALESCE(o.created_at, m.created_at))) AS week
@@ -2835,8 +2812,7 @@ export async function platformSeries(weeks = 26): Promise<PlatformWeekRow[]> {
             ${WEEK_COLUMNS_SQL},
             COALESCE((SELECT count(DISTINCT e.merchant_id)::int FROM ev e
                        WHERE e.week = w.week AND e.type = 'stamp'), 0) AS active_merchants,
-            (SELECT count(*)::int FROM signups s WHERE s.week = w.week) AS new_merchants,
-            (SELECT count(*)::int FROM activated a WHERE a.week = w.week) AS activated
+            (SELECT count(*)::int FROM signups s WHERE s.week = w.week) AS new_merchants
        FROM weeks w
       ORDER BY w.week`,
     [Math.max(2, Math.min(104, Math.round(weeks)))],

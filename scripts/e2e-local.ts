@@ -795,36 +795,40 @@ async function main() {
     "an owner signing in is recorded — nothing tracked that before",
   );
   expect(
-    Array.isArray(adminOk.retention) &&
-      adminOk.retention.every((r: any) =>
-        typeof r.second_visit_rate === "number" && typeof r.completion_rate === "number" &&
-        "median_gap_days" in r && "alive_30" in r),
-    "admin sees retention: second visit, completion, gaps and still-active rates",
-  );
-  expect(
     Array.isArray(adminOk.staff) &&
       adminOk.staff.every((s: any) => /^staff:[0-9a-f]{10}$/.test(s.actor) && typeof s.stamps === "number"),
     "admin sees counter activity per staff phone",
   );
   expect(JSON.stringify(adminOk).indexOf("password") === -1, "admin overview never includes any password field");
-  // The portfolio figure is recomputed over everyone, never averaged from the
-  // per-shop rows — a rate over 3 customers and a rate over 300 do not average.
-  expect(
-    adminOk.platform && typeof adminOk.platform.second_visit_rate === "number" &&
-      typeof adminOk.platform.started === "number",
-    "the console gets a platform-wide retention row",
-  );
+  // ONE returning rate, replacing six. Six retention rates behind a "not enough
+  // data" gate is five more than the question needs.
   {
-    const rows = adminOk.retention.filter((r: any) => r.started > 0);
-    const started = rows.reduce((a: number, r: any) => a + r.started, 0);
-    const weighted = started
-      ? rows.reduce((a: number, r: any) => a + r.second_visit_rate * r.started, 0) / started
-      : 0;
+    const r = adminOk.returning;
     expect(
-      Math.abs(adminOk.platform.second_visit_rate - weighted) < 0.0001,
-      `the platform rate is the weighted truth, not the mean of the rows (${adminOk.platform.second_visit_rate.toFixed(3)} vs ${weighted.toFixed(3)})`,
+      r && typeof r.eligible === "number" && typeof r.returned === "number" &&
+        (r.rate === null || typeof r.rate === "number"),
+      "the console gets one returning-customer rate, and a null rather than a fake 0%",
     );
+    expect(
+      r.returned <= r.eligible && r.prev_returned <= r.prev_eligible,
+      `the numerator never exceeds the denominator (${r.returned}/${r.eligible}, was ${r.prev_returned}/${r.prev_eligible})`,
+    );
+    expect(
+      r.rate === null || Math.abs(r.rate - r.returned / r.eligible) < 0.0001,
+      "the rate is exactly returned over eligible, not rounded server-side",
+    );
+    expect(!("retention" in adminOk) && !("platform" in adminOk),
+      "the six-rate retention payload is gone, not merely unread");
   }
+  // The two new columns the merchant table and the activation timeline read.
+  expect(
+    adminOk.merchants.every((m: any) => typeof m.active_30d === "number" && m.active_30d >= m.active_7d),
+    "every shop reports customers over 30 days, and it can never be under its own 7-day figure",
+  );
+  expect(
+    adminOk.merchants.every((m: any) => "first_customer_at" in m),
+    "every shop reports when its first card was issued — step three of the timeline",
+  );
 
   // --- Week by week: the one thing the console could never show ---
   // Everything else it reports is a snapshot. The only time comparison was this
@@ -842,8 +846,8 @@ async function main() {
       s.every((w: any) =>
         typeof w.stamps === "number" && typeof w.active_merchants === "number" &&
         typeof w.active_customers === "number" && typeof w.rewards === "number" &&
-        typeof w.new_merchants === "number" && typeof w.activated === "number"),
-      "every bucket carries all six counts",
+        typeof w.new_merchants === "number"),
+      "every bucket carries all five counts",
     );
     // Strictly weekly and in order, so the browser can slice the tail off for a
     // shorter range and trust that the last row is the week now running.
@@ -949,25 +953,24 @@ async function main() {
   );
   const triaged = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
   const quietRow = triaged.merchants.find((x: any) => x.id === quietMerchant.id);
-  const quietFlags = quietRow.flags.map((f: any) => f.key);
-  expect(quietFlags.includes("never-activated"), "a merchant that never stamped is flagged");
-  expect(
-    quietRow.flags.find((f: any) => f.key === "never-activated").label === "Never set up",
-    "...and 'never opened their poster' is called out separately from 'poster up, nobody stamping'",
-  );
+  // A shop that has a login and has never stamped raises no FLAG — its STAGE
+  // says exactly that, which is the whole point of the four-word vocabulary.
+  // It used to raise "Never set up", one of eight flags that were really just
+  // the stage restated as a problem.
+  expect(quietRow.stage === "activated",
+    `a shop with a login and no stamps is 'activated' (got ${quietRow.stage})`);
+  expect(!quietRow.flags.some((f: any) => f.key === "never-activated"),
+    "…and raises no flag for it — the stage is the statement");
   const busyRow = triaged.merchants.find((x: any) => x.id === ownMerchant.id);
-  expect(!busyRow.flags.some((f: any) => f.key === "never-activated"),
-    "a merchant that IS stamping is never flagged as never-activated");
+  expect(busyRow.stage === "stamping",
+    `a shop stamping right now is 'stamping' (got ${busyRow.stage})`);
 
-  // poster_view is what separates the two, so prove the route writes it.
+  // poster_view is still recorded — it is the evidence that anything was ever
+  // put on a counter, and a shop's own page reads it.
   expect((await get("/c/" + quietCard.id + "/poster")).status === 200, "the poster renders for a new merchant");
   const posterSeen = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
     .merchants.find((x: any) => x.id === quietMerchant.id);
   expect(posterSeen.poster_views > 0, "opening the poster is recorded");
-  expect(
-    posterSeen.flags.find((f: any) => f.key === "never-activated").label === "No stamps yet",
-    "...and once the poster has been opened the diagnosis changes to 'poster up, nobody stamping'",
-  );
 
   // --- Sign-up channels: a poster scan and a shared link are told apart ---
   // Both arrive as an ordinary page view, so the only thing separating them is
@@ -1115,8 +1118,8 @@ async function main() {
   {
     const unclaimed = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
       .merchants.find((x: any) => x.id === dfyOut.merchantId);
-    expect(unclaimed.stage === "unclaimed" && unclaimed.has_owner === false,
-      `a shop nobody has claimed reads as unclaimed (${unclaimed.stage})`);
+    expect(unclaimed.stage === "not-claimed" && unclaimed.has_owner === false,
+      `a shop nobody has claimed reads as not-claimed (${unclaimed.stage})`);
     // The console's Reset their password button is built off this. Null here is
     // what keeps the button off a row that has no login to reset.
     expect(unclaimed.owner_id === null, "...and carries no owner to reset a password for");
@@ -1272,8 +1275,11 @@ async function main() {
   {
     const nowClaimed = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
       .merchants.find((x: any) => x.id === dfyOut.merchantId);
-    expect(nowClaimed.stage === "claimed" && nowClaimed.has_owner === true,
-      `a claimed shop that has not stamped reads as claimed (${nowClaimed.stage})`);
+    // "Activated" means the LOGIN exists — not the first stamp, which is the
+    // step after it. There was no word at all for this state before, even
+    // though it is the most common place for a new shop to stall.
+    expect(nowClaimed.stage === "activated" && nowClaimed.has_owner === true,
+      `a claimed shop that has not stamped reads as activated (${nowClaimed.stage})`);
     // Which owner, so the row can reset their password without a second list of
     // every owner on the platform to pick the same shop out of again.
     expect(
@@ -1326,8 +1332,8 @@ async function main() {
 
     const after = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
       .merchants.find((x: any) => x.id === dfyOut.merchantId);
-    expect(after.stage === "unclaimed" && after.has_owner === false && after.owner_id === null,
-      `the shop reads as unclaimed again (${after.stage})`);
+    expect(after.stage === "not-claimed" && after.has_owner === false && after.owner_id === null,
+      `the shop reads as not-claimed again (${after.stage})`);
     expect(after.card_ids.includes(dfyOut.cardId),
       "...keeping the SAME card id, so posters and issued cards still point at it");
     // History, not erasure: both dates stand, which is the answer to a dispute.
@@ -2235,33 +2241,77 @@ async function main() {
     `the Home headline counts people, like the list does (${headline} vs ${listed.customers.length})`,
   );
 
-  // --- Retention counts PEOPLE and NET stamps, not passes and raw events ---
-  // This is the bug the console was reporting as "no returning customers".
+  // --- The returning rate counts PEOPLE and NET stamps, and only people who
+  //     have HAD the chance to come back ---
   // The person above holds two passes and has been stamped on each: that is one
   // customer who came back a second time. Keyed on the pass — as it was — they
   // read as two customers who each came once and never returned, which drove a
   // shop with real regulars to a second-visit rate of zero.
   {
-    const { adminRetention: retQ, merchantHealth: mhQ } = await import("../src/db.js");
+    const { returningRate, merchantHealth: mhQ } = await import("../src/db.js");
     const mine = (await mhQ()).find((x) => x.card_ids.includes("default"))!;
-    const before = (await retQ()).find((r) => r.id === mine.id)!;
+    const rate = () => returningRate(mine.id);
+    const before = await rate();
     expect(
-      before.second_visit_rate > 0,
-      `a person holding two stamped passes is a returning customer (${Math.round(before.second_visit_rate * 100)}%)`,
+      before.returned >= 1 && before.rate !== null && before.rate > 0,
+      `a person holding two stamped passes is ONE returning customer (${before.returned} of ${before.eligible})`,
     );
-    // And an undo is a correction, so it takes its visit back off — every other
-    // metric in the codebase subtracts undos and this one used not to.
-    const beforeStarted = before.started;
+
+    // The 14-day gate. Somebody stamped today has not failed to come back —
+    // they have not had the chance — so they are in neither number. Without
+    // this, a good week for sign-ups would crater the rate, which is exactly
+    // backwards.
+    const freshPerson = await mkCustomer(m1.id);
+    const freshPass = await mk("apple", freshPerson.id);
+    await logEvent("default", freshPass.serial, "stamp");
+    const withFresh = await rate();
+    expect(
+      withFresh.eligible === before.eligible && withFresh.returned === before.returned,
+      `a customer first stamped today is in neither number (${withFresh.returned} of ${withFresh.eligible})`,
+    );
+
+    // One stamp, 20 days ago: eligible, and has not come back.
     const soloPerson = await mkCustomer(m1.id);
     const soloPass = await mk("apple", soloPerson.id);
     await logEvent("default", soloPass.serial, "stamp");
-    const withSolo = (await retQ()).find((r) => r.id === mine.id)!;
-    expect(withSolo.started === beforeStarted + 1, "a newly stamped customer joins the denominator");
-    await logEvent("default", soloPass.serial, "undo");
-    const undone = (await retQ()).find((r) => r.id === mine.id)!;
+    await getPool().query(
+      `UPDATE events SET created_at = now() - interval '20 days' WHERE serial = $1`, [soloPass.serial],
+    );
+    const withSolo = await rate();
     expect(
-      undone.started === beforeStarted,
-      `an undo takes the visit back off, so they are not counted as started (${undone.started} vs ${beforeStarted})`,
+      withSolo.eligible === before.eligible + 1 && withSolo.returned === before.returned,
+      `a customer stamped once 20 days ago is eligible and has not returned (${withSolo.returned} of ${withSolo.eligible})`,
+    );
+
+    // A second stamp makes them a returning customer…
+    await logEvent("default", soloPass.serial, "stamp");
+    const returned = await rate();
+    expect(
+      returned.returned === before.returned + 1 && returned.eligible === withSolo.eligible,
+      `a second stamp moves them into the numerator only (${returned.returned} of ${returned.eligible})`,
+    );
+    // …and an undo is a correction, so it takes that visit straight back off.
+    // Every other metric in the codebase subtracts undos and this one must too.
+    await logEvent("default", soloPass.serial, "undo");
+    const undone = await rate();
+    expect(
+      undone.returned === before.returned && undone.eligible === withSolo.eligible,
+      `an undo takes the second visit back off (${undone.returned} of ${undone.eligible})`,
+    );
+
+    // The comparison rate is the SAME arithmetic on a cutoff four weeks back,
+    // so a stamp given today can never move it.
+    expect(
+      typeof undone.prev_eligible === "number" && undone.prev_eligible <= undone.eligible,
+      `the four-weeks-ago cohort is no bigger than today's (${undone.prev_eligible} vs ${undone.eligible})`,
+    );
+
+    // Platform-wide is recomputed over everyone, never averaged from per-shop
+    // rates — a rate over 3 customers and a rate over 300 do not average.
+    const all = await returningRate();
+    expect(
+      all.eligible >= undone.eligible && all.returned >= undone.returned,
+      `the platform rate covers at least this shop's people (${all.returned} of ${all.eligible})`,
     );
   }
   // Lapse is measured across everything they hold, not per card.
