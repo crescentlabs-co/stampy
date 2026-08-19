@@ -172,7 +172,7 @@ describe("buildLoyaltyObject", () => {
     const obj = buildLoyaltyObject(row(), card()) as any;
     expect(obj.loyaltyPoints.balance.string).toBe("3/10");
     const stamps = obj.textModulesData.find((t: any) => t.id === "stamps");
-    expect(stamps.body).toBe("⬤⬤⬤◯◯◯◯◯◯◯");
+    expect(stamps.body).toBe("⬤ ⬤ ⬤ ◯ ◯\n◯ ◯ ◯ ◯ ◯");
   });
 
   it("switches to reward-ready copy when full", () => {

@@ -408,7 +408,7 @@ describe("the design panel, mounted", () => {
       // is never sent.
       expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("2 earned");
       expect(div.querySelector("[data-pvg-slbl]")!.textContent).toBe("YOUR STAMPS · 2/10");
-      expect(div.querySelector("[data-pvg-dots]")!.textContent).toBe("⬤⬤◯◯◯◯◯◯◯◯");
+      expect(div.querySelector("[data-pvg-dots]")!.textContent).toBe("⬤ ⬤ ◯ ◯ ◯\n◯ ◯ ◯ ◯ ◯");
       // The shop's name once, on the issuer line; the title says what it is.
       expect(div.querySelector("[data-pvg-issuer]")!.textContent).toBe("Kopi Corner");
       expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Loyalty card");

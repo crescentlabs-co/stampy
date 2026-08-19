@@ -1996,14 +1996,42 @@ const ACTIVE_PASS_SQL = `(
     OR EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')
      )`;
 
-// Stamps actually given. A staff `undo` corrects a mis-scan, so it has to come
-// back off the total — otherwise the headline number overstates real activity.
-// Assumes the cards table is aliased `c`.
-const NET_STAMPS_SQL = `(
-       SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
-                     - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
-         FROM events e WHERE e.card_id = c.id
-     )`;
+/**
+ * Stamps actually GIVEN: every stamp, minus every correction.
+ *
+ * A staff `undo` reverses a mis-scan, and `events` is append-only, so the stamp
+ * row stays behind. Any number that means "how much has this shop done" has to
+ * take the correction off, or a counter that fat-fingers twice a day reads as
+ * busier than one that does not.
+ *
+ * ONE implementation, because there were five: a constant used by a single
+ * query plus four hand-written copies, which is how `stamps` and `stamps_30d`
+ * came to sit in the same SELECT with opposite rules. Everything net goes
+ * through here.
+ *
+ * `NOT e.is_test` is part of the rule, not an extra: a card the owner put in
+ * their own wallet is not activity. This constant used to be the one net
+ * implementation WITHOUT that filter, while the four copies had it.
+ *
+ * The floor at zero is for the same reason `addStamps` clamps: undos can
+ * outnumber stamps in a window that starts mid-correction, and a negative
+ * "stamps given" is not a fact about anything.
+ *
+ * @param scope  SQL that picks the events — usually a card or merchant clause.
+ * @param since  a Postgres interval ('7 days'), or "" for all time.
+ */
+function netStamps(scope: string, since = ""): string {
+  const window = since ? ` AND e.created_at > now() - interval '${since}'` : "";
+  const when = (type: string) => `count(*) FILTER (WHERE e.type = '${type}'${window})`;
+  return `(SELECT GREATEST(${when("stamp")} - ${when("undo")}, 0)::int
+             FROM events e WHERE ${scope} AND NOT e.is_test)`;
+}
+
+/** Net stamps for the card aliased `c`. */
+const NET_STAMPS_SQL = netStamps("e.card_id = c.id");
+
+/** Every event under the merchant aliased `m`. Assumes events are aliased `e`. */
+const MERCHANT_EVENTS_SQL = `e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)`;
 
 // How many nudges have gone out since this card's last visit. Non-zero means we
 // messaged someone who then didn't come in — the signal for "stop chasing".
@@ -2153,24 +2181,29 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
               WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}) AS active,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}) AS cards,
             ${NET_STAMPS_SQL} AS stamps,
-            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'redeem') AS redemptions,
+            (SELECT count(*)::int FROM events e
+              WHERE e.card_id = c.id AND e.type = 'redeem' AND NOT e.is_test) AS redemptions,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
               AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'nudge')) AS nudged,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
               AND EXISTS (SELECT 1 FROM events s WHERE s.serial = p.serial AND s.type = 'stamp'
                             AND s.created_at > (SELECT max(n.created_at) FROM events n
                                                  WHERE n.serial = p.serial AND n.type = 'nudge'))) AS nudge_returned,
-            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.forced) AS forced_stamps,
-            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'undo') AS undos,
-            (SELECT max(e.created_at) FROM events e WHERE e.card_id = c.id AND e.type = 'stamp') AS last_stamp_at,
+            -- forced is a flag on a stamp, so this needs the type filter too:
+            -- without it any future forced-anything event lands in a column the
+            -- console reads as "stamps the counter overrode".
+            (SELECT count(*)::int FROM events e
+              WHERE e.card_id = c.id AND e.type = 'stamp' AND e.forced AND NOT e.is_test) AS forced_stamps,
+            (SELECT count(*)::int FROM events e
+              WHERE e.card_id = c.id AND e.type = 'undo' AND NOT e.is_test) AS undos,
+            (SELECT max(e.created_at) FROM events e
+              WHERE e.card_id = c.id AND e.type = 'stamp' AND NOT e.is_test) AS last_stamp_at,
             (SELECT max(l.created_at) FROM owner_logins l
                JOIN owner_cards oc ON oc.owner_id = l.owner_id
               WHERE oc.card_id = c.id) AS last_owner_login,
-            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'stamp'
-               AND e.created_at > now() - interval '7 days') AS stamps_7d,
-            (SELECT count(*)::int FROM events e WHERE e.card_id = c.id AND e.type = 'stamp'
-               AND e.created_at > now() - interval '30 days') AS stamps_30d,
-            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id
+            ${netStamps("e.card_id = c.id", "7 days")} AS stamps_7d,
+            ${netStamps("e.card_id = c.id", "30 days")} AS stamps_30d,
+            (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')) AS added,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND ${REMOVED_PASS_SQL}) AS removed,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND NOT ${ACTIVE_PASS_SQL}
@@ -2368,7 +2401,7 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
   // demand in the one report used to judge whether a shop is working.
   const ev = (filter: string, since = "") =>
     `(SELECT count(*)::int FROM events e
-       WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
+       WHERE ${MERCHANT_EVENTS_SQL}
          AND NOT e.is_test
          AND ${filter}${since ? ` AND e.created_at > now() - interval '${since}'` : ""})`;
   const res = await getPool().query<MerchantHealthRow>(
@@ -2390,8 +2423,8 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             -- event that defines it. Zero until then.
             COALESCE(floor(extract(epoch FROM (now() -
               (SELECT min(e.created_at) FROM events e
-                WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
-                  AND e.type = 'stamp'))) / 86400.0), 0)::int AS trial_day,
+                WHERE ${MERCHANT_EVENTS_SQL}
+                  AND e.type = 'stamp' AND NOT e.is_test))) / 86400.0), 0)::int AS trial_day,
             (SELECT count(*)::int FROM cards WHERE merchant_id = m.id) AS cards,
             COALESCE((SELECT array_agg(id ORDER BY created_at) FROM cards WHERE merchant_id = m.id),
                      ARRAY[]::text[]) AS card_ids,
@@ -2403,11 +2436,11 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             COALESCE((SELECT max(stamps_target) FROM cards WHERE merchant_id = m.id), 0) AS stamps_target,
 
             (SELECT min(e.created_at) FROM events e
-              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
-                AND e.type = 'stamp') AS first_stamp_at,
+              WHERE ${MERCHANT_EVENTS_SQL}
+                AND e.type = 'stamp' AND NOT e.is_test) AS first_stamp_at,
             (SELECT min(e.created_at) FROM events e
-              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
-                AND e.type = 'redeem') AS first_redeem_at,
+              WHERE ${MERCHANT_EVENTS_SQL}
+                AND e.type = 'redeem' AND NOT e.is_test) AS first_redeem_at,
             -- The first card ever issued to anybody. Sits between the login
             -- existing and the first stamp on the activation timeline, and it
             -- is the step that separates "nobody has scanned the poster" from
@@ -2418,19 +2451,27 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             ${ev("e.type = 'poster_view'")} AS poster_views,
 
             (SELECT max(e.created_at) FROM events e
-              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
-                AND e.type = 'stamp') AS last_stamp_at,
+              WHERE ${MERCHANT_EVENTS_SQL}
+                AND e.type = 'stamp' AND NOT e.is_test) AS last_stamp_at,
             (SELECT max(l.created_at) FROM owner_logins l WHERE l.owner_id = m.owner_id) AS last_owner_login,
             (SELECT count(*)::int FROM owner_logins l
               WHERE l.owner_id = m.owner_id AND l.created_at > now() - interval '30 days') AS logins_30d,
-            GREATEST(${ev("e.type = 'stamp'")} - ${ev("e.type = 'undo'")}, 0) AS stamps,
-            ${ev("e.type = 'stamp'", "7 days")} AS stamps_7d,
-            ${ev("e.type = 'stamp'", "30 days")} AS stamps_30d,
+            -- All four net, through the one helper. The all-time figure was net
+            -- and the three windowed ones were not, in this same SELECT — so the
+            -- number nobody scans obeyed the rule and the ones in the merchants
+            -- table did not. stamps_7d and stamps_prev_7d are compared against
+            -- each other for the "slowing down" flag, where two differently
+            -- inflated numbers are worse than two wrong ones.
+            ${netStamps(MERCHANT_EVENTS_SQL)} AS stamps,
+            ${netStamps(MERCHANT_EVENTS_SQL, "7 days")} AS stamps_7d,
+            ${netStamps(MERCHANT_EVENTS_SQL, "30 days")} AS stamps_30d,
             -- The week before last, so the table can show a direction rather
             -- than a number that could mean anything.
-            (SELECT count(*)::int FROM events e
-              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
-                AND e.type = 'stamp'
+            (SELECT GREATEST(
+                      count(*) FILTER (WHERE e.type = 'stamp')
+                    - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
+               FROM events e
+              WHERE ${MERCHANT_EVENTS_SQL} AND NOT e.is_test
                 AND e.created_at > now() - interval '14 days'
                 AND e.created_at <= now() - interval '7 days') AS stamps_prev_7d,
             (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
@@ -2490,8 +2531,8 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             EXISTS (SELECT 1 FROM card_logos l
                      WHERE l.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)) AS has_art,
             (SELECT count(DISTINCT e.actor)::int FROM events e
-              WHERE e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
-                AND e.actor LIKE 'staff:%') AS staff_devices,
+              WHERE ${MERCHANT_EVENTS_SQL}
+                AND e.actor LIKE 'staff:%' AND NOT e.is_test) AS staff_devices,
 
             ${ev("e.type = 'pin_failed'", "24 hours")} AS pin_failed_24h,
             ${ev("e.type = 'lookup_failed'", "7 days")} AS lookup_failed_7d,
@@ -2779,6 +2820,9 @@ const eventWeeksCte = (scope: string) => `ev AS (
           AND ${scope}
      )`;
 
+// The netStamps rule, spelled out rather than called: `ev` has already dropped
+// test events and does not carry the column to filter on again, so the helper
+// cannot be pointed at it. Same arithmetic, same floor — if one changes, both do.
 const WEEK_COLUMNS_SQL = `COALESCE((SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
                                     - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
                         FROM ev e WHERE e.week = w.week), 0) AS stamps,
@@ -3416,11 +3460,14 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
        (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
           WHERE p.card_id = $1 AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL})::text AS active,
        (SELECT count(*) FROM passes p WHERE p.card_id = $1 AND ${REAL_PASS_SQL})::text AS cards,
-       GREATEST(count(*) FILTER (WHERE type = 'stamp')
-              - count(*) FILTER (WHERE type = 'undo'), 0)::text AS stamps,
+       -- The owner's Home tile, and the number their "spend influenced" figure
+       -- is multiplied out of. Net through the shared helper: an undo is a
+       -- correction, so it comes off. The counter fold one tab away is
+       -- deliberately NOT net — see counterActivity, where the take-back is its
+       -- own cell and both numbers are facts about the day.
+       ${netStamps("e.card_id = $1")}::text AS stamps,
        count(*) FILTER (WHERE type = 'redeem')::text AS redemptions,
-       GREATEST(count(*) FILTER (WHERE type = 'stamp' AND created_at > now() - interval '30 days')
-              - count(*) FILTER (WHERE type = 'undo'  AND created_at > now() - interval '30 days'), 0)::text AS "stamps30d",
+       ${netStamps("e.card_id = $1", "30 days")}::text AS "stamps30d",
        count(*) FILTER (WHERE type = 'redeem' AND created_at > now() - interval '30 days')::text AS "redemptions30d",
        (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
           WHERE ${MATURE_PASS_SQL})::text AS matured,

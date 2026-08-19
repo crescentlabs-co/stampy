@@ -61,12 +61,32 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
 }
 
 describe("stampDots", () => {
-  it("renders filled and empty slots", () => {
-    expect(stampDots(3, 10)).toBe("⬤⬤⬤◯◯◯◯◯◯◯");
+  // Two rows, spaced — the same 2×N grid stampGrid has always described for the
+  // Apple strip image. On Android these are TEXT in a field whose size and
+  // alignment Google owns, so the shape of the string is the only lever there
+  // is, and one unbroken run of ten was something you counted rather than read.
+  it("renders filled and empty slots as a spaced two-row grid", () => {
+    expect(stampDots(3, 10)).toBe("⬤ ⬤ ⬤ ◯ ◯\n◯ ◯ ◯ ◯ ◯");
   });
   it("clamps below zero and above target", () => {
-    expect(stampDots(-2, 5)).toBe("◯◯◯◯◯");
-    expect(stampDots(9, 5)).toBe("⬤⬤⬤⬤⬤");
+    expect(stampDots(-2, 5)).toBe("◯ ◯ ◯\n◯ ◯");
+    expect(stampDots(9, 5)).toBe("⬤ ⬤ ⬤\n⬤ ⬤");
+  });
+  // An odd target leaves the SHORT row underneath, matching the way the strip
+  // image centres its last row rather than its first.
+  it("puts the longer row on top when the target is odd", () => {
+    expect(stampDots(0, 7)).toBe("◯ ◯ ◯ ◯\n◯ ◯ ◯");
+  });
+  /**
+   * Below five, two rows of one or two circles is a stack, not a grid — the
+   * break costs more than it gives. A target of 1 must also not produce a
+   * trailing empty line, which is what a naive halving does.
+   */
+  it("stays on one line for a small card", () => {
+    expect(stampDots(1, 4)).toBe("⬤ ◯ ◯ ◯");
+    expect(stampDots(1, 1)).toBe("⬤");
+    expect(stampDots(0, 0)).toBe("");
+    for (const t of [0, 1, 2, 3, 4]) expect(stampDots(1, t)).not.toContain("\n");
   });
   /**
    * Large circles, and monochrome ones. On Android these are TEXT in a field

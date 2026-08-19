@@ -420,9 +420,30 @@ async function main() {
     [crossPass.serial],
   )).rows[0]!;
   expect(landed.card_id === "default", "the stamp is recorded against the card the pass belongs to");
+
+  // The owner's HOME tile, across an undo.
+  //
+  // This is the number an owner reads first and it had no test at all: the undo
+  // assertions in this file cover the retention rate, the counter fold and
+  // passes.stamp_count, and none of them touch cardMetrics. "Stamps" on Home is
+  // meant to be stamps actually GIVEN, so a correction has to come off it —
+  // unlike the counter fold below, where the take-back is its own cell and both
+  // numbers are facts.
+  const tile = async () => {
+    const ov = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+    return (ov.cards as { id: string; metrics: { stamps: number } }[])
+      .filter((c) => c.id === "default")
+      .reduce((a, c) => a + c.metrics.stamps, 0);
+  };
+  const tileAfterStamp = await tile();
   await fetch(base + "/staff/api/undo", {
     method: "POST", headers: staff2Headers, body: JSON.stringify({ serial: crossPass.serial }),
   });
+  const tileAfterUndo = await tile();
+  expect(
+    tileAfterUndo === tileAfterStamp - 1,
+    `an undo comes off the Home stamps tile (${tileAfterStamp} → ${tileAfterUndo})`,
+  );
 
   // A short code from the shop's other card resolves too — it used to 404.
   const codeLookup = await fetch(
@@ -1934,6 +1955,23 @@ async function main() {
       "...the console's customer count is unchanged");
     expect(after.health.made === before.health.made,
       "...and the funnel did not record a sign-up");
+
+    // The DATES, which every count in the same query filtered and these three
+    // did not. A shop that has never served anybody could start its own trial
+    // clock, tick "First stamp" on the activation timeline, and clear the
+    // went-quiet flag — by the owner stamping the card in their own pocket,
+    // without a single count moving to show it. Judgement calls, made on
+    // evidence that was not evidence.
+    expect(String(after.health.last_stamp_at) === String(before.health.last_stamp_at),
+      "...a test stamp does not make a silent shop look alive (last_stamp_at)");
+    expect(after.health.trial_day === before.health.trial_day,
+      `...nor start the trial clock (${before.health.trial_day} → ${after.health.trial_day})`);
+    expect(String(after.health.first_stamp_at) === String(before.health.first_stamp_at),
+      "...nor tick First stamp on the activation timeline");
+    expect(after.health.stamps === before.health.stamps
+        && after.health.stamps_7d === before.health.stamps_7d
+        && after.health.stamps_30d === before.health.stamps_30d,
+      "...and none of the three stamp windows moved");
     // The nudge buckets are the one that would actually reach a person: the
     // owner messaging their own test card, against that card's 7-day limit.
     const buckets = JSON.parse((await get("/dashboard/api/customers?cardId=" + testCard + "&lapsedDays=0",
@@ -2671,6 +2709,11 @@ async function main() {
     });
     const afterUndo = await counterNow();
     expect(afterUndo.takenBack === before.takenBack + 1, "an undo shows as a stamp taken back");
+    // DELIBERATELY not net, and the only owner-facing stamp count that is not.
+    // The Home tile means "stamps actually given" and subtracts corrections;
+    // this fold is the counter's log for the day, where the stamp and the
+    // take-back are two facts shown side by side. Both are pinned by a test so
+    // the difference has to be read before it can be "fixed".
     expect(afterUndo.stamps === afterForced.stamps, "...and does not quietly reduce stamps given");
 
     // 5. Customers are PEOPLE (invariant 5). One person holding an Apple and a

@@ -699,7 +699,9 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pvg-lbl { font-size: .66rem; letter-spacing: .07em; opacity: .65; text-transform: uppercase; }
     .pvg-val { font-size: .95rem; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
     .pvg-stamps { padding-top: 13px; }
-    .pvg-dots { font-size: .95rem; letter-spacing: 1px; margin-top: 3px; }
+    /* pre-line, because the grid arrives as a string with a newline in it — the
+       only way to shape text in a field whose typography belongs to Google. */
+    .pvg-dots { font-size: .95rem; margin-top: 3px; white-space: pre-line; line-height: 1.5; }
     /* Centred, on white, rounded — Google draws its own plate behind the code
        whatever the card colour is. */
     .pvg-qr { width: 96px; height: 96px; margin: 16px auto 0; background: #fff;
@@ -758,16 +760,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pvacts { margin-top: 10px; }
     .pvacts-t { font-size: .82rem; font-weight: 600; color: var(--muted);
                 display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
-    /* space-between, not packed left: Apple and Google stay the square pair
-       they are deliberately drawn as (see .pvicon) rather than stretching to
-       fill, but the row itself uses the width it has instead of leaving it
-       empty past "Poster". */
-    .pvactsrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-    .pvactsrow .btn { width: auto; padding: 9px 13px; font-size: .85rem; }
     /* Square, so the two marks read as a pair rather than as two buttons that
        happen to have pictures in them. */
     .pvicon { padding: 8px; line-height: 0; min-width: 38px; display: inline-flex;
               align-items: center; justify-content: center; }
+    /* …except inside a sectioned bar, where every section is an equal share of
+       the width. min-width would stop the two marks shrinking with the third
+       section on a narrow phone, and line-height:0 clips the "Poster" label
+       sitting next to them. */
+    .actbar .pvicon { min-width: 0; line-height: 1.2; padding: 11px 10px; }
     /* The editor's own spacing. The page's default label margin is 14px top and
        6px bottom, which over seven controls is most of a screen of nothing — and
        this section is read top to bottom in one sitting, so its height is the
@@ -795,12 +796,20 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .crhdr { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
     .crtoggle { width: auto; padding: 6px 11px; font-size: .78rem; flex: none; }
     .crtoggle.on { background: var(--ink); color: var(--surface-2, #fff); border-color: var(--ink); }
-    /* space-between, not packed left with a 6px gap: the squares are fixed
-       size on purpose (they are colour, not a bar to fill) but five of them
-       in a row that can run to 400px left a wall of blank space beside them. */
-    .swstrip { display: flex; justify-content: space-between; margin-top: 5px; }
-    .sw { width: 26px; height: 26px; border-radius: 7px; flex: none;
-          box-shadow: inset 0 0 0 1px rgba(32,33,29,.18); }
+    /* The palette as ONE bar of five sections, the same shape as .actbar above
+       it. Five 26px squares spread across a row that can run to 400px was the
+       scattered look in its purest form: mostly gap, and no way to tell it was
+       one palette rather than five unrelated chips. */
+    .swstrip { display: flex; height: 34px; margin-top: 5px; border-radius: 999px;
+               overflow: hidden; box-shadow: inset 0 0 0 1px var(--field-border); }
+    .sw { flex: 1 1 0; min-width: 0; }
+    /* title= is hover-only and this designer is used on a phone, so the names
+       are on the page. Same flex basis as the sections above, so each label
+       stays under the colour it belongs to. */
+    .swnames { display: flex; margin-top: 4px; }
+    .swnames span { flex: 1 1 0; min-width: 0; text-align: center;
+                    font-size: .6rem; letter-spacing: .04em; color: var(--muted);
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .crlist[hidden] { display: none; }
     /* Inline rejection notice (e.g. a stamp upload with no transparency) —
        stays on screen, unlike a toast, because it asks the owner to go and fix
@@ -841,15 +850,37 @@ export const DESIGN_PANEL_CSS = /* css */ `
        --surface is one shade apart, and eight ghost buttons live inside this
        fold. Inside it they go back to the page colour with a hairline. */
     .fold .btn-ghost { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
-    /* One bar, not two buttons of whatever width their own label happened to
-       need — Upload and Remove read as a pair of equal actions on the same
-       logo, so they take equal width and sit centred in it. flex:1 rather
-       than a fixed split: Remove is display:none until a logo exists, and
-       flex:1 on a single remaining item fills the bar on its own instead of
-       leaving half of it empty. */
-    .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
-    .logorow input[type=file] { display: none; }
-    .logorow .btn { flex: 1; padding: 10px 14px; font-size: .9rem; }
+    /* --- the sectioned action bar ---
+       ONE bar cut into equal sections, not a scatter of separate pills with
+       air between them. Separate pills were the previous shape and they read
+       as unrelated things that happen to sit near each other; these are two
+       or three actions on ONE thing (this logo, this stamp, this card), so
+       they share one outline and are divided by a hairline — the same
+       grouped-row treatment a phone's own Settings uses.
+       Outlined, never filled with the accent: DESIGN.md rule 1 gives the neon
+       exactly one job, and "upload a logo" is not the next action on a page. */
+    .actbar { display: flex; align-items: stretch; margin-top: 4px;
+              border-radius: 999px; overflow: hidden; background: var(--bg);
+              box-shadow: inset 0 0 0 1px var(--field-border); }
+    /* flex-basis 0, so sections are equal regardless of how long their labels
+       are — sized by content, "Upload logo" and "Remove logo" differ enough to
+       look like a mistake. */
+    .actbar > * { flex: 1 1 0; min-width: 0; }
+    .actbar > * + * { box-shadow: inset 1px 0 0 var(--field-border); }
+    /* .btn.btn-ghost, not .btn: :is(.fold, .grp, …) .btn-ghost in baseCss is
+       (0,2,0) and would re-fill each section and give it its own ring inside
+       the bar. (0,3,0) wins outright rather than depending on which stylesheet
+       happens to be printed last. */
+    .actbar .btn.btn-ghost { width: 100%; border-radius: 0; background: transparent;
+                             box-shadow: none; padding: 11px 10px; font-size: .88rem;
+                             display: flex; align-items: center; justify-content: center;
+                             gap: 6px; line-height: 1.2; }
+    .actbar .btn.btn-ghost:hover { background: var(--surface); }
+    /* Present but not available: a Remove that vanishes until there is
+       something to remove reads as a missing feature, not as a disabled one. */
+    .actbar .btn.btn-ghost:disabled { opacity: .4; cursor: not-allowed; }
+    .actbar .btn.btn-ghost:disabled:hover { background: transparent; }
+    .actbar input[type=file] { display: none; }
     /* A row, not a tick-box: title and its consequence on the left, the switch
        on the right, matching the settings-row shape a phone's own Settings app
        already taught everyone to read — a checkbox with a sentence beside it
@@ -900,12 +931,11 @@ export const DESIGN_PANEL_CSS = /* css */ `
             padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
     .chip:hover { border-color: var(--accent); }
     .chip.on { border-color: var(--accent); }
-    /* Same bar as .logorow: three equal answers to one question, not three
-       buttons sized to their own label and left-packed with the row's air
-       going unused on the right. */
-    .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
-    .emojirow input[type=file] { display: none; }
-    .emojirow .btn { flex: 1; padding: 10px 14px; font-size: .9rem; }
+    /* The stamp bar's hint sits beside the bar, not inside it: it is not a
+       fourth section, and a 22px round ⓘ stretched to an equal share of the
+       row is exactly how it read. */
+    .stamprow { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+    .stamprow .actbar { flex: 1; min-width: 0; margin-top: 0; }
     /* --- premium card preview --- */
     .pv { border-radius: 18px; padding: 16px; margin: 10px 0 4px; overflow: hidden;
           box-shadow: 0 10px 30px -8px rgba(43,29,21,.35), 0 2px 6px rgba(43,29,21,.15); }
@@ -1080,7 +1110,7 @@ export const DESIGN_PANEL_JS = /* js */ `
                rule it used to draw now belongs to the Design fold below. -->
           <div class="pvacts">
             <span class="pvacts-t">Add a test card\${info("Puts this card in your own wallet, or opens your printed poster. It is a real card, but it never counts as a customer and never appears in your numbers. Each link lasts 30 minutes.")}</span>
-            <div class="pvactsrow">
+            <div class="actbar">
               <button class="btn btn-ghost pvicon" data-a="test" data-w="apple" title="Add to Apple Wallet" aria-label="Add to Apple Wallet">${APPLE_GLYPH}</button>
               <button class="btn btn-ghost pvicon" data-a="test" data-w="google" title="Add to Google Wallet" aria-label="Add to Google Wallet">${GOOGLE_GLYPH}</button>
               <!-- A word, not a mark: there is no logo that means "your printed
@@ -1112,9 +1142,9 @@ export const DESIGN_PANEL_JS = /* js */ `
              control. -->
         <div class="lrow">
           <label class="dlbl">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
-          <div class="logorow">
+          <div class="actbar">
             <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
-            <button class="btn btn-ghost" data-a="rmlogo" style="\${c.logoVersion ? "" : "display:none"}">Remove logo</button>
+            <button class="btn btn-ghost" data-a="rmlogo" \${c.logoVersion ? "" : "disabled"}>Remove logo</button>
           </div>
         </div>
 
@@ -1128,9 +1158,9 @@ export const DESIGN_PANEL_JS = /* js */ `
              where anything is actually being lost. -->
         <div class="lrow" data-markbox>
           <label class="dlbl">Square logo for Android\${info("Google Wallet shows your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Optional: skip it and Android keeps your main logo. Only Android uses it; your iPhone card, poster and sign-up page are unaffected.")}</label>
-          <div class="logorow">
+          <div class="actbar">
             <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload logo</span><input data-mark type="file" accept="image/*"></label>
-            <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove logo</button>
+            <button class="btn btn-ghost" data-a="rmmark" \${c.markVersion ? "" : "disabled"}>Remove logo</button>
           </div>
           <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
         </div>
@@ -1154,10 +1184,12 @@ export const DESIGN_PANEL_JS = /* js */ `
              field. "Default" is always shown because it is the only way back,
              and a control that appears once you no longer need it is no control
              at all. -->
-        <div class="emojirow">
-          <label class="btn btn-ghost" style="margin:0">Upload<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
-          <button class="btn btn-ghost" data-a="emoji">Emoji</button>
-          <button class="btn btn-ghost" data-a="rmstamp">Default</button>
+        <div class="stamprow">
+          <div class="actbar">
+            <label class="btn btn-ghost" style="margin:0">Upload<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
+            <button class="btn btn-ghost" data-a="emoji">Emoji</button>
+            <button class="btn btn-ghost" data-a="rmstamp">Default</button>
+          </div>
           \${info("Upload a simple shape or symbol — not a photo — however you have it: a plain background is taken out and the empty space around it trimmed. Its own colours are ignored; it is filled with your stamp colour. Default is plain dots.")}
         </div>
         <!-- What is actually set. The rendered grid used to be the only signal,
@@ -1185,6 +1217,7 @@ export const DESIGN_PANEL_JS = /* js */ `
              as decoration beside the button rather than as the answer to the
              word above it. -->
         <div class="swstrip" data-swatches></div>
+        <div class="swnames" data-swnames></div>
         <div class="crlist" data-roles hidden></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
@@ -1483,11 +1516,17 @@ export const DESIGN_PANEL_JS = /* js */ `
         // this one says what the thing is — exactly as buildLoyaltyClass sends
         // it, which is a fixed string and not the shop's.
         q("[data-pvg-prog]").textContent = "Loyalty card";
-        // The SAME characters stampDots sends (src/passModel.ts) — large circles,
-        // because Android reads these as text at arm's length. Typed out rather
-        // than imported: this is browser JS inside a template literal with no
-        // module system. The mock-vs-payload test is what keeps the two in step.
-        q("[data-pvg-dots]").textContent = "⬤".repeat(start) + "◯".repeat(target - start);
+        // stampDots, transcribed (src/passModel.ts): large circles, spaced, over
+        // two rows once there are five of them. Typed out rather than imported —
+        // this is browser JS inside a template literal with no module system —
+        // and held in step by the mock-vs-payload test, which compares this
+        // against what buildLoyaltyPatch actually sends.
+        const slots = [];
+        for (let i = 0; i < target; i++) slots.push(i < start ? "⬤" : "◯");
+        const top = Math.ceil(slots.length / 2);
+        q("[data-pvg-dots]").textContent = slots.length < 5
+          ? slots.join(" ")
+          : slots.slice(0, top).join(" ") + "\\n" + slots.slice(top).join(" ");
         // Every caption and every value below comes from buildLoyaltyPatch,
         // headers included — a card at its target says REWARD READY 🎉 and tells
         // the holder to show it, and a mock that only ever drew the ordinary
@@ -1805,7 +1844,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       wireUpload("[data-logo]", "logo", 480, 150, (url) => {
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1;
-        q("[data-a=rmlogo]").style.display = "";
+        q("[data-a=rmlogo]").disabled = false;
         lastLogoUrl = url;
         // Re-measure: whether Android needs a square version is a fact about
         // THIS image, so a new upload can turn that row on or off.
@@ -1827,7 +1866,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (!body.ok) return toast(body.error || "Couldn't remove logo");
         c.logoVersion = 0;
         q("[data-pv-logo]").style.display = "none";
-        q("[data-a=rmlogo]").style.display = "none";
+        q("[data-a=rmlogo]").disabled = true;
         lastLogoUrl = "";
         logoRatio = 0;
         updateMark();
@@ -1841,7 +1880,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       // never uses it, and a preview that showed it would be a lie.
       wireUpload("[data-mark]", "mark", 400, 400, () => {
         c.markVersion = 1;
-        q("[data-a=rmmark]").style.display = "";
+        q("[data-a=rmmark]").disabled = false;
         // The row stays, and changes what it says: with one uploaded it is no
         // longer a warning, it is where you go to replace or remove it. Removing
         // it silently would leave no way back.
@@ -1852,7 +1891,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         const { body } = await api(P("/mark"), { method: "DELETE" });
         if (!body.ok) return toast(body.error || "Couldn't remove it");
         c.markVersion = 0;
-        q("[data-a=rmmark]").style.display = "none";
+        q("[data-a=rmmark]").disabled = true;
         updateMark();
         renderPreview();
         toast("Square logo removed — Android goes back to your main logo");
@@ -2065,14 +2104,24 @@ export const DESIGN_PANEL_JS = /* js */ `
         const strip = q("[data-swatches]");
         if (!strip) return;
         strip.innerHTML = "";
+        const names = q("[data-swnames]");
+        if (names) names.innerHTML = "";
         for (const r of ROLES) {
           const sw = document.createElement("span");
           sw.className = "sw";
           sw.style.background = f(r.k).value;
           // Named, because a bare row of colours cannot say which one is the
-          // band — and the band is the one people go looking for.
+          // band — and the band is the one people go looking for. The title is
+          // kept for a pointer, but the name is also PRINTED under its section:
+          // this designer is used on a phone, where hover does not exist and a
+          // title attribute is unreachable.
           sw.title = r.name;
           strip.appendChild(sw);
+          if (names) {
+            const nm = document.createElement("span");
+            nm.textContent = r.name;
+            names.appendChild(nm);
+          }
         }
       }
 
@@ -6083,7 +6132,13 @@ export function adminPage(): string {
             staffRows.length + ")" + info("A PHONE, not a person — signing out and back in mints a new id, and changing the PIN resets them all. Rewards is flagged when one phone hands out rewards on more than 30% of the stamps it adds; that is the shape free-coffee-for-friends takes.") + "</summary>" +
             '<div class="tw"><table><tr><th>Phone</th><th>Stamps</th><th>Rewards</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>' +
             staffRows.map((s) => '<tr><td class="mono">' + esc(s.actor.replace("staff:", "")) + "</td><td>" +
-              s.stamps + '</td><td class="' + (s.stamps >= 10 && s.redeems / s.stamps > 0.3 ? "bad" : "") + '">' +
+              // The columns stay RAW — stamps, undos and forced side by side is
+              // the point of an audit table, and netting one into another hides
+              // a fact. The FLAG divides by net, though: a phone that pads its
+              // stamp count with scans it then undoes was diluting its own
+              // ratio, which is the one number here meant to catch it.
+              s.stamps + '</td><td class="' +
+              ((s.stamps - s.undos) >= 10 && s.redeems / Math.max(1, s.stamps - s.undos) > 0.3 ? "bad" : "") + '">' +
               s.redeems + "</td><td>" + s.undos + "</td><td>" + s.forced + "</td><td>" + ago(s.last_seen) +
               "</td></tr>").join("") + "</table></div></details>" : "") +
 

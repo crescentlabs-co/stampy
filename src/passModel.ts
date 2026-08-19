@@ -5,10 +5,31 @@
 import { config } from "./config.js";
 import type { CardRow, PassRow } from "./db.js";
 
-/** "●●●○○○○○○○" — filled vs empty stamp slots. */
+/**
+ * The stamp grid as text: filled vs empty slots, spaced, over two rows.
+ *
+ * One unbroken run of ten circles is a thing you have to count rather than
+ * read. This is the same 2×N grid the Apple strip image draws (see stampGrid,
+ * which has always said two rows) — spaces between the circles and a line break
+ * at the halfway point, so a glance lands on a shape instead of a queue.
+ *
+ * Still a STRING, so still free. Size, alignment and wrapping belong to Google
+ * on the Android card — these are text modules, and characters are the only
+ * lever we have. Anything more would mean sending an image per stamp, which is
+ * the ~20s path buildLoyaltyPatch exists to avoid.
+ *
+ * One row below four stamps: two rows of one or two circles is not a grid, it
+ * is a stack, and the break costs more than it gives.
+ */
 export function stampDots(count: number, target: number): string {
   const filled = Math.max(0, Math.min(count, target));
-  return DOT_FULL.repeat(filled) + DOT_EMPTY.repeat(Math.max(0, target - filled));
+  const slots = Array.from({ length: Math.max(0, target) }, (_, i) =>
+    i < filled ? DOT_FULL : DOT_EMPTY);
+  if (slots.length < 5) return slots.join(" ");
+  // Ceiling on the top row, so an odd target leaves the SHORT row underneath —
+  // the same way the strip image centres its last row rather than its first.
+  const top = Math.ceil(slots.length / 2);
+  return slots.slice(0, top).join(" ") + "\n" + slots.slice(top).join(" ");
 }
 
 /**
