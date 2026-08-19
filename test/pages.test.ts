@@ -1220,7 +1220,7 @@ describe("the console says things once", () => {
  */
 describe("the counter view judges nothing", () => {
   const html = dashboardPage(true, "");
-  // The block lives at the bottom of the Customers tab, folded away.
+  // The block lives below the message box on the Customers tab, folded away.
   const block = html.slice(
     html.indexOf("// ---- At the counter"),
     html.indexOf("/** Send. The server decides"),
@@ -1230,8 +1230,10 @@ describe("the counter view judges nothing", () => {
     expect(block.length).toBeGreaterThan(500);
     expect(html).toContain("Today's Activity");
     expect(html).toContain("data-counter");
-    // Folded and last: it must never push the message box off the screen.
-    expect(html.indexOf("data-counter")).toBeGreaterThan(html.indexOf("data-find"));
+    // Folded, and above Find a customer: it is the thing an owner checks
+    // first. Folded is what keeps it from pushing the message box off screen —
+    // being last was never what did that.
+    expect(html.indexOf("data-counter")).toBeLessThan(html.indexOf("data-find"));
   });
 
   /**

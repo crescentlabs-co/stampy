@@ -578,15 +578,19 @@ describe("the design panel, mounted", () => {
         expect(none.querySelector("[data-markhint]")!.hidden).toBe(true);
       });
 
+      // The buttons say Upload/Replace/Remove "logo", the same words as the row
+      // above — the row's own label ("Square logo for Android") is what says
+      // WHICH logo, so repeating it on the control left the two rows reading as
+      // different kinds of thing when they are the same action on two files.
       it("stops warning once a square version is there to use instead", async () => {
         const div = await mounted(card({ logoVersion: 5, markVersion: 9 }), { w: 480, h: 120 });
         expect(div.querySelector("[data-markhint]")!.hidden).toBe(true);
-        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Replace square version");
+        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Replace logo");
       });
 
       it("says on the button whether one is already there", async () => {
         const div = await mounted(card({ logoVersion: 5 }), { w: 480, h: 120 });
-        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Upload square version");
+        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Upload logo");
       });
 
     });

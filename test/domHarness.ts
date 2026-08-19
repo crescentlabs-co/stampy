@@ -364,6 +364,11 @@ export function makeHarness(
       };
     },
     setTimeout,
+    // The panel defers its first showSurface by a frame, because in the real
+    // dashboard it is still a detached node when it runs and a detached node
+    // measures zero. Run it straight through here: this DOM has no layout to
+    // wait for, and every test below asserts on the mounted result.
+    requestAnimationFrame: (cb: () => void) => { cb(); return 0; },
     console,
     // SEG_JS reseats every tab thumb on resize and once the fonts land. Neither
     // happens here, but both have to be addressable or the panel throws at mount.

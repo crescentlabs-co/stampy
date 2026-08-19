@@ -736,9 +736,18 @@ export const DESIGN_PANEL_CSS = /* css */ `
        it is a control inside a panel, not the panel's own navigation. Mini on
        purpose: inline-flex, so the strip is only as wide as its three labels.
        Stretched full width it read as navigation, which is the one thing it is
-       not: it picks which surface you are looking at. */
+       not: it picks which surface you are looking at.
+       Size alone did not read as "not navigation" — it was still the exact
+       same neon pill-and-thumb as the real tab bar one scroll above it, just
+       smaller. DESIGN.md rule 1 reserves the neon for the next action; picking
+       a preview to look at is not one, so its active state goes dark instead —
+       the same ink/on-slab pairing .crtoggle.on already uses lower down in
+       this panel for the same reason. Neon now means exactly one thing on this
+       screen: the real tab bar. */
     .dseg { display: inline-flex; margin: 2px 0 12px; }
     .dseg button { flex: 0 0 auto; font-size: .84rem; padding: 8px 14px; }
+    .dseg button.on { color: var(--on-slab); }
+    .dseg .thumb { background: var(--slab); }
     .dpane { display: block; }
     .dpane[hidden] { display: none; }
     .pvbox { min-width: 0; }
@@ -746,10 +755,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
        to be a .sec heading, which draws a rule and 28px of air, and that read as
        a new section beginning rather than as something you do to the card
        directly above. wrap so a narrow phone breaks after the title. */
-    .pvacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+    .pvacts { margin-top: 10px; }
     .pvacts-t { font-size: .82rem; font-weight: 600; color: var(--muted);
-                display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; }
-    .pvacts .btn { width: auto; padding: 9px 13px; font-size: .85rem; }
+                display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+    /* space-between, not packed left: Apple and Google stay the square pair
+       they are deliberately drawn as (see .pvicon) rather than stretching to
+       fill, but the row itself uses the width it has instead of leaving it
+       empty past "Poster". */
+    .pvactsrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+    .pvactsrow .btn { width: auto; padding: 9px 13px; font-size: .85rem; }
     /* Square, so the two marks read as a pair rather than as two buttons that
        happen to have pictures in them. */
     .pvicon { padding: 8px; line-height: 0; min-width: 38px; display: inline-flex;
@@ -767,7 +781,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        both would stack into a hole between every pair. */
     .lrow + .lrow { margin-top: 12px; }
     .lrow .dlbl { margin-top: 0; }
-    .lrow .chk { margin-top: 0; }
+    .lrow .tgrow { margin-top: 0; }
     /* The one line that is conditional, rather than the whole row: it says
        something is being lost right now, so it only belongs on screen when
        something is. */
@@ -781,7 +795,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .crhdr { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
     .crtoggle { width: auto; padding: 6px 11px; font-size: .78rem; flex: none; }
     .crtoggle.on { background: var(--ink); color: var(--surface-2, #fff); border-color: var(--ink); }
-    .swstrip { display: flex; gap: 6px; margin-top: 5px; }
+    /* space-between, not packed left with a 6px gap: the squares are fixed
+       size on purpose (they are colour, not a bar to fill) but five of them
+       in a row that can run to 400px left a wall of blank space beside them. */
+    .swstrip { display: flex; justify-content: space-between; margin-top: 5px; }
     .sw { width: 26px; height: 26px; border-radius: 7px; flex: none;
           box-shadow: inset 0 0 0 1px rgba(32,33,29,.18); }
     .crlist[hidden] { display: none; }
@@ -824,15 +841,38 @@ export const DESIGN_PANEL_CSS = /* css */ `
        --surface is one shade apart, and eight ghost buttons live inside this
        fold. Inside it they go back to the page colour with a hairline. */
     .fold .btn-ghost { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
+    /* One bar, not two buttons of whatever width their own label happened to
+       need — Upload and Remove read as a pair of equal actions on the same
+       logo, so they take equal width and sit centred in it. flex:1 rather
+       than a fixed split: Remove is display:none until a logo exists, and
+       flex:1 on a single remaining item fills the bar on its own instead of
+       leaving half of it empty. */
     .logorow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
     .logorow input[type=file] { display: none; }
-    .logorow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
-    /* A real tick-box, not a styled div: the panel is shared with the admin
-       console, so it carries its own copy rather than borrowing the dashboard's
-       .eye — which admin does not load. */
-    .chk { display: flex; align-items: flex-start; gap: 8px; font-size: .85rem;
-           color: var(--muted); font-weight: 400; cursor: pointer; }
-    .chk input { width: auto; margin: 2px 0 0; flex: none; }
+    .logorow .btn { flex: 1; padding: 10px 14px; font-size: .9rem; }
+    /* A row, not a tick-box: title and its consequence on the left, the switch
+       on the right, matching the settings-row shape a phone's own Settings app
+       already taught everyone to read — a checkbox with a sentence beside it
+       was a form field, and this is a preference. Built from a real
+       <input type=checkbox> (same .checked, same change event data-lname
+       already read) with the box itself made invisible but still the full hit
+       target — the track and thumb beside it are paint, not the control. */
+    .tgrow { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+             margin-top: 4px; cursor: pointer; }
+    .tgtext { flex: 1; min-width: 0; font-size: .85rem; color: var(--muted); }
+    .tg { position: relative; display: inline-block; width: 44px; height: 26px; flex: none; }
+    .tg input { position: absolute; inset: 0; margin: 0; width: 100%; height: 100%;
+                opacity: 0; cursor: pointer; }
+    .tgtrack { position: absolute; inset: 0; background: var(--ghost-bg); border-radius: 999px;
+               box-shadow: inset 0 0 0 1px var(--field-border); transition: background .15s ease; }
+    .tgthumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 999px;
+               background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s ease; }
+    /* The one flip switch on the page, so it earns the neon rather than
+       competing with it — DESIGN.md rule 1's "live-state pill". */
+    .tg input:checked ~ .tgtrack { background: var(--accent); box-shadow: none; }
+    .tg input:checked ~ .tgtrack .tgthumb { transform: translateX(18px); }
+    .tg input:focus-visible ~ .tgtrack { outline: 2px solid var(--ink); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { .tgtrack, .tgthumb { transition: none; } }
     .copyrow { display: flex; gap: 8px; margin-top: 4px; }
     .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: var(--ghost-bg); }
     .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
@@ -860,13 +900,12 @@ export const DESIGN_PANEL_CSS = /* css */ `
             padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
     .chip:hover { border-color: var(--accent); }
     .chip.on { border-color: var(--accent); }
+    /* Same bar as .logorow: three equal answers to one question, not three
+       buttons sized to their own label and left-packed with the row's air
+       going unused on the right. */
     .emojirow { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
-    /* min-width:0 or the field refuses to shrink and pushes the row to wrap:
-       a flex item's default min-width is its content, not zero. */
-    .emojirow input[type=text], .emojirow input:not([type]) { flex: 1; min-width: 0; font-size: 1.15rem; }
     .emojirow input[type=file] { display: none; }
-    .emojirow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
-                       color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); font-weight: 700; }
+    .emojirow .btn { flex: 1; padding: 10px 14px; font-size: .9rem; }
     /* --- premium card preview --- */
     .pv { border-radius: 18px; padding: 16px; margin: 10px 0 4px; overflow: hidden;
           box-shadow: 0 10px 30px -8px rgba(43,29,21,.35), 0 2px 6px rgba(43,29,21,.15); }
@@ -1040,12 +1079,14 @@ export const DESIGN_PANEL_JS = /* js */ `
                section rather than as something you do TO the card above it. The
                rule it used to draw now belongs to the Design fold below. -->
           <div class="pvacts">
-            <span class="pvacts-t">Add a test card:\${info("Puts this card in your own wallet, or opens your printed poster. It is a real card, but it never counts as a customer and never appears in your numbers. Each link lasts 30 minutes.")}</span>
-            <button class="btn btn-ghost pvicon" data-a="test" data-w="apple" title="Add to Apple Wallet" aria-label="Add to Apple Wallet">${APPLE_GLYPH}</button>
-            <button class="btn btn-ghost pvicon" data-a="test" data-w="google" title="Add to Google Wallet" aria-label="Add to Google Wallet">${GOOGLE_GLYPH}</button>
-            <!-- A word, not a mark: there is no logo that means "your printed
-                 poster", and inventing one would be a symbol nobody can read. -->
-            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}/poster">Poster</a>
+            <span class="pvacts-t">Add a test card\${info("Puts this card in your own wallet, or opens your printed poster. It is a real card, but it never counts as a customer and never appears in your numbers. Each link lasts 30 minutes.")}</span>
+            <div class="pvactsrow">
+              <button class="btn btn-ghost pvicon" data-a="test" data-w="apple" title="Add to Apple Wallet" aria-label="Add to Apple Wallet">${APPLE_GLYPH}</button>
+              <button class="btn btn-ghost pvicon" data-a="test" data-w="google" title="Add to Google Wallet" aria-label="Add to Google Wallet">${GOOGLE_GLYPH}</button>
+              <!-- A word, not a mark: there is no logo that means "your printed
+                   poster", and inventing one would be a symbol nobody can read. -->
+              <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}/poster">Poster</a>
+            </div>
           </div>
           <div data-testout hidden></div>
         </div>
@@ -1088,17 +1129,20 @@ export const DESIGN_PANEL_JS = /* js */ `
         <div class="lrow" data-markbox>
           <label class="dlbl">Square logo for Android\${info("Google Wallet shows your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Optional: skip it and Android keeps your main logo. Only Android uses it; your iPhone card, poster and sign-up page are unaffected.")}</label>
           <div class="logorow">
-            <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload square version</span><input data-mark type="file" accept="image/*"></label>
-            <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove it</button>
+            <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload logo</span><input data-mark type="file" accept="image/*"></label>
+            <button class="btn btn-ghost" data-a="rmmark" style="\${c.markVersion ? "" : "display:none"}">Remove logo</button>
           </div>
           <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
         </div>
 
         <div class="lrow">
-          <label class="dlbl">Business name\${info("Your shop's name is printed next to the logo on the card, the poster and your sign-up page. Tick this when the logo already contains it, and we leave the printed one off so it is not said twice.")}</label>
-          <label class="chk">
-            <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
-            <span>My logo already includes it — don't print it again</span>
+          <label class="dlbl">Business name\${info("Your shop's name is printed next to the logo on the card, the poster and your sign-up page. Turn this on when the logo already contains it, and we leave the printed one off so it is not said twice.")}</label>
+          <label class="tgrow">
+            <span class="tgtext">My logo already includes my business name</span>
+            <span class="tg">
+              <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
+              <span class="tgtrack"><span class="tgthumb"></span></span>
+            </span>
           </label>
         </div>
 
@@ -1490,7 +1534,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // where the state of the row above it lives too. The hint is the one
         // extra thing, and only in the one state where something is actually
         // being lost: a wide logo, and no square version to use instead.
-        q("[data-markbtn]").textContent = c.markVersion ? "Replace square version" : "Upload square version";
+        q("[data-markbtn]").textContent = c.markVersion ? "Replace logo" : "Upload logo";
         hint.hidden = !(c.logoVersion && logoRatio > 1.25 && !c.markVersion);
       }
       // Measured off its own Image rather than the preview's: the preview logo
@@ -2195,7 +2239,15 @@ export const DESIGN_PANEL_JS = /* js */ `
       surfaceSeg.querySelectorAll("button").forEach((b) => {
         b.onclick = () => showSurface(b.dataset.tab);
       });
-      showSurface("apple");
+      // The panel this builds is still a detached node when this runs — its
+      // caller appends the RETURN VALUE of this function, after everything in
+      // it has already executed. A detached node has no layout box, so
+      // moveThumb (inside showSurface) measured 0 for offsetWidth/offsetLeft
+      // and seated the thumb at nothing: iPhone was the active tab but had no
+      // visible highlight until a later click (which runs after attaching, and
+      // measures correctly) moved it for the first time. Deferring one frame
+      // guarantees the caller's appendChild has already run.
+      requestAnimationFrame(() => showSurface("apple"));
 
       /**
        * Say whether a shape is stored, and show it.
@@ -4291,11 +4343,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .sharelist a .arr { color: var(--muted); }
     .sharelist { margin-bottom: 6px; }
     /* --- home: totals + per-card breakdown --- */
-    .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
-    /* Three tiles fit across a phone. A fourth (spend) wraps to 2×2 rather than
-       3-then-1, and goes back to one row once there's room. */
-    .totals.four { grid-template-columns: repeat(2, 1fr); }
-    @media (min-width: 560px) { .totals.four { grid-template-columns: repeat(4, 1fr); } }
+    /* Always four tiles, always 2×2 — a square hero card, not a row that
+       stretches to four-across once a wider viewport allows it. Tracked spend
+       stays IN the grid even with nothing to show yet (an em dash, not a
+       missing tile): a metric that vanishes when it has no answer reads as
+       broken, not as "not set up yet". */
+    .totals { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
     .totals .metric { padding: 16px 14px 13px; }
     .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
@@ -4533,18 +4586,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         (oneCurrency ? (priced[0] || {}).currency || "" : "") +
         n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-      // Three numbers, all time. The "came back" rate was here and is not any
-      // more: it needed a footnote about the week it takes to mean anything, and
-      // a tile that has to be explained is a tile nobody reads. The retention
+      // Four numbers, all time, in a fixed 2×2 — the same four tiles whether or
+      // not an average spend is set, so the shape of the page never shifts
+      // under an owner. The "came back" rate was here and is not any more: it
+      // needed a footnote about the week it takes to mean anything, and a tile
+      // that has to be explained is a tile nobody reads. The retention
       // question is answered properly on the admin console. cardMetrics still
       // computes matured/returned — nothing else moves if it comes back.
       const host = div.querySelector("[data-totals]");
-      host.className = "totals " + (priced.length ? "four" : "three");
+      host.className = "totals";
       host.innerHTML = \`
         <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
         <div class="metric"><b>\${sum("stamps")}</b><span>stamps</span></div>
         <div class="metric"><b>\${sum("redemptions")}</b><span>rewards given</span></div>
-        \${priced.length ? '<div class="metric"><b>' + money(influenced) + '</b><span>spend influenced</span></div>' : ""}\`;
+        <div class="metric"><b>\${priced.length ? money(influenced) : "—"}</b><span>tracked spend</span></div>\`;
 
       // Only the empty state now. The two "issued but not counted" figures that
       // used to sit here — cards abandoned at the Add sheet, and cards since
@@ -4560,7 +4615,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           : "No customers yet — they appear once someone adds your card and gets their first stamp.";
         if (!priced.length) {
           line.insertAdjacentHTML("afterend",
-            '<p class="muted" style="margin:2px 0 4px">Set an average spend in Card → Rules to see the money your stamps influenced.</p>');
+            '<p class="muted" style="margin:2px 0 4px">Set an average spend in Card → Rules to see tracked spend.</p>');
         }
       })();
       return div;
@@ -4583,17 +4638,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <input data-msg maxlength="200">
         <button class="btn btn-dark" style="margin-top:10px" data-send>Push notification</button>
         <p class="muted" style="margin-top:6px" data-who></p>
-        <details class="grp" style="margin-top:22px" data-find>
+        <!-- Folded, ahead of the customer search: it is what an owner checks
+             first, and it must not push the message box off the screen —
+             loaded only when opened, not with the rest of the tab. -->
+        <details class="grp" style="margin-top:22px" data-counter>
+          <summary><span class="gt">Today's Activity</span>\${info("What happened at your counter today, and nothing more. Everyone shares one PIN, so none of this can say who did anything — tap any number for the exact times.")}<span class="gh" data-clast></span></summary>
+          <div data-cbody style="margin-top:10px"></div>
+        </details>
+        <details class="grp" style="margin-top:20px" data-find>
           <summary><span class="gt">Find a customer</span></summary>
           <input data-search placeholder="🔍 Card code" autocomplete="off" style="text-transform:uppercase;margin-top:10px">
           <div data-results style="margin-top:10px"></div>
-        </details>
-        <!-- Folded, and last. It is a thing to check when something feels off,
-             not a thing to read every day, and it must not push the message box
-             off the screen. Loaded only when opened. -->
-        <details class="grp" data-counter>
-          <summary><span class="gt">Today's Activity</span>\${info("What happened at your counter today, and nothing more. Everyone shares one PIN, so none of this can say who did anything — tap any number for the exact times.")}<span class="gh" data-clast></span></summary>
-          <div data-cbody style="margin-top:10px"></div>
         </details>\`;
       const q = (s) => div.querySelector(s);
       let all = [], ready = 0, cooling = 0;
@@ -4878,7 +4933,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <input data-cur type="password" placeholder="Current password" autocomplete="current-password">
         <input data-new type="password" placeholder="New password (min 8)" autocomplete="new-password" style="margin-top:8px">
         <label class="eye"><input type="checkbox" data-eye="[data-cur],[data-new]"> Show passwords</label>
-        <button class="btn btn-dark" style="margin-top:10px" data-pwsave>Update password</button>
+        <button class="btn btn-dark" style="margin-top:20px" data-pwsave>Update password</button>
         <button class="btn btn-ghost" style="margin-top:20px" data-out>Log out</button>\`;
       wireEyes(div);
       // No wireInfo here: renderPanel delegates from the panel this sits inside,
