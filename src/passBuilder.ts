@@ -62,7 +62,7 @@ export function passArt(
     art["logo@3x.png"] = logoPng;
   }
   if (stripPng) {
-    // Rendered at @2x (750×246 for a 375×123pt storeCard strip) and handed to
+    // Rendered at @3x (1125×369 for a 375×123pt storeCard strip) and handed to
     // every slot — one buffer beats three near-identical ones through the
     // signer, and Wallet scales it per device.
     art["strip.png"] = stripPng;

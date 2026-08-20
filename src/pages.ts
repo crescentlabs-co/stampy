@@ -1485,7 +1485,18 @@ export const DESIGN_PANEL_JS = /* js */ `
        * Earned stamps take the accent colour; unearned are the same shape at 25%.
        */
       function drawStampStrip(filled, target, icon) {
-        const W = 750, H = 246, M = 40;
+        // 1125×369 — Apple's storeCard strip at @3x (375×123pt), and the SAME
+        // file is Google's heroImage. It was 750×246 (@2x), which was correct
+        // for Apple and undersized for Google: their loyalty guidelines ask for
+        // 1032px of width and we were sending 750. Everything below is derived
+        // from W, H and M, so the grid scales rather than being re-laid-out.
+        //
+        // The 3:1 shape is Apple's and cannot change — a storeCard strip is a
+        // fixed slot. Google currently documents ~1032×812 for a hero, so this
+        // is wider than they ask and shorter than they ask; a hero at the wrong
+        // RATIO is letterboxed, but one under their width may be dropped, so
+        // width is the half worth fixing with one image serving both.
+        const W = 1125, H = 369, M = 60;
         const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
         const x = cv.getContext("2d");
         // The band, drawn from what the pickers say RIGHT NOW — then the stamps
@@ -1954,7 +1965,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       // image keeps its own shape, so a square mark stays square and fills the
       // wallet's logo slot, and a wide wordmark stays wide. Whichever they have
       // is the right shape to upload.
-      wireUpload("[data-logo]", "logo", 480, 150, (url) => {
+      wireUpload("[data-logo]", "logo", 1280, 400, (url) => {
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1;
         q("[data-a=rmlogo]").disabled = false;
@@ -2004,7 +2015,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       // is the shape being fitted, and letterboxing beats a cropped mark.
       // Nothing on this page previews it: the preview is the Apple card, which
       // never uses it, and a preview that showed it would be a lie.
-      wireUpload("[data-mark]", "mark", 400, 400, () => {
+      wireUpload("[data-mark]", "mark", 660, 660, () => {
         c.markVersion = 1;
         q("[data-a=rmmark]").disabled = false;
         // The row stays, and changes what it says: with one uploaded it is no
@@ -2111,7 +2122,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           bg: found.bg, fg: found.fg, label: found.label,
           accent: found.accent, bandColor: found.band,
         }, "", true);
-        await saveBanner(bandPng(750, 246), true);
+        await saveBanner(bandPng(1125, 369), true);
         // The extracted card colour is sampled FROM the logo, so it can land on
         // top of the logo's own ink. This is the same check the upload used to
         // run on its own, and it must come last or it corrects a colour that is
@@ -2634,7 +2645,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
         }, "Design");
-        await saveBanner(bandPng(750, 246));
+        await saveBanner(bandPng(1125, 369));
       }
 
       /**
@@ -3204,6 +3215,21 @@ export function marketingPage(contactEmail = ""): string {
     .hero .sub { margin: 20px 0 0; max-width: 40ch; color: var(--ink-2);
                  font-size: clamp(1.02rem, 2vw, 1.14rem); line-height: 1.55; }
     .herobtns { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 12px; }
+    /* Reasons not to worry, set quietly so they reassure without competing with
+       the button they sit under. */
+    .fud { list-style: none; margin: 18px 0 0; padding: 0; display: flex;
+           flex-wrap: wrap; gap: 8px 18px; }
+    .fud li { display: flex; align-items: center; gap: 7px; color: var(--ink-2);
+              font-size: .88rem; font-weight: 500; }
+    .fud li::before { content: ""; width: 15px; height: 15px; flex: none; border-radius: 50%;
+                      background: var(--neon) center/9px 9px no-repeat;
+                      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+    /* The clip is the proof: a card filling up is the promise in the headline
+       actually happening. Sized so it never pushes the button below the fold. */
+    .heromedia { display: flex; justify-content: center; }
+    .heromedia video { width: 100%; max-width: 300px; height: auto; display: block;
+                       border-radius: 26px; background: var(--surface);
+                       box-shadow: 0 30px 70px -30px rgba(12,14,13,.45); }
     .trylbl { margin: 30px 0 0; font-size: .78rem; font-weight: 700; letter-spacing: .1em;
               text-transform: uppercase; color: var(--ink-2); }
     .herobox { background: var(--slab); border-radius: var(--r); padding: clamp(28px, 4vw, 52px);
@@ -3239,6 +3265,19 @@ export function marketingPage(contactEmail = ""): string {
     /* ------------------------------------------------------- two-up panels -- */
     .duo { display: grid; gap: 18px; }
     @media (min-width: 860px) { .duo { grid-template-columns: 1fr 1fr; } }
+    /* Steps beside the thing happening. The rows alternate so the eye zig-zags
+       down the page instead of running down one column. */
+    .mrow { display: grid; gap: clamp(18px, 3vw, 34px); align-items: center; }
+    .mrow + .mrow { margin-top: clamp(22px, 4vw, 46px); }
+    @media (min-width: 860px) {
+      .mrow { grid-template-columns: 1.05fr .95fr; }
+      .mrow.flip .panel { order: 2; }
+      .mrow.flip .rowvid { order: 1; }
+    }
+    .rowvid { display: flex; justify-content: center; }
+    .rowvid video { width: 100%; max-width: 268px; height: auto; display: block;
+                    border-radius: 24px; background: var(--surface);
+                    box-shadow: 0 24px 60px -30px rgba(12,14,13,.45); }
     .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 42px); }
     .panel.pale { background: var(--soft); }
     .panel.dark { background: var(--slab); color: var(--on-slab); }
@@ -3292,9 +3331,9 @@ export function marketingPage(contactEmail = ""): string {
            overflow: hidden; touch-action: pan-y; }
     /* One track that slides, rather than slides that appear and disappear. The
        flex items stay full width so the transform maps 1:1 to slide index. */
-    .cartrack { display: flex; align-items: stretch;
-                transition: transform .52s cubic-bezier(.32, .72, 0, 1); }
-    .slide { flex: 0 0 100%; display: grid; }
+    .cartrack { display: block; }
+    .slide { display: grid; }
+    .slide + .slide { border-top: 1px solid rgba(244,246,242,.14); }
     @media (min-width: 900px) { .slide { grid-template-columns: 1fr 1fr; } }
     @media (prefers-reduced-motion: reduce) { .cartrack { transition: none; } }
     .slidetx { padding: clamp(30px, 4vw, 60px); display: flex; flex-direction: column;
@@ -3307,10 +3346,6 @@ export function marketingPage(contactEmail = ""): string {
     .slideart > img { position: absolute; inset: 0; width: 100%; height: 100%;
                       object-fit: cover; filter: grayscale(.92) contrast(1.06) brightness(.62); }
     .slideart > :not(img) { position: relative; z-index: 1; }
-    .cardots { display: flex; gap: 8px; justify-content: center; margin-top: 22px; }
-    .cardots button { width: 34px; height: 5px; border-radius: 999px; border: none;
-                      background: var(--hair); cursor: pointer; padding: 0; }
-    .cardots button[aria-pressed="true"] { background: var(--ink); }
 
     /* -------------------------------------------------- drawn lock screen -- */
     .lock { width: 100%; max-width: 300px; }
@@ -3479,45 +3514,28 @@ export function marketingPage(contactEmail = ""): string {
     (function () {
       var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      // ---- feature carousel -------------------------------------------------
-      var car = document.querySelector('[data-car]');
-      var track = document.querySelector('[data-cartrack]');
-      if (car && track) {
-        var slides = [].slice.call(track.querySelectorAll('[data-slide]'));
-        var dots = [].slice.call(document.querySelectorAll('[data-dot]'));
-        var at = 0, timer = null;
-        function show(i) {
-          at = (i + slides.length) % slides.length;
-          track.style.transform = 'translateX(' + (at * -100) + '%)';
-          slides.forEach(function (s, n) { s.setAttribute('aria-hidden', String(n !== at)); });
-          dots.forEach(function (d, n) { d.setAttribute('aria-pressed', String(n === at)); });
+      // ---- looping clips ----------------------------------------------------
+      var clips = [].slice.call(document.querySelectorAll('[data-loop]'));
+      if (clips.length && !reduce) {
+        var start = function (v) {
+          if (v.dataset.started) return;
+          v.dataset.started = '1';
+          if (v.preload === 'none') v.load();
+          var p = v.play();
+          if (p && p.catch) p.catch(function () {});
+        };
+        if ('IntersectionObserver' in window) {
+          var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) {
+              if (!e.isIntersecting) return;
+              start(e.target);
+              io.unobserve(e.target);
+            });
+          }, { rootMargin: '200px' });
+          clips.forEach(function (v) { io.observe(v); });
+        } else {
+          clips.forEach(start);
         }
-        function stop() { if (timer) { clearInterval(timer); timer = null; } }
-        // Autoplay is a convenience, never the only way through: the dots stay
-        // authoritative, and a visitor who is reading is never interrupted.
-        function play() { if (reduce) return; stop(); timer = setInterval(function () { show(at + 1); }, 5500); }
-        dots.forEach(function (d, n) {
-          d.addEventListener('click', function () { show(n); play(); });
-        });
-        car.addEventListener('mouseenter', stop);
-        car.addEventListener('mouseleave', play);
-        car.addEventListener('focusin', stop);
-        car.addEventListener('focusout', play);
-        // Thumb swipe. Only acts on a mostly-horizontal drag, so a vertical
-        // flick still scrolls the page instead of changing slide.
-        var x0 = null, y0 = null;
-        car.addEventListener('touchstart', function (e) {
-          x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; stop();
-        }, { passive: true });
-        car.addEventListener('touchend', function (e) {
-          if (x0 === null) return;
-          var dx = e.changedTouches[0].clientX - x0;
-          var dy = e.changedTouches[0].clientY - y0;
-          if (Math.abs(dx) > 44 && Math.abs(dx) > Math.abs(dy)) show(at + (dx < 0 ? 1 : -1));
-          x0 = null; y0 = null; play();
-        }, { passive: true });
-        show(0);
-        play();
       }
 
       // ---- owner phone screens ---------------------------------------------
@@ -3550,34 +3568,33 @@ export function marketingPage(contactEmail = ""): string {
     </div></header>
 
     <main>
-      <!-- 1 · HERO -->
+      <!-- 1 · HERO. The only section 100% of visitors see, so it carries the
+           whole argument on its own: outcome, what it is, the action, the
+           reasons not to worry, and proof you can check in ten seconds. -->
       <section class="shell"><div class="hero">
         <div>
-          <h1>The stamp card that lives in your customer's phone</h1>
-          <p class="sub">No app, for them or for you. And it can't be left at home.</p>
-          <p class="trylbl">Try a sample card</p>
+          <h1>Turn your customers into regulars</h1>
+          <p class="sub">A stamp card that lives in your customer's phone. No app to
+            download, and it can't be left at home.</p>
+          <p class="trylbl">Try a real card on your own phone</p>
           <div class="herobtns">
             <!-- TODO(founder): both point at the live demo pass once it is wired. -->
             <a class="pbtn pbtn-neon" href="/dashboard">Apple Wallet</a>
             <a class="pbtn pbtn-line" href="/dashboard">Google Wallet</a>
           </div>
+          <!-- The fear-killers, immediately under the button. Every one of these
+               is true today; none of them is a number we cannot back. -->
+          <ul class="fud">
+            <li>First month free</li>
+            <li>No card details</li>
+            <li>No app for your customers</li>
+            <li>Cancel any time</li>
+          </ul>
         </div>
-        <div class="herobox">
-          <div class="card">
-            <div class="top">
-              <div>
-                <p class="shop">Kopi Corner</p>
-                <p class="meta">Apple Wallet</p>
-              </div>
-              <span class="mark">P</span>
-            </div>
-            <div class="rowlbl"><span>Progress</span><b>7 of 10</b></div>
-            <div class="dots">
-              <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i>
-              <i class="on"></i><i class="on"></i><i></i><i></i><i></i>
-            </div>
-            <div class="rw"><span>Reward</span><b>Free drink</b></div>
-          </div>
+        <div class="heromedia">
+          <video src="/assets/vid/card-v1.mp4" poster="/assets/vid/card-v1.jpg"
+                 width="439" height="849" muted loop playsinline preload="metadata"
+                 data-loop aria-label="A loyalty card in a phone wallet filling up to its reward"></video>
         </div>
       </div></section>
 
@@ -3587,7 +3604,7 @@ export function marketingPage(contactEmail = ""): string {
           <h2>Nothing to install. On either side.</h2>
           <p>No app for your customers, and no new hardware on your counter.</p>
         </div>
-        <div class="duo">
+        <div class="mrow">
           <div class="panel pale">
             <p class="who">For your customer</p>
             <h3>Three taps, then never again</h3>
@@ -3599,6 +3616,14 @@ export function marketingPage(contactEmail = ""): string {
               <li><span class="n">3</span><span class="tx">Gets a stamp every visit</span></li>
             </ul>
           </div>
+          <div class="rowvid">
+            <video src="/assets/vid/signup-v1.mp4" poster="/assets/vid/signup-v1.jpg"
+                   width="439" height="849" muted loop playsinline preload="none"
+                   data-loop aria-label="Scanning the QR and the card saving into a phone wallet"></video>
+          </div>
+        </div>
+
+        <div class="mrow flip">
           <div class="panel dark">
             <p class="who">For you</p>
             <h3>Four seconds at the counter</h3>
@@ -3609,6 +3634,11 @@ export function marketingPage(contactEmail = ""): string {
               <li aria-hidden="true"><span class="arw"></span></li>
               <li><span class="n">3</span><span class="tx">Stamped. Their phone updates itself</span></li>
             </ul>
+          </div>
+          <div class="rowvid">
+            <video src="/assets/vid/scan-v1.mp4" poster="/assets/vid/scan-v1.jpg"
+                   width="439" height="849" muted loop playsinline preload="none"
+                   data-loop aria-label="A stamp being added at the counter"></video>
           </div>
         </div>
       </div></section>
@@ -3691,11 +3721,6 @@ export function marketingPage(contactEmail = ""): string {
             </div>
           </div>
         </div></div>
-        <div class="cardots">
-          <button type="button" data-dot aria-label="Card updates" aria-pressed="true"></button>
-          <button type="button" data-dot aria-label="Lives in the wallet" aria-pressed="false"></button>
-          <button type="button" data-dot aria-label="Bringing customers back" aria-pressed="false"></button>
-        </div>
       </div></section>
 
       <!-- 5 · FOR THE OWNER -->

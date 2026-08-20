@@ -117,10 +117,20 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
  * The URL segment is the key, because it is also the art path
  * (/c/:cardId/art/<kind>.png) and the designer builds both from one string.
  */
+// `big` picks the byte cap: 512KB rather than 256KB.
+//
+// The logo and the Android mark moved up to it when their render sizes did.
+// They are generated at 1280×400 and 660×660 now — Google's own recommendation
+// and its stated 660×660 MINIMUM for the circular logo — where they used to be
+// 480×150 and 400×400. A detailed logo at 660×660 lands in the low hundreds of
+// KB, and the old 256KB cap would have rejected the upload outright: an owner
+// would have been told their logo was too big by the same release that made it
+// bigger. The stamp icon stays small because it is a silhouette we trim and
+// refill, never a photograph.
 export const ART_KINDS = {
-  logo: { set: setCardLogo, del: deleteCardLogo, big: false },
+  logo: { set: setCardLogo, del: deleteCardLogo, big: true },
   banner: { set: setCardBanner, del: deleteCardBanner, big: true },
-  mark: { set: setCardLogoMark, del: deleteCardLogoMark, big: false },
+  mark: { set: setCardLogoMark, del: deleteCardLogoMark, big: true },
   "stamp-icon": { set: setCardStampIcon, del: deleteCardStampIcon, big: false },
 } as const;
 
