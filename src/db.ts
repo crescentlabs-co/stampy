@@ -2030,7 +2030,24 @@ function netStamps(scope: string, since = ""): string {
 /** Net stamps for the card aliased `c`. */
 const NET_STAMPS_SQL = netStamps("e.card_id = c.id");
 
-/** Every event under the merchant aliased `m`. Assumes events are aliased `e`. */
+/**
+ * Every event under the merchant aliased `m`. Assumes events are aliased `e`.
+ *
+ * EVERY card the shop has ever had, archived ones included — those stamps were
+ * given and retiring a card does not unhappen them.
+ *
+ * That is one card-set wider than the owner's own dashboard, which sums
+ * `cardsForOwner` and therefore sees live cards only. The two agree today
+ * because they cannot disagree: a merchant is capped at one card
+ * (routes/dashboard.ts, POST /api/cards) and archiving a shop's last live card
+ * is refused (archiveCard below), so no live shop can hold an archived card.
+ * The console's total and the owner's tile are the same number by construction,
+ * and an e2e assertion holds them to it.
+ *
+ * If multi-card ever ships, this is the first thing that breaks: the console
+ * would count a retired card's stamps and the owner's dashboard would not.
+ * Decide then which one "stamps" means — do not let it drift.
+ */
 const MERCHANT_EVENTS_SQL = `e.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)`;
 
 // How many nudges have gone out since this card's last visit. Non-zero means we

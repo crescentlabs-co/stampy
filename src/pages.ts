@@ -5585,6 +5585,11 @@ export function adminPage(): string {
     td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
     .mrow { cursor: pointer; }
     .mrow:hover td { background: var(--ghost-bg); }
+    /* The totals line. Ruled off and unclickable — it is not a shop, and it is
+       the one row on this page you are meant to check the others against. */
+    .mtot td { border-top: 2px solid var(--ink); font-weight: 700;
+               font-variant-numeric: tabular-nums; }
+    .mtot .flags { font-weight: 400; }
     .mrow .mname { font-weight: 700; }
     .mrow .mname::after { content: " ›"; color: var(--muted); font-weight: 400; }
     .flags { font-size: .78rem; color: var(--muted); }
@@ -6119,8 +6124,14 @@ export function adminPage(): string {
       // "Owner seen" came off: an owner who never logs in but whose counter
       // stamps all day is a success, and the column implied the opposite. It is
       // still on the shop's own page, where it is context rather than a verdict.
+      // Every stamp column names its WINDOW. Four figures on this console were
+      // all called "stamps" and none of them said over what period, so a shop
+      // with one stamp this week read as 1 in the table and 0 on its own page —
+      // a rolling 30 days against a tile that only counts finished weeks. Both
+      // right, neither legible.
       const MERCHANT_HEAD = "<tr><th>Shop</th><th>Stage</th><th>Last stamp</th>" +
-        "<th>Customers 30d</th><th>Stamps 30d</th><th>Stamps/customer</th><th>Problems</th></tr>";
+        "<th>Customers 30d</th><th>Stamps (30d)</th><th>Stamps (all time)</th>" +
+        "<th>Stamps/customer</th><th>Problems</th></tr>";
       const merchantRow = (m) => {
         const perCust = m.active_30d ? (m.stamps_30d / m.active_30d).toFixed(1) : "—";
         return '<tr class="mrow" data-m="' + esc(m.id) + '">' +
@@ -6132,8 +6143,37 @@ export function adminPage(): string {
             ago(m.last_stamp_at) + "</td>" +
           "<td>" + m.active_30d + "</td>" +
           "<td>" + m.stamps_30d + "</td>" +
+          "<td>" + m.stamps + "</td>" +
           '<td style="font-variant-numeric:tabular-nums">' + perCust + "</td>" +
           "<td>" + (chips(m) || '<span class="flags">—</span>') + "</td></tr>";
+      };
+
+      /**
+       * The line that makes the table checkable.
+       *
+       * SUMMED FROM THE ROWS ON SCREEN, never from a second query. A total that
+       * comes from its own SELECT can disagree with the column above it, and
+       * "the top does not equal the list" is the exact complaint this is fixing
+       * — the same reason metrics are derived from the event log rather than
+       * stored beside it.
+       *
+       * Live shops only, and it says so: a closed account is not evidence about
+       * the product, and the Overview has always left them out. The rows stay
+       * visible so an archived shop can still be found.
+       */
+      const liveOf = (ms) => ms.filter((m) => !m.archived_at);
+      const sumBy = (ms, key) => ms.reduce((a, m) => a + (Number(m[key]) || 0), 0);
+      const merchantTotals = (ms) => {
+        const live = liveOf(ms);
+        const hidden = ms.length - live.length;
+        return '<tr class="mtot"><td>Total' +
+          '<br><span class="flags">' + live.length + " live shop" + (live.length === 1 ? "" : "s") +
+            (hidden ? " · " + hidden + " archived, not counted" : "") + "</span></td>" +
+          "<td></td><td></td>" +
+          "<td>" + sumBy(live, "active_30d") + "</td>" +
+          "<td>" + sumBy(live, "stamps_30d") + "</td>" +
+          "<td>" + sumBy(live, "stamps") + "</td>" +
+          "<td></td><td></td></tr>";
       };
 
       // ---- one shop, on its own page ------------------------------------------
@@ -6235,7 +6275,8 @@ export function adminPage(): string {
               m.poster_views ? "poster opened, nobody stamped" : "poster never opened") +
           "</div>" +
 
-          '<h2 style="margin-top:26px">This shop, week by week</h2>' +
+          '<h2 style="margin-top:26px">This shop, week by week' +
+            info("Each tile is ONE week — the most recent finished one — not a running total. The week now under way is left out, so a shop stamped only today reads as zero here while its all-time and 30-day figures above both count it. For the total, read Stamps (all time).") + "</h2>" +
           '<div data-mseries><p class="nodata">Loading…</p></div>' +
 
           '<h2 style="margin-top:26px">Are people signing up?' + info("This is acquisition, not health — it names WHICH step is losing people. A drop from opened to tapped is the sign-up page; from made to landed is the wallet's own Add sheet. The last bar is not a further step: it is how many of the cards that DID land were later thrown away, so a small number there is the good outcome. A QR scan and a tapped link both arrive as an ordinary page view, so the split comes from a tag on the poster QR and the share link; anything untagged, including posters printed before the tag existed, counts as untagged rather than lost.") + "</h2>" +
@@ -6255,7 +6296,14 @@ export function adminPage(): string {
             "<dt>Their average basket</dt><dd>" +
               (v.hasBasket ? money(m, m.basket_cents / 100) : "never told us") + "</dd>" +
             "<dt>Customers</dt><dd>" + m.customers + "</dd>" +
-            "<dt>Stamps</dt><dd>" + m.stamps + "</dd>" +
+            // Both windows, both named. This said "Stamps" and meant all time,
+            // while the row you clicked to get here said "Stamps" and meant the
+            // last 30 days — so the page appeared to contradict the table that
+            // opened it. The all-time one is the figure that tallies: it is
+            // this shop's line in the Merchants total, and the number on their
+            // own dashboard.
+            "<dt>Stamps (all time)</dt><dd>" + m.stamps + "</dd>" +
+            "<dt>Stamps (last 30 days)</dt><dd>" + m.stamps_30d + "</dd>" +
           "</dl>" + (v.hasBasket
             ? '<p class="dnote">Stamps and customers are counted. The spend is those stamps times a basket they typed in themselves, so it is an estimate — there is no tracked spend in this product.</p>'
             : '<p class="dnote">They have never told us their average basket, so there is no money figure — one would be a guess times a guess. It is a field in their own dashboard.</p>') +
@@ -6482,8 +6530,32 @@ export function adminPage(): string {
                 info("Kept off the bar on purpose. Paying is not a stage: a shop can be paying AND churning, and that pair is the most useful thing this page can tell you — so it travels beside the stage rather than replacing it.") + "</p>" : "") +
             "</div></div>" +
 
+            // The book total, and the ONE number on this console that can be
+            // checked by hand: it is the sum of the "Stamps (all time)" column
+            // on Merchants, which is the sum of each shop's own dashboard.
+            // Summed from the same rows the table renders — a second query
+            // could disagree with the list, which is the whole complaint.
+            //
+            // It sits above Week by week because those tiles answer a different
+            // question entirely (one finished week), and reading them as a
+            // total is exactly the mistake that made these numbers look broken.
+            '<h2 style="margin-top:26px">Everything so far' +
+              info("All time, across live shops. Archived shops are left out here and out of the totals on Merchants, but their rows stay so you can still find them. This is the number that must equal the Stamps (all time) column added up, and each shop's own dashboard. The week-by-week tiles below are a different question: one finished week, not a running total.") + "</h2>" +
+            '<div class="tiles">' +
+              '<div class="tile"><div class="tl">Stamps, all time</div>' +
+                '<div class="tv">' + int(sumBy(liveOf(body.merchants), "stamps")) + "</div>" +
+                '<div class="tn">across ' + liveOf(body.merchants).length + " live shop" +
+                  (liveOf(body.merchants).length === 1 ? "" : "s") + "</div></div>" +
+              '<div class="tile"><div class="tl">Customers, last 30 days</div>' +
+                '<div class="tv">' + int(sumBy(liveOf(body.merchants), "active_30d")) + "</div>" +
+                '<div class="tn">people stamped, counted once each per shop</div></div>' +
+              '<div class="tile"><div class="tl">Rewards, all time</div>' +
+                '<div class="tv">' + int(sumBy(liveOf(body.merchants), "redemptions")) + "</div>" +
+                '<div class="tn">handed over at a counter</div></div>' +
+            "</div>" +
+
             '<h2 style="margin-top:26px">Week by week' +
-              info("Whole weeks, Monday to Sunday, off the event log. Archived shops are left out of every line — a closed account is not evidence about the product.") + "</h2>" +
+              info("Whole weeks, Monday to Sunday, off the event log. Each tile is ONE week — the most recent finished one — not a running total; for totals read Everything so far above. Archived shops are left out of every line, and out of those totals too, so the two agree.") + "</h2>" +
             rangeRow("Whole weeks only. This week is still running" +
               (partWeek ? " — " + int(partWeek.stamps) + " stamps so far, at " + int(partWeek.active_merchants) + " shops" : "") +
               ", so it is reported here rather than drawn beside finished ones.") +
@@ -6519,7 +6591,8 @@ export function adminPage(): string {
           '<div id="pane-merchants"' + (pane === "merchants" ? "" : " hidden") + ">" +
             '<h2>Every shop' + info("Worst first, never alphabetical. Open any shop for the whole picture: its problems, its weekly lines, its funnel, its card and everything you can do to it.") + "</h2>" +
             '<div class="tw"><table>' + MERCHANT_HEAD +
-              ranked.filter((m) => !m.archived_at).map(merchantRow).join("") + "</table></div>" +
+              ranked.filter((m) => !m.archived_at).map(merchantRow).join("") +
+              merchantTotals(ranked) + "</table></div>" +
             (archivedMerchants.length
               ? '<details class="fold" style="margin-top:12px"><summary>Archived shops (' +
                 archivedMerchants.length + ")" +

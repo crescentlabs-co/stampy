@@ -1030,6 +1030,81 @@ async function main() {
     );
   }
 
+  // --- The chain: one number, readable at three heights -------------------
+  //
+  // The console showed four figures all called "stamps" — a rolling 30 days, an
+  // all-time total, and two tiles that each hold ONE finished week — and none of
+  // them said so. Compared by eye they looked broken, and nothing anywhere could
+  // be added up and checked, which is why a genuinely wrong number would have
+  // been invisible.
+  //
+  // ALL TIME is the figure that reaches every level unchanged. This asserts the
+  // whole chain in one place, because "these three agree" is exactly what no
+  // test has ever said:
+  //
+  //   owner's Home tile  ==  the shop's row  ==  its cards  ==  a term of the total
+  {
+    const admin = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
+    const row = admin.merchants.find((x: any) => x.id === ownMerchant.id);
+    const theirs = admin.cards.filter((c: any) => row.card_ids.includes(c.id));
+    expect(
+      row.stamps === theirs.reduce((a: number, c: any) => a + c.stamps, 0),
+      `the shop's all-time stamps equal its cards' (${row.stamps})`,
+    );
+    const ownerTotal = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body)
+      .cards.reduce((a: number, c: any) => a + c.metrics.stamps, 0);
+    expect(
+      ownerTotal === row.stamps,
+      `...and the owner's own Home tile says the same (${ownerTotal} vs ${row.stamps})`,
+    );
+
+    // The console's total is the sum of the LIVE rows, and archiving has to move
+    // it — the Overview always left archived shops out while the table kept
+    // them, so the top could never be the sum of the list.
+    //
+    // On a THROWAWAY shop, not this one. Archiving bumps staff_session_epoch
+    // for the whole owner (setMerchantArchived), and unarchiving deliberately
+    // does not reverse it — so doing this to the main merchant silently kills
+    // every staff cookie the rest of this file still uses, on every card that
+    // owner runs. Its stamp is written with logEvent rather than through the
+    // counter, so the throwaway needs no PIN and no session of its own.
+    const liveSum = (ms: any[]) =>
+      ms.filter((m) => !m.archived_at).reduce((a: number, m: any) => a + m.stamps, 0);
+    const tmpOwner = await createOwner(crypto.randomUUID(), "archive-total@shop.my", "x");
+    const tmpMerchant = await ensureMerchantForOwner(tmpOwner.id, "Archive Total Cafe");
+    const tmpCard = await createCard({
+      merchantId: tmpMerchant.id, name: "Archive Total Cafe", reward: "Free tea",
+      stampsTarget: 10, stampsStart: 2,
+    });
+    await linkOwnerCard(tmpOwner.id, tmpCard.id);
+    const tmpPass = await mk("apple", (await mkCustomer(tmpMerchant.id)).id, tmpCard.id);
+    await logEvent(tmpCard.id, tmpPass.serial, "stamp", { actor: "staff:e2e" });
+
+    const withTmp = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
+    const tmpRow = withTmp.merchants.find((x: any) => x.id === tmpMerchant.id);
+    expect(tmpRow.stamps === 1, `the throwaway shop has one stamp (${tmpRow.stamps})`);
+    const before = liveSum(withTmp.merchants);
+
+    await fetch(base + "/admin/api/merchant/" + tmpMerchant.id + "/archive", {
+      method: "POST", headers: { cookie: cookieNow },
+    });
+    const archived = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
+    expect(
+      liveSum(archived.merchants) === before - 1,
+      `archiving a shop takes its stamps out of the total (${before} → ${liveSum(archived.merchants)})`,
+    );
+    // ...and it is still listed, so it can be found and restored.
+    expect(
+      archived.merchants.some((m: any) => m.id === tmpMerchant.id && m.archived_at),
+      "...and the shop is still on the list, flagged archived",
+    );
+    await fetch(base + "/admin/api/merchant/" + tmpMerchant.id + "/unarchive", {
+      method: "POST", headers: { cookie: cookieNow },
+    });
+    const restored = JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body);
+    expect(liveSum(restored.merchants) === before, "...and restoring it puts them back");
+  }
+
   // --- Triage: fires on the merchant that is broken, and NOT on the one that isn't ---
   // A rule that flags everybody trains you to ignore the list, so the second
   // half of this is the half that matters.
