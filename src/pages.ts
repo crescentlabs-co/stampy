@@ -150,7 +150,15 @@ const baseCss = /* css */ `
      size. At .74rem/.05em "Welcome stamps" plus its info dot no longer fitted a
      three-across column and the dot dropped to a second line, so the size and
      the tracking are set to what actually fits the narrowest column we use. */
-  label { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  /* Sentence case, not uppercase. Every label in the dashboard runs through
+     here, so uppercasing shouted LOGO / STAMP / COLOURS / MESSAGE at an owner
+     and turned any label that is a sentence rather than a word — the
+     business-name switch, which is a <label> — into a wall of caps. Size and
+     weight carry the hierarchy; the caps only added noise and cost legibility.
+     The card MOCKS keep their uppercase (.pv-lbl, .pvg-lbl): those transcribe
+     what Apple and Google actually print, and lowercasing them would make the
+     preview lie about the real card. */
+  label { font-size: .78rem; font-weight: 700; letter-spacing: .01em;
           color: var(--muted); display: block; margin: 14px 0 6px; }
   /* The one place our own name appears inside a merchant's dashboard, and the
      quietest thing on the page on purpose: what they are looking at is their
@@ -708,9 +716,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
               border-radius: 12px; display: flex; align-items: center; justify-content: center;
               color: #111; font-weight: 700; font-size: .78rem; letter-spacing: 1px; }
     .pvg-code { text-align: center; font-size: .78rem; margin-top: 8px; }
-    /* The card does not end at the colour. Google leaves a white shelf below it,
-       and without one the mock looked like a shorter card than the real thing. */
-    .pvg-foot { background: #fff; height: 34px; margin: 16px -16px 0; }
+    /* The band Google renders below the details — its heroImage slot. Left
+       unset it is the bare white shelf an owner sees on their phone and cannot
+       account for; filled, it is the all-filled stamp grid (see
+       buildLoyaltyClass). Bleeds to both edges because Google's does.
+       Falls back to the white shelf when the card has no grid yet, so the mock
+       still shows the card ending where the real one ends. */
+    .pvg-foot { background: #fff; height: 34px; margin: 16px -16px 0;
+                background-size: cover; background-position: center; }
+    .pvg-foot.band { height: auto; aspect-ratio: 750 / 246; background-color: transparent; }
 
     /* --- the printed sheet --- */
     /* White, because paper is. Only the head band and the QR frame are brand. */
@@ -746,10 +760,23 @@ export const DESIGN_PANEL_CSS = /* css */ `
        the same ink/on-slab pairing .crtoggle.on already uses lower down in
        this panel for the same reason. Neon now means exactly one thing on this
        screen: the real tab bar. */
-    .dseg { display: inline-flex; margin: 2px 0 12px; }
-    .dseg button { flex: 0 0 auto; font-size: .84rem; padding: 8px 14px; }
-    .dseg button.on { color: var(--on-slab); }
-    .dseg .thumb { background: var(--slab); }
+    /* NOT a pill with a sliding thumb any more. Shrinking the page's own tab
+       control and darkening its thumb was not enough separation: it was still
+       the same object, one scroll below the real one, and read as a second
+       navigation. The pill-and-thumb shape now belongs to the page tabs alone.
+       This is an underlined strip — the active surface is marked by a rule
+       under its label and by ink weight, which is the conventional shape for
+       "which view am I looking at" and cannot be confused with a pill. */
+    .dseg { display: flex; gap: 2px; margin: 0 0 14px; padding: 0;
+            background: none; border-radius: 0; border-bottom: 1px solid var(--line); }
+    .dseg button { flex: 0 0 auto; font-size: .84rem; padding: 9px 12px; border-radius: 0;
+                   color: var(--muted); font-weight: 600; background: none;
+                   border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .dseg button.on { color: var(--ink); font-weight: 700; border-bottom-color: var(--ink); }
+    .dseg button:hover { color: var(--ink); }
+    /* The thumb is the pill's marker and has no place here; the underline is
+       the state. Left in the markup so moveThumb stays harmless. */
+    .dseg .thumb { display: none; }
     .dpane { display: block; }
     .dpane[hidden] { display: none; }
     .pvbox { min-width: 0; }
@@ -773,14 +800,21 @@ export const DESIGN_PANEL_CSS = /* css */ `
        6px bottom, which over seven controls is most of a screen of nothing — and
        this section is read top to bottom in one sitting, so its height is the
        thing that makes it feel long. */
-    .dsec { margin: 18px 0 2px; padding-top: 14px; }
+    /* The design fold's own summary carries the section heading now, so the
+       first control inside it must not add a second heading's worth of air. */
+    .dfold { margin-top: 18px; }
+    .dfold > summary { font-size: .95rem; }
+    .dfold .dsec.first { margin-top: 0; }
+    .dsec { margin: 26px 0 4px; padding-top: 18px; }
     .dsec.first { margin-top: 4px; padding-top: 0; border-top: none; }
-    .dlbl { margin: 12px 0 4px; }
+    /* More air above a label than below it: the gap belongs to the control it
+       introduces, not to the one it follows. */
+    .dlbl { margin: 20px 0 6px; }
     /* The three logo rows, identical in shape so they read as three answers to
        one question rather than one control with two things stuck to it. The
        first label in a row loses its top margin: the row supplies the gap, and
        both would stack into a hole between every pair. */
-    .lrow + .lrow { margin-top: 12px; }
+    .lrow + .lrow { margin-top: 20px; }
     .lrow .dlbl { margin-top: 0; }
     .lrow .tgrow { margin-top: 0; }
     /* The one line that is conditional, rather than the whole row: it says
@@ -859,7 +893,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        grouped-row treatment a phone's own Settings uses.
        Outlined, never filled with the accent: DESIGN.md rule 1 gives the neon
        exactly one job, and "upload a logo" is not the next action on a page. */
-    .actbar { display: flex; align-items: stretch; margin-top: 4px;
+    .actbar { display: flex; align-items: stretch; margin-top: 6px;
               border-radius: 999px; overflow: hidden; background: var(--bg);
               box-shadow: inset 0 0 0 1px var(--field-border); }
     /* flex-basis 0, so sections are equal regardless of how long their labels
@@ -1028,7 +1062,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           <div class="seg dseg" data-surfaces role="tablist">
             <button data-tab="apple" class="on">iPhone</button>
             <button data-tab="google">Android</button>
-            <button data-tab="signup">Sign-up</button>
+            <button data-tab="signup">Sign-up poster</button>
             <span class="thumb"></span>
           </div>
 
@@ -1109,13 +1143,13 @@ export const DESIGN_PANEL_JS = /* js */ `
                section rather than as something you do TO the card above it. The
                rule it used to draw now belongs to the Design fold below. -->
           <div class="pvacts">
-            <span class="pvacts-t">Add a test card\${info("Puts this card in your own wallet, or opens your printed poster. It is a real card, but it never counts as a customer and never appears in your numbers. Each link lasts 30 minutes.")}</span>
+            <span class="pvacts-t">Add a test card\${info("A real card for testing — it never counts as a customer and never shows in your numbers. Each link lasts 30 minutes.")}</span>
             <div class="actbar">
               <button class="btn btn-ghost pvicon" data-a="test" data-w="apple" title="Add to Apple Wallet" aria-label="Add to Apple Wallet">${APPLE_GLYPH}</button>
               <button class="btn btn-ghost pvicon" data-a="test" data-w="google" title="Add to Google Wallet" aria-label="Add to Google Wallet">${GOOGLE_GLYPH}</button>
               <!-- A word, not a mark: there is no logo that means "your printed
                    poster", and inventing one would be a symbol nobody can read. -->
-              <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}/poster">Poster</a>
+              <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}/poster">Sign-up poster</a>
             </div>
           </div>
           <div data-testout hidden></div>
@@ -1131,7 +1165,14 @@ export const DESIGN_PANEL_JS = /* js */ `
              this inside a step headed "Design their card" and inside a row whose
              summary says the same, so printing DESIGN again straight underneath
              read as a page that had not been updated. -->
-        \${env.titled ? '<label class="sec dsec first" style="display:block">Design</label>' : ""}
+        <!-- Folded away, and CLOSED. Most owners take their logo's colours and
+             never open this again, so ~20 controls sat between them and the
+             rules they came for. The card preview and "Add a test card" stay
+             outside it, because those are what the tab is opened to see.
+             Only on the owner's dashboard: the console already renders this
+             panel inside its own "Design their card" fold, and a fold inside a
+             fold is two carets saying the same thing. -->
+        \${env.titled ? '<details class="fold dfold"><summary>Customise the design</summary>' : ""}
 
         <!-- THREE things, three rows, in the order they are decided: the logo
              itself, the square version Android crops to, and whether that logo
@@ -1141,7 +1182,7 @@ export const DESIGN_PANEL_JS = /* js */ `
              afterthought. Same shape each: a label with its ⓘ, then its
              control. -->
         <div class="lrow">
-          <label class="dlbl">Logo\${info("It goes on the card, the sign-up page and your printed poster. Any shape; we do not crop it, and a wide logo with your name in it is fine and usually looks best. If it sits on a plain white square we take that background out. Your card colours are taken from it automatically, replacing any you had picked.")}</label>
+          <label class="dlbl">Logo\${info("Goes on your card, sign-up page and poster. Any shape — a wide logo with your name in it works well. Your card colours are read from it.")}</label>
           <div class="actbar">
             <label class="btn btn-ghost" style="margin:0">Upload logo<input data-logo type="file" accept="image/*"></label>
             <button class="btn btn-ghost" data-a="rmlogo" \${c.logoVersion ? "" : "disabled"}>Remove logo</button>
@@ -1157,7 +1198,7 @@ export const DESIGN_PANEL_JS = /* js */ `
              only once there is a wide logo to be cropped, which is the one state
              where anything is actually being lost. -->
         <div class="lrow" data-markbox>
-          <label class="dlbl">Square logo for Android\${info("Google Wallet shows your logo in a small circle and crops to it, so a wide logo loses both ends. Upload a square version — just the symbol usually works. Optional: skip it and Android keeps your main logo. Only Android uses it; your iPhone card, poster and sign-up page are unaffected.")}</label>
+          <label class="dlbl">Square logo for Android\${info("Android crops your logo to a small circle, so a wide one loses both ends. A square version fixes that. Optional.")}</label>
           <div class="actbar">
             <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload logo</span><input data-mark type="file" accept="image/*"></label>
             <button class="btn btn-ghost" data-a="rmmark" \${c.markVersion ? "" : "disabled"}>Remove logo</button>
@@ -1165,10 +1206,11 @@ export const DESIGN_PANEL_JS = /* js */ `
           <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
         </div>
 
+        <!-- No heading: the sentence IS the label, and "Business name" above it
+             was the same words twice in a row. -->
         <div class="lrow">
-          <label class="dlbl">Business name\${info("Your shop's name is printed next to the logo on the card, the poster and your sign-up page. Turn this on when the logo already contains it, and we leave the printed one off so it is not said twice.")}</label>
           <label class="tgrow">
-            <span class="tgtext">My logo already includes my business name</span>
+            <span class="tgtext">My logo already includes my business name\${info("Turn this on and we stop printing the name beside your logo, so it is not said twice.")}</span>
             <span class="tg">
               <input data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
               <span class="tgtrack"><span class="tgthumb"></span></span>
@@ -1176,7 +1218,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           </label>
         </div>
 
-        <label class="dlbl">Stamp\${info("Plain dots, any emoji, or your own shape. Whatever you pick is drawn in your Stamps colour. iPhone only — Android is sent the count as text, so it shows dots whatever you choose here.")}</label>
+        <label class="dlbl">Stamp\${info("Plain dots, an emoji, or your own shape, drawn in your Stamps colour. iPhone only — Android always shows dots.")}</label>
         <!-- Three buttons, one choice. It was a text field, a Use button, an
              upload and a Dots button: four controls for three answers, and the
              field read as something you had to fill in before anything would
@@ -1190,7 +1232,7 @@ export const DESIGN_PANEL_JS = /* js */ `
             <button class="btn btn-ghost" data-a="emoji">Emoji</button>
             <button class="btn btn-ghost" data-a="rmstamp">Default</button>
           </div>
-          \${info("Upload a simple shape or symbol — not a photo — however you have it: a plain background is taken out and the empty space around it trimmed. Its own colours are ignored; it is filled with your stamp colour. Default is plain dots.")}
+          \${info("A simple shape or symbol, not a photo. We trim it and fill it with your stamp colour.")}
         </div>
         <!-- What is actually set. The rendered grid used to be the only signal,
              and the grid was exactly what went wrong — so an owner whose shape
@@ -1209,7 +1251,7 @@ export const DESIGN_PANEL_JS = /* js */ `
              of the panel: it is what you do to these colours, and a button
              floated 300px away reads as belonging to whatever it is nearest. -->
         <div class="crhdr">
-          <label style="margin:0">Colours\${info("Taken from your logo automatically, and used on all three: the iPhone card, the Android card and your sign-up poster. Open Customize to set any of them by hand — the band is the strip the stamps sit on, and Stamps is what an earned stamp fills in with.")}</label>
+          <label style="margin:0">Colours\${info("Read from your logo and used everywhere. Customize sets any of them by hand.")}</label>
           <button type="button" class="btn btn-ghost crtoggle" data-a="customise">Customize</button>
         </div>
         <!-- The palette sits UNDER its label, like every other control here. On
@@ -1233,6 +1275,8 @@ export const DESIGN_PANEL_JS = /* js */ `
           <input data-f="accent" type="color" value="\${c.accent}">
           <input data-f="bandColor" type="color" value="\${c.bandColor}">
         </div>
+
+        \${env.titled ? "</details>" : ""}
 
         <!-- ================= LOYALTY PROGRAMME ================= -->
         \${env.rulesNote}
@@ -1260,7 +1304,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
         </div>
 
-        <label class="dlbl">Sign-up page message\${info("The line customers read after scanning your QR, before they add the card. It also headlines your printed poster. Leave blank and we write one from your reward.")}</label>
+        <label class="dlbl">Sign-up page message\${info("The line customers read after scanning, before they add the card. It also headlines your poster. Leave blank and we write one.")}</label>
         <input data-f="signupMessage" maxlength="120" value="\${(c.signupMessage || "").replace(/"/g, "&quot;")}" placeholder="Collect \${c.stampsTarget} stamps, get a \${(c.reward || "").toLowerCase()}.">
         </div>
 
@@ -1551,6 +1595,21 @@ export const DESIGN_PANEL_JS = /* js */ `
           im.src = env.artUrl(c.markVersion ? "mark" : "logo", v);
           im.style.display = "";
         } else im.style.display = "none";
+        // The hero band: the ALL-FILLED grid, never the customer's real count.
+        // Drawn at target-of-target here for the same reason the class points at
+        // stamps/full.png — this band is decoration, and a mock that animated it
+        // with the preview's slider would promise Android something it does not
+        // do (see buildLoyaltyClass).
+        const foot = q(".pvg-foot");
+        if (foot) {
+          if (stampStyle) {
+            foot.style.backgroundImage = "url(" + drawStampStrip(target, target, stampStyle) + ")";
+            foot.classList.add("band");
+          } else {
+            foot.style.backgroundImage = "";
+            foot.classList.remove("band");
+          }
+        }
       }
 
       /**
@@ -1606,8 +1665,14 @@ export const DESIGN_PANEL_JS = /* js */ `
         else im.style.display = "none";
         const reward = f("reward").value || "your reward";
         const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
-        q("[data-pvp-offer]").textContent =
-          f("signupMessage").value || ("Collect " + target + " stamps, get a " + reward.toLowerCase() + ".");
+        const suggested = "Collect " + target + " stamps, get a " + reward.toLowerCase() + ".";
+        q("[data-pvp-offer]").textContent = f("signupMessage").value || suggested;
+        // The FIELD's placeholder is the same sentence, and it used to be baked
+        // in once at mount — so raising the target to 10 and saving left the
+        // suggestion underneath still offering the old number, disagreeing with
+        // the poster beside it until the whole page was reloaded. It is derived
+        // from the same two values here, on every repaint, so it cannot drift.
+        f("signupMessage").placeholder = suggested;
         // The QR frame is the accent on white paper, and a pale accent prints as
         // no frame at all — the same fallback posterPage makes server-side.
         const accent = f("accent").value;
@@ -1862,6 +1927,14 @@ export const DESIGN_PANEL_JS = /* js */ `
       // entirely with no upload and shows the shop name alone — the preview has
       // to agree, or the owner is designing against something they won't get.
       q("[data-a=rmlogo]").onclick = async () => {
+        // Same hard delete as the stamp shape, same lack of an undo.
+        const ok = await modal(
+          "Delete your logo?",
+          "<p>It comes off the card, the sign-up page and your poster straight away, and cannot be undone — " +
+            "you would need the original file to put it back.</p>",
+          "Delete it",
+        );
+        if (!ok) return;
         const { body } = await api(P("/logo"), { method: "DELETE" });
         if (!body.ok) return toast(body.error || "Couldn't remove logo");
         c.logoVersion = 0;
@@ -1888,6 +1961,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         renderPreview();
       }, "contain");
       q("[data-a=rmmark]").onclick = async () => {
+        const ok = await modal(
+          "Delete your square logo?",
+          "<p>Android goes back to cropping your main logo. This happens straight away and cannot be undone.</p>",
+          "Delete it",
+        );
+        if (!ok) return;
         const { body } = await api(P("/mark"), { method: "DELETE" });
         if (!body.ok) return toast(body.error || "Couldn't remove it");
         c.markVersion = 0;
@@ -2407,7 +2486,22 @@ export const DESIGN_PANEL_JS = /* js */ `
       // one: the grid image is the only place stamps are drawn now. The stored
       // shape goes too: leaving it behind would have the next page load quietly
       // offer to draw a stamp the owner had just removed.
+      // Confirmed, because this button DELETES the uploaded shape and there is
+      // no undo and no history — the art is one row, hard-deleted. It sits
+      // between Upload and Emoji, reads like a third style rather than a
+      // discard, and applies the instant it is pressed: an owner pressed it
+      // meaning "show me the plain option" and lost artwork they had no other
+      // copy of. Only asks when there is actually something to lose.
       q("[data-a=rmstamp]").onclick = async () => {
+        if (c.stampIconVersion) {
+          const ok = await modal(
+            "Delete your stamp shape?",
+            "<p>Your uploaded shape is deleted and the stamps go back to plain dots. " +
+              "This happens straight away and cannot be undone — you would need the original file to put it back.</p>",
+            "Delete it",
+          );
+          if (!ok) return;
+        }
         q("[data-stamperr]").style.display = "none";
         await api(P("/stamp-icon"), { method: "DELETE" });
         await loadStampIcon("");
@@ -2475,31 +2569,42 @@ export const DESIGN_PANEL_JS = /* js */ `
        *   the look  → everyone holding a card, right now
        *   the rules → new cards, and existing ones when they next earn a reward
        *   the name  → the one rules-side change that reaches a wallet today
+       *
+       * They are two ROWS now, not two sentences. Run together in a paragraph,
+       * "reaches all 5 customers" and "their stamps and reward are untouched"
+       * landed one after the other about the same five people and read as a
+       * contradiction — it was reported as one. Same two facts, labelled.
        */
       q("[data-a=save]").onclick = async () => {
         const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
         const ok = await modal(
           env.showDetails ? "Save these changes?" : "Save this card?",
+          '<dl class="mdlblast">' +
           // The look half is true on every path — the console sets no rules, but
-          // it very much sets colours.
-          "<p>Your new look reaches" +
+          // it very much sets colours. "have taken a card", NOT "already hold
+          // one": this count is ACTIVE_PASS_SQL, which deliberately keeps
+          // counting somebody after they delete the card so that churn cannot
+          // erase its own evidence. Some of these people no longer hold
+          // anything, and the sentence must not claim otherwise.
+            "<dt>Look</dt><dd>Reaches" +
             (liveCustomers
-              ? " all <strong>" + liveCustomers + "</strong> " + them() + " who already hold a card"
+              ? " all <strong>" + liveCustomers + "</strong> " + them() + " who have taken a card"
               : " everyone who takes a card") +
-            ". Their stamps and reward are untouched.</p>" +
+            ", next time their phone checks in.</dd>" +
           // With the terms hidden the only other thing this button can change is
           // the name, so promising anything about rules would be a lie.
           (!env.showDetails
-            ? "<p style=\\"margin-top:8px\\">The reward and the stamp count are not touched — only the shop sets those.</p>"
+            ? "<dt>Reward<br>&amp; stamps</dt><dd>Not touched — only the shop sets those.</dd>"
             : liveCustomers
-            ? '<p style="margin-top:8px">New cards use your rules straight away. Your <strong>' + liveCustomers +
-              "</strong> existing " + them() + " keep the reward and stamp count they were promised, and move " +
-              "onto the new ones the next time they earn a reward.</p>"
-            : '<p style="margin-top:8px">Your rules apply to every card from here on.</p>') +
+            ? "<dt>Reward<br>&amp; stamps</dt><dd>Unchanged for those <strong>" + liveCustomers +
+              "</strong>. They keep what they were promised until their next reward, then move onto " +
+              "the new rules. New customers get them today.</dd>"
+            : "<dt>Reward<br>&amp; stamps</dt><dd>Apply to every card from here on.</dd>") +
           (renamed && liveCustomers
-            ? '<p style="margin-top:8px">The new shop name <strong>does</strong> reach cards already in a wallet. ' +
-              "Your old sign-up links keep working.</p>"
-            : ""),
+            ? "<dt>Shop name</dt><dd>The new name <strong>does</strong> reach cards already in a wallet. " +
+              "Your old sign-up links keep working.</dd>"
+            : "") +
+          "</dl>",
           "Save changes",
         );
         if (!ok) return;
@@ -2534,6 +2639,15 @@ export const MODAL_CSS = /* css */ `
   .mdlbox h3 { margin: 0 0 8px; font-size: 1.12rem; }
   .mdlbody { color: var(--muted); font-size: .9rem; line-height: 1.55; }
   .mdlbody strong { color: var(--ink); }
+  /* Two blast radii, side by side rather than in one paragraph. The look and
+     the rules reach completely different people, and running them together got
+     "reaches all 5 customers" and "are untouched" into consecutive sentences
+     about the same 5 people — which read as a contradiction and was reported as
+     one. A label per row is the whole fix. */
+  .mdlblast { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin-top: 12px; }
+  .mdlblast dt { font-size: .62rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+                 color: var(--muted); padding-top: 3px; white-space: nowrap; }
+  .mdlblast dd { margin: 0; }
   .mdlrow { display: flex; gap: 8px; margin-top: 18px; }
   .mdlrow .btn { width: auto; flex: 1; margin: 0; padding: 12px 14px; font-size: .92rem; }
   @keyframes mdlin { from { opacity: 0 } to { opacity: 1 } }
@@ -4352,8 +4466,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
               padding: 16px 16px 13px; text-align: left; }
     .metric b { font-family: var(--display); font-weight: 800; font-size: 2rem; line-height: 1;
                 display: block; letter-spacing: -.035em; font-variant-numeric: tabular-nums; color: var(--ink); }
-    .metric span { display: block; margin-top: 6px; font-size: .68rem; text-transform: uppercase;
-                   letter-spacing: .05em; color: var(--muted); }
+    .metric span { display: block; margin-top: 6px; font-size: .78rem;
+                   letter-spacing: .01em; color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: 16px; margin-top: 14px; }
     .links { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; font-size: .9rem; }
@@ -4401,7 +4515,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .totals .metric { padding: 16px 14px 13px; }
     .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
-    .breakdown th { text-align: left; color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .breakdown th { text-align: left; color: var(--muted); font-size: .78rem; letter-spacing: .01em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     .breakdown td { padding: 10px; border-bottom: 1px solid var(--line); }
     .breakdown td.n { text-align: right; font-variant-numeric: tabular-nums; }
     .viewall { margin-top: 18px; }
@@ -4676,6 +4790,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // limit was never enforced here anyway — canNudge (src/winback.ts) decides,
     // server-side, and reports back what actually went out. The groups came from
     // that same rule, so the subtitle can't disagree with the button either.
+    /**
+     * PARKED, not deleted. Both folds below are built and working; neither is
+     * on screen while these are false.
+     *
+     * "Today's Activity" answers a question no owner has asked yet — it was
+     * hard to tell what it was FOR — and "Find a customer" assumes a shop wants
+     * to look someone up, which no one has needed. Rather than guess, they wait
+     * for feedback from real shops. Flip either to true to bring it straight
+     * back; the markup, the loaders and the drill-down sheets are all still
+     * here, and test/pages.test.ts asserts that they are.
+     */
+    const SHOW_COUNTER_FOLD = false;
+    const SHOW_FIND_FOLD = false;
+
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
@@ -4687,18 +4815,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <input data-msg maxlength="200">
         <button class="btn btn-dark" style="margin-top:10px" data-send>Push notification</button>
         <p class="muted" style="margin-top:6px" data-who></p>
-        <!-- Folded, ahead of the customer search: it is what an owner checks
-             first, and it must not push the message box off the screen —
-             loaded only when opened, not with the rest of the tab. -->
+        <!-- Both parked behind the flags above. Folded, ahead of the customer
+             search: it is what an owner checks first, and it must not push the
+             message box off the screen — loaded only when opened. -->
+        \${SHOW_COUNTER_FOLD ? \`
         <details class="grp" style="margin-top:22px" data-counter>
-          <summary><span class="gt">Today's Activity</span>\${info("What happened at your counter today, and nothing more. Everyone shares one PIN, so none of this can say who did anything — tap any number for the exact times.")}<span class="gh" data-clast></span></summary>
+          <summary><span class="gt">Today's Activity</span>\${info("What happened at your counter today. Nobody is named — everyone shares one PIN. Tap a number for the times.")}<span class="gh" data-clast></span></summary>
           <div data-cbody style="margin-top:10px"></div>
-        </details>
+        </details>\` : ""}
+        \${SHOW_FIND_FOLD ? \`
         <details class="grp" style="margin-top:20px" data-find>
           <summary><span class="gt">Find a customer</span></summary>
           <input data-search placeholder="🔍 Card code" autocomplete="off" style="text-transform:uppercase;margin-top:10px">
           <div data-results style="margin-top:10px"></div>
-        </details>\`;
+        </details>\` : ""}\`;
       const q = (s) => div.querySelector(s);
       let all = [], ready = 0, cooling = 0;
 
@@ -4719,7 +4849,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // second request and the message box above must never wait on it.
       const cfold = q("[data-counter]");
       let counterLoaded = false;
-      cfold.addEventListener("toggle", async () => {
+      if (cfold) cfold.addEventListener("toggle", async () => {
         if (!cfold.open || counterLoaded) return;
         counterLoaded = true;
         const { body } = await api("/counter");
@@ -4850,7 +4980,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
       // Hidden until they type: the list is a lookup tool, not a view.
       function renderResults() {
-        const search = (q("[data-search]").value || "").trim().toUpperCase();
+        const box = q("[data-search]");
+        if (!box) return; // parked — see SHOW_FIND_FOLD
+        const search = (box.value || "").trim().toUpperCase();
         const host = q("[data-results]"); host.innerHTML = "";
         if (!search) return;
         const shown = all.filter((x) => x.code.toUpperCase().includes(search));
@@ -4882,7 +5014,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       }
       q("[data-msg]").oninput = (e) => { e.target.dataset.touched = "1"; };
       q("[data-send]").onclick = () => confirmSend(ready, { target: "ready" });
-      q("[data-search]").oninput = renderResults;
+      const searchBox = q("[data-search]");
+      if (searchBox) searchBox.oninput = renderResults;
       load();
       return div;
     }
@@ -4947,7 +5080,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const c = S.cards[0] || {};
       div.innerHTML = \`
         <h2 class="sec first">Staff stamper</h2>
-        <p class="muted">Staff use this tool to punch cards.\${info("One PIN covers your whole counter, on every card you run. It is stored scrambled, so nobody can look it up — not even us. Setting a new one signs every staff phone out.")}</p>
+        <p class="muted">Staff use this tool to punch cards.\${info("One PIN for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
         <label style="margin-top:14px" data-pinlabel>Staff PIN</label>
         <div class="copyrow" style="margin-top:6px">
           <input data-pin placeholder="4–12 digits" inputmode="numeric" autocomplete="off">
@@ -4972,7 +5105,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                are plain page views otherwise, and knowing which channel works
                is the difference between printing more posters and posting more. -->
           <a href="/j/\${S.joinRef || c.id || ""}?s=link" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
-          <a href="/c/\${c.id || ""}/poster" target="_blank"><span>Sign-up QR poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
+          <a href="/c/\${c.id || ""}/poster" target="_blank"><span>Sign-up poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
         </div>
 
         <h2 class="sec">Your account</h2>

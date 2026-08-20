@@ -613,6 +613,36 @@ async function serveStampStrip(cardId: string, filled: number, res: import("expr
   res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(strip.png);
 }
 
+/**
+ * The all-filled grid — what Android shows as its hero band.
+ *
+ * Deliberately NOT progress. Google fetches a hero image itself when the card
+ * updates, so a band that tracked the count would arrive seconds behind the
+ * number beside it; this one never changes, so it rides on the CLASS and costs
+ * a stamp nothing. A full card reads as decoration. A band drawn at the
+ * customer's real count would be a second, slower progress indicator
+ * disagreeing with the first.
+ *
+ * The target is read from the card, never from the URL: strips are keyed
+ * (card_id, target, filled), so a URL carrying a number would 404 the moment an
+ * owner changed their target — which is the exact trap the sibling route above
+ * documents.
+ */
+async function serveFullStampStrip(cardId: string, res: import("express").Response): Promise<void> {
+  const card = await getCard(cardId).catch(() => null);
+  if (!card) return void res.status(404).end();
+  const strip = await getStampStrip(cardId, card.stamps_target, card.stamps_target).catch(() => null);
+  if (!strip) return void res.status(404).end();
+  res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(strip.png);
+}
+
+// BEFORE the :filled route below: ":filled.png" happily matches "full.png"
+// with filled="full", which Number() turns into 0 — the EMPTY grid, silently,
+// on every Android card. Specific path first.
+publicRouter.get("/art/stamps/full.png", (_req, res) => serveFullStampStrip(DEFAULT_CARD_ID, res));
+publicRouter.get("/c/:cardId/art/stamps/full.png", (req, res) =>
+  serveFullStampStrip(req.params.cardId!, res));
+
 publicRouter.get("/art/stamps/:filled.png", (req, res) =>
   serveStampStrip(DEFAULT_CARD_ID, Number(req.params.filled) || 0, res));
 publicRouter.get("/c/:cardId/art/stamps/:filled.png", (req, res) =>

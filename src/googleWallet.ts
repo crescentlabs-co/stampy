@@ -15,6 +15,7 @@ import {
   cafeBannerVersion,
   cafeLogoVersion,
   cardLogoMarkVersion,
+  stampStripsVersion,
   type CardRow,
   type PassRow,
 } from "./db.js";
@@ -140,14 +141,16 @@ export async function ensureClass(card: CardRow): Promise<GoogleResult> {
   if (!setupStatus().canGoogleWallet) return notConfigured();
   try {
     // Version-stamp the art URLs so Google re-fetches them after an upload.
-    const [logoVersion, bannerVersion, markVersion, business] = await Promise.all([
+    const [logoVersion, bannerVersion, markVersion, business, stampsVersion] = await Promise.all([
       cafeLogoVersion(card.id).catch(() => 0),
       cafeBannerVersion(card.id).catch(() => 0),
       // 0 ⇒ no square mark uploaded, and programLogo stays the wide logo.
       cardLogoMarkVersion(card.id).catch(() => 0),
       businessNameForCard(card),
+      // 0 ⇒ no rendered grid, and the hero band falls back to the banner.
+      stampStripsVersion(card.id).catch(() => 0),
     ]);
-    const cls = buildLoyaltyClass(card, logoVersion, bannerVersion, business, markVersion);
+    const cls = buildLoyaltyClass(card, logoVersion, bannerVersion, business, markVersion, stampsVersion);
     const inserted = await api("POST", "/loyaltyClass", cls);
     if (inserted.status === 409) {
       return toResult(await api("PATCH", `/loyaltyClass/${cls.id as string}`, cls));

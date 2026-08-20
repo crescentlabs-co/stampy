@@ -25,7 +25,11 @@ export function objectId(row: Pick<PassRow, "serial">): string {
 }
 
 /** A café's hosted art URL (per-café route; ?v= makes Google re-fetch after an upload). */
-function artUrl(card: Pick<CardRow, "id">, name: "logo" | "banner" | "mark", version = 0): string {
+function artUrl(
+  card: Pick<CardRow, "id">,
+  name: "logo" | "banner" | "mark" | "stamps/full",
+  version = 0,
+): string {
   const base = card.id === DEFAULT_CARD_ID ? "" : `/c/${card.id}`;
   return `${config.baseUrl}${base}/art/${name}.png${version ? `?v=${version}` : ""}`;
 }
@@ -124,6 +128,8 @@ export function buildLoyaltyClass(
   business = card.name,
   /** Non-zero ⇒ a square mark exists and is used instead of the wide logo. */
   markVersion = 0,
+  /** Non-zero ⇒ the card has rendered stamp strips, so the hero band is the grid. */
+  stampsVersion = 0,
 ): Record<string, unknown> {
   const cls: Record<string, unknown> = {
     id: classId(card),
@@ -177,7 +183,24 @@ export function buildLoyaltyClass(
       ],
     };
   }
-  if (bannerVersion) {
+  // The band across the bottom of the Android card. Without one Google leaves
+  // the space blank, which is the white strip an owner sees and cannot explain.
+  //
+  // The stamp grid wins over the banner because the banner is already
+  // composited into every strip (see applyStamps), so the grid carries both —
+  // picking the banner instead would drop the stamps for no gain.
+  //
+  // It is the ALL-FILLED grid, and that is the point: it lives on the class, is
+  // re-sent only when the owner saves, and therefore costs a stamp nothing.
+  // A band drawn at the customer's real count would have to ride the object
+  // patch, where Google re-fetches the image itself and lands it seconds after
+  // the number it sits beside — two progress indicators disagreeing.
+  if (stampsVersion) {
+    cls.heroImage = {
+      sourceUri: { uri: artUrl(card, "stamps/full", stampsVersion) },
+      contentDescription: { defaultValue: { language: "en", value: `${business} stamp card` } },
+    };
+  } else if (bannerVersion) {
     cls.heroImage = {
       sourceUri: { uri: artUrl(card, "banner", bannerVersion) },
       contentDescription: { defaultValue: { language: "en", value: `${business} banner` } },

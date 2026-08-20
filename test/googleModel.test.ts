@@ -123,6 +123,30 @@ describe("buildLoyaltyClass", () => {
     );
   });
 
+  /**
+   * The band across the bottom of the Android card — the slot that is otherwise
+   * a bare white strip nobody can account for.
+   *
+   * It is the ALL-FILLED grid and it points at full.png, which resolves the
+   * target server-side. A URL carrying the count would have to be re-sent on
+   * every stamp, and Google fetches hero images itself: that is the delay the
+   * patch above is tested to avoid. Static, on the class, it costs a stamp
+   * nothing.
+   */
+  it("prefers the stamp band over the banner, and never carries a count", () => {
+    const withGrid = buildLoyaltyClass(card({ id: "kopi2" }), 0, 99, undefined, 0, 1234) as any;
+    expect(withGrid.heroImage.sourceUri.uri).toBe(
+      "https://stampy.example.test/c/kopi2/art/stamps/full.png?v=1234",
+    );
+    // The banner is composited into every strip, so the grid carries both —
+    // falling back to it would drop the stamps for nothing.
+    expect(withGrid.heroImage.sourceUri.uri).not.toContain("banner");
+    // No count anywhere in the URL: that is what makes it static.
+    for (const n of ["/0.png", "/3.png", "/10.png"]) {
+      expect(withGrid.heroImage.sourceUri.uri).not.toContain(n);
+    }
+  });
+
   it("carries the terms and privacy links, so existing cards inherit them", () => {
     // On the CLASS, not the object: class data renders on every object already
     // issued, which is the only way an Android card in a wallet today can gain

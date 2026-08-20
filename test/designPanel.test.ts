@@ -455,7 +455,9 @@ describe("the design panel, mounted", () => {
       // nothing and needs no round trip to become pressable.
       const poster = div.querySelectorAll("a").find((a) => (a.attrs.href ?? "").endsWith("/poster"));
       expect(poster, "a link to the printed poster").not.toBeUndefined();
-      expect(poster!.textContent).toBe("Poster");
+      // "Sign-up poster" — the same words the surface tab and the Shop tab use
+      // for it, because it is the same sheet in all three places.
+      expect(poster!.textContent).toBe("Sign-up poster");
       // Nothing revealed yet, and no stale QR sitting in the markup.
       expect(div.querySelector(".testqr")).toBeNull();
     });
@@ -517,8 +519,12 @@ describe("the design panel, mounted", () => {
       // ...and none of them owns two, which is what interleaving looked like.
       expect(owns(rows[0]!, "[data-lname]")).toBe(false);
       expect(owns(rows[0]!, "[data-mark]")).toBe(false);
-      // Every row is a label and its control, so they read as peers.
-      for (const r of rows) expect(r.querySelector(".dlbl")).not.toBeNull();
+      // The two upload rows are a heading and their control. The third is a
+      // switch, whose own sentence IS its label — a "Business name" heading over
+      // "My logo already includes my business name" said it twice.
+      for (const r of [rows[0]!, rows[1]!]) expect(r.querySelector(".dlbl")).not.toBeNull();
+      expect(rows[2]!.querySelector(".dlbl")).toBeNull();
+      expect(rows[2]!.querySelector(".tgtext")).not.toBeNull();
     });
 
     it("keeps the name tick beside the logo, not inside a surface", () => {

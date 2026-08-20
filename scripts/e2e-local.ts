@@ -721,6 +721,7 @@ async function main() {
 
   // --- Rich stamp grid: one strip PNG per count (Apple strip / Google hero) ---
   expect((await get("/art/stamps/2.png")).status === 404, "no stamp grid → strip 404 (falls back to text dots)");
+  expect((await get("/art/stamps/full.png")).status === 404, "no stamp grid → hero band 404 (Android falls back to the banner)");
   // Read the target NOW, not from the seed row: earlier blocks edit the card, and
   // the grid is stored under the target it was drawn for.
   const T = (await getCard("default"))!.stamps_target;
@@ -730,9 +731,17 @@ async function main() {
       { target: T, filled: 0, png: pngB64 },
       { target: T, filled: 1, png: pngB64 },
       { target: T, filled: 2, png: pngB64 },
+      // The all-filled one: what Android shows as its static hero band.
+      { target: T, filled: T, png: pngB64 },
     ] }),
   });
   expect(stampUp.status === 200, "stamp-grid upload accepted");
+  // full.png must resolve the target from the CARD, never from the URL — and it
+  // must not be swallowed by the :filled route, which would read "full" as 0 and
+  // quietly serve the EMPTY grid to every Android card.
+  const heroBand = await fetch(base + "/art/stamps/full.png");
+  expect(heroBand.status === 200 && (heroBand.headers.get("content-type") || "").includes("image/png"),
+    "hero band served at /art/stamps/full.png once a grid exists");
   const servedStrip = Buffer.from(await (await fetch(base + "/art/stamps/1.png")).arrayBuffer());
   expect(servedStrip.equals(Buffer.from(pngB64, "base64")), "uploaded strip bytes served back at /art/stamps/1.png");
   const ovStamp = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
@@ -973,6 +982,53 @@ async function main() {
     Math.abs(mRow.value.spendPerReward - mRow.stamps_target * (mRow.basket_cents / 100)) < 0.01,
     "spend per reward is their own target × their own basket",
   );
+
+  // Every stamp figure on this console is NET, including the windowed ones.
+  //
+  // They were not. `stamps` was net and `stamps_7d` / `stamps_30d` were gross,
+  // in the same SELECT — so the all-time number nobody scans obeyed the rule
+  // and the 30-day column in the merchants table, plus the "Stamps/customer"
+  // figure beside it, did not. The two 7-day figures are also compared against
+  // each other for the "slowing down" flag, where being inflated in the same
+  // direction is not the reassurance it sounds like.
+  {
+    const health = async () =>
+      JSON.parse((await get("/admin/api/overview", { headers: { cookie: cookieNow } })).body)
+        .merchants.find((x: any) => x.id === ownMerchant.id);
+    const netPass = await mk();
+    await fetch(base + "/staff/api/stamp", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: netPass.serial }),
+    });
+    const stamped = await health();
+    await fetch(base + "/staff/api/undo", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: netPass.serial }),
+    });
+    const undone = await health();
+    for (const k of ["stamps", "stamps_7d", "stamps_30d"] as const) {
+      expect(
+        undone[k] === stamped[k] - 1,
+        `an undo comes off the console's ${k} (${stamped[k]} → ${undone[k]})`,
+      );
+    }
+    // ...and the money figure follows, because it is that number × their basket.
+    // Asserted as the identity rather than "it went down": this shop has no
+    // basket set, so both readings are zero and a comparison would pass on a
+    // number that never moved. The identity holds either way and is the thing
+    // that actually matters — spend is the net count times their own basket,
+    // never a second count of its own.
+    expect(
+      Math.abs(undone.value.spendThroughCard - undone.stamps * (undone.basket_cents / 100)) < 0.01,
+      "...and the estimated spend is still that net count × their basket",
+    );
+    // The welcome stamps that pass arrived holding never entered any of them:
+    // it was minted with two and then stamped once, so the console must have
+    // moved by exactly one. Three would mean the free ones were counted as
+    // work the shop did — and then billed again through the spend figure above.
+    expect(
+      stamped.stamps === mRow.stamps + 1,
+      `a card's welcome stamps reach no console figure; only the counter stamp does (${mRow.stamps} → ${stamped.stamps})`,
+    );
+  }
 
   // --- Triage: fires on the merchant that is broken, and NOT on the one that isn't ---
   // A rule that flags everybody trains you to ignore the list, so the second
@@ -2636,6 +2692,74 @@ async function main() {
     const tokens = await pushTokensForCard(wpCard);
     expect(tokens.includes("tok-1"),
       `a design change finds every device holding the card (${tokens.length} registered)`);
+  }
+
+  // --- …and the phone that answers the push is TOLD something changed ---
+  // The bug this pins: the push above is only a doorbell. iOS answers it by
+  // asking this endpoint what changed, and the answer comes purely from
+  // `passes.updated_at`. A design save writes to `cards` and used to touch no
+  // pass row at all — so this returned 204 "nothing changed", the phone went
+  // back to sleep, and the new art only ever appeared at that customer's NEXT
+  // STAMP (because addStamps does bump the column). Android had no such
+  // problem, its look being class data, so the two platforms silently
+  // disagreed for months. Reported as "I saved a colour and my iPhone card
+  // didn't change" — which was exactly right.
+  {
+    const wpCard = (await getPool().query<{ card_id: string }>(
+      "SELECT card_id FROM passes WHERE serial = $1", [wp.serial],
+    )).rows[0]!.card_id;
+    const stampsBefore = (await getPool().query<{ n: string; t: string; r: string }>(
+      "SELECT stamp_count::text AS n, stamps_target::text AS t, reward AS r FROM passes WHERE serial = $1",
+      [wp.serial],
+    )).rows[0]!;
+    const tag = async () =>
+      (await getPool().query<{ ms: string }>(
+        "SELECT floor(extract(epoch FROM updated_at) * 1000)::bigint::text AS ms FROM passes WHERE serial = $1",
+        [wp.serial],
+      )).rows[0]!.ms;
+    const changedSince = async (since: string) =>
+      fetch(base + `/wallet/v1/devices/dev-http-1/registrations/pass.com.e2e?passesUpdatedSince=${since}`);
+
+    const before = await tag();
+    // Nothing has happened, so the device is told nothing has happened.
+    expect((await changedSince(before)).status === 204,
+      "with nothing changed, the device is told 204 and does not re-download");
+
+    // A colour change through the real route — no stamp, nothing else.
+    const design = await fetch(base + "/admin/api/card/" + wpCard + "/design", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ bg: "#123456" }),
+    });
+    expect(design.status === 200, "an admin design save succeeds");
+
+    const after = await changedSince(before);
+    expect(after.status === 200,
+      `after a design save the device is told there IS something to fetch (got ${after.status})`);
+    const changed = JSON.parse(await after.text());
+    expect(
+      Array.isArray(changed.serialNumbers) && changed.serialNumbers.includes(wp.serial),
+      "…and the changed pass is named, so iOS comes back for it",
+    );
+    expect(Number(await tag()) > Number(before), "the pass's updated_at actually moved");
+
+    // The re-download carries the NEW colour. Apple is unconfigured here, so a
+    // 503 is the honest pass-through (invariant 1) — what must never happen is
+    // a 200 carrying the old art.
+    const fresh = await fetch(base + `/wallet/v1/passes/pass.com.e2e/${wp.serial}`, { headers: passAuth });
+    expect([200, 503].includes(fresh.status),
+      `the pass endpoint answers or degrades cleanly (${fresh.status})`);
+
+    // The promise on a card already in a wallet still stands: a LOOK change
+    // must not have rewritten anybody's ruleset or their progress.
+    const stampsAfter = (await getPool().query<{ n: string; t: string; r: string }>(
+      "SELECT stamp_count::text AS n, stamps_target::text AS t, reward AS r FROM passes WHERE serial = $1",
+      [wp.serial],
+    )).rows[0]!;
+    expect(
+      stampsAfter.n === stampsBefore.n && stampsAfter.t === stampsBefore.t && stampsAfter.r === stampsBefore.r,
+      "a look change leaves stamps, target and reward exactly as they were",
+    );
   }
 
   const reg2 = await fetch(base + regUrl("dev-http-2", wp.serial), {

@@ -513,7 +513,10 @@ describe("one designer, two pages", () => {
       for (const name of ["apple", "google", "signup"]) {
         expect(html).toContain(`data-surface="${name}"`);
       }
-      expect(html).toContain(">Design<");
+      // The design controls now live behind a CLOSED fold, so the words are on
+      // its summary rather than in a heading. On the console this panel is
+      // already inside its own "Design their card" fold, so it adds none.
+      expect(html).toContain("Customise the design");
       // The second heading is named for what is under it, so it is a ternary in
       // the source rather than a literal: the console cannot set the rules, and
       // heading a lone shop-name field "Loyalty programme" there would promise
@@ -737,11 +740,29 @@ describe("one designer, two pages", () => {
    * the button no longer does: the look reaches every card already in a wallet,
    * the rules only reach new ones.
    */
+  /**
+   * The look and the rules reach completely different people, so they are two
+   * labelled ROWS. As consecutive sentences in one paragraph, "reaches all 5
+   * customers" and "their stamps and reward are untouched" described the same
+   * five people and read as a contradiction — which is exactly how it was
+   * reported.
+   */
   it("says in the confirmation what each half of a save reaches", () => {
     const panel = panelOf(dash);
-    expect(panel).toContain("Their stamps and reward are untouched");
-    expect(panel).toContain("the next time they earn a reward");
+    expect(panel).toContain('<dl class="mdlblast">');
+    expect(panel).toContain("<dt>Look</dt>");
+    expect(panel).toContain("<dt>Reward<br>&amp; stamps</dt>");
+    expect(panel).toContain("next time their phone checks in");
+    // Kept clear of the string-concatenation boundaries in the source: this
+    // reads the panel's SOURCE, not what the browser ends up rendering.
+    expect(panel).toContain("They keep what they were promised until their next reward");
+    expect(panel).toContain("New customers get them today");
     expect(panel).toContain("does</strong> reach cards already in a wallet");
+    // The count is ACTIVE_PASS_SQL, which keeps counting somebody after they
+    // delete the card so churn cannot erase its own evidence. Some of them no
+    // longer hold anything, so the sentence must not say they do.
+    expect(panel).toContain("who have taken a card");
+    expect(panel).not.toContain("who already hold a card");
   });
 
   /**
@@ -1407,12 +1428,13 @@ describe("dashboard information architecture", () => {
    */
   it("orders the editor design-first, and the programme after it", () => {
     const at = (s: string) => html.indexOf(s);
-    expect(at(">Design<")).toBeLessThan(at("data-logo"));
+    expect(at("Customise the design")).toBeLessThan(at("data-logo"));
     expect(at("data-logo")).toBeLessThan(at("data-stampimg"));
     expect(at("data-stampimg")).toBeLessThan(at("data-roles"));
     expect(at("data-roles")).toBeLessThan(at('data-f="shopName"'));
     expect(at('data-f="shopName"')).toBeLessThan(at('data-a="save"'));
-    // The old Design fold is gone entirely, tabs and all.
+    // The old per-wallet Design fold is still gone; the fold here is the new
+    // one, and it is named for the action rather than the section.
     expect(html).not.toContain("<summary>Design</summary>");
   });
 
@@ -1423,7 +1445,10 @@ describe("dashboard information architecture", () => {
     // Slicing from ">Design<" would start AFTER that heading's own class
     // attribute and quietly count one heading instead of two.
     const editor = html.slice(html.indexOf("data-testout"), html.indexOf('data-a="save"'));
-    expect((editor.match(/class="sec/g) ?? []).length).toBe(2);
+    // ONE heading now, not two: the design half is a fold, and its summary is
+    // its title. "Loyalty programme" below it is the only .sec left.
+    expect((editor.match(/class="sec/g) ?? []).length).toBe(1);
+    expect(editor).toContain("Customise the design");
     for (const name of ["Logo", "Colours", "Stamp"]) {
       expect(editor).toContain(`>${name}`);
     }
@@ -1545,7 +1570,7 @@ describe("dashboard information architecture", () => {
    * whose length was the complaint.
    */
   it("keeps the Android explanation behind its info button", () => {
-    expect(html).toContain("Google Wallet shows your logo in a small circle and crops to it");
+    expect(html).toContain("Android crops your logo to a small circle");
     expect(html).not.toContain('class="marknote"');
   });
 
