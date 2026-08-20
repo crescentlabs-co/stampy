@@ -3317,15 +3317,28 @@ export function marketingPage(contactEmail = ""): string {
       .mqtrack { animation: none; }
     }
     .xc { flex: 0 0 auto; width: 250px; background: var(--paper); border: 2px solid var(--hair);
-          border-radius: 20px; padding: 20px; }
-    .xc .biz { font-family: var(--display); font-weight: 800; font-size: 1.1rem;
-               letter-spacing: -.02em; }
-    .xc .kind { color: var(--ink-2); font-size: .76rem; font-weight: 600; margin-top: 2px; }
-    .xc .dots { margin: 16px 0 14px; }
-    .xc dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0;
-             font-size: .82rem; }
-    .xc dt { color: var(--ink-2); font-weight: 500; }
-    .xc dd { margin: 0; text-align: right; font-weight: 700; }
+          border-radius: 20px; overflow: hidden; }
+    .xc header { background: var(--neon); color: var(--on-accent); display: flex;
+                 align-items: center; gap: 6px; padding: 9px 12px; }
+    .xc header img { flex: none; display: block; }
+    .xc header b { font-family: var(--display); font-weight: 800; font-size: .84rem;
+                   letter-spacing: -.02em; white-space: nowrap; overflow: hidden;
+                   text-overflow: ellipsis; }
+    .xc header span { margin-left: auto; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+    /* The stamps are the product's own mark, faded until earned. */
+    .xc .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; padding: 13px 12px; }
+    .xc .grid i { aspect-ratio: 1; border-radius: 50%; border: 1.5px solid var(--hair);
+                  background: url("/assets/img/punchme-mark-v1.png") center/60% no-repeat;
+                  opacity: .3; }
+    .xc .grid i.on { border-color: var(--ink); opacity: 1; }
+    .xc footer { background: var(--neon); color: var(--on-accent); display: flex;
+                 justify-content: space-between; gap: 10px; padding: 10px 12px; }
+    .xc footer span { display: block; font-size: .58rem; font-weight: 700; letter-spacing: .09em;
+                      text-transform: uppercase; opacity: .74; }
+    .xc footer b { font-size: .82rem; font-weight: 700; }
+    .xc footer .pg { text-align: right; }
+    .xc .kind { color: var(--ink-2); font-size: .74rem; font-weight: 600; margin: 0;
+                padding: 9px 12px 11px; }
 
     /* ------------------------------------------------------------ carousel -- */
     .car { background: var(--slab); color: var(--on-slab); border-radius: var(--r);
@@ -3498,13 +3511,16 @@ export function marketingPage(contactEmail = ""): string {
     let dots = "";
     for (let i = 0; i < slots; i++) dots += `<i class="${i < filled ? "on" : ""}"></i>`;
     return `<article class="xc">
-              <p class="biz">${biz}</p>
+              <header>
+                <img src="/assets/img/punchme-mark-v1.png" alt="" width="18" height="18">
+                <b>${biz}</b><span>${filled} earned</span>
+              </header>
+              <div class="grid">${dots}</div>
+              <footer>
+                <div><span>Reward</span><b>${reward}</b></div>
+                <div class="pg"><span>Progress</span><b>${filled}/${slots}</b></div>
+              </footer>
               <p class="kind">${kind}</p>
-              <div class="dots">${dots}</div>
-              <dl>
-                <dt>Stamps</dt><dd>${slots}</dd>
-                <dt>Reward</dt><dd>${reward}</dd>
-              </dl>
             </article>`;
   };
   // The track is doubled so the translate can loop at exactly -50% with no seam.
