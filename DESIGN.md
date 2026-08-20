@@ -108,6 +108,43 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   hover title carries it and a table view underneath carries all of them,
   because hover does not exist on a phone.
 
+## The marketing page's above-the-fold
+
+Roughly 60% of visitors never scroll, so the first screen carries the whole
+argument. It is built in this order and the order is the point:
+
+1. **The dream outcome**, not what the product is. "Turn your customers into
+   regulars", never "a stamp card that lives in a wallet" — that belongs in the
+   line underneath.
+2. **The sub-headline** says what it is and what makes it different.
+3. **One clear action**, labelled with what the visitor gets.
+4. **The fear-killers directly under the button** — first month free, no card
+   details, no app for your customers, cancel any time.
+5. **Media that shows the promise being kept**, not decoration.
+
+**Never invent proof.** No merchant counts, testimonials, logos or retention
+statistics — there are no customers yet (see PRODUCT.md). The demo card and the
+risk reversal do that job instead, and a demo you can verify in ten seconds is
+worth more than a testimonial nobody can check.
+
+**Nothing that argues for the product may be hidden.** No carousels, no folds
+for value props: what is hidden does not get seen, especially on a phone. A
+slider once held two of three value props behind a 34×5px dot.
+
+**Headings carry their own benefit.** Assume the visitor reads only those.
+"Why us", "Who are we?" and "What we do" name the section after itself and say
+nothing — the version of this page that shipped them is the anti-example.
+
+## Video
+
+Clips are **muted, looping, `playsinline`, poster-backed, and carry no
+`autoplay` attribute** — playback starts from script, and only when
+`prefers-reduced-motion` is not set, so a visitor who asked for less motion
+keeps a still. They are cropped to the phone screen: source footage with its own
+burned-in captions would argue with the page's headings in someone else's type.
+Budget is ~1.5MB for the set; below the fold they use `preload="none"` and start
+on an IntersectionObserver.
+
 ## Where the aesthetic came from
 
 The marketing page (`marketingPage()`, src/pages.ts) is the reference

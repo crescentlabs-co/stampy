@@ -92,6 +92,14 @@ async function main() {
   // font is.
   expect(landing.body.includes("/assets/img/quiet-table-v1.jpg"), "landing page references its carousel photograph");
   expect(landing.body.includes("/assets/img/shopfront-v1.jpg"), "landing page references its closing photograph");
+  // The looping clips and the brand mark are the page argument now, so a
+  // missing byte is a hole in it. Checked the same way the font is.
+  for (const asset of ["/assets/vid/card-v1.mp4", "/assets/vid/card-v1.jpg",
+                       "/assets/vid/signup-v1.mp4", "/assets/vid/scan-v1.mp4",
+                       "/assets/img/punchme-logo-v1.png"]) {
+    expect(landing.body.includes(asset) || asset.endsWith(".jpg"), `landing references ${asset}`);
+    expect((await get(asset)).status === 200, `GET ${asset} serves`);
+  }
   const shot = await get("/assets/img/shopfront-v1.jpg");
   expect(shot.status === 200, "GET /assets/img/*.jpg serves the landing photography");
 

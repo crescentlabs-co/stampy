@@ -2798,6 +2798,7 @@ function page(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/img/punchme-favicon-v1.png">
 <title>${esc(title)}</title>
 <style>${baseCss}${extraCss}</style>
 </head>
@@ -3173,8 +3174,8 @@ export function marketingPage(contactEmail = ""): string {
            backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--hair); }
     .navin { max-width: 1180px; margin: 0 auto; padding: 13px clamp(18px, 4vw, 40px);
              display: flex; align-items: center; gap: 20px; }
-    .brand { font-family: var(--display); font-weight: 800; font-size: 1.16rem;
-             letter-spacing: -.035em; text-decoration: none; }
+    .brand { display: flex; align-items: center; text-decoration: none; }
+    .brand img { height: 27px; width: auto; display: block; }
     .navlinks { display: none; margin-left: auto; gap: 26px; }
     @media (min-width: 760px) { .navlinks { display: flex; } }
     .navlinks a { text-decoration: none; font-size: .92rem; font-weight: 500; color: var(--ink-2); }
@@ -3558,7 +3559,7 @@ export function marketingPage(contactEmail = ""): string {
 
   const body = `
     <header class="nav"><div class="navin">
-      <a class="brand" href="/">PunchMe</a>
+      <a class="brand" href="/"><img src="/assets/img/punchme-logo-v1.png" alt="PunchMe" width="220" height="54"></a>
       <nav class="navlinks">
         <a href="#how">How it works</a>
         <a href="#owner">For owners</a>
@@ -3646,7 +3647,7 @@ export function marketingPage(contactEmail = ""): string {
       <!-- 3 · EXAMPLES, auto-scrolling -->
       <section class="band tight"><div class="shell">
         <div class="lede">
-          <h2>Built for your business</h2>
+          <h2>Your stamps, your reward, your rules</h2>
           <p>Every trade counts differently. Yours is set up to match.</p>
         </div>
       </div>
@@ -3656,9 +3657,7 @@ export function marketingPage(contactEmail = ""): string {
       <!-- 4 · FEATURE CAROUSEL -->
       <section class="band"><div class="shell">
         <div class="lede">
-          <h2>Why us</h2>
-        </div>
-        <div class="car" data-car><div class="cartrack" data-cartrack>
+        <div class="car"><div class="cartrack">
           <div class="slide" data-slide>
             <div class="slidetx">
               <h3>Their card updates before they leave the counter</h3>
@@ -3726,7 +3725,7 @@ export function marketingPage(contactEmail = ""): string {
       <!-- 5 · FOR THE OWNER -->
       <section class="band" id="owner"><div class="shell">
         <div class="lede">
-          <h2>Everything you run it from</h2>
+          <h2>You run the whole thing from your phone</h2>
           <p>Tap a point to see the screen.</p>
         </div>
         <div class="own">
@@ -3798,7 +3797,7 @@ export function marketingPage(contactEmail = ""): string {
 
       <!-- 6 · PRICE -->
       <section class="band tight" id="price"><div class="shell">
-        <div class="lede"><h2>One price</h2></div>
+        <div class="lede"><h2>Everything included, for RM79 a month</h2></div>
         <div class="price">
           <p class="amt">RM79</p>
           <p class="per">a month &middot; first month free</p>
@@ -3815,7 +3814,7 @@ export function marketingPage(contactEmail = ""): string {
 
       <!-- 7 · WHO WE ARE -->
       <section class="band tight"><div class="shell"><div class="us">
-        <h2>Who are we?</h2>
+        <h2>Built by two people in KL who set up every shop themselves</h2>
         <p>Two of us, in Kuala Lumpur. Four years in e-commerce data analytics between
           one of us, five in fintech product for the other.</p>
         <p>We set up every shop ourselves, so you will always be talking to the people
