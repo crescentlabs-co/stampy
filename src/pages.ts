@@ -3407,13 +3407,14 @@ export function marketingPage(contactEmail = ""): string {
     .owncap[aria-pressed="true"] { background: var(--soft); border-left-color: var(--neon); }
     .owncap[aria-pressed="true"] p { color: var(--ink); }
     @media (prefers-reduced-motion: reduce) { .owncap { transition: none; } }
-    .phone { width: 320px; max-width: 100%; margin: 0 auto; background: var(--ink);
+    .phone { width: 380px; max-width: 100%; margin: 0 auto; background: var(--ink);
              border-radius: 42px; padding: 11px; box-shadow: 0 30px 70px -30px rgba(12,14,13,.5); }
     .screen { background: var(--paper); border-radius: 32px; overflow: hidden;
               min-height: 560px; display: flex; flex-direction: column; }
     .sbar { display: flex; align-items: center; justify-content: space-between;
             padding: 14px 20px 6px; font-size: .74rem; font-weight: 700; color: var(--ink); }
-    .scr { display: none; padding: 8px 18px 20px; flex: 1; }
+    .scr { display: none; }
+    .scr img { width: 100%; height: auto; display: block; }
     /* No fill-mode and no to-frame: the resting state is the element's own, so a
        screen that never gets to animate is simply visible. With "both" it was
        pinned at opacity 0, and the phone rendered empty. */
@@ -3757,45 +3758,23 @@ export function marketingPage(contactEmail = ""): string {
           </div>
           <div class="phone">
             <div class="screen">
-              <div class="sbar"><span>9:41</span><span>PunchMe</span></div>
 
               <div class="scr" data-screen="stamp" data-on>
-                <h5>Stamper</h5>
-                <p class="hint">Kopi Corner &middot; signed in</p>
-                <div class="scan"><span class="frame"></span><span class="cap">Point at their card</span></div>
-                <div class="toast">Stamp added &middot; 7 of 10</div>
-                <div class="box"><p class="t">Recent</p><p class="s">4 stamps in the last hour</p></div>
+                <img src="/assets/img/screen-stamping-v1.jpg" alt="The stamper, with a stamp just added" width="430" height="860" loading="lazy">
               </div>
 
               <div class="scr" data-screen="notify">
-                <h5>Notifications</h5>
-                <p class="hint">Who to bring back</p>
-                <div class="box"><p class="t">Slipping away &middot; 14</p><p class="s">Last visit 2 to 4 weeks ago</p></div>
-                <div class="box"><p class="t">Nearly gone &middot; 31</p><p class="s">Last visit over 6 weeks ago</p></div>
-                <div class="box line"><p class="t">12 skipped</p><p class="s">Messaged in the last 7 days</p></div>
-                <div class="toast">Sent to 45 people</div>
+                <img src="/assets/img/screen-notify-v1.jpg" alt="The dashboard composing a win-back message" width="430" height="860" loading="lazy">
               </div>
 
               <div class="scr" data-screen="customers">
-                <h5>Customers</h5>
-                <p class="hint">Everyone who holds a card</p>
-                <div class="box"><p class="t">Regulars &middot; 88</p><p class="s">Visited in the last fortnight</p></div>
-                <div class="box"><p class="t">133 in total</p><p class="s">No names, no numbers</p></div>
-                <div class="box line"><p class="t">Today</p><p class="s">21 stamps &middot; 3 rewards given</p></div>
+                <img src="/assets/img/screen-customers-v1.jpg" alt="The dashboard customer list" width="430" height="860" loading="lazy">
               </div>
 
               <div class="scr" data-screen="settings">
-                <h5>Your card</h5>
-                <p class="hint">Change it any time</p>
-                <div class="fld"><label>Shop name</label><div class="val">Kopi Corner</div></div>
-                <div class="fld"><label>Stamps to a reward</label><div class="val">10</div></div>
-                <div class="fld"><label>Reward</label><div class="val">Free drink</div></div>
-                <div class="box"><p class="t">Staff PIN</p><p class="s">Shown once, then replaced</p></div>
+                <img src="/assets/img/screen-card-v1.jpg" alt="The card settings: stamps, reward and staff PIN" width="430" height="860" loading="lazy">
               </div>
 
-              <div class="tabbar">
-                <span class="on">Home</span><span>Customers</span><span>Card</span><span>Settings</span>
-              </div>
             </div>
           </div>
           <div>
