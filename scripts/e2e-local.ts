@@ -445,6 +445,23 @@ async function main() {
     `an undo comes off the Home stamps tile (${tileAfterStamp} → ${tileAfterUndo})`,
   );
 
+  // ...and a WELCOME stamp is not a stamp given. A new card is minted already
+  // holding some, written straight to passes.stamp_count with no event — so
+  // issuing one must not move this number. It is free, the shop did not hand it
+  // over, and the same figure is multiplied by their basket for "spend
+  // influenced", so a welcome stamp counted here would be invoiced twice: once
+  // as work they did not do, once as money they did not take.
+  //
+  // The counter fold and the console's spend figure already assert this. The
+  // Home tile — the one an owner actually reads — did not.
+  const tileBeforeIssue = await tile();
+  await mk();
+  const tileAfterIssue = await tile();
+  expect(
+    tileAfterIssue === tileBeforeIssue,
+    `issuing a card with welcome stamps adds nothing to the Home tile (${tileBeforeIssue} → ${tileAfterIssue})`,
+  );
+
   // A short code from the shop's other card resolves too — it used to 404.
   const codeLookup = await fetch(
     base + "/staff/api/lookup?code=" + encodeURIComponent(crossPass.short_code),
