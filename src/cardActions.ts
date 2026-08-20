@@ -20,6 +20,7 @@ import {
   logMessage,
   pushTokensForCard,
   pushTokensForSerial,
+  touchPassesForCard,
   type CardRow,
   type EventMeta,
   type EventType,
@@ -241,6 +242,13 @@ async function deliver(
  */
 export async function refreshCardArt(card: CardRow): Promise<PushSummary> {
   const started = Date.now();
+  // FIRST, and awaited on its own before anything is pushed. The APNs push is
+  // only a doorbell: the phone answers it by asking `serialsUpdatedSince` what
+  // changed, and that question is answered purely from `passes.updated_at`. Push
+  // before bumping and the phone can arrive to be told "nothing" — which is not
+  // a hypothetical race, it is what this whole function did until now, because
+  // nothing bumped the column at all. See touchPassesForCard in src/db.ts.
+  await touchPassesForCard(card.id);
   const [, pushResults] = await Promise.all([
     ensureClass(card).then((r) => {
       if (!r.ok && r.reason !== "google-not-configured") {

@@ -3764,6 +3764,35 @@ async function logPassLifecycle(serial: string, type: EventType): Promise<void> 
   );
 }
 
+/**
+ * Mark every pass on this card as changed, so Apple comes back for a new one.
+ *
+ * This is the other half of `serialsUpdatedSince` below, and it exists because
+ * the two halves disagreed for months. Changing a card's LOOK writes to
+ * `cards`; it touches no pass row. `refreshCardArt` would send the APNs
+ * wake-up, the phone would dutifully ask what changed, and `serialsUpdatedSince`
+ * — which answers that question purely from `passes.updated_at` — would say
+ * "nothing". The route returned 204 and the phone went back to sleep still
+ * holding the old art. The new look only ever appeared at that customer's NEXT
+ * STAMP, because `addStamps` is one of the three writes that does bump the
+ * column. Android had no such problem: its look is class data and renders on
+ * every object already issued, so the two platforms silently disagreed.
+ *
+ * NOT an event, deliberately. `events` is append-only and describes things that
+ * happened to a customer; this is a cache-invalidation timestamp and nothing
+ * more. Nothing reads this column as a visit clock either — `LAST_VISIT_SQL`
+ * comes off stamp EVENTS with a `p.created_at` fallback — so bumping it cannot
+ * disturb the lapse clock, the nudge limits or any churn figure. `setPassMessage`
+ * already sets the same precedent for a nudge.
+ */
+export async function touchPassesForCard(cardId: string): Promise<number> {
+  const res = await getPool().query(
+    `UPDATE passes SET updated_at = now() WHERE card_id = $1`,
+    [cardId],
+  );
+  return res.rowCount ?? 0;
+}
+
 /** Serials on this device whose passes changed after `updatedSince` (epoch ms tag). */
 export async function serialsUpdatedSince(
   deviceLibraryId: string,
