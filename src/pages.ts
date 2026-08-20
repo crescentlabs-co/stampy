@@ -828,9 +828,22 @@ export const DESIGN_PANEL_CSS = /* css */ `
        it. Five 26px squares spread across a row that can run to 400px was the
        scattered look in its purest form: mostly gap, and no way to tell it was
        one palette rather than five unrelated chips. */
+    /* Same frame mechanism as .actbar: 1px of padding and a 1px gap, with the
+       strip's own colour showing through as the outline AND the dividers. An
+       inset shadow cannot do it once the sections are opaque — the sections
+       paint over it. */
     .swstrip { display: flex; height: 34px; margin-top: 5px; border-radius: 999px;
-               overflow: hidden; box-shadow: inset 0 0 0 1px var(--field-border); }
-    .sw { flex: 1 1 0; min-width: 0; }
+               overflow: hidden; padding: 1px; gap: 1px; background: var(--field-border); }
+    /* Each swatch is a button now: the strip named all five parts already, so
+       it was the obvious thing to press long before it did anything. */
+    .sw { flex: 1 1 0; min-width: 0; border: 0; padding: 0; cursor: pointer;
+          font: inherit; border-radius: 0; }
+    .sw:first-child { border-radius: 999px 0 0 999px; }
+    .sw:last-child { border-radius: 0 999px 999px 0; }
+    .sw:hover { box-shadow: inset 0 0 0 2px var(--accent); }
+    /* The one whose palette is open. Inset so it cannot move the strip. */
+    .sw.on { box-shadow: inset 0 0 0 2px var(--ink); }
+    .sw:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; z-index: 1; }
     /* title= is hover-only and this designer is used on a phone, so the names
        are on the page. Same flex basis as the sections above, so each label
        stays under the colour it belongs to. */
@@ -858,30 +871,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .chipcustom input[type=color] { width: 30px; height: 30px; padding: 2px; margin: 0;
                                     border: 1px solid var(--field-border); border-radius: 8px;
                                     background: var(--surface); cursor: pointer; }
-    /* --- tap the card to recolour it ---
-       The preview stops being a picture and becomes the control. Every part
-       that maps to a colour gets a pointer and a hairline on hover, so the
-       card advertises that it can be tapped without drawing chrome over the
-       thing the owner is trying to judge. */
-    .pvhit, .pvhit [data-pv-banner], .pvhit [data-pv-dots],
-    .pvhit [data-pv-name], .pvhit [data-pv-progress],
-    .pvhit [data-pv-reward], .pvhit .pv-lbl { cursor: pointer; }
-    .pvhit :is([data-pv-banner], [data-pv-dots], [data-pv-name],
-               [data-pv-progress], [data-pv-reward], .pv-lbl) {
-      border-radius: 6px; outline: 1px dashed transparent; outline-offset: 2px;
-      transition: outline-color .12s ease;
-    }
-    .pvhit :is([data-pv-banner], [data-pv-dots], [data-pv-name],
-               [data-pv-progress], [data-pv-reward], .pv-lbl):hover {
-      outline-color: rgba(255,255,255,.55);
-    }
-    /* The part being edited, marked on the card itself so the tap has an
-       answer. Solid rather than dashed: this is a state, not an invitation. */
-    .pvhit-on { outline: 2px solid var(--accent) !important; outline-offset: 2px; }
-    .pv.pvhit-on { outline-offset: 3px; }
-    @media (prefers-reduced-motion: reduce) { .pvhit :is([data-pv-banner], .pv-lbl) { transition: none; } }
-    /* The palette that opens under the card. Sits inside the preview box so it
-       travels with it when the console moves the preview into its rail. */
+    /* The palette that opens under the swatch strip — in the editor column,
+       beside the strip that was tapped. NOT under the preview: the console
+       mounts the preview in a right-hand rail, so opening it there would put
+       the answer in a different column from the control. */
     .crpal { background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
              padding: 10px 12px 12px; margin-top: 10px; }
     .crpal-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -890,7 +883,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .crpal-x { border: none; background: none; font: inherit; font-size: .9rem; line-height: 1;
                color: var(--muted); cursor: pointer; padding: 4px; border-radius: 6px; }
     .crpal-x:hover { background: var(--surface); color: var(--ink); }
-    .crtip { margin-top: 6px; }
     /* The swatch whose palette is open, marked in the read-out strip too, so
        the strip and the card never disagree about what is being edited. */
     .sw.on { box-shadow: inset 0 0 0 1px var(--bg), 0 0 0 2px var(--accent); }
@@ -922,14 +914,16 @@ export const DESIGN_PANEL_CSS = /* css */ `
        grouped-row treatment a phone's own Settings uses.
        Outlined, never filled with the accent: DESIGN.md rule 1 gives the neon
        exactly one job, and "upload a logo" is not the next action on a page. */
-    /* The divider between sections is a 1px GAP showing the bar's own colour
-       through, not an inset shadow on each section. The shadow version was
-       there and too faint to read as a divider, and it occupied the one
-       property the hover ring below needs. A gap cannot be overridden by a
-       state, so the divider survives hover, focus and disabled alike. */
-    .actbar { display: flex; align-items: stretch; margin-top: 6px; gap: 1px;
-              border-radius: 999px; overflow: hidden; background: var(--field-border);
-              box-shadow: inset 0 0 0 1px var(--field-border); }
+    /* One mechanism draws BOTH the outline and the dividers: 1px of padding and
+       a 1px gap, with the bar's own colour showing through around and between
+       opaque sections.
+       The outline cannot be an inset shadow here. It was, and the moment the
+       sections stopped being transparent they painted straight over it — the
+       bar lost its edge and read as floating text, which is exactly what "Add a
+       test card" looked like. Padding puts the frame outside the sections
+       instead of under them, so nothing can cover it. */
+    .actbar { display: flex; align-items: stretch; margin-top: 6px; gap: 1px; padding: 1px;
+              border-radius: 999px; overflow: hidden; background: var(--field-border); }
     /* flex-basis 0, so sections are equal regardless of how long their labels
        are — sized by content, "Upload logo" and "Remove logo" differ enough to
        look like a mistake. */
@@ -1142,11 +1136,11 @@ export const DESIGN_PANEL_JS = /* js */ `
                 <div class="pvg-val" data-pvg-bal></div>
               </div>
             </div>
-            <div class="pvg-rule"></div>
-            <div class="pvg-stamps">
-              <div class="pvg-lbl" data-pvg-slbl>YOUR STAMPS</div>
-              <div class="pvg-dots" data-pvg-dots></div>
-            </div>
+            <!-- The dots row went with its module in googleModel.ts. Google
+                 renders text modules left-aligned in its own typography, so the
+                 grid could never be centred or sized like the iPhone's, and
+                 sending it as an image is what made a stamp take ~20s to reach
+                 a phone. The count now lives in PROGRESS, above. -->
             <div class="pvg-qr">QR</div>
             <div class="pvg-code">Code ABC123</div>
             <div class="pvg-foot"></div>
@@ -1174,8 +1168,6 @@ export const DESIGN_PANEL_JS = /* js */ `
                node into its right-hand rail (mountDesigner), and a palette left
                behind in the editor column would open 400px away from the thing
                it recolours. Empty and hidden until something is tapped. -->
-          <div class="crpal" data-palette hidden></div>
-
           <!-- The real thing, on a real phone. Deliberately NOT a .sec heading:
                that class draws a rule and 28px of air above itself, which pushed
                this away from the card and made it read as the start of a new
@@ -1316,9 +1308,14 @@ export const DESIGN_PANEL_JS = /* js */ `
              more thing to find, and the rows were a second, worse drawing of a
              card that was already right there. -->
         <label class="dlbl">Colours\${info("Read from your logo and used everywhere. To change one, tap that part of the card in the preview.")}</label>
+        <!-- The strip IS the control. Each swatch is a button; tapping one opens
+             its palette directly underneath, where you are already looking.
+             The palette lives HERE rather than under the preview: the console
+             mounts the preview in a right-hand rail, so opening it there would
+             put the answer in a different column from the thing you tapped. -->
         <div class="swstrip" data-swatches></div>
         <div class="swnames" data-swnames></div>
-        <p class="dnote crtip">Tap any part of the card to recolour it.</p>
+        <div class="crpal" data-palette hidden></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
              from the start. They are PARKED here and MOVED into the open palette,
@@ -1618,32 +1615,19 @@ export const DESIGN_PANEL_JS = /* js */ `
         // this one says what the thing is — exactly as buildLoyaltyClass sends
         // it, which is a fixed string and not the shop's.
         q("[data-pvg-prog]").textContent = "Loyalty card";
-        // stampDots, transcribed (src/passModel.ts): large circles, spaced, over
-        // two rows once there are five of them. Typed out rather than imported —
-        // this is browser JS inside a template literal with no module system —
-        // and held in step by the mock-vs-payload test, which compares this
-        // against what buildLoyaltyPatch actually sends.
-        const slots = [];
-        for (let i = 0; i < target; i++) slots.push(i < start ? "⬤" : "◯");
-        const top = Math.ceil(slots.length / 2);
-        q("[data-pvg-dots]").textContent = slots.length < 5
-          ? slots.join(" ")
-          : slots.slice(0, top).join(" ") + "\\n" + slots.slice(top).join(" ");
         // Every caption and every value below comes from buildLoyaltyPatch,
-        // headers included — a card at its target says REWARD READY 🎉 and tells
-        // the holder to show it, and a mock that only ever drew the ordinary
-        // state would hide the one moment the card exists for.
+        // headers included — a card at its target tells the holder to show it,
+        // and a mock that only ever drew the ordinary state would hide the one
+        // moment the card exists for. The mock-vs-payload test compares this
+        // against what buildLoyaltyPatch actually sends, so the two cannot
+        // drift: the dot grid used to be drawn here and was removed in step
+        // with its module.
         const ready = start >= target;
         const reward = f("reward").value || "Your reward";
         const progress = start + "/" + target;
-        // getHeaderFieldValue, transcribed: the iPhone's top-right line. Kept in
-        // step by the mock-vs-payload test, which reads both off the real
-        // function rather than off a second copy of these words.
-        const left = target - Math.max(0, Math.min(start, target));
         q("[data-pvg-bal]").textContent = ready
-          ? "Reward ready"
-          : (left <= start ? left + " left" : start + " earned");
-        q("[data-pvg-slbl]").textContent = ready ? "REWARD READY 🎉" : "YOUR STAMPS · " + progress;
+          ? progress + " — reward ready 🎉"
+          : progress + " earned";
         q("[data-pvg-reward]").textContent = ready ? reward + " — show this to staff!" : reward;
         // The square mark if there is one, else the wide logo — the same
         // fallback logoUrl() applies when the class is built.
@@ -2196,41 +2180,30 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (role === "bg") f("fg").value = pickTextColor(hex);
         renderPreview(); refreshSwatches();
       }
-      // ---- Tap the card, change that colour ----
+      // ---- Tap a swatch, change that colour ----
       //
       // The five named rows and the Customize button that revealed them are
       // gone. They asked an owner to name the part they meant — "Band" — before
-      // they could point at it, when the part was on screen the whole time; and
-      // they were a second, worse drawing of a card that was already right
-      // there. Now the preview IS the control.
+      // they could point at it, and the strip of colours was sitting right there
+      // saying all five names already. So the strip IS the control now: it was
+      // a read-out and a list of the parts at the same time, which made it the
+      // obvious thing to press and the one place a colour can be changed.
       //
-      // Only the iPhone mock carries hit regions: it is the one surface with all
-      // five parts on it. Android has no band and no drawn stamps (see
-      // buildLoyaltyPatch) and the sign-up page is not a card, so regions there
-      // would offer to change things that surface does not show.
+      // ONE control for one job, deliberately. This section previously carried a
+      // chip row AND five colour squares doing the same thing, and the note in
+      // its old CSS is the reason to keep it to one: two controls for one job
+      // read as two different jobs.
       const park = q("[data-park]");
       const palHost = q("[data-palette]");
-      const pvRoot = q("[data-pv]");
-      // Specific first, the card itself LAST: closest() walks outwards, so a tap
-      // on the band has to meet the band before it meets the card behind it.
-      const HITS = [
-        { sel: "[data-pv-banner]", role: "bandColor" },
-        { sel: "[data-pv-dots]", role: "accent" },
-        { sel: ".pv-lbl", role: "label" },
-        { sel: "[data-pv-name]", role: "fg" },
-        { sel: "[data-pv-progress]", role: "fg" },
-        { sel: "[data-pv-reward]", role: "fg" },
-        { sel: "[data-pv]", role: "bg" },
-      ];
 
       /**
-       * What the logo produced, named.
+       * What the logo produced, named — and the way in to changing it.
        *
-       * The colours are DERIVED — uploading a logo sets all five — so this stays
-       * a read-out. A bare row of colours cannot say which one is the band, and
-       * the band is the one people go looking for, so each is printed with its
-       * name under it: this designer is used on a phone, where a title attribute
-       * is unreachable.
+       * The colours are DERIVED, so this began as a read-out. A bare row of
+       * colours cannot say which one is the band, and the band is the one people
+       * go looking for, so each is printed with its name under it: this designer
+       * is used on a phone, where a title attribute is unreachable. Buttons
+       * rather than spans, so the strip answers a keyboard as well as a thumb.
        */
       function drawSwatches() {
         const strip = q("[data-swatches]");
@@ -2239,10 +2212,22 @@ export const DESIGN_PANEL_JS = /* js */ `
         const names = q("[data-swnames]");
         if (names) names.innerHTML = "";
         for (const r of ROLES) {
-          const sw = document.createElement("span");
+          const sw = document.createElement("button");
+          sw.type = "button";
           sw.className = "sw" + (r.k === activeRole ? " on" : "");
           sw.style.background = f(r.k).value;
           sw.title = r.name;
+          // A real attribute, not dataset: identical in a browser, and this way
+          // the strip is addressable by selector from CSS and from the tests.
+          sw.setAttribute("data-role", r.k);
+          sw.setAttribute("aria-label", r.name);
+          sw.setAttribute("aria-expanded", r.k === activeRole ? "true" : "false");
+          // Tapping the open one shuts it, so the strip is a toggle rather than
+          // something that can only ever be opened.
+          sw.onclick = () => {
+            activeRole = activeRole === r.k ? null : r.k;
+            drawPalette();
+          };
           strip.appendChild(sw);
           if (names) {
             const nm = document.createElement("span");
@@ -2261,16 +2246,6 @@ export const DESIGN_PANEL_JS = /* js */ `
       }
 
       /** Outline the part being edited, so the tap has an answer on the card. */
-      function markHits() {
-        if (!pvRoot) return;
-        for (const h of HITS) {
-          // querySelectorAll never returns the root itself, and the card
-          // background IS the root — so it is toggled directly.
-          const els = h.sel === "[data-pv]" ? [pvRoot] : pvRoot.querySelectorAll(h.sel);
-          for (const el of els) el.classList.toggle("pvhit-on", h.role === activeRole);
-        }
-      }
-
       /**
        * Draw the palette for whichever part is open, or close it.
        *
@@ -2284,7 +2259,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         for (const r of ROLES) park.appendChild(f(r.k));
         palHost.innerHTML = "";
         palHost.hidden = !activeRole;
-        markHits();
         if (!activeRole) { drawSwatches(); return; }
 
         const role = ROLES.find((r) => r.k === activeRole);
@@ -2323,26 +2297,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         drawSwatches();
       }
 
-      /**
-       * One delegated listener on the preview, not six.
-       *
-       * renderPreview rewrites the dots and the labels on every change, so
-       * anything bound per element would be thrown away the first time a colour
-       * moved. Delegation survives that.
-       */
-      if (pvRoot) {
-        pvRoot.classList.add("pvhit");
-        pvRoot.onclick = (e) => {
-          if (!e.target || !e.target.closest) return;
-          for (const h of HITS) {
-            if (e.target.closest(h.sel)) {
-              activeRole = activeRole === h.role ? null : h.role;
-              drawPalette();
-              return;
-            }
-          }
-        };
-      }
+      // The preview stays a preview. It briefly carried hit regions so the card
+      // itself could be tapped, which was a misreading of the ask: the strip of
+      // colours below already names all five parts and was the thing meant. Two
+      // ways to change one colour is the "chip row plus five squares" mistake
+      // this section has already made once.
+
       // The OS picker writes straight through. No rebuild here on purpose —
       // this fires on every frame of a drag, and rebuilding would move the very
       // input the picker is attached to.

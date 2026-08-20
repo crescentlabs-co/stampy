@@ -1500,12 +1500,15 @@ describe("dashboard information architecture", () => {
 
   // Two controls set the same five fields: a chip row and a row of five colour
   // squares. Two controls for one job read as two different jobs.
-  it("picks colours by tapping the part of the card they belong to", () => {
-    // The preview IS the control. Hit regions map each part to its role, and
-    // the palette opens INSIDE the preview box so it travels with it when the
-    // console moves that node into its rail.
+  it("picks colours by tapping the swatch for that part", () => {
+    // The strip already named all five parts, so it was the obvious thing to
+    // press long before it did anything. Each swatch is a button; its palette
+    // opens directly underneath, in the same column.
     expect(html).toContain("data-palette");
-    expect(html).toContain('{ sel: "[data-pv-banner]", role: "bandColor" }');
+    expect(html).toContain('sw.setAttribute("data-role", r.k)');
+    expect(html).toContain('sw.setAttribute("aria-expanded"');
+    // And the preview stays a preview — one control for one job.
+    expect(html).not.toContain("pvhit");
     expect(html).toContain("Custom…");
     expect(html).not.toContain("rolebtn");
     expect(html).not.toContain("crhead");

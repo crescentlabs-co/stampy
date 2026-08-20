@@ -194,15 +194,20 @@ describe("buildLoyaltyObject", () => {
 
   it("shows stamp progress as the points balance", () => {
     const obj = buildLoyaltyObject(row(), card()) as any;
+    // Still sent, and must be: loyaltyPoints.balance is the field whose change
+    // triggers Google's update notification. Drop it and Android stops telling
+    // anyone a stamp landed, with every card still looking right when opened.
     expect(obj.loyaltyPoints.balance.string).toBe("3/10");
-    const stamps = obj.textModulesData.find((t: any) => t.id === "stamps");
-    expect(stamps.body).toBe("⬤ ⬤ ⬤ ◯ ◯\n◯ ◯ ◯ ◯ ◯");
+    // And on the front of the card, where the dot grid used to be.
+    expect(obj.textModulesData.find((t: any) => t.id === "earned").body).toBe("3/10 earned");
+    expect(obj.textModulesData.find((t: any) => t.id === "stamps")).toBeUndefined();
   });
 
   it("switches to reward-ready copy when full", () => {
     const obj = buildLoyaltyObject(row({ stamp_count: 10 }), card()) as any;
-    const stamps = obj.textModulesData.find((t: any) => t.id === "stamps");
-    expect(stamps.header).toContain("REWARD READY");
+    // The shout moved to the line that survived. It used to sit on the dot
+    // row's header, which is gone.
+    expect(obj.textModulesData.find((t: any) => t.id === "earned").body).toContain("reward ready");
     const reward = obj.textModulesData.find((t: any) => t.id === "reward");
     expect(reward.body).toContain("show this to staff");
   });
@@ -285,30 +290,38 @@ describe("save-to-wallet JWT", () => {
     /**
      * The override REPLACES the default rows, so the count has to be somewhere
      * or it leaves the card entirely — it was the one thing the default template
-     * showed for free. It rides in the stamps HEADER rather than taking a column
-     * beside the dots: twenty large circles in half a row would wrap or clip.
+     * showed for free. It used to ride in the dot row's header; with that row
+     * gone it is the PROGRESS line itself, which is why that line says the
+     * number rather than a phrase derived from it.
      */
-    it("keeps the stamp count, in the header the dots run under", () => {
-      const stamps = (buildLoyaltyPatch(row({ stamp_count: 1, stamps_target: 8 }), card())
-        .textModulesData as { id: string; header: string }[]).find((m) => m.id === "stamps");
-      expect(stamps?.header).toBe("YOUR STAMPS · 1/8");
-      expect(paths(rows())).toContain("object.textModulesData['stamps']");
+    it("keeps the stamp count now that the dots are gone", () => {
+      const mods = buildLoyaltyPatch(row({ stamp_count: 1, stamps_target: 8 }), card())
+        .textModulesData as { id: string; header: string; body: string }[];
+      expect(mods.find((m) => m.id === "earned")?.body).toBe("1/8 earned");
+      // The module and the template path that pointed at it went together: a
+      // path naming a module that does not exist renders an EMPTY ROW rather
+      // than failing, so half a removal is silent on the phone.
+      expect(mods.find((m) => m.id === "stamps")).toBeUndefined();
+      expect(paths(rows())).not.toContain("object.textModulesData['stamps']");
     });
 
     /**
-     * "1 earned" / "3 left" / "Reward ready" — the line the iPhone carries in
-     * its top-right corner. Bound to the function the iPhone uses rather than to
-     * a copy of its wording, so the two cards cannot start disagreeing about
-     * when a card is "3 left" instead of "5 earned".
+     * The count at every stage of a card, and the one state it exists for.
+     *
+     * It used to borrow the iPhone's phrasing ("1 earned" / "3 left"), which
+     * reads well beside a grid of dots showing the whole card at a glance. With
+     * the dots gone this is the only place the number appears on the front, so
+     * it says the number.
      */
-    it("carries the iPhone's own earned line, from the iPhone's own function", async () => {
-      const { getHeaderFieldValue } = await import("../src/passModel.js");
+    it("says how many of how many, and shouts at the target", () => {
       expect(paths(rows())).toContain("object.textModulesData['earned']");
-      for (const [n, t] of [[1, 8], [6, 8], [8, 8], [0, 10]] as const) {
-        const earned = (buildLoyaltyPatch(row({ stamp_count: n, stamps_target: t }), card())
-          .textModulesData as { id: string; body: string }[]).find((m) => m.id === "earned");
-        expect(earned?.body, `${n}/${t}`).toBe(getHeaderFieldValue(n, t));
+      const earned = (n: number, t: number) =>
+        (buildLoyaltyPatch(row({ stamp_count: n, stamps_target: t }), card())
+          .textModulesData as { id: string; body: string }[]).find((m) => m.id === "earned")?.body;
+      for (const [n, t] of [[0, 10], [1, 8], [6, 8]] as const) {
+        expect(earned(n, t), `${n}/${t}`).toBe(`${n}/${t} earned`);
       }
+      expect(earned(8, 8)).toBe("8/8 — reward ready 🎉");
     });
 
     /**
@@ -371,11 +384,14 @@ describe("save-to-wallet JWT", () => {
 
     // The dots are one character per stamp; a 20-stamp card sharing a row would
     // be cut in half.
-    it("gives the dots a row to themselves", () => {
-      const dotRow = rows().find((r) =>
-        paths(r).includes("object.textModulesData['stamps']"),
-      );
-      expect(dotRow.oneItem).toBeDefined();
+    /**
+     * One row, and nothing pointing at a module that no longer exists. Google
+     * renders an empty row for a dangling fieldPath rather than rejecting it,
+     * so a half-removal shows up only on a real phone.
+     */
+    it("has no row left pointing at the dots", () => {
+      expect(rows().length).toBe(1);
+      expect(paths(rows())).not.toContain("object.textModulesData['stamps']");
     });
   });
 });

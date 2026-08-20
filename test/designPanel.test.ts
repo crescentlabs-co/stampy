@@ -340,9 +340,11 @@ describe("the design panel, mounted", () => {
           div.querySelector(lbl)!.textContent + "|" + div.querySelector(val)!.textContent;
         expect(pair("[data-pvg-clbl]", "[data-pvg-bal]")).toBe(sent.earned);
         expect(pair("[data-pvg-rlbl]", "[data-pvg-reward]")).toBe(sent.reward);
-        // The count is inside this header ("YOUR STAMPS · 2/10"), so comparing
-        // the whole caption is what proves the mock has it too.
-        expect(pair("[data-pvg-slbl]", "[data-pvg-dots]")).toBe(sent.stamps);
+        // The dot grid and its row are gone from BOTH, together. A template path
+        // naming a module that no longer exists renders an empty row rather than
+        // failing, so the mock keeping it would have been invisible on the phone.
+        expect(sent.stamps).toBeUndefined();
+        expect(div.querySelector("[data-pvg-dots]")).toBeNull();
       });
 
       /**
@@ -355,7 +357,6 @@ describe("the design panel, mounted", () => {
         const div = build(card({ stampsStart: 6, stampsTarget: 6, reward: "Free coffee" }), h);
         await h.settle();
         const sent = headers(6, 6);
-        expect(div.querySelector("[data-pvg-slbl]")!.textContent).toBe(sent.stamps!.split("|")[0]);
         expect(
           div.querySelector("[data-pvg-rlbl]")!.textContent + "|" +
             div.querySelector("[data-pvg-reward]")!.textContent,
@@ -368,10 +369,9 @@ describe("the design panel, mounted", () => {
       });
 
       /**
-       * The mock transcribes getHeaderFieldValue rather than importing it —
-       * browser JS inside a template literal has no module system. So the rule
-       * that decides between "5 earned" and "3 left" exists twice, and this is
-       * what stops the two copies drifting apart.
+       * The mock builds this line itself — browser JS inside a template literal
+       * has no module system — so the wording exists twice, and this is what
+       * stops the two copies drifting apart.
        */
       it("matches the earned line at every stage of a card", async () => {
         for (const [n, t] of [[0, 10], [1, 8], [6, 8], [8, 8]] as const) {
@@ -384,19 +384,16 @@ describe("the design panel, mounted", () => {
       });
 
       /**
-       * Progress and reward share a row because they are the template's twoItems
-       * row; the dots have their own because that row is oneItem. Get the
-       * grouping wrong and the mock is describing a layout Google will not
-       * produce, however right the words are.
+       * Progress and reward share a row because they ARE the template's twoItems
+       * row — the only row left. Get the grouping wrong and the mock describes a
+       * layout Google will not produce, however right the words are.
        */
-      it("pairs progress with reward, and gives the dots their own row", () => {
+      it("pairs progress with reward on one row", () => {
         const h = makeHarness();
         const div = build(card(), h);
         const bal = div.querySelector("[data-pvg-bal]")!;
         const reward = div.querySelector("[data-pvg-reward]")!;
         expect(bal.parent!.parent).toBe(reward.parent!.parent);
-        const dots = div.querySelector("[data-pvg-dots]")!;
-        expect(dots.parent).not.toBe(bal.parent!.parent);
       });
     });
 
@@ -404,11 +401,10 @@ describe("the design panel, mounted", () => {
       const h = makeHarness();
       const div = build(card({ shopName: "Kopi Corner", reward: "Free coffee" }), h);
       await h.settle();
-      // Android is text dots and text lines — never the rendered grid, which it
-      // is never sent.
-      expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("2 earned");
-      expect(div.querySelector("[data-pvg-slbl]")!.textContent).toBe("YOUR STAMPS · 2/10");
-      expect(div.querySelector("[data-pvg-dots]")!.textContent).toBe("⬤ ⬤ ◯ ◯ ◯\n◯ ◯ ◯ ◯ ◯");
+      // Android is two text lines — never the rendered grid, which it is never
+      // sent, and no longer a row of characters pretending to be one.
+      expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("2/10 earned");
+      expect(div.querySelector("[data-pvg-dots]")).toBeNull();
       // The shop's name once, on the issuer line; the title says what it is.
       expect(div.querySelector("[data-pvg-issuer]")!.textContent).toBe("Kopi Corner");
       expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Loyalty card");
@@ -659,12 +655,10 @@ describe("the design panel, mounted", () => {
    * owner to name the part they meant before they could point at it, when the
    * part was on screen the whole time.
    */
-  describe("tap the card to recolour it", () => {
-    /** Click a part of the preview, the way the delegated handler sees it. */
-    const tap = (div: FakeEl, sel: string) => {
-      const el = div.querySelector(sel)!;
-      div.querySelector("[data-pv]")!.onclick!({ target: el });
-    };
+  describe("tap a swatch to recolour that part", () => {
+    /** Press the swatch for a role, the way a thumb would. */
+    const tap = (div: FakeEl, role: string) =>
+      div.querySelector('[data-swatches] [data-role="' + role + '"]')!.onclick!();
 
     it("rests as a read-out with no palette open", async () => {
       const h = makeHarness();
@@ -677,27 +671,31 @@ describe("the design panel, mounted", () => {
       expect(div.querySelector("[data-roles]")).toBeNull();
     });
 
-    it("opens the palette for the part that was tapped", async () => {
+    /**
+     * The strip is the ONE way in. The preview briefly carried hit regions too,
+     * which is the "chip row plus five colour squares" mistake this section has
+     * already made once: two controls for one job read as two different jobs.
+     */
+    it("leaves the preview a preview", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
-      tap(div, "[data-pv-banner]");
+      expect(div.querySelector("[data-pv]")!.onclick).toBeNull();
+    });
+
+    it("opens the palette for the swatch that was tapped", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      tap(div, "bandColor");
       const pal = div.querySelector("[data-palette]")!;
       expect(pal.hidden).toBe(false);
       expect(pal.querySelector(".crpal-n")!.textContent).toBe("Band");
       // The band's own picker is the one moved in, so "Custom…" edits the band.
       expect(pal.querySelector('[data-f="bandColor"]')).not.toBeNull();
-      // Tapping the same part again closes it.
-      tap(div, "[data-pv-banner]");
+      // Tapping the same swatch again closes it.
+      tap(div, "bandColor");
       expect(div.querySelector("[data-palette]")!.hidden).toBe(true);
-    });
-
-    it("reads the card itself as the background, not whatever is on top", async () => {
-      const h = makeHarness();
-      const div = build(card(), h);
-      await h.settle();
-      tap(div, "[data-pv]");
-      expect(div.querySelector(".crpal-n")!.textContent).toBe("Card");
     });
 
     /**
@@ -715,15 +713,15 @@ describe("the design panel, mounted", () => {
       const keys = ["bg", "fg", "label", "accent", "bandColor"];
       const present = () => keys.every((k) => div.querySelector('[data-f="' + k + '"]') !== null);
       expect(present()).toBe(true);
-      tap(div, "[data-pv-banner]");
+      tap(div, "bandColor");
       expect(present()).toBe(true);
       // Straight from one part to another, so a picker is moved while another
       // is already out of the park.
-      tap(div, "[data-pv-dots]");
+      tap(div, "accent");
       expect(present()).toBe(true);
       expect(div.querySelector(".crpal-n")!.textContent).toBe("Stamps");
       // ...and closed on top of it.
-      tap(div, "[data-pv-dots]");
+      tap(div, "accent");
       expect(present()).toBe(true);
       expect(div.querySelector("[data-palette]")!.hidden).toBe(true);
     });

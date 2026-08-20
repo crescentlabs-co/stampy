@@ -12,7 +12,7 @@
 import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
 import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
-import { getHeaderFieldValue, isRewardReady, rewardTerms, stampDots } from "./passModel.js";
+import { isRewardReady, rewardTerms } from "./passModel.js";
 
 /** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
 export function classId(card: Pick<CardRow, "id">): string {
@@ -55,7 +55,9 @@ export function logoUrl(card: Pick<CardRow, "id">, logoVersion = 0, markVersion 
  * a fieldPath naming a module that does not exist and simply renders an empty
  * row, so the card would lose its reward line with nothing failing anywhere.
  */
-export const FRONT_STAMPS_MODULE = "stamps";
+// FRONT_STAMPS_MODULE was here, holding the dot grid. Gone with its row —
+// stampDots itself stays in passModel.ts, where the iPhone card and the staff
+// counter both still use it.
 export const FRONT_REWARD_MODULE = "reward";
 /**
  * "1 earned", "3 left", "Reward ready" — the line the iPhone card carries in its
@@ -111,10 +113,9 @@ function cardFrontTemplate(): Record<string, unknown> {
             endItem: mod(FRONT_EARNED_MODULE),
           },
         },
-        // Its own row, full width, with the count folded into its HEADER rather
-        // than given a column beside it: the dots are one character per stamp,
-        // and twenty large circles in half a row would wrap or clip.
-        { oneItem: { item: mod(FRONT_STAMPS_MODULE) } },
+        // The dots had their own full-width row here. Removed with the module
+        // itself — a template path naming a module that does not exist renders
+        // an empty row rather than failing, so the two must go together.
       ],
     },
   };
@@ -272,17 +273,18 @@ export function buildLoyaltyPatch(
       {
         id: FRONT_EARNED_MODULE,
         header: "PROGRESS",
-        // The iPhone's own wording, from the iPhone's own function — not a
-        // second copy of the rule that decides between "earned" and "left".
-        body: getHeaderFieldValue(row.stamp_count, row.stamps_target),
+        // "3/10 earned" — the count itself, not a derived phrase. It used to
+        // borrow the iPhone's wording ("1 earned" / "3 left"), which reads well
+        // beside a grid of dots that shows the whole card at a glance. With the
+        // dots gone this line is the only place the number appears on the front,
+        // so it says the number.
+        body: ready ? `${progress} — reward ready 🎉` : `${progress} earned`,
       },
-      {
-        id: FRONT_STAMPS_MODULE,
-        // The count rides in the HEADER rather than taking a column of its own
-        // beside the dots, which would halve the width they have to run in.
-        header: ready ? "REWARD READY 🎉" : `YOUR STAMPS · ${progress}`,
-        body: stampDots(row.stamp_count, row.stamps_target),
-      },
+      // The dots row is gone. Google renders text modules left-aligned in its
+      // own typography, so the grid could never be centred or sized like the
+      // iPhone's, and sending it as an IMAGE is what once made a stamp take
+      // ~20s to reach a phone instead of 3-5s. A row of characters pretending
+      // to be a stamp card was worth less than the space it took.
       {
         id: FRONT_REWARD_MODULE,
         header: "REWARD",
