@@ -110,7 +110,7 @@ describe("the design panel, mounted", () => {
     expect(div.querySelector("[data-stampimg]")).not.toBeNull();
     // The way back, always present: a control that appears only once you no
     // longer need it is no control at all.
-    expect(div.querySelector("[data-a=rmstamp]")!.textContent).toBe("Default");
+    expect(div.querySelector("[data-a=rmstamp]")!.textContent).toBe("Dots");
   });
 
   /**
@@ -537,7 +537,56 @@ describe("the design panel, mounted", () => {
       const order = div.all();
       const at = (sel: string) => order.indexOf(div.querySelector(sel)!);
       expect(at("[data-lname]")).toBeGreaterThan(at("[data-logo]"));
-      expect(at("[data-lname]")).toBeLessThan(at("[data-roles]"));
+      expect(at("[data-lname]")).toBeLessThan(at("[data-swatches]"));
+    });
+
+    /**
+     * The switch was dead for months, and this is why.
+     *
+     * A <label> binds to its FIRST LABELABLE DESCENDANT, and <button> is
+     * labelable. With the ⓘ inside the label, the label's control was the info
+     * dot — never the checkbox. The visible track paints over an opacity:0
+     * input, so every click landed on the track, fell through to label
+     * activation, and popped the info bubble instead of flipping the switch.
+     *
+     * Structural, not a click: the harness does not implement label activation,
+     * so a click test here would only be testing the harness. What can be
+     * asserted is the shape that caused it.
+     */
+    it("gives the name switch a label that can only mean the checkbox", () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      const tick = div.querySelector("[data-lname]")!;
+      // Every label around the switch resolves to it, explicitly.
+      for (let n = tick.parent; n; n = n.parent) {
+        if (n.tag === "label") expect(n.getAttribute("for")).toBe("lname-tg");
+      }
+      expect(tick.getAttribute("id")).toBe("lname-tg");
+      // And no label in this row contains a button — the actual defect.
+      for (const lab of div.querySelectorAll(".tgrow label")) {
+        expect(lab.querySelectorAll("button").length).toBe(0);
+      }
+      // The row itself is no longer a label, which is what let the ⓘ capture it.
+      expect(div.querySelector(".tgrow")!.tag).not.toBe("label");
+    });
+
+    /**
+     * "Upload logo" sat on the button whether or not a logo was already there,
+     * so a merchant looking at their own logo was invited to upload one. The
+     * Android row below it had been doing this correctly all along, which is
+     * exactly what made the difference visible.
+     */
+    it("says Replace once a logo is already there", async () => {
+      const open = async (c: Record<string, unknown>) => {
+        const h = makeHarness({ imageSize: { w: 480, h: 120 } });
+        const div = build(c, h);
+        await h.settle();
+        return div;
+      };
+      const bare = await open(card({ logoVersion: 0 }));
+      expect(bare.querySelector("[data-logobtn]")!.textContent).toBe("Upload logo");
+      const withLogo = await open(card({ logoVersion: 7 }));
+      expect(withLogo.querySelector("[data-logobtn]")!.textContent).toBe("Replace logo");
     });
 
     /**
@@ -604,44 +653,79 @@ describe("the design panel, mounted", () => {
 
   /**
    * Colours are DERIVED — a logo upload sets all five — so the section rests as
-   * a read-out and the editable rows are a choice.
+   * a read-out, and changing one happens on the CARD.
+   *
+   * There used to be a Customize button revealing five named rows. It asked the
+   * owner to name the part they meant before they could point at it, when the
+   * part was on screen the whole time.
    */
-  describe("Customize colours", () => {
-    const openIt = (div: FakeEl) => div.querySelector("[data-a=customise]")!.onclick!();
+  describe("tap the card to recolour it", () => {
+    /** Click a part of the preview, the way the delegated handler sees it. */
+    const tap = (div: FakeEl, sel: string) => {
+      const el = div.querySelector(sel)!;
+      div.querySelector("[data-pv]")!.onclick!({ target: el });
+    };
 
-    it("shows the palette and hides the rows until asked", async () => {
+    it("rests as a read-out with no palette open", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
-      expect(div.querySelector("[data-roles]")!.hidden).toBe(true);
+      expect(div.querySelector("[data-palette]")!.hidden).toBe(true);
       expect(div.querySelectorAll("[data-swatches] .sw").length).toBe(5);
-      openIt(div);
-      expect(div.querySelector("[data-roles]")!.hidden).toBe(false);
+      // The button and the five rows it revealed are gone entirely.
+      expect(div.querySelector("[data-a=customise]")).toBeNull();
+      expect(div.querySelector("[data-roles]")).toBeNull();
+    });
+
+    it("opens the palette for the part that was tapped", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      tap(div, "[data-pv-banner]");
+      const pal = div.querySelector("[data-palette]")!;
+      expect(pal.hidden).toBe(false);
+      expect(pal.querySelector(".crpal-n")!.textContent).toBe("Band");
+      // The band's own picker is the one moved in, so "Custom…" edits the band.
+      expect(pal.querySelector('[data-f="bandColor"]')).not.toBeNull();
+      // Tapping the same part again closes it.
+      tap(div, "[data-pv-banner]");
+      expect(div.querySelector("[data-palette]")!.hidden).toBe(true);
+    });
+
+    it("reads the card itself as the background, not whatever is on top", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      tap(div, "[data-pv]");
+      expect(div.querySelector(".crpal-n")!.textContent).toBe("Card");
     });
 
     /**
-     * The invariant this control could most plausibly break. The open row
-     * physically HOLDS one of the five <input type="color"> elements, and every
-     * function in the panel reads its colours through f("bg") and friends —
-     * so closing the list with a picker still inside it would leave those reads
-     * pointing at a node nobody can reach or open.
+     * The invariant this control could most plausibly break, and the reason the
+     * old row list carried a comment about it. The open palette physically HOLDS
+     * one of the five <input type="color"> elements, and every function in the
+     * panel reads its colours through f("bg") and friends — so rebuilding with a
+     * picker still inside would leave those reads pointing at a node nobody can
+     * reach or open.
      */
-    it("never loses a colour picker, opened or closed", async () => {
+    it("never loses a colour picker, whatever is opened or closed", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
       const keys = ["bg", "fg", "label", "accent", "bandColor"];
       const present = () => keys.every((k) => div.querySelector('[data-f="' + k + '"]') !== null);
       expect(present()).toBe(true);
-      openIt(div);
+      tap(div, "[data-pv-banner]");
       expect(present()).toBe(true);
-      // Open a role, so one picker is genuinely moved out of the park...
-      div.querySelectorAll("[data-roles] .crhead")[0]!.onclick!();
+      // Straight from one part to another, so a picker is moved while another
+      // is already out of the park.
+      tap(div, "[data-pv-dots]");
       expect(present()).toBe(true);
-      // ...then close the whole thing on top of it.
-      openIt(div);
+      expect(div.querySelector(".crpal-n")!.textContent).toBe("Stamps");
+      // ...and closed on top of it.
+      tap(div, "[data-pv-dots]");
       expect(present()).toBe(true);
-      expect(div.querySelector("[data-roles]")!.hidden).toBe(true);
+      expect(div.querySelector("[data-palette]")!.hidden).toBe(true);
     });
   });
 

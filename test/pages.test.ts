@@ -467,7 +467,7 @@ describe("one designer, two pages", () => {
       expect(html.match(/function paintBand/g)!.length).toBe(1);
       // Anchored to the start of a line so it counts the base rule and not the
       // descendant overrides ("  .fold .crlist { ... }") declared beside it.
-      expect(html.match(/\n\s*\.crlist \{/g)!.length).toBe(1);
+      expect(html.match(/\n\s*\.crpal \{/g)!.length).toBe(1);
     }
   });
 
@@ -487,7 +487,7 @@ describe("one designer, two pages", () => {
   // read as one grey slab with the controls dissolved into it.
   it("puts the fold's own boxes back on the page colour", () => {
     for (const html of [dash, admin]) {
-      expect(html).toContain(".fold .crlist { background: var(--bg); }");
+      expect(html).toContain(".fold .crpal { background: var(--bg); }");
       expect(html).toMatch(/:is\(\.fold, \.grp, \.bucket, \.mdetail\) \.btn-ghost \{/);
     }
   });
@@ -750,9 +750,13 @@ describe("one designer, two pages", () => {
   it("says in the confirmation what each half of a save reaches", () => {
     const panel = panelOf(dash);
     expect(panel).toContain('<dl class="mdlblast">');
-    expect(panel).toContain("<dt>Look</dt>");
+    expect(panel).toContain("<dt>Design</dt>");
+    // It used to say the design arrives "next time their phone checks in",
+    // which was true only while a design save touched no pass row. It lands in
+    // seconds now, and the stale wording was reported as confusing.
+    expect(panel).toContain("usually within seconds");
+    expect(panel).not.toContain("next time their phone checks in");
     expect(panel).toContain("<dt>Reward<br>&amp; stamps</dt>");
-    expect(panel).toContain("next time their phone checks in");
     // Kept clear of the string-concatenation boundaries in the source: this
     // reads the panel's SOURCE, not what the browser ends up rendering.
     expect(panel).toContain("They keep what they were promised until their next reward");
@@ -1452,8 +1456,8 @@ describe("dashboard information architecture", () => {
     const at = (s: string) => html.indexOf(s);
     expect(at("Customise the design")).toBeLessThan(at("data-logo"));
     expect(at("data-logo")).toBeLessThan(at("data-stampimg"));
-    expect(at("data-stampimg")).toBeLessThan(at("data-roles"));
-    expect(at("data-roles")).toBeLessThan(at('data-f="shopName"'));
+    expect(at("data-stampimg")).toBeLessThan(at("data-swatches"));
+    expect(at("data-swatches")).toBeLessThan(at('data-f="shopName"'));
     expect(at('data-f="shopName"')).toBeLessThan(at('data-a="save"'));
     // The old per-wallet Design fold is still gone; the fold here is the new
     // one, and it is named for the action rather than the section.
@@ -1471,7 +1475,7 @@ describe("dashboard information architecture", () => {
     // its title. "Loyalty programme" below it is the only .sec left.
     expect((editor.match(/class="sec/g) ?? []).length).toBe(1);
     expect(editor).toContain("Customise the design");
-    for (const name of ["Logo", "Colours", "Stamp"]) {
+    for (const name of ["Apple logo", "Android logo", "Colours", "Stamp logo"]) {
       expect(editor).toContain(`>${name}`);
     }
     expect(html).not.toContain("Band texture");
@@ -1496,11 +1500,15 @@ describe("dashboard information architecture", () => {
 
   // Two controls set the same five fields: a chip row and a row of five colour
   // squares. Two controls for one job read as two different jobs.
-  it("picks colours from one labelled list, not a chip row plus five squares", () => {
-    expect(html).toContain("data-roles");
-    expect(html).toContain("crhead");
+  it("picks colours by tapping the part of the card they belong to", () => {
+    // The preview IS the control. Hit regions map each part to its role, and
+    // the palette opens INSIDE the preview box so it travels with it when the
+    // console moves that node into its rail.
+    expect(html).toContain("data-palette");
+    expect(html).toContain('{ sel: "[data-pv-banner]", role: "bandColor" }');
     expect(html).toContain("Custom…");
     expect(html).not.toContain("rolebtn");
+    expect(html).not.toContain("crhead");
     // The native pickers stay in the DOM as the source of truth every other
     // function reads through f("bg"). They are PARKED and moved into the open
     // row — never hidden and clicked from a proxy, because .click() on a
@@ -1578,11 +1586,13 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("data-a=usepal");
     expect(html).not.toContain("Use these colours");
     // The strip that DID come back is a read-out, not a control: it shows what
-    // the logo produced. The five editable rows sit behind Customize, because
-    // the palette is derived and most merchants want it left alone.
+    // the logo produced. Changing one happens on the CARD — the Customize
+    // button and the five named rows it revealed are gone, because they asked
+    // you to name the part you meant before you could point at it.
     expect(html).toContain("data-swatches");
-    expect(html).toContain('class="crlist" data-roles hidden');
-    expect(html).toContain('data-a="customise"');
+    expect(html).toContain("data-palette");
+    expect(html).not.toContain('data-a="customise"');
+    expect(html).not.toContain("data-roles");
   });
 
   /**
@@ -1600,7 +1610,7 @@ describe("dashboard information architecture", () => {
   // page, and never what the owner wants: they want a colour already in play,
   // just somewhere else.
   it("lets any colour be swapped into any role", () => {
-    expect(html).toContain("data-roles");
+    expect(html).toContain("data-palette");
     expect(html).toContain("activeRole");
     expect(html).toContain("NEUTRALS");
   });

@@ -54,7 +54,9 @@ export class FakeEl {
   dataset: Record<string, string> = {};
   classList = new FakeClassList(this);
   /** Handlers the panel assigns; tests fire them to simulate a tap. */
-  onclick: (() => unknown) | null = null;
+  // Takes the event, because real handlers do — the designer delegates one
+  // listener on the preview and reads e.target to find which part was tapped.
+  onclick: ((e?: { target?: FakeEl }) => unknown) | null = null;
   onchange: (() => unknown) | null = null;
   oninput: (() => unknown) | null = null;
   files: unknown[] = [];
@@ -127,6 +129,21 @@ export class FakeEl {
     const groups = sel.split(",").map((s) => s.trim()).filter(Boolean);
     const hit = this.all().slice(1).filter((el) => groups.some((g) => matches(el, g)));
     return hit;
+  }
+  /**
+   * Self first, then outwards — the real contract, and the reason the designer
+   * can delegate one listener on the preview instead of binding six that
+   * renderPreview would throw away on the next repaint.
+   *
+   * Without this the panel's guard (`if (!e.target.closest) return`) made every
+   * tap a no-op and the tests passed by doing nothing at all.
+   */
+  closest(sel: string): FakeEl | null {
+    const groups = sel.split(",").map((s) => s.trim()).filter(Boolean);
+    for (let node: FakeEl | null = this; node; node = node.parent) {
+      if (groups.some((g) => matches(node!, g))) return node;
+    }
+    return null;
   }
 }
 
