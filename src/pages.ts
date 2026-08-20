@@ -5590,6 +5590,12 @@ export function adminPage(): string {
     .mtot td { border-top: 2px solid var(--ink); font-weight: 700;
                font-variant-numeric: tabular-nums; }
     .mtot .flags { font-weight: 400; }
+    /* The week now running: tinted and italic so it reads as provisional at a
+       glance, without a legend. It sits at the TOP because the table is newest
+       first, which is where you look for "how are we doing right now". */
+    .wknow td { background: var(--ghost-bg); font-style: italic; }
+    .wktot td { border-top: 2px solid var(--ink); font-weight: 700; }
+    .wktot .flags { font-weight: 400; font-style: normal; }
     .mrow .mname { font-weight: 700; }
     .mrow .mname::after { content: " ›"; color: var(--muted); font-weight: 400; }
     .flags { font-size: .78rem; color: var(--muted); }
@@ -5928,12 +5934,44 @@ export function adminPage(): string {
      * on a phone and does not answer to a keyboard. This is the same data, and
      * it is the reason the bars can stay unlabelled.
      */
-    function seriesTable(rows, defs) {
+    /**
+     * @param rows  the FINISHED weeks, oldest first.
+     * @param part  the week now running, or null. It is listed and totalled
+     *              here but never fed to a tile: a tile states a change against
+     *              the week before, and a Tuesday measured against a full week
+     *              points down every Monday and recovers by Sunday, for reasons
+     *              that say nothing about the shop. It was dropped entirely
+     *              instead, which meant a shop stamped only today read as zero
+     *              with nothing on screen explaining why.
+     *
+     * The Total is over exactly the rows shown, part week included, so it can
+     * be checked by adding the column up — the same rule as the merchants
+     * table: a total derived from anything other than what is on screen is a
+     * total that can disagree with it.
+     */
+    function seriesTable(rows, defs, part) {
+      const shown = part ? [...rows, part] : [...rows];
+      const cell = (v, d) =>
+        '<td style="font-variant-numeric:tabular-nums">' + esc((d.dp ? one : int)(v)) + "</td>";
+      // A rate cannot be summed — "stamps per customer" over six weeks is not
+      // the six weekly figures added up — so a derived column totals as a dash
+      // rather than as a number that would be quietly wrong.
+      const total = (d) => d.dp
+        ? "<td>—</td>"
+        : cell(shown.reduce((a, r) => a + (Number(r[d.key]) || 0), 0), d);
       return '<div class="tw"><table><tr><th>Week of</th>' +
         defs.map((d) => "<th>" + esc(d.label) + "</th>").join("") + "</tr>" +
+        (part
+          ? '<tr class="wknow"><td>' + esc(weekOf(part.week)) +
+            ' <span class="flags">still running</span></td>' +
+            defs.map((d) => cell(part[d.key], d)).join("") + "</tr>"
+          : "") +
         [...rows].reverse().map((row) => "<tr><td>" + esc(weekOf(row.week)) + "</td>" +
-          defs.map((d) => '<td style="font-variant-numeric:tabular-nums">' +
-            esc((d.dp ? one : int)(row[d.key])) + "</td>").join("") + "</tr>").join("") +
+          defs.map((d) => cell(row[d.key], d)).join("") + "</tr>").join("") +
+        '<tr class="wktot"><td>Total' +
+          '<br><span class="flags">' + shown.length + " week" + (shown.length === 1 ? "" : "s") +
+          (part ? ", including the one still running" : "") + "</span></td>" +
+          defs.map(total).join("") + "</tr>" +
         "</table></div>";
     }
 
@@ -6556,12 +6594,10 @@ export function adminPage(): string {
 
             '<h2 style="margin-top:26px">Week by week' +
               info("Whole weeks, Monday to Sunday, off the event log. Each tile is ONE week — the most recent finished one — not a running total; for totals read Everything so far above. Archived shops are left out of every line, and out of those totals too, so the two agree.") + "</h2>" +
-            rangeRow("Whole weeks only. This week is still running" +
-              (partWeek ? " — " + int(partWeek.stamps) + " stamps so far, at " + int(partWeek.active_merchants) + " shops" : "") +
-              ", so it is reported here rather than drawn beside finished ones.") +
+            rangeRow("The tiles compare finished weeks only, so a half-run week never reads as a fall. The week now running is in the table below, marked, and in its total.") +
             '<div class="tiles">' + P_TILES.map((d) => tile(rows, d)).join("") + "</div>" +
             '<details class="fold" style="margin-top:12px"><summary>Every week, as numbers</summary>' +
-              seriesTable(rows, P_TILES) + "</details>" +
+              seriesTable(rows, P_TILES, partWeek) + "</details>" +
 
             '<h2 style="margin-top:26px">Do customers come back?' +
               info("Of everyone whose first stamp was at least 14 days ago, how many have been stamped more than once. Recomputed across every live shop's customers at once, never averaged from per-shop rates — a rate over 3 customers and a rate over 300 do not average into anything. Counted per person and per net stamp, and somebody stamped this week is in neither number, because they have not had the chance to come back.") + "</h2>" +
@@ -6722,12 +6758,19 @@ export function adminPage(): string {
             (m.nudged ? '<p class="dnote">Nudged → came back: ' + m.nudge_returned + " of " + m.nudged + "</p>" : "");
           const host = $("[data-mseries]");
           if (!host) return;
-          const weeks = derive(s.series).slice(0, -1).slice(-range);
-          host.innerHTML = weeks.length
-            ? rangeRow("Whole weeks only; the week now running is left out.") +
+          // The running week is held out of the TILES and listed in the table,
+          // the same as the platform section above. It used to be dropped
+          // outright here — and unlike the platform view, never reported
+          // anywhere — so a shop stamped only today read as zero with nothing
+          // on screen saying why.
+          const mAll = derive(s.series);
+          const mPart = mAll.length ? mAll[mAll.length - 1] : null;
+          const weeks = mAll.slice(0, -1).slice(-range);
+          host.innerHTML = weeks.length || mPart
+            ? rangeRow("The tiles compare finished weeks only, so a half-run week never reads as a fall. The week now running is in the table below, marked, and in its total.") +
               '<div class="tiles">' + M_TILES.map((d) => tile(weeks, d)).join("") + "</div>" +
               '<details class="fold" style="margin-top:12px"><summary>Every week, as numbers</summary>' +
-              seriesTable(weeks, M_TILES) + "</details>"
+              seriesTable(weeks, M_TILES, mPart) + "</details>"
             : '<p class="nodata">Nothing has happened here yet.</p>';
           const rr = host.querySelector("[data-range]");
           if (rr) {

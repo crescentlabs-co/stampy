@@ -1169,12 +1169,34 @@ describe("the console says things once", () => {
    * finished weeks it draws a crash every Monday morning, so it is held out of
    * every chart and reported as itself.
    */
-  it("keeps the part-week out of the charts", () => {
+  /**
+   * The week now running is out of the TILES and in the TABLE.
+   *
+   * A tile states a change against the week before, so a Tuesday measured
+   * against a full week points down every Monday and recovers by Sunday — for
+   * reasons that say nothing about the shop. It used to be dropped outright
+   * instead, and on a shop's own page it was not reported anywhere at all, so a
+   * shop stamped only today read as zero with nothing explaining why.
+   */
+  it("keeps the part-week out of the tiles and in the table", () => {
     expect(html).toContain("const doneWeeks = allWeeks.slice(0, -1)");
-    expect(html).toContain("This week is still running");
+    expect(html).toContain("The tiles compare finished weeks only");
+    // Both sections hand it to the table, which marks it and totals it.
+    expect(html).toContain("seriesTable(rows, P_TILES, partWeek)");
+    expect(html).toContain("seriesTable(weeks, M_TILES, mPart)");
+    expect(html).toContain("still running");
     // An average over nobody at all is not zero.
     expect(html).toContain("r.active_customers ? r.stamps / r.active_customers : null");
     expect(html).toContain("no shops stamped");
+  });
+
+  /**
+   * A rate cannot be summed: six weekly "stamps per customer" figures added up
+   * is not the stamps per customer over six weeks. Those columns total as a
+   * dash rather than as a number that would be quietly wrong.
+   */
+  it("does not add up a rate in the weekly total", () => {
+    expect(html).toContain('const total = (d) => d.dp\n        ? "<td>—</td>"');
   });
 
   /** The six tiles, and only these six. Each answers one of the three questions. */
@@ -1206,7 +1228,7 @@ describe("the console says things once", () => {
     expect(spark).not.toContain("stroke-dasharray");
     // A tooltip is never the only way to read a value: hover does not exist on
     // a phone and does not answer to a keyboard, so the numbers are also a table.
-    expect(html).toContain("function seriesTable(rows, defs)");
+    expect(html).toContain("function seriesTable(rows, defs, part)");
     expect(html).toContain("Every week, as numbers");
     // One range control for everything it scopes, never one per chart.
     expect(html.match(/data-range/g)!.length).toBeGreaterThan(0);
