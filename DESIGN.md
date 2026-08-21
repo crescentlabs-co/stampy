@@ -97,6 +97,17 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   the weight renders at 400 and reads as body text.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
+- **A welcome block** (the dashboard's `.greet`) is `--slab`, never a colour.
+  It is rule 2 applied: the reference for it was another product's blue header,
+  and taking the blue would have been a second palette. Nothing inside it is
+  neon — the tab strip's active thumb is that screen's one neon fill — so its
+  action is an outlined pill in `--on-slab`, and its focus ring is neon
+  because ink vanishes on a black panel.
+- **Two nav controls on one screen differ by SHAPE, not by hue.** The dashboard's
+  tabs are a neon pill; the card previews' switch under them is a neon
+  underline. Reaching for a second accent to tell two controls apart is how a
+  palette grows a colour it cannot explain — and the underline still never
+  touches the label, because `--accent` on white is unreadable (rule 1).
 - **Charts** are hand-rolled inline SVG — there is no chart library and no build
   step to add one. Emphasis is **weight, not colour**: the period being read is
   `--ink`, the context behind it is `--field-border`, and the baseline is a

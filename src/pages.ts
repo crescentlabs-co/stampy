@@ -768,8 +768,16 @@ export const DESIGN_PANEL_CSS = /* css */ `
             background: none; border-radius: 0; border-bottom: 1px solid var(--line); }
     .dseg button { flex: 0 0 auto; font-size: .84rem; padding: 9px 12px; border-radius: 0;
                    color: var(--muted); font-weight: 600; background: none;
-                   border-bottom: 2px solid transparent; margin-bottom: -1px; }
-    .dseg button.on { color: var(--ink); font-weight: 700; border-bottom-color: var(--ink); }
+                   border-bottom: 3px solid transparent; margin-bottom: -1px; }
+    /* The highlighter, back. It was a dark hairline, which is the quietest
+       possible way to say "you are here" and read as no marker at all beside
+       the neon tab strip above it. Neon UNDERLINE against the tabs' neon PILL:
+       one hue, two shapes, so the two controls cannot be mistaken for each
+       other without inventing a second palette (DESIGN.md rule 6).
+       The LABEL stays --ink. Rule 1's "never text" is not negotiable — neon on
+       white cannot be read, so the mark goes under the word, never on it. */
+    .dseg button.on { color: var(--ink); font-weight: 700;
+                      border-bottom-color: var(--accent); }
     .dseg button:hover { color: var(--ink); }
     /* The thumb is the pill's marker and has no place here; the underline is
        the state. Left in the markup so moveThumb stays harmless. */
@@ -4563,6 +4571,35 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* Five tabs don't fit a 375px phone at the default size. Tighten them enough
        that all five stay visible (a hidden tab is worse than small type), and
        keep a scroll as the fallback for anything narrower still. */
+    /* --- the welcome block ---------------------------------------------------
+       The dashboard used to open on the word "Dashboard" and the login email:
+       a fact about the software, addressed to nobody. This greets the shop and
+       says how the card is doing, and it doubles as the rule between the page
+       and the tab strip — there was nothing separating navigation from content.
+
+       --slab, not a colour. DESIGN.md rule 2: weight comes from the black
+       panel. The reference for this was a blue header from another product, and
+       taking the blue would have been inventing a second palette rule 6 forbids.
+       Nothing in here is neon: the tab strip's active thumb is the one neon
+       fill this screen gets (Components — ".btn-neon is the only neon one on a
+       screen"), so the action below is an outlined pill instead. */
+    .greet { background: var(--slab); color: var(--on-slab); border-radius: var(--r-lg);
+            padding: 20px 22px; margin-top: 4px; }
+    .greet h1 { font-size: 1.45rem; margin: 0; color: var(--on-slab); }
+    /* The login email. Quiet, but it must stay legible on the slab — it is the
+       only thing on screen answering "which account am I in?", which matters
+       the moment somebody runs two shops. */
+    .greet .who { font-size: .8rem; margin: 3px 0 0; opacity: .62; word-break: break-all; }
+    .greet .stat { font-size: .95rem; margin: 14px 0 0; font-variant-numeric: tabular-nums; }
+    .greet .stat b { font-weight: 700; }
+    /* The quiet third, on a dark ground: an outline rather than a fill. Focus is
+       neon here and ink on light — rule 3, both directions declared. */
+    .greet .act { display: inline-block; width: auto; margin-top: 14px; padding: 9px 16px;
+                 border-radius: 999px; font-size: .88rem; font-weight: 700;
+                 background: none; color: var(--on-slab); cursor: pointer;
+                 border: 1px solid rgba(244,246,242,.35); text-decoration: none; }
+    .greet .act:hover { border-color: var(--on-slab); background: rgba(244,246,242,.08); }
+    .greet .act:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     #tabs { margin: 18px 0 24px; overflow-x: auto; scrollbar-width: none; }
     #tabs::-webkit-scrollbar { display: none; }
     #tabs button { padding: 10px 9px; font-size: .84rem; }
@@ -5307,13 +5344,52 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           "This account does not have a shop. If that is a surprise, message whoever set your PunchMe up — they can hand it back.",
         );
       }
+      /**
+       * The block the dashboard opens on.
+       *
+       * It replaced "Dashboard" over the login email — a title that named the
+       * software and said nothing to the person reading it — and it is also the
+       * rule between the tab strip and the page, which had none.
+       *
+       * Everything here is already in S. No request, no query: a greeting that
+       * costs a round trip is a greeting that arrives after you have started
+       * reading.
+       *
+       * The numbers are SUMMED across cards. A merchant running two programmes
+       * has one shop, and this block greets the shop — reading them off
+       * cards[0] would show one programme's figures as though they were the
+       * whole business, which is the shape of bug this codebase has had twice.
+       */
+      function greetHtml() {
+        const shop = (S.cards[0] || {}).shopName || "your shop";
+        const people = S.cards.reduce((a, c) => a + ((c.metrics || {}).active || 0), 0);
+        const stamps = S.cards.reduce((a, c) => a + ((c.metrics || {}).stamps || 0), 0);
+        const link = S.joinRef ? location.origin + "/j/" + S.joinRef : "";
+        // "0 customers · 0 stamps" is a bleak thing to open a new shop on, so
+        // a shop nobody has joined says so plainly and lets the button below
+        // carry the action — spelling out "share your sign-up link" here as
+        // well put the same instruction on screen twice, two lines apart.
+        const line = people
+          ? "<b>" + people + "</b> customer" + (people === 1 ? "" : "s") +
+            " · <b>" + stamps + "</b> stamp" + (stamps === 1 ? "" : "s") + " given"
+          : "Nobody has taken a card yet.";
+        return '<div class="greet">' +
+          "<h1>Hello, " + esc(shop) + "</h1>" +
+          '<p class="who">' + esc(S.email) + "</p>" +
+          '<p class="stat">' + line + "</p>" +
+          (link
+            ? '<a class="act" href="' + esc(link) + '" target="_blank" rel="noopener">Share your sign-up link</a>'
+            : "") +
+          "</div>";
+      }
+
       // Three tabs, each one job: who your customers are and how it's going ·
       // what the card is · everything you set once. Home and Customers used to
       // be separate, which left a headline row on one page and the people it
       // described on another; with one card per merchant the first was too thin
       // to be a page of its own.
       $("#app").innerHTML = \`
-        <div><h1 style="margin:0">Dashboard</h1><p class="sub" style="margin:2px 0 14px">\${S.email}</p></div>
+        \${greetHtml()}
         <div class="seg" id="tabs" role="tablist">
           <button data-tab="customers" class="on">Customers</button>
           <button data-tab="card">Card</button>

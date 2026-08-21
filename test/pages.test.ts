@@ -1370,6 +1370,77 @@ describe("the counter view judges nothing", () => {
 describe("dashboard information architecture", () => {
   const html = dashboardPage(true, "");
 
+  /**
+   * The dashboard used to open on "Dashboard" over the login email — a title
+   * naming the software, addressed to nobody — with nothing between it and the
+   * tab strip. The welcome block replaced it and doubles as that rule.
+   */
+  describe("the welcome block", () => {
+    /** The builder as it reaches the browser, so these read the real source. */
+    const greet = html.slice(html.indexOf("function greetHtml()"),
+                             html.indexOf("// Three tabs, each one job"));
+
+    it("greets the SHOP and says which login you are on", () => {
+      expect(greet).toContain('(S.cards[0] || {}).shopName');
+      expect(greet).toContain('"<h1>Hello, " + esc(shop)');
+      // The email is the only thing on screen answering "which account is
+      // this?", which starts mattering the moment somebody runs two shops.
+      expect(greet).toContain('esc(S.email)');
+      // The SHELL no longer carries the old title. Scoped to the shell on
+      // purpose: deadEnd() still uses a plain "Dashboard" heading, and rightly
+      // — it is the screen shown when there is no shop to greet.
+      // Anchored BACKWARDS from #pinwarn: several screens assign #app, and
+      // indexOf would have found the login form's.
+      const at = html.indexOf('id="pinwarn"');
+      const shell = html.slice(html.lastIndexOf('$("#app").innerHTML', at), at);
+      expect(shell).toContain("greetHtml()");
+      expect(shell).not.toContain("Dashboard</h1>");
+    });
+
+    /**
+     * Summed, never read off cards[0]. A merchant running two programmes has
+     * ONE shop, and showing one programme's figures as the whole business is
+     * the shape of bug this codebase has already had twice.
+     */
+    it("adds its numbers up across every card", () => {
+      expect(greet).toContain("S.cards.reduce((a, c) => a + ((c.metrics || {}).active || 0), 0)");
+      expect(greet).toContain("S.cards.reduce((a, c) => a + ((c.metrics || {}).stamps || 0), 0)");
+    });
+
+    /** "0 customers · 0 stamps" is a bleak thing to open a new shop on. */
+    it("says what to do instead of counting nothing", () => {
+      expect(greet).toContain("Nobody has taken a card yet");
+      expect(greet).toContain("const line = people");
+    });
+
+    /**
+     * The tab strip's active thumb is this screen's one neon fill — DESIGN.md
+     * Components: ".btn-neon is the only neon one on a screen". The block sits
+     * on --slab because rule 2 says weight comes from the black panel, not
+     * from a colour, and the reference for it was another product's blue.
+     */
+    it("spends no second neon, and takes its weight from the slab", () => {
+      expect(html).toContain(".greet { background: var(--slab)");
+      expect(greet).not.toContain("btn-neon");
+      expect(greet).not.toContain("--accent");
+      // Focus on a dark panel is neon; ink would vanish (rule 3).
+      expect(html).toContain(".greet .act:focus-visible { outline: 3px solid var(--accent)");
+    });
+  });
+
+  /**
+   * The Card tab's iPhone/Android/Poster switch had a dark hairline for its
+   * active state, which read as no marker at all beside the neon tab strip
+   * above it. Neon UNDERLINE against the tabs' neon PILL: one hue, two shapes,
+   * so neither control needs a second palette to be told apart.
+   */
+  it("marks the open preview with a neon underline, never neon text", () => {
+    expect(html).toContain("border-bottom-color: var(--accent);");
+    expect(html).toContain("border-bottom: 3px solid transparent;");
+    // Rule 1's "never text": the mark goes under the word, not on it.
+    expect(html).toContain(".dseg button.on { color: var(--ink); font-weight: 700;");
+  });
+
   it("has one tab per job", () => {
     for (const tab of ["customers", "card", "shop"]) {
       expect(html).toContain(`data-tab="${tab}"`);
