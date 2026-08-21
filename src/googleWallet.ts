@@ -24,6 +24,7 @@ import {
   buildLoyaltyObject,
   buildLoyaltyPatch,
   buildSaveJwtClaims,
+  classId,
   objectId,
 } from "./googleModel.js";
 
@@ -227,4 +228,121 @@ export async function addMessage(row: PassRow, card: CardRow, text: string): Pro
   } catch (err) {
     return { ok: false, reason: String(err) };
   }
+}
+
+// ------------------------------------------------------------ diagnosis ----
+
+/**
+ * What Google is ACTUALLY holding for one card — read-only, and the only way to
+ * answer "why is the band on my Android card blank?".
+ *
+ * Everything upstream of Google is checkable from a browser: the art URLs are
+ * public, `ensureClass` is a few lines, and the strip renders. None of that
+ * proves the write landed. A class POST that comes back 400 is logged to
+ * Railway and swallowed by every caller (they are all `void ensureClass(...)`),
+ * so the console can say "resynced" while Google holds a class from March. This
+ * reads the other end of the wire instead of inferring it.
+ *
+ * **It never returns Google's raw JSON.** The class carries
+ * `callbackOptions.url`, which has GOOGLE_CALLBACK_SECRET in its query string —
+ * anything that echoed the class wholesale would print that secret into a
+ * browser, a screenshot and a support thread. Only the named fields below cross
+ * back, and the callback is reported as a boolean.
+ */
+export interface GoogleClassReport {
+  found: boolean;
+  status?: number;
+  /** Why the read failed, when it did. Google's text, truncated. */
+  reason?: string;
+  reviewStatus?: string;
+  /** The band across the card. Undefined ⇒ Google is holding no hero at all. */
+  heroUri?: string;
+  programLogoUri?: string;
+  /** True ⇒ the save/delete callback is registered (the token itself is never returned). */
+  hasCallback: boolean;
+  /** What ensureClass would send right now, to compare against the above. */
+  expectedHeroUri?: string;
+  expectedProgramLogoUri?: string;
+}
+
+export interface GoogleObjectReport {
+  serial: string;
+  found: boolean;
+  status?: number;
+  /**
+   * An object-level hero SHADOWS the class's band. Set by the stamp path until
+   * c53cc79 and never cleared since — a PATCH that omits a field leaves it
+   * alone — so this is the first thing to look at on a card that has been in a
+   * wallet a while.
+   */
+  ownHeroUri?: string;
+  state?: string;
+}
+
+/** GET the class Google is holding. Returns only named, secret-free fields. */
+export async function readClass(card: CardRow): Promise<GoogleClassReport> {
+  if (!setupStatus().canGoogleWallet) return { found: false, hasCallback: false, reason: "google-not-configured" };
+  const [logoVersion, bannerVersion, markVersion, business, stampsVersion] = await Promise.all([
+    cafeLogoVersion(card.id).catch(() => 0),
+    cafeBannerVersion(card.id).catch(() => 0),
+    cardLogoMarkVersion(card.id).catch(() => 0),
+    businessNameForCard(card),
+    stampStripsVersion(card.id).catch(() => 0),
+  ]);
+  const want = buildLoyaltyClass(card, logoVersion, bannerVersion, business, markVersion, stampsVersion);
+  const expectedHeroUri = uriOf(want.heroImage);
+  const expectedProgramLogoUri = uriOf(want.programLogo);
+
+  const res = await api("GET", `/loyaltyClass/${classId(card)}`);
+  if (res.status < 200 || res.status >= 300) {
+    return {
+      found: false,
+      status: res.status,
+      reason: res.text.slice(0, 200),
+      hasCallback: false,
+      expectedHeroUri,
+      expectedProgramLogoUri,
+    };
+  }
+  const cls = safeParse(res.text);
+  return {
+    found: true,
+    status: res.status,
+    reviewStatus: typeof cls.reviewStatus === "string" ? cls.reviewStatus : undefined,
+    heroUri: uriOf(cls.heroImage),
+    programLogoUri: uriOf(cls.programLogo),
+    hasCallback: Boolean((cls.callbackOptions as { url?: string } | undefined)?.url),
+    expectedHeroUri,
+    expectedProgramLogoUri,
+  };
+}
+
+/** GET one object Google is holding, to see whether it shadows the class band. */
+export async function readObject(serial: string): Promise<GoogleObjectReport> {
+  if (!setupStatus().canGoogleWallet) return { serial, found: false };
+  const res = await api("GET", `/loyaltyObject/${config.googleIssuerId}.${serial}`);
+  if (res.status < 200 || res.status >= 300) return { serial, found: false, status: res.status };
+  const obj = safeParse(res.text);
+  return {
+    serial,
+    found: true,
+    status: res.status,
+    ownHeroUri: uriOf(obj.heroImage),
+    state: typeof obj.state === "string" ? obj.state : undefined,
+  };
+}
+
+function safeParse(text: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(text) as unknown;
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The sourceUri out of an Image, whichever of Google's two shapes it arrives in. */
+function uriOf(image: unknown): string | undefined {
+  const src = (image as { sourceUri?: { uri?: string } } | null | undefined)?.sourceUri?.uri;
+  return typeof src === "string" && src ? src : undefined;
 }

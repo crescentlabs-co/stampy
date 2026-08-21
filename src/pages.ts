@@ -5897,6 +5897,9 @@ export function adminPage(): string {
     .flags { font-size: .78rem; color: var(--muted); }
     /* Something that needs a phone call. */
     .bad { color: #9a3412; font-weight: 600; }
+    /* Worth knowing, not worth ringing about. Amber is the app's one attention
+       colour (DESIGN.md rule 6) and stays out of the accent's job. */
+    .flags .warn { color: #92400e; font-weight: 600; }
     .tw { overflow-x: auto; }
     /* --- one shop, on its own page ------------------------------------------ */
     .back { margin: 2px 0 14px; }
@@ -6675,6 +6678,11 @@ export function adminPage(): string {
           // id — and the panel then appears in full, unfolded, where it means
           // something.
 
+          (liveCards.length ? '<details class="fold" style="margin-top:10px"><summary>Check their Android card' +
+            info("The band across the bottom of an Android card is Google\u2019s heroImage, not ours — we hand Google a link and Google fetches it. When that write fails it is logged on the server and nowhere else, so a card can look wrong here with everything on our side correct. This asks Google what it is actually holding. It reads only: nothing is changed and nobody is notified.") +
+            '</summary><button class="btn btn-ghost cbtn" data-gcheck style="margin-top:8px">Ask Google</button>' +
+            '<div data-gout></div></details>' : "") +
+
           '<details class="fold" style="margin-top:10px"><summary>Contact, links and programmes</summary>' +
             '<div class="flags">Sign-up link: <span class="mono">' + origin + "/j/" + esc(m.id) + "</span></div>" +
             '<label style="margin-top:12px">Phone</label>' +
@@ -7155,6 +7163,68 @@ export function adminPage(): string {
               '<p class="dnote" style="margin:8px 0 0">' + esc(why) + "</p>";
           });
         }
+        // Reads the far end of the wire. Every way an Android band goes blank
+        // looks the same from our side, so this names which one it is rather
+        // than leaving an owner to guess: the class write failed, the class is
+        // right but an old card carries its own band over the top, or the link
+        // Google holds no longer serves an image.
+        const gcheck = scope.querySelector("[data-gcheck]");
+        if (gcheck) gcheck.onclick = async () => {
+          const out = scope.querySelector("[data-gout]");
+          gcheck.disabled = true;
+          gcheck.textContent = "Asking Google…";
+          out.innerHTML = "";
+          const { body: r } = await api("/merchant/" + id + "/google");
+          gcheck.disabled = false;
+          gcheck.textContent = "Ask Google";
+          if (!r.cards) {
+            out.innerHTML = '<p class="dnote" style="margin:8px 0 0">Couldn’t reach Google.</p>';
+            return;
+          }
+          out.innerHTML = r.cards.map((c) => {
+            const cl = c.class || {};
+            const lines = [];
+            if (!cl.found) {
+              lines.push(cl.reason === "google-not-configured"
+                ? ["bad", "Google Wallet isn’t set up in Railway, so there is nothing to ask."]
+                : ["bad", "Google has no card design for this programme (" + esc(String(cl.status || "?")) +
+                   "). Nothing we send is reaching it — press Resync Google Wallet on Overview and check again."]);
+            } else {
+              if (!cl.heroUri) {
+                lines.push(["bad", "Google is holding NO band image. That is the blank strip — the design save never landed."]);
+              } else if (cl.expectedHeroUri && cl.heroUri !== cl.expectedHeroUri) {
+                lines.push(["bad", "Google is holding an OLD band. Its link is not the one we would send now, so the last save never reached Google."]);
+              } else {
+                lines.push(["ok", "Google is holding the current band."]);
+              }
+              if (c.hero) {
+                lines.push(c.hero.status === 200 && c.hero.type.indexOf("image/") === 0
+                  ? ["ok", "That link loads: " + esc(c.hero.type) + ", " + Math.round(c.hero.bytes / 1024) + "KB."]
+                  : ["bad", "That link does NOT load (" + esc(String(c.hero.status)) + " " + esc(c.hero.type) +
+                     "). Google cannot fetch it, so the strip stays blank."]);
+              }
+              // An object-level image wins over the class's for as long as it
+              // exists, and every stamp since has been a patch that leaves it
+              // alone — so a shop can have a perfect design and still show
+              // the wrong band on the cards that have been in a wallet longest.
+              const shadowed = (c.objects || []).filter((o) => o.ownHeroUri);
+              if (shadowed.length) {
+                lines.push(["bad", shadowed.length + " card" + (shadowed.length === 1 ? "" : "s") +
+                  " in a wallet carry their own band, which hides the shop’s. Those were issued before the band moved to the design."]);
+              }
+              if (!cl.hasCallback) {
+                lines.push(["warn", "Google has no callback registered, so nobody is told when a customer deletes their card. Set GOOGLE_CALLBACK_SECRET in Railway, then resync."]);
+              }
+              if (cl.reviewStatus && cl.reviewStatus.toLowerCase() === "draft") {
+                lines.push(["bad", "The design is still a DRAFT at Google, which cannot issue cards."]);
+              }
+            }
+            return '<div class="flags" style="margin-top:10px"><strong>' + esc(c.name) + "</strong>" +
+              lines.map((l) => '<div class="' + (l[0] === "bad" ? "bad" : l[0] === "warn" ? "warn" : "") +
+                '" style="margin-top:4px">' + (l[0] === "ok" ? "✓ " : "• ") + l[1] + "</div>").join("") +
+              "</div>";
+          }).join("");
+        };
         // Mounted lazily: it is a second request per shop and the page must not
         // wait on it to show the numbers, which are what the page is for.
         const dfold = scope.querySelector("[data-designfold]");

@@ -921,6 +921,35 @@ async function main() {
     );
   }
 
+  // "Ask Google" — read-only, and it must NEVER echo Google's raw class. The
+  // class carries callbackOptions.url with GOOGLE_CALLBACK_SECRET in its query
+  // string, so a report that spread the class would print that secret into a
+  // browser and every screenshot of it. Google is unconfigured here, which is
+  // the shape that has to stay safe too.
+  {
+    const own = (await ownerMerchant((await getOwnerByEmail("owner@test.my"))!.id))!;
+    const res = await get("/admin/api/merchant/" + own.id + "/google", { headers: { cookie: cookieNow } });
+    expect(res.status === 200, "the console can ask Google what it is holding");
+    const report = JSON.parse(res.body);
+    expect(Array.isArray(report.cards) && report.cards.length > 0, "it answers per programme");
+    expect(
+      report.cards.every((c: any) => c.class && typeof c.class.hasCallback === "boolean"),
+      "the callback is reported as a boolean, never as its URL",
+    );
+    expect(
+      !/token=|callbackOptions|private_key/i.test(res.body),
+      "no secret is echoed back from Google's class",
+    );
+    expect(
+      report.cards.every((c: any) => c.class.reason === "google-not-configured"),
+      "with no Google credentials it says so instead of throwing",
+    );
+    expect(
+      (await get("/admin/api/merchant/" + own.id + "/google", { headers: { cookie: cookieOutsider } })).status !== 200,
+      "asking Google is admin-only",
+    );
+  }
+
   // One shop's own lines, on its own endpoint — fetched when its page opens,
   // not dragged along with the list.
   {

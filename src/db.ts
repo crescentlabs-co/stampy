@@ -3888,3 +3888,24 @@ export async function pushTokensForSerial(serial: string): Promise<string[]> {
   );
   return res.rows.map((r) => r.push_token);
 }
+
+/**
+ * The OLDEST Google passes on a card, for the console's "Check Google Wallet".
+ *
+ * Oldest, not newest, because that is where the evidence is. An object created
+ * today carries no heroImage — buildLoyaltyObject sends none — so reading a
+ * fresh one proves nothing. The failure worth finding is historical: an object
+ * written back when the stamp path carried a picture still holds that
+ * heroImage, it shadows the class's band for as long as it exists, and every
+ * stamp since has been a PATCH, which leaves an omitted field alone.
+ */
+export async function oldestGoogleSerials(cardId: string, limit = 5): Promise<string[]> {
+  const res = await getPool().query<{ serial: string }>(
+    `SELECT serial FROM passes
+      WHERE card_id = $1 AND platform = 'google'
+      ORDER BY created_at ASC
+      LIMIT $2`,
+    [cardId, limit],
+  );
+  return res.rows.map((r) => r.serial);
+}

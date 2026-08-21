@@ -54,6 +54,8 @@ import {
   getOwner,
   merchantForCard,
   updateMerchant,
+  oldestGoogleSerials,
+  cardsForMerchant,
   setStampStrips,
   updateCard,
   updateOwnerPassword,
@@ -68,7 +70,7 @@ import {
   type ArtKind,
 } from "../cardView.js";
 import { refreshCardArt } from "../cardActions.js";
-import { ensureClass } from "../googleWallet.js";
+import { ensureClass, readClass, readObject } from "../googleWallet.js";
 import { stageOf, triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng } from "../imageValidate.js";
 import { adminPage } from "../pages.js";
@@ -172,6 +174,49 @@ adminRouter.get("/api/merchant/:id/series", requireAdmin, async (req, res) => {
   ]);
   res.json({ series, returning });
 });
+
+/**
+ * What Google is actually holding for this shop, and whether it can be fetched.
+ *
+ * The band across the bottom of an Android card is Google's `heroImage`, and
+ * every way it can be blank looks identical from here: the class write silently
+ * failed (every caller is `void ensureClass(...)`, so a 400 reaches Railway's
+ * log and nowhere else); the class is fine but an OLD object carries its own
+ * hero, which shadows it; or the URI Google holds no longer serves an image.
+ * This asks Google which, instead of inferring it from our side of the wire.
+ *
+ * Read-only — no POST, no PATCH, so it cannot notify anyone or move a count,
+ * and it is safe to press as often as you like. Secrets never come back: see
+ * GoogleClassReport, which names every field it returns precisely because the
+ * class holds the callback token.
+ */
+adminRouter.get("/api/merchant/:id/google", requireAdmin, async (req, res) => {
+  const cards = await cardsForMerchant(req.params.id!);
+  const report = [];
+  for (const card of cards) {
+    const cls = await readClass(card);
+    const serials = await oldestGoogleSerials(card.id).catch(() => []);
+    const objects = [];
+    for (const serial of serials) objects.push(await readObject(serial));
+    // The URI GOOGLE holds, fetched the way Google would fetch it. A version
+    // stamp we never sent is the tell for a class that stopped updating, and a
+    // 404 here is the tell for art removed after the class was written.
+    report.push({ cardId: card.id, name: card.name, class: cls, objects, hero: await headArt(cls.heroUri) });
+  }
+  res.json({ cards: report });
+});
+
+/** HEAD the art URI Google holds. `null` when there is no URI to check. */
+async function headArt(uri?: string): Promise<{ status: number; type: string; bytes: number } | null> {
+  if (!uri) return null;
+  try {
+    const r = await fetch(uri, { method: "GET" });
+    const buf = Buffer.from(await r.arrayBuffer());
+    return { status: r.status, type: r.headers.get("content-type") ?? "", bytes: buf.length };
+  } catch (err) {
+    return { status: 0, type: String(err).slice(0, 80), bytes: 0 };
+  }
+}
 
 /** What this merchant has changed about their card — the WTP signal. */
 adminRouter.get("/api/merchant/:id/edits", requireAdmin, async (req, res) => {
