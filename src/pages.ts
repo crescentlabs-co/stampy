@@ -3318,7 +3318,7 @@ export function marketingPage(contactEmail = ""): string {
     }
     .xc { flex: 0 0 auto; width: 250px; background: var(--paper); border: 2px solid var(--hair);
           border-radius: 20px; overflow: hidden; }
-    .xc header { background: var(--neon); color: var(--on-accent); display: flex;
+    .xc header { background: var(--band); color: var(--bandink); display: flex;
                  align-items: center; gap: 6px; padding: 9px 12px; }
     .xc header img { flex: none; display: block; }
     .xc header b { font-family: var(--display); font-weight: 800; font-size: .84rem;
@@ -3327,18 +3327,15 @@ export function marketingPage(contactEmail = ""): string {
     .xc header span { margin-left: auto; font-size: .72rem; font-weight: 700; white-space: nowrap; }
     /* The stamps are the product's own mark, faded until earned. */
     .xc .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; padding: 13px 12px; }
-    .xc .grid i { aspect-ratio: 1; border-radius: 50%; border: 1.5px solid var(--hair);
-                  background: url("/assets/img/punchme-mark-v1.png") center/60% no-repeat;
-                  opacity: .3; }
-    .xc .grid i.on { border-color: var(--ink); opacity: 1; }
-    .xc footer { background: var(--neon); color: var(--on-accent); display: flex;
+    .xc .grid i { aspect-ratio: 1; border-radius: 50%; background: var(--line); }
+    .xc .grid i.on { background: var(--band); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.16); }
+    .xc footer { background: var(--band); color: var(--bandink); display: flex;
                  justify-content: space-between; gap: 10px; padding: 10px 12px; }
     .xc footer span { display: block; font-size: .58rem; font-weight: 700; letter-spacing: .09em;
                       text-transform: uppercase; opacity: .74; }
     .xc footer b { font-size: .82rem; font-weight: 700; }
     .xc footer .pg { text-align: right; }
-    .xc .kind { color: var(--ink-2); font-size: .74rem; font-weight: 600; margin: 0;
-                padding: 9px 12px 11px; }
+    .xc .grid { padding-bottom: 15px; }
 
     /* ------------------------------------------------------------ carousel -- */
     .car { background: var(--slab); color: var(--on-slab); border-radius: var(--r);
@@ -3409,8 +3406,7 @@ export function marketingPage(contactEmail = ""): string {
     @media (prefers-reduced-motion: reduce) { .owncap { transition: none; } }
     .phone { width: 380px; max-width: 100%; margin: 0 auto; background: var(--ink);
              border-radius: 42px; padding: 11px; box-shadow: 0 30px 70px -30px rgba(12,14,13,.5); }
-    .screen { background: var(--paper); border-radius: 32px; overflow: hidden;
-              min-height: 560px; display: flex; flex-direction: column; }
+    .screen { background: var(--paper); border-radius: 32px; overflow: hidden; }
     .sbar { display: flex; align-items: center; justify-content: space-between;
             padding: 14px 20px 6px; font-size: .74rem; font-weight: 700; color: var(--ink); }
     .scr { display: none; }
@@ -3500,28 +3496,25 @@ export function marketingPage(contactEmail = ""): string {
   `;
 
   // Placeholder example cards. TODO(founder): confirm the six trades and rewards.
-  const EXAMPLES: [string, string, number, number, string][] = [
-    ["Kopi Corner", "Cafe or kopitiam", 10, 7, "Free drink"],
-    ["Roti Bakar Co", "Bakery", 10, 4, "Free item"],
-    ["Teh Tarik Lane", "Bubble tea", 10, 9, "Free drink"],
-    ["Gaya Barber", "Barber or salon", 5, 3, "Free cut"],
-    ["Kilat Wash", "Car wash", 5, 2, "Free upgrade"],
-    ["Paws & Co", "Pet grooming", 5, 4, "Free add on"],
+  // biz, band colour, ink on that band, stamps, filled, reward
+  const EXAMPLES: [string, string, string, number, number, string][] = [
+    ["Kopi Corner", "#c9f73d", "#0c0e0d", 10, 7, "Free drink"],
+    ["Roti Bakar Co", "#f3c969", "#3d2708", 10, 4, "Free item"],
+    ["Teh Tarik Lane", "#5b3fa6", "#f6f2ff", 10, 9, "Free drink"],
+    ["Gaya Barber", "#14161a", "#f4f6f2", 5, 3, "Free cut"],
+    ["Kilat Wash", "#2f6fed", "#f2f7ff", 5, 2, "Free upgrade"],
+    ["Paws & Co", "#ff8fb8", "#42101f", 5, 4, "Free add on"],
   ];
-  const cardHtml = ([biz, kind, slots, filled, reward]: [string, string, number, number, string]) => {
+  const cardHtml = ([biz, band, ink, slots, filled, reward]: [string, string, string, number, number, string]) => {
     let dots = "";
     for (let i = 0; i < slots; i++) dots += `<i class="${i < filled ? "on" : ""}"></i>`;
-    return `<article class="xc">
-              <header>
-                <img src="/assets/img/punchme-mark-v1.png" alt="" width="18" height="18">
-                <b>${biz}</b><span>${filled} earned</span>
-              </header>
+    return `<article class="xc" style="--band: ${band}; --bandink: ${ink}">
+              <header><b>${biz}</b><span>${filled} earned</span></header>
               <div class="grid">${dots}</div>
               <footer>
                 <div><span>Reward</span><b>${reward}</b></div>
                 <div class="pg"><span>Progress</span><b>${filled}/${slots}</b></div>
               </footer>
-              <p class="kind">${kind}</p>
             </article>`;
   };
   // The track is doubled so the translate can loop at exactly -50% with no seam.
@@ -3636,7 +3629,7 @@ export function marketingPage(contactEmail = ""): string {
           </div>
           <div class="rowvid">
             <video src="/assets/vid/signup-v1.mp4" poster="/assets/vid/signup-v1.jpg"
-                   width="439" height="849" muted loop playsinline preload="none"
+                   width="439" height="849" muted loop playsinline preload="metadata"
                    data-loop aria-label="Scanning the QR and the card saving into a phone wallet"></video>
           </div>
         </div>
@@ -3655,7 +3648,7 @@ export function marketingPage(contactEmail = ""): string {
           </div>
           <div class="rowvid">
             <video src="/assets/vid/scan-v1.mp4" poster="/assets/vid/scan-v1.jpg"
-                   width="439" height="849" muted loop playsinline preload="none"
+                   width="439" height="849" muted loop playsinline preload="metadata"
                    data-loop aria-label="A stamp being added at the counter"></video>
           </div>
         </div>
