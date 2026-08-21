@@ -95,7 +95,7 @@ async function main() {
   // The looping clips and the brand mark are the page argument now, so a
   // missing byte is a hole in it. Checked the same way the font is.
   for (const asset of ["/assets/vid/card-v1.mp4", "/assets/vid/card-v1.jpg",
-                       "/assets/vid/signup-v1.mp4", "/assets/vid/scan-v1.mp4",
+                       "/assets/vid/signup-v1.mp4",
                        "/assets/img/punchme-logo-v1.png"]) {
     expect(landing.body.includes(asset) || asset.endsWith(".jpg"), `landing references ${asset}`);
     expect((await get(asset)).status === 200, `GET ${asset} serves`);

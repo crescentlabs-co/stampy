@@ -135,6 +135,17 @@ slider once held two of three value props behind a 34×5px dot.
 "Why us", "Who are we?" and "What we do" name the section after itself and say
 nothing — the version of this page that shipped them is the anti-example.
 
+**The gist goes directly under the fold.** Three cards, an icon, a three-word
+heading and one line each — and nothing else inside them, because what makes the
+block readable at a glance is that there is nothing else to read. Demonstrations
+go *under* the three, never inside one. This is the second thing a visitor sees
+and often the last thing they read.
+
+**Say what a competitor cannot.** "No app to download" is a claim every rival
+web-app loyalty product also makes, so it cannot be the differentiator. The pass
+living in Apple Wallet and Google Wallet — beside their bank cards, updating on
+the lock screen, working with no signal — is the one thing that is ours.
+
 ## Video
 
 Clips are **muted, looping, `playsinline`, poster-backed, and carry no

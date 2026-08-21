@@ -3266,19 +3266,23 @@ export function marketingPage(contactEmail = ""): string {
     /* ------------------------------------------------------- two-up panels -- */
     .duo { display: grid; gap: 18px; }
     @media (min-width: 860px) { .duo { grid-template-columns: 1fr 1fr; } }
-    /* Steps beside the thing happening. The rows alternate so the eye zig-zags
-       down the page instead of running down one column. */
-    .mrow { display: grid; gap: clamp(18px, 3vw, 34px); align-items: center; }
-    .mrow + .mrow { margin-top: clamp(22px, 4vw, 46px); }
-    @media (min-width: 860px) {
-      .mrow { grid-template-columns: 1.05fr .95fr; }
-      .mrow.flip .panel { order: 2; }
-      .mrow.flip .rowvid { order: 1; }
-    }
-    .rowvid { display: flex; justify-content: center; }
-    .rowvid video { width: 100%; max-width: 268px; height: auto; display: block;
-                    border-radius: 24px; background: var(--surface);
-                    box-shadow: 0 24px 60px -30px rgba(12,14,13,.45); }
+    /* The gist, in ten seconds. Three cards, no media inside them: the reason
+       this reads at a glance is that there is nothing else in it. */
+    .three { display: grid; gap: 14px; }
+    @media (min-width: 820px) { .three { grid-template-columns: repeat(3, 1fr); } }
+    .up { background: var(--soft); border: 1px solid var(--hair); border-radius: var(--r);
+          padding: clamp(22px, 3vw, 30px); }
+    .up .ico { font-size: 1.7rem; line-height: 1; display: block; margin-bottom: 14px; }
+    .up h3 { font-size: 1.16rem; letter-spacing: -.02em; margin-bottom: 7px; }
+    .up p { color: var(--ink-2); font-size: .95rem; line-height: 1.5; margin: 0; }
+    /* One demonstration under the three, centred, so the section stays one idea
+       and one proof rather than a wall of panels. */
+    .demo { display: flex; flex-direction: column; align-items: center;
+            margin-top: clamp(30px, 5vw, 54px); }
+    .demo video { width: 100%; max-width: 258px; height: auto; display: block;
+                  border-radius: 24px; background: var(--soft);
+                  box-shadow: 0 24px 60px -30px rgba(12,14,13,.45); }
+    .demo .cap { margin: 16px 0 0; color: var(--ink-2); font-size: .92rem; text-align: center; }
     .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 42px); }
     .panel.pale { background: var(--soft); }
     .panel.dark { background: var(--slab); color: var(--on-slab); }
@@ -3354,6 +3358,9 @@ export function marketingPage(contactEmail = ""): string {
                  max-width: 40ch; }
     .slideart { position: relative; min-height: 300px; background: #1a1f19;
                 display: grid; place-items: center; padding: 30px; overflow: hidden; }
+    .slideart .shot { position: static; width: auto; height: auto; max-height: 340px;
+                      border-radius: 18px; box-shadow: 0 20px 50px -24px rgba(0,0,0,.6);
+                      filter: none; }
     .slideart > img { position: absolute; inset: 0; width: 100%; height: 100%;
                       object-fit: cover; filter: grayscale(.92) contrast(1.06) brightness(.62); }
     .slideart > :not(img) { position: relative; z-index: 1; }
@@ -3404,7 +3411,7 @@ export function marketingPage(contactEmail = ""): string {
     .owncap[aria-pressed="true"] { background: var(--soft); border-left-color: var(--neon); }
     .owncap[aria-pressed="true"] p { color: var(--ink); }
     @media (prefers-reduced-motion: reduce) { .owncap { transition: none; } }
-    .phone { width: 380px; max-width: 100%; margin: 0 auto; background: var(--ink);
+    .phone { width: min(380px, 100%); margin: 0 auto; background: var(--ink);
              border-radius: 42px; padding: 11px; box-shadow: 0 30px 70px -30px rgba(12,14,13,.5); }
     .screen { background: var(--paper); border-radius: 32px; overflow: hidden; }
     .sbar { display: flex; align-items: center; justify-content: space-between;
@@ -3585,8 +3592,9 @@ export function marketingPage(contactEmail = ""): string {
       <section class="shell"><div class="hero">
         <div>
           <h1>Turn your customers into regulars</h1>
-          <p class="sub">A stamp card that lives in your customer's phone. No app to
-            download, and it can't be left at home.</p>
+          <p class="sub">Reward repeat visits, win back quiet customers, and never get
+            left at home &mdash; all from a stamp card that lives in Apple Wallet and
+            Google Wallet.</p>
           <p class="trylbl">Try a real card on your own phone</p>
           <div class="herobtns">
             <!-- TODO(founder): both point at the live demo pass once it is wired. -->
@@ -3609,48 +3617,34 @@ export function marketingPage(contactEmail = ""): string {
         </div>
       </div></section>
 
-      <!-- 2 · NOTHING TO INSTALL -->
+      <!-- 2 · THE DIFFERENCE, in ten seconds. Three cards and nothing else:
+           what makes this readable is that there is nothing else in it. -->
       <section class="band" id="how"><div class="shell">
         <div class="lede">
-          <h2>Nothing to install. On either side.</h2>
-          <p>No app for your customers, and no new hardware on your counter.</p>
+          <h2>Not another app they'll never open</h2>
         </div>
-        <div class="mrow">
-          <div class="panel pale">
-            <p class="who">For your customer</p>
-            <h3>Three taps, then never again</h3>
-            <ul class="flow">
-              <li><span class="n">1</span><span class="tx">Scans the QR on your counter</span></li>
-              <li aria-hidden="true"><span class="arw"></span></li>
-              <li><span class="n">2</span><span class="tx">The card saves straight into their wallet</span></li>
-              <li aria-hidden="true"><span class="arw"></span></li>
-              <li><span class="n">3</span><span class="tx">Gets a stamp every visit</span></li>
-            </ul>
+        <div class="three">
+          <div class="up">
+            <span class="ico" aria-hidden="true">&#128179;</span>
+            <h3>In their real wallet</h3>
+            <p>The card sits next to their bank cards, in Apple Wallet and Google Wallet.</p>
           </div>
-          <div class="rowvid">
-            <video src="/assets/vid/signup-v1.mp4" poster="/assets/vid/signup-v1.jpg"
-                   width="439" height="849" muted loop playsinline preload="metadata"
-                   data-loop aria-label="Scanning the QR and the card saving into a phone wallet"></video>
+          <div class="up">
+            <span class="ico" aria-hidden="true">&#128276;</span>
+            <h3>Updates on the lock screen</h3>
+            <p>They see the new stamp without opening anything at all.</p>
+          </div>
+          <div class="up">
+            <span class="ico" aria-hidden="true">&#128274;</span>
+            <h3>Nothing collected</h3>
+            <p>No name, no email, no phone number. Not now, not ever.</p>
           </div>
         </div>
-
-        <div class="mrow flip">
-          <div class="panel dark">
-            <p class="who">For you</p>
-            <h3>Four seconds at the counter</h3>
-            <ul class="flow">
-              <li><span class="n">1</span><span class="tx">Open the stamper on any phone</span></li>
-              <li aria-hidden="true"><span class="arw"></span></li>
-              <li><span class="n">2</span><span class="tx">Scan their card</span></li>
-              <li aria-hidden="true"><span class="arw"></span></li>
-              <li><span class="n">3</span><span class="tx">Stamped. Their phone updates itself</span></li>
-            </ul>
-          </div>
-          <div class="rowvid">
-            <video src="/assets/vid/scan-v1.mp4" poster="/assets/vid/scan-v1.jpg"
-                   width="439" height="849" muted loop playsinline preload="metadata"
-                   data-loop aria-label="A stamp being added at the counter"></video>
-          </div>
+        <div class="demo">
+          <video src="/assets/vid/signup-v1.mp4" poster="/assets/vid/signup-v1.jpg"
+                 width="439" height="849" muted loop playsinline preload="metadata"
+                 data-loop aria-label="Scanning the QR and the card saving into a phone wallet"></video>
+          <p class="cap">One scan, and it&rsquo;s in their wallet. No app, no sign-up.</p>
         </div>
       </div></section>
 
@@ -3670,47 +3664,32 @@ export function marketingPage(contactEmail = ""): string {
         <div class="car"><div class="cartrack">
           <div class="slide" data-slide>
             <div class="slidetx">
-              <h3>Their card updates before they leave the counter</h3>
-              <p>Tap once. The phone in their pocket catches up on its own.</p>
+              <h3>You can see who is slipping away</h3>
+              <p>Paper tells you nothing until a regular has already gone. This tells you
+                the week they start coming less.</p>
             </div>
             <div class="slideart">
-              <div class="lock">
-                <p class="clock">9:41</p>
-                <p class="date">Tuesday 12 August</p>
-                <div class="notif">
-                  <span class="ic">P</span>
-                  <div>
-                    <div class="hd"><b>Kopi Corner</b><span class="tm">now</span></div>
-                    <p>7 of 10 stamps. Three more and the next one is free.</p>
-                  </div>
-                </div>
-              </div>
+              <img class="shot" src="/assets/img/screen-customers-v1.jpg"
+                   alt="The dashboard customer list" width="780" height="1688" loading="lazy">
             </div>
           </div>
           <div class="slide" data-slide>
             <div class="slidetx">
-              <h3>It lives in the wallet they already have</h3>
-              <p>Apple Wallet and Google Wallet, one QR for both. No download, no sign-up,
-                no personal details.</p>
+              <h3>Change the rules without asking anyone to rescan</h3>          </div>
+          <div class="slide" data-slide>
+            <div class="slidetx">
+              <h3>Change the rules without asking anyone to rescan</h3>
+              <p>Raise the target or change the reward whenever you like. Everyone part
+                way through keeps the deal they were promised.</p>
             </div>
             <div class="slideart">
-              <div class="card">
-                <div class="top">
-                  <div>
-                    <p class="shop">Kopi Corner</p>
-                    <p class="meta">Google Wallet</p>
-                  </div>
-                  <span class="mark">P</span>
-                </div>
-                <div class="rowlbl"><span>Progress</span><b>9 of 10</b></div>
-                <div class="dots">
-                  <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i>
-                  <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i>
-                </div>
-                <div class="rw"><span>Reward</span><b>Free drink</b></div>
-              </div>
+              <img class="shot" src="/assets/img/screen-card-v1.jpg"
+                   alt="The card settings: stamps, reward and staff PIN" width="780" height="1688" loading="lazy">
             </div>
           </div>
+          <div class="slide" data-slide>
+            <div class="slidetx">
+              <h3>Bring back the ones who stopped coming</h3>          </div>
           <div class="slide" data-slide>
             <div class="slidetx">
               <h3>Bring back the ones who stopped coming</h3>
