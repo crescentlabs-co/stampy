@@ -505,8 +505,13 @@ describe("the design panel, mounted", () => {
     it("lays the three logo decisions out as three rows, in order", () => {
       const h = makeHarness();
       const div = build(card(), h);
+      // Four rows now: the three logo decisions, then the band artwork, which
+      // is a fourth picture the owner supplies and sits directly above the
+      // stamps that get drawn on top of it. The three below are still one
+      // decision each, which is what this test is really about.
       const rows = div.querySelectorAll(".lrow");
-      expect(rows.length).toBe(3);
+      expect(rows.length).toBe(4);
+      expect(rows[3]!.querySelector("[data-band]")).not.toBeNull();
       // Each owns exactly one of the three, and in this order.
       const owns = (row: FakeEl, sel: string) => row.querySelector(sel) !== null;
       expect(owns(rows[0]!, "[data-logo]")).toBe(true);
@@ -724,6 +729,85 @@ describe("the design panel, mounted", () => {
       tap(div, "accent");
       expect(present()).toBe(true);
       expect(div.querySelector("[data-palette]")!.hidden).toBe(true);
+    });
+  });
+
+  /**
+   * The band behind the stamps.
+   *
+   * card_banners holds one of two things — the flat band we generate, or the
+   * owner's uploaded artwork — and cards.band_texture is the only thing that
+   * says which. Get that wrong and a colour save paints a flat rectangle over
+   * somebody's upload, silently, with no undo and no copy of the file.
+   */
+  describe("band artwork", () => {
+    it("draws the artwork behind the stamps once it has decoded", async () => {
+      const h = makeHarness();
+      build(card({ bandTexture: "image", bannerVersion: 1700000000000 }), h);
+      // Asked for the stored band...
+      expect(h.images.some((im) => im.src.includes("banner"))).toBe(true);
+      // ...and at this instant it has not decoded, so nothing is composited yet.
+      await h.settle();
+      // ...and painted it. The stamp style here is dots, so a drawImage can
+      // only have come from the band.
+      expect(h.drawn().some((d) => d.op === "drawImage")).toBe(true);
+    });
+
+    it("leaves the band flat when there is no artwork", async () => {
+      const h = makeHarness();
+      build(card(), h);
+      await h.settle();
+      expect(h.images.some((im) => im.src.includes("banner"))).toBe(false);
+      expect(h.drawn().some((d) => d.op === "drawImage")).toBe(false);
+    });
+
+    /**
+     * The one that silently eats an upload. saveLook() regenerated the flat
+     * band on EVERY save, so touching a colour picker once would have
+     * overwritten the artwork.
+     */
+    it("does not regenerate the band over an upload when a colour is saved", async () => {
+      const h = makeHarness();
+      const div = build(card({ bandTexture: "image", bannerVersion: 1700000000000 }), h);
+      await h.settle();
+      const before = h.requests.length;
+      await div.querySelector("[data-a=save]")!.onclick!();
+      await h.settle();
+      const posts = h.requests.slice(before)
+        .filter((r) => r.method === "POST" && r.url.endsWith("/banner"));
+      expect(posts.length).toBe(0);
+    });
+
+    /** ...and a flat card still regenerates it, because Google reads that PNG. */
+    it("does regenerate the band when it is a flat colour", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const before = h.requests.length;
+      await div.querySelector("[data-a=save]")!.onclick!();
+      await h.settle();
+      const posts = h.requests.slice(before)
+        .filter((r) => r.method === "POST" && r.url.endsWith("/banner"));
+      expect(posts.length).toBeGreaterThan(0);
+    });
+
+    /**
+     * Remove has to put a flat band BACK. That PNG is Google's hero image
+     * whenever a card has no stamp strips, so deleting the upload and leaving
+     * the row empty would point the class at nothing.
+     */
+    it("puts a flat band back when the artwork is removed", async () => {
+      const h = makeHarness();
+      const div = build(card({ bandTexture: "image", bannerVersion: 1700000000000 }), h);
+      await h.settle();
+      const before = h.requests.length;
+      await div.querySelector("[data-a=rmband]")!.onclick!();
+      await h.settle();
+      const after = h.requests.slice(before);
+      expect(after.some((r) => r.method === "DELETE" && r.url.endsWith("/banner"))).toBe(true);
+      expect(after.some((r) => r.method === "POST" && r.url.endsWith("/banner"))).toBe(true);
+      // And the flag goes back, or the next save would skip regenerating.
+      expect(after.some((r) => r.body && (r.body as { bandTexture?: string }).bandTexture === "flat")).toBe(true);
     });
   });
 

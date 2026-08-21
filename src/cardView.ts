@@ -81,11 +81,19 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   if (typeof body.fg === "string") fields.foreground_color = hexToRgb(body.fg);
   if (typeof body.label === "string") fields.label_color = hexToRgb(body.label);
   if (typeof body.accent === "string") fields.accent_color = hexToRgb(body.accent);
-  // The band across the middle of the card — one flat colour. It carried a
-  // texture too (gradient, waves, chevron…): ten variations of a surface the
-  // stamps are drawn on top of, every one tuned to be barely visible so it
-  // could not fight them. cards.band_texture survives as a column because
-  // migrations here are additive, and is now written by nothing.
+  // The band across the middle of the card. It carried a TEXTURE too once
+  // (gradient, waves, chevron…): ten variations of a surface the stamps are
+  // drawn on top of, every one tuned to be barely visible so it could not fight
+  // them, and all ten were removed.
+  //
+  // band_texture survived as a column and is written again — but as a FLAG, not
+  // a style. card_banners holds one of two things, the owner's uploaded artwork
+  // or the flat band we generated, and this says which. Without it a colour
+  // save cannot tell the difference and regenerates the flat band over the
+  // upload. Only the two values: anything else falls back to flat.
+  if (typeof body.bandTexture === "string") {
+    fields.band_texture = body.bandTexture === "image" ? "image" : "flat";
+  }
   if (typeof body.bandColor === "string") fields.band_color = hexToRgb(body.bandColor);
   // The default text a nudge is pre-filled with. The column is still called
   // auto_winback_message from when a scheduler used it; nothing is automated

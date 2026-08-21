@@ -1277,6 +1277,18 @@ export const DESIGN_PANEL_JS = /* js */ `
           </div>
         </div>
 
+        <!-- The band behind the stamps. Sits with the logo rows because it is the
+             same kind of decision — a picture you supply — and directly above the
+             stamps that get drawn on top of it, which is the thing worth having in
+             mind while choosing one. -->
+        <div class="lrow">
+          <label class="dlbl">Band artwork\${info("The strip behind your stamps. Leave it empty and the band is just your Band colour. Your stamps are drawn ON TOP of whatever you upload, so a busy picture will fight them — something simple, and open in the middle, works best. Cropped to fit a wide strip.")}</label>
+          <div class="actbar">
+            <label class="btn btn-ghost" style="margin:0"><span data-bandbtn>Upload image</span><input data-band type="file" accept="image/*"></label>
+            <button class="btn btn-ghost" data-a="rmband" \${c.bandTexture === "image" ? "" : "disabled"}>Remove</button>
+          </div>
+        </div>
+
         <label class="dlbl">Stamp logo\${info("Plain dots, an emoji, or your own shape, drawn in your Stamps colour. A simple shape or symbol, not a photo — we trim it and fill it with your stamp colour. iPhone only: Android always shows dots.")}</label>
         <!-- Three buttons, one choice. It was a text field, a Use button, an
              upload and a Dots button: four controls for three answers, and the
@@ -1436,8 +1448,17 @@ export const DESIGN_PANEL_JS = /* js */ `
       }
       // Drawn from the hosted copy, which is same-origin, so the canvas stays
       // untainted and toDataURL keeps working.
+      //
+      // ONLY when the band is an uploaded image. card_banners holds one of two
+      // things — the owner's artwork, or the flat band we generated — and
+      // band_texture says which. Loading the generated one would paint a STALE
+      // colour over a fresh one: drag the Band picker and the card would not
+      // move until the PNG had been saved, re-served and re-decoded, which is
+      // exactly the bug that made the band read from the picker in the first
+      // place.
+      let bandIsImage = c.bandTexture === "image";
       const bannerReadyPromise = loadBanner(
-        c.bannerVersion ? env.artUrl("banner", c.bannerVersion) : "",
+        bandIsImage && c.bannerVersion ? env.artUrl("banner", c.bannerVersion) : "",
       );
 
       /**
@@ -1481,18 +1502,21 @@ export const DESIGN_PANEL_JS = /* js */ `
       }
 
       /**
-       * One strip image for one stamp count. 750x246 is the @2x storeCard strip
-       * (375x123pt); the grid is centred with a 40px clear margin all round, and
-       * an odd target leaves the last row one short, centred.
+       * One strip image for one stamp count.
        *
-       * @2x rather than @3x on purpose: once a banner photo is composited in,
-       * an @3x strip weighs ~414KB and a full set of 21 comes to 8MB, which
-       * overruns both the upload cap and the request body. @2x halves the
-       * dimensions for ~190KB each, and the strip is imagery with no fine text,
-       * so an @3x phone upscaling it is not noticeable.
-       * Earned stamps take the accent colour; unearned are the same shape at 25%.
+       * 1125x369 is the @3x storeCard strip (375x123pt) and is also what Google
+       * takes as its hero image, which is why it is the default — Google asks
+       * for 1032px of width and the old @2x render was 750. The grid is centred
+       * with a clear margin all round and an odd target leaves the last row one
+       * short, centred. Earned stamps take the accent colour; unearned are the
+       * same shape at 25%.
+       *
+       * The caller can ask for a smaller canvas. That is not a preference: a
+       * band image composited into an @3x strip can pass the server's 512KB
+       * per-strip cap on its own, and the route fails the whole set — see the
+       * clamp in applyStamps.
        */
-      function drawStampStrip(filled, target, icon) {
+      function drawStampStrip(filled, target, icon, wOut, hOut) {
         // 1125×369 — Apple's storeCard strip at @3x (375×123pt), and the SAME
         // file is Google's heroImage. It was 750×246 (@2x), which was correct
         // for Apple and undersized for Google: their loyalty guidelines ask for
@@ -1504,7 +1528,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         // is wider than they ask and shorter than they ask; a hero at the wrong
         // RATIO is letterboxed, but one under their width may be dropped, so
         // width is the half worth fixing with one image serving both.
-        const W = 1125, H = 369, M = 60;
+        // Defaults are @3x; applyStamps passes @2x instead when a composited
+        // band would push a strip past the server's 512KB cap. M scales with
+        // the canvas so the grid keeps the same clear margin at either size.
+        const W = wOut || 1125, H = hOut || 369, M = Math.round(W * 0.0533);
         const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
         const x = cv.getContext("2d");
         // The band, drawn from what the pickers say RIGHT NOW — then the stamps
@@ -1598,7 +1625,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         // class, so which image you saw depended on whether the banner or the
         // strip painted last — the preview could show a banner the pass didn't have.
         const dots = q("[data-pv-dots]"), banner = q("[data-pv-banner]");
-        if (stampStyle) {
+        // ...and whenever the band is an uploaded image, for the same reason.
+        // The real card ALWAYS gets a composited strip — applyStamps renders one
+        // whatever the stamp style — so with artwork behind the stamps the text
+        // dots and a decorative 64px band would show a card nobody receives.
+        if (stampStyle || bandIsImage) {
           dots.style.display = "none";
           banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
           banner.classList.add("on", "strip");
@@ -1762,7 +1793,7 @@ export const DESIGN_PANEL_JS = /* js */ `
 
       // What each upload is called when a toast has to name it. Keyed by the
       // same string the route takes, so a new kind cannot be added without one.
-      const ART_LABEL = { logo: "Logo", banner: "Banner", mark: "Square logo" };
+      const ART_LABEL = { logo: "Logo", banner: "Band artwork", mark: "Android logo" };
 
       // ---- Make an upload usable without asking the owner to edit it ----
       //
@@ -2067,6 +2098,63 @@ export const DESIGN_PANEL_JS = /* js */ `
         toast(on ? "Your name will not be printed next to the logo" : "Your name will show next to the logo");
       };
 
+
+      // ---- The band behind the stamps ----
+      //
+      // Stored in card_banners, the same row the generated flat band uses —
+      // cards.band_texture says which of the two is in there. That column has
+      // existed since the ten procedural textures were removed and has been
+      // written by nothing since; this is what it is for.
+      //
+      // 1125x369 to match the strip exactly, so compositing is a straight
+      // draw with no resampling, and "cover" because a band is 3:1 and almost
+      // nothing anybody uploads is.
+      wireUpload("[data-band]", "banner", 1125, 369, async (url) => {
+        await loadBanner(url);
+        bandIsImage = true;
+        c.bandTexture = "image";
+        c.bannerVersion = Date.now();
+        q("[data-a=rmband]").disabled = false;
+        updateBandBtn();
+        // The texture flag has to reach the server, or the next colour save
+        // regenerates the flat band straight over the upload.
+        await save({ bandTexture: "image" }, "", true);
+        // Every stored strip still has the old band baked into it.
+        await applyStamps(stampStyle || "dot", true);
+        renderPreview();
+      }, "cover");
+
+      q("[data-a=rmband]").onclick = async () => {
+        const ok = await modal(
+          "Remove your band artwork?",
+          "<p>The band goes back to your Band colour. The image is deleted and cannot be undone — you would need the original file to put it back.</p>",
+          "Remove it",
+        );
+        if (!ok) return;
+        const { body } = await api(P("/banner"), { method: "DELETE" });
+        if (!body.ok) return toast(body.error || "Couldn't remove it");
+        await loadBanner("");
+        bandIsImage = false;
+        c.bandTexture = "flat";
+        q("[data-a=rmband]").disabled = true;
+        updateBandBtn();
+        await save({ bandTexture: "flat" }, "", true);
+        // Put a flat band back in card_banners before anything reads it: it is
+        // Google's hero image whenever a card has no strips, and deleting the
+        // upload without regenerating would leave that pointing at nothing.
+        await saveBanner(bandPng(1125, 369), true);
+        await applyStamps(stampStyle || "dot", true);
+        renderPreview();
+        toast("Back to your Band colour");
+      };
+
+      /** Upload vs Replace, the same tell the logo rows carry. */
+      function updateBandBtn() {
+        const b = q("[data-bandbtn]");
+        if (b) b.textContent = bandIsImage ? "Replace image" : "Upload image";
+      }
+      updateBandBtn();
+
       // ---- Colours out of the logo ----
       //
       // Applied on upload, not offered. It used to paint five swatches and a
@@ -2130,7 +2218,10 @@ export const DESIGN_PANEL_JS = /* js */ `
           bg: found.bg, fg: found.fg, label: found.label,
           accent: found.accent, bandColor: found.band,
         }, "", true);
-        await saveBanner(bandPng(1125, 369), true);
+        // Same guard as saveLook: taking colours from a logo must not repaint
+        // over uploaded band artwork. The Band colour still moves underneath —
+        // it is what shows if the image is ever removed.
+        if (!bandIsImage) await saveBanner(bandPng(1125, 369), true);
         // The extracted card colour is sampled FROM the logo, so it can land on
         // top of the logo's own ink. This is the same check the upload used to
         // run on its own, and it must come last or it corrects a colour that is
@@ -2355,9 +2446,30 @@ export const DESIGN_PANEL_JS = /* js */ `
        * by the time the stamps are drawn on top, so the band would simply be
        * missing from the strip.
        */
+      /**
+       * The backdrop the stamps are drawn onto: the owner's artwork if they
+       * uploaded any, otherwise the Band colour.
+       *
+       * The image half is what the bannerImg/bannerReady loader above has always
+       * been for. It kept decoding and nothing drew it, because ten procedural
+       * textures were removed from here and the flat fill was all that was left.
+       * An uploaded image is a different proposition from those: a merchant who
+       * brings their own artwork has decided it is worth the stamps sitting on
+       * it, which is not a decision a built-in "grain" option could make for
+       * them.
+       *
+       * COVER, not stretch. A band is 3:1 and almost nothing anybody uploads is,
+       * so fitting it would letterbox the ends in a colour that is not on the
+       * card. Cover crops instead, centred, which is what every other art path
+       * in this panel does.
+       */
       function paintBand(x, c1, w, h) {
         x.fillStyle = c1;
         x.fillRect(0, 0, w, h);
+        if (!bannerReady || !bannerImg.naturalWidth) return;
+        const k = Math.max(w / bannerImg.naturalWidth, h / bannerImg.naturalHeight);
+        const iw = bannerImg.naturalWidth * k, ih = bannerImg.naturalHeight * k;
+        x.drawImage(bannerImg, (w - iw) / 2, (h - ih) / 2, iw, ih);
       }
       // ---- The band: the strip the stamps sit on, in one flat colour ----
       //
@@ -2396,12 +2508,36 @@ export const DESIGN_PANEL_JS = /* js */ `
         // lost their stamps picture entirely. Usually one set; two until everyone
         // on the old ruleset has earned their next reward.
         const targets = [...new Set([target, ...(c.targetsInUse || [])])].filter((t) => t >= 1 && t <= 20);
-        const strips = [];
-        for (const t of targets) {
-          for (let n = 0; n <= t; n++) {
-            strips.push({ target: t, filled: n, png: drawStampStrip(n, t, style).split(",")[1] });
+        // Render the set, and keep every strip inside the server's cap.
+        //
+        // validateArtPng rejects anything over 512KB and the route fails the
+        // WHOLE save, so one heavy strip loses the lot. A flat band is ~40KB and
+        // nowhere near it; uploaded artwork composited at 1125x369 can clear it
+        // on its own. The strips also travel in ONE body (express.json 8mb) and
+        // setStampStrips replaces the set atomically — CLAUDE.md is explicit
+        // that the all-at-once replace is what prunes a target nobody holds any
+        // more — so chunking is not available as an escape.
+        //
+        // So: render, weigh, and if it is too heavy render the set again at @2x.
+        // A shop with artwork trades some resolution for a card that saves; a
+        // flat shop keeps @3x. The GRID is what gets smaller, which is the wrong
+        // half to lose — but a strip that will not upload is worse than a strip
+        // that is 750px wide, and 750x246 is what every card shipped with until
+        // two commits ago.
+        const CAP = 512 * 1024;
+        // base64 is 4 bytes per 3, and the cap is applied to the DECODED bytes.
+        const decoded = (b64) => Math.floor(b64.length * 3 / 4);
+        const render = (w, h) => {
+          const out = [];
+          for (const t of targets) {
+            for (let n = 0; n <= t; n++) {
+              out.push({ target: t, filled: n, png: drawStampStrip(n, t, style, w, h).split(",")[1] });
+            }
           }
-        }
+          return out;
+        };
+        let strips = render(1125, 369);
+        if (strips.some((s) => decoded(s.png) > CAP * 0.9)) strips = render(750, 246);
         const { body } = await api(P("/stamps"), { method: "POST", body: JSON.stringify({ style, strips }) });
         if (!body.ok) return toast(body.error || "Couldn't save stamps");
         renderPreview();
@@ -2653,7 +2789,12 @@ export const DESIGN_PANEL_JS = /* js */ `
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
         }, "Design");
-        await saveBanner(bandPng(1125, 369));
+        // Only while the band IS the flat colour. card_banners holds either the
+        // generated band or the owner's artwork, and regenerating unconditionally
+        // would paint a flat rectangle over an upload the first time somebody
+        // touched a colour picker — silently, with no undo and no copy of the
+        // file. band_texture is what tells the two apart.
+        if (!bandIsImage) await saveBanner(bandPng(1125, 369));
       }
 
       /**
