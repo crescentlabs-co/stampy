@@ -3600,9 +3600,8 @@ export function marketingPage(contactEmail = ""): string {
       <section class="shell"><div class="hero">
         <div>
           <h1>Turn your customers into regulars</h1>
-          <p class="sub">Reward repeat visits, win back quiet customers, and never get
-            left at home &mdash; all from a stamp card that lives in Apple Wallet and
-            Google Wallet.</p>
+          <p class="sub">Reward repeat visits and win back quiet customers, with a stamp
+            card that lives in Apple Wallet and Google Wallet.</p>
           <p class="trylbl">Try a real card on your own phone</p>
           <div class="herobtns">
             <!-- TODO(founder): both point at the live demo pass once it is wired. -->
@@ -3838,7 +3837,7 @@ export function marketingPage(contactEmail = ""): string {
       </div></div>
     </main>`;
   // No footer: this page IS the brand, and it signs off in its own footer.
-  return page("PunchMe — the stamp card that lives in your customer's phone", body, css, script, false);
+  return page("PunchMe: the stamp card that lives in your customer's phone", body, css, script, false);
 }
 
 // -------------------------------------------------------------- legal ----
