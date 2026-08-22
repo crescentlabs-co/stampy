@@ -3399,6 +3399,10 @@ export function marketingPage(contactEmail = ""): string {
     .lede h2 { font-size: clamp(2rem, 5vw, 3.2rem); max-width: 20ch; margin: 0 auto; }
     .lede p { margin: 16px auto 0; max-width: 46ch; color: var(--ink-2); font-size: 1.02rem;
               line-height: 1.55; }
+    /* The one section heading set like the hero. If every heading shouts there
+       is no emphasis left to spend, so this class stays on section two. */
+    .lede.shout h2 { text-transform: uppercase; letter-spacing: -.035em;
+                     font-size: clamp(2.2rem, 6.6vw, 4.8rem); max-width: 15ch; }
 
     /* ---------------------------------------------------------------- hero -- */
     /* Roughly 60% of visitors never scroll, so this screen carries the whole
@@ -3707,8 +3711,8 @@ export function marketingPage(contactEmail = ""): string {
            cannot truthfully copy: "no app to download" is a line every one of
            them also runs, so it is a clause here, not the argument. -->
       <section class="band"><div class="shell">
-        <div class="lede">
-          <h2>How PunchMe brings back customers</h2>
+        <div class="lede shout">
+          <h2>Why they come back</h2>
         </div>
         <div class="tiles">${tiles}</div>
       </div></section>

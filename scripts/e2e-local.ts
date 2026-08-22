@@ -92,12 +92,14 @@ async function main() {
   // the page's proof, so it is named here rather than left to a spot check.
   // The closing photograph went out with the "Want it on your counter" block.
   //
-  // The three section-two tile slots (/assets/img/tile-*.webp) are deliberately
-  // ABSENT from this list. They are CSS background-images over the tile's own
-  // colour precisely so a slot with no artwork yet renders as a clean panel,
-  // and asserting 200 on them would make shipping the layout wait on the
-  // photography. Move one into this list the day its file lands.
+  // The section-two tile art is here too now that all three files exist. They
+  // are still CSS background-images over the block's own colour, so a missing
+  // one degrades to a clean coloured panel rather than a broken-image icon -
+  // but a slot that HAS art and 404s is a hole, and that is what this catches.
   for (const asset of ["/assets/img/hero-phones-v1.webp",
+                       "/assets/img/tile-wallet-v1.webp",
+                       "/assets/img/tile-notify-v1.webp",
+                       "/assets/img/tile-numbers-v1.webp",
                        "/assets/img/punchme-logo-v1.png"]) {
     expect(landing.body.includes(asset), `landing references ${asset}`);
     expect((await get(asset)).status === 200, `GET ${asset} serves`);
