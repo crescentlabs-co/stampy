@@ -1930,7 +1930,12 @@ describe("the marketing page can actually be contacted", () => {
     const cta = /<a class="pbtn pbtn-glow"[^>]*>/.exec(html);
     expect(cta, "the contact CTA moved — this test is now checking nothing").toBeTruthy();
     expect(cta![0], "the contact CTA goes nowhere").not.toContain("#contact");
-    expect(cta![0], "the contact CTA has no real href").toMatch(/href="(mailto:|https?:)/);
+    // Either straight out, or through the redirect that counts the press first.
+    // /go/start is not a cop-out destination: the e2e asserts it answers 302 to
+    // an https URL, which is the half this test cannot see.
+    expect(cta![0], "the contact CTA has no real href").toMatch(
+      /href="(mailto:|https?:|\/go\/start)/,
+    );
     // And nothing anywhere may still point at the section that was deleted.
     expect(html, "a link still points at the removed #contact section").not.toContain('href="#contact"');
   });

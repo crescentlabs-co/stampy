@@ -45,7 +45,9 @@ import {
   unarchiveCard,
   getCard,
   merchantEdits,
+  demoCardFunnel,
   merchantHealth,
+  siteTraffic,
   merchantSeries,
   platformSeries,
   returningRate,
@@ -137,7 +139,7 @@ adminRouter.get("/m/:id", (_req, res) => {
  * and are unit-tested without a browser or a database.
  */
 adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
-  const [merchants, cards, owners, returning, staff, series] = await Promise.all([
+  const [merchants, cards, owners, returning, staff, series, traffic, demo] = await Promise.all([
     merchantHealth(),
     allCardsWithStats(),
     allOwners(),
@@ -152,6 +154,10 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     // rather than a round trip — a range control that waits on the network
     // stops being something you flick between.
     platformSeries(SERIES_WEEKS),
+    // The landing page's own numbers. Two windows fetched together, because the
+    // 7-day figure alone cannot tell a quiet week from a dead page.
+    Promise.all([siteTraffic(7), siteTraffic(30)]),
+    Promise.all([demoCardFunnel(config.demoCardId, 7), demoCardFunnel(config.demoCardId, 30)]),
   ]);
   const withFlags = merchants.map((m) => ({
     ...m,
@@ -163,7 +169,16 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     // the same time and that pair is the whole point of this page.
     stage: stageOf(m),
   }));
-  res.json({ merchants: withFlags, cards, owners, returning, staff, series });
+  res.json({
+    merchants: withFlags,
+    cards,
+    owners,
+    returning,
+    staff,
+    series,
+    traffic: { week: traffic[0], month: traffic[1] },
+    demo: { week: demo[0], month: demo[1] },
+  });
 });
 
 /** One shop's own weekly lines and its own returning rate, when its page opens. */

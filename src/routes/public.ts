@@ -18,10 +18,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import {
+  hasAnalyticsOptOut,
   readCustomerCookie,
+  readDeviceId,
   readEnrollCookie,
   readTestPassToken,
+  setAnalyticsOptOut,
   setCustomerCookie,
+  setDeviceId,
   setEnrollCookie,
 } from "../auth.js";
 import { config, setupStatus } from "../config.js";
@@ -52,6 +56,7 @@ import {
   resolveCustomer,
   type CardRow,
   type CustomerRecord,
+  recordSiteView,
   type MerchantRow,
   type Platform,
 } from "../db.js";
@@ -62,6 +67,7 @@ import {
   landingPage,
   marketingPage,
   notReadyPage,
+  optOutPage,
   shopNotOpenPage,
   posterPage,
   privacyPage,
@@ -432,11 +438,100 @@ const merchantQr = (merchantId: string, res: import("express").Response) =>
   // simply count as unattributed.
   qrFor(`/j/${merchantId}?s=poster`, res);
 
-publicRouter.get("/", (_req, res) =>
+/**
+ * Counts one visit to a public marketing page.
+ *
+ * Scoped to the pages below and nowhere near the customer flow: /c/:cardId and
+ * /j/:ref already have join_view, and putting an analytics cookie on the page a
+ * customer scans into would undercut the exact promise that page makes.
+ *
+ * Nothing here can fail a request. The id is minted per browser, the opt-out is
+ * honoured before anything is written, and a database that is down loses a
+ * count rather than a page view.
+ */
+function countView(req: import("express").Request, res: import("express").Response): void {
+  if (hasAnalyticsOptOut(req)) return;
+  let deviceId = readDeviceId(req);
+  if (!deviceId) {
+    deviceId = randomBytes(12).toString("hex");
+    setDeviceId(res, deviceId);
+  }
+  const { ua, bot } = viewMeta(req);
+  // The HOST only. A full referrer URL can carry a search query or a private
+  // path, and "which site sent them" is the whole question being asked.
+  let referrer = "";
+  try {
+    const raw = req.get("referer") ?? "";
+    if (raw) {
+      const host = new URL(raw).host;
+      referrer = host === new URL(config.baseUrl || "http://localhost").host ? "" : host;
+    }
+  } catch {
+    referrer = "";
+  }
+  void recordSiteView({
+    kind: "view",
+    path: req.path,
+    deviceId,
+    source: sourceOf(req),
+    referrer,
+    ua,
+    isBot: bot,
+  }).catch((err) => console.error("[site_view] not logged:", err));
+}
+
+publicRouter.get("/", (req, res) => {
+  countView(req, res);
   res
     .type("html")
-    .send(marketingPage(config.contactEmail, config.whatsappNumber, config.demoCardId)),
-);
+    .send(marketingPage(config.contactEmail, config.demoCardId));
+});
+
+/**
+ * Where the landing page's call to action goes, so the press can be counted.
+ *
+ * A click on an outbound link cannot be recorded reliably from the browser — the
+ * page is already navigating away — so it is a real redirect through here
+ * instead. No JavaScript involved, and it works with the page's script blocked.
+ *
+ * Only ever redirects to https. WhatsApp and Instagram both are; the mailto
+ * fallback deliberately stays on the footer link rather than being redirected
+ * to, because whether a 302 to a mailto: opens anything at all is up to the
+ * browser, and a call to action that silently does nothing is the fault this
+ * whole route exists to avoid.
+ */
+publicRouter.get("/go/start", (req, res) => {
+  if (!hasAnalyticsOptOut(req)) {
+    const deviceId = readDeviceId(req) ?? randomBytes(12).toString("hex");
+    if (!readDeviceId(req)) setDeviceId(res, deviceId);
+    const { ua, bot } = viewMeta(req);
+    void recordSiteView({
+      kind: "cta",
+      path: "/go/start",
+      deviceId,
+      source: sourceOf(req),
+      ua,
+      isBot: bot,
+    }).catch((err) => console.error("[site_cta] not logged:", err));
+  }
+  const text = encodeURIComponent("Hi! I'd like to try PunchMe for my shop.");
+  const to = config.whatsappNumber
+    ? `https://wa.me/${config.whatsappNumber}?text=${text}`
+    : "https://instagram.com/punchme.my";
+  res.redirect(302, to);
+});
+
+/**
+ * The founder's own devices, out of their own numbers.
+ *
+ * Visited once per device. Without it the counts are mostly them: at this stage
+ * almost every visit is a phone being checked after a deploy, and a number that
+ * is mostly self-traffic tells nobody anything.
+ */
+publicRouter.get("/analytics-optout", (_req, res) => {
+  setAnalyticsOptOut(res);
+  res.type("html").send(optOutPage());
+});
 // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia. One route, one
 // query param, a plain <a> to switch — no JS, so the page stays script-free.
 publicRouter.get("/privacy", (req, res) =>
@@ -446,10 +541,16 @@ publicRouter.get("/privacy", (req, res) =>
       req.query.lang === "bm" ? privacyPageBm(config.contactEmail) : privacyPage(config.contactEmail),
     ),
 );
-publicRouter.get("/terms", (_req, res) => res.type("html").send(termsPage(config.contactEmail)));
+publicRouter.get("/terms", (req, res) => {
+  countView(req, res);
+  res.type("html").send(termsPage(config.contactEmail));
+});
 // How to get help. Also what Google's business profile wants as a support URL —
 // which used to point at /terms, whose contact line is a footnote under the law.
-publicRouter.get("/support", (_req, res) => res.type("html").send(supportPage(config.contactEmail)));
+publicRouter.get("/support", (req, res) => {
+  countView(req, res);
+  res.type("html").send(supportPage(config.contactEmail));
+});
 /**
  * The merchant join link — the one that goes on a poster.
  *

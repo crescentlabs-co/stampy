@@ -3305,11 +3305,7 @@ export function claimPage(
  * Life comes from the four colour tiles in section two, not from ornament, and
  * they are the only place on any surface those colours appear (DESIGN.md).
  */
-export function marketingPage(
-  contactEmail = "",
-  whatsappNumber = "",
-  demoCardId = DEFAULT_CARD_ID,
-): string {
+export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): string {
   const css = /* css */ `
     :root {
       --paper: var(--bg); --soft: var(--surface);
@@ -3782,12 +3778,14 @@ export function marketingPage(
    * the section it sat in - and a reviewer pressing it and staying exactly where
    * they were is what cost us Google Wallet publishing access.
    */
-  const waText = encodeURIComponent("Hi! I'd like to try PunchMe for my shop.");
-  const contactCta = whatsappNumber
-    ? `href="https://wa.me/${whatsappNumber}?text=${waText}" target="_blank" rel="noopener"`
-    : contactEmail
-      ? `href="mailto:${esc(contactEmail)}"`
-      : `href="https://instagram.com/punchme.my" target="_blank" rel="noopener"`;
+  //
+  // It goes through /go/start rather than straight out, so the press can be
+  // counted: a click on an outbound link cannot be recorded from the browser
+  // once the page is already navigating away. That route resolves the
+  // destination and redirects, and it only ever redirects to https - which is
+  // why the mailto fallback is not in this chain. It stays on the footer link,
+  // where it is a plain mailto: and behaves.
+  const contactCta = `href="/go/start"`;
 
   const body = `
     <header class="nav"><div class="navin">
@@ -3943,6 +3941,27 @@ export function marketingPage(
   return page("PunchMe: the stamp card that lives in your customer's phone", body, css, script, false);
 }
 
+/**
+ * Confirms this browser will not be counted in the site's traffic numbers.
+ *
+ * Its own tiny page rather than a line on an existing one: it is visited
+ * deliberately, once per device, and it has to say plainly what just happened
+ * so it is obvious the opt-out took.
+ */
+export function optOutPage(): string {
+  return page(
+    "Analytics off — PunchMe",
+    `<div class="card" style="text-align:center">
+      <h1>You will not be counted</h1>
+      <p class="sub">This browser is now excluded from PunchMe&rsquo;s visitor numbers.
+        Nothing about it is recorded from here on.</p>
+      <p class="muted" style="margin-top:14px">Clearing this browser&rsquo;s cookies undoes
+        it, so visit this page again after you do.</p>
+      <a class="btn btn-dark" href="/" style="margin-top:18px">Back to the site</a>
+    </div>`,
+  );
+}
+
 // -------------------------------------------------------------- legal ----
 
 const legalCss = /* css */ `
@@ -4058,6 +4077,20 @@ export function privacyPage(contactEmail = ""): string {
     </ul>
     <p>None of this is your identity. It identifies a <em>card in a browser</em>: a new phone reads as a new customer, and we accept that rather than ask you who you are. Each shop is separate — if you hold cards at two shops, those are two unconnected records, and neither shop can see the other.</p>
 
+    <h2>Visitors to this website</h2>
+    <p>Separately from any card, we count visits to our own public pages &mdash; this
+      page, the home page, Support and Terms. We store the page you opened, the site
+      you arrived from, what your browser says it is, and <strong>a random reference
+      in a cookie</strong> so that ten visits from you are not counted as ten
+      different people. That reference is a string of random characters. It is not
+      linked to you, to any card, to any shop, or to anything else we hold, and
+      there is nothing we could look it up against.</p>
+    <p>We do this to see whether the website is working, and nothing else. There is
+      no advertising, no third-party analytics service, and nothing is shared with
+      anyone. If you would rather not be counted at all, open
+      <a href="/analytics-optout">/analytics-optout</a> and this browser will be
+      excluded from then on.</p>
+
     <h2>What we collect from café owners</h2>
     <p>Your email address, a securely hashed password (we can never see the password itself), your staff PIN as a one-way hash, and the card details you enter: café name, reward, colours, and any logo or banner you upload.</p>
 
@@ -4131,6 +4164,20 @@ export function privacyPageBm(contactEmail = ""): string {
       <li><strong>Satu kuki di dalam pelayar anda</strong>, ditetapkan untuk kedai yang anda sertai, supaya lawatan kedua menambah setem pada kad sedia ada dan bukannya mengeluarkan kad baharu. Ia mengandungi rujukan rawak sahaja.</li>
     </ul>
     <p>Semua ini bukan identiti anda. Ia mengenal pasti <em>sekeping kad di dalam sebuah pelayar</em>: telefon baharu akan dibaca sebagai pelanggan baharu, dan kami menerima hakikat itu daripada bertanya siapa anda. Setiap kedai adalah berasingan — jika anda memegang kad di dua kedai, itu dua rekod yang tidak berhubung, dan kedai yang satu tidak dapat melihat yang lain.</p>
+
+    <h2>Pelawat ke laman web ini</h2>
+    <p>Berasingan daripada mana-mana kad, kami mengira lawatan ke halaman awam kami
+      sendiri &mdash; halaman ini, halaman utama, Sokongan dan Terma. Kami menyimpan
+      halaman yang anda buka, laman yang anda datang daripadanya, apa yang pelayar
+      anda nyatakan tentang dirinya, dan <strong>satu rujukan rawak dalam kuki</strong>
+      supaya sepuluh lawatan daripada anda tidak dikira sebagai sepuluh orang berbeza.
+      Rujukan itu ialah rentetan aksara rawak. Ia tidak dikaitkan dengan anda, dengan
+      mana-mana kad, mana-mana kedai, atau apa-apa lain yang kami simpan.</p>
+    <p>Kami melakukan ini untuk melihat sama ada laman web ini berfungsi, dan tiada
+      yang lain. Tiada pengiklanan, tiada perkhidmatan analitik pihak ketiga, dan
+      tiada apa-apa dikongsi dengan sesiapa. Jika anda tidak mahu dikira langsung,
+      buka <a href="/analytics-optout">/analytics-optout</a> dan pelayar ini akan
+      dikecualikan mulai saat itu.</p>
 
     <h2>Apa yang kami kumpul daripada pemilik kafe</h2>
     <p>Alamat e-mel anda, kata laluan yang dicincang secara selamat (kami tidak dapat melihat kata laluan sebenar), PIN kakitangan anda sebagai cincangan sehala, dan butiran kad yang anda masukkan: nama kafe, ganjaran, warna, serta apa-apa logo atau sepanduk yang anda muat naik.</p>
@@ -5750,6 +5797,18 @@ export function adminPage(): string {
                background: var(--ghost-bg); gap: 2px; }
     .lifebar i { display: block; }
     .lifekey { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .82rem; }
+    /* The landing page box. Same panel treatment as everything else here, and
+       deliberately small: six numbers read on the way past, not a dashboard. */
+    .trafbox { background: var(--surface); border: 1px solid var(--line);
+               border-radius: var(--r-lg); padding: 16px 18px; margin-top: 14px; }
+    .trafrow { display: grid; gap: 12px; margin-top: 10px;
+               grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+    .trafrow > div { display: flex; flex-direction: column; }
+    .trafrow b { font-family: var(--display); font-weight: 800; font-size: 1.5rem;
+                 line-height: 1; font-variant-numeric: tabular-nums; }
+    .trafmo { color: var(--muted); font-size: .72rem; margin-top: 3px; }
+    .traflab { color: var(--muted); font-size: .68rem; font-weight: 700;
+               letter-spacing: .05em; text-transform: uppercase; margin-top: 5px; }
     .lifekey span { display: flex; align-items: center; gap: 6px; color: var(--muted); }
     .lifekey b { color: var(--ink); font-variant-numeric: tabular-nums; }
     .lifekey i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; flex: none; }
@@ -6322,6 +6381,12 @@ export function adminPage(): string {
         ? Math.max(0, Math.round((new Date(to) - new Date(from)) / 86400000)) + "d" : "—";
 
       const merchants = body.merchants || [];
+      // The landing page's own figures. Defaulted here rather than guarded at
+      // every use: a console that has never had a visit is a normal state, not
+      // an error, and it should render zeros rather than dashes.
+      const emptyTraffic = { views: 0, devices: 0, returning: 0, cta: 0, ctaDevices: 0, referrers: [] };
+      const traffic = body.traffic || { week: emptyTraffic, month: emptyTraffic };
+      const demoFunnel = body.demo || { week: { clicked: 0, added: 0 }, month: { clicked: 0, added: 0 } };
       const live = merchants.filter((m) => !m.archived_at);
       const money = (m, n) => m.currency + Math.round(n).toLocaleString();
       const byMerchant = new Map(merchants.map((m) => [m.id, m]));
@@ -6807,6 +6872,14 @@ export function adminPage(): string {
           ? '<i class="' + cls + '" style="width:' + wide(list.length) + '%"></i>' : "";
         const key = (cls, list, label) => list.length
           ? '<span><i class="' + cls + '"></i><b>' + list.length + "</b> " + label + "</span>" : "";
+        // The landing page's numbers. Both windows are shown at once rather
+        // than behind a switch: 7 days alone cannot tell a quiet week from a
+        // dead page, and the pair is one glance where a toggle is two.
+        const t = traffic.week, m2 = traffic.month;
+        const d = demoFunnel.week, dm = demoFunnel.month;
+        const traf = (label, week, month) =>
+          '<div><b>' + week + '</b><span class="trafmo">' + month + " in 30d</span>" +
+          '<span class="traflab">' + label + "</span></div>";
         const rows = shownWeeks();
 
         $("#app").innerHTML =
@@ -6836,7 +6909,31 @@ export function adminPage(): string {
                 key("new", unclaimed, "not claimed") + "</div>" +
               (paid.length ? '<p class="dnote" style="margin-top:8px">' + paid.length + " paying" +
                 info("Kept off the bar on purpose. Paying is not a stage: a shop can be paying AND churning, and that pair is the most useful thing this page can tell you — so it travels beside the stage rather than replacing it.") + "</p>" : "") +
-            "</div></div>" +
+
+            // ---------------------------- the landing page's own numbers ----
+            // A small box, not a pane: this is one glance on the way past, and
+            // it is the founder's number rather than any shop's - which is why
+            // it lives here and not on a dashboard an owner can see.
+            '</div></div>' +
+            '<div class="trafbox">' +
+              '<p class="leadlab">Landing page' +
+                info("Visits to the public pages, counted with an anonymous per-browser id and nothing else. Bots are recorded but excluded from these figures. Your own devices are excluded once you have visited /analytics-optout on each of them - without that, at this stage almost every visit here is you.") +
+              "</p>" +
+              '<div class="trafrow">' +
+                traf("Visits", t.views, m2.views) +
+                traf("Devices", t.devices, m2.devices) +
+                traf("Came back", t.returning, m2.returning) +
+                traf("Pressed start", t.cta, m2.cta) +
+                traf("Tried the card", d.clicked, dm.clicked) +
+                traf("Kept it", d.added, dm.added) +
+              "</div>" +
+              (t.referrers.length
+                ? '<p class="dnote">From ' + t.referrers.map(function (r) {
+                    return r.host + " " + r.n;
+                  }).join(" · ") + "</p>"
+                : '<p class="dnote">No visits recorded in the last 7 days.</p>') +
+            "</div>" +
+
 
             // The book total, and the ONE number on this console that can be
             // checked by hand: it is the sum of the "Stamps (all time)" column

@@ -713,6 +713,34 @@ export async function migrate(): Promise<void> {
     -- either one. Reuse them if the idea comes back; do not drop them.
     ALTER TABLE card_logos ADD COLUMN IF NOT EXISTS png_original bytea;
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS logo_tint text NOT NULL DEFAULT '';
+    -- v2.6: marketing-site traffic.
+    --
+    -- Deliberately NOT in the events table. Its card_id is NOT NULL and
+    -- references cards, and a visit to the landing page belongs to no card —
+    -- there is nothing truthful to put there. It also keeps the two apart on
+    -- purpose: events is the product's own append-only log, and a marketing
+    -- page view is not a thing that happened to a customer's card.
+    -- (No backticks anywhere in here: this whole block is inside a template
+    -- literal, and one would end the string. CLAUDE.md 12.)
+    --
+    -- Anonymous by construction. device_id is a random string minted in the
+    -- visitor's browser and means nothing anywhere else; there is no column here
+    -- that could identify a person, which is what lets the privacy page keep
+    -- saying what it says. Bots are RECORDED and flagged rather than dropped, so
+    -- the filter can be tightened later without the history being already gone.
+    CREATE TABLE IF NOT EXISTS site_views (
+      id         bigserial PRIMARY KEY,
+      kind       text NOT NULL DEFAULT 'view',
+      path       text NOT NULL DEFAULT '/',
+      device_id  text NOT NULL,
+      source     text NOT NULL DEFAULT '',
+      referrer   text NOT NULL DEFAULT '',
+      ua         text NOT NULL DEFAULT '',
+      is_bot     boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_site_views_time ON site_views(created_at);
+    CREATE INDEX IF NOT EXISTS idx_site_views_device ON site_views(device_id, created_at);
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -1111,6 +1139,128 @@ export async function getMerchant(id: string): Promise<MerchantRow | null> {
  * has ever held. `viaSlug` tells the route whether to redirect to the canonical
  * form, so a retired name still works but doesn't linger in the address bar.
  */
+// ------------------------------------------------- marketing-site traffic ----
+
+/**
+ * One visit to a public marketing page, or one press of its call to action.
+ *
+ * `kind` is 'view' or 'cta' and those two strings are permanent — every query
+ * below keys off them, so renaming one means rewriting stored rows and every
+ * query together (the same rule `events` types live under).
+ *
+ * Never throws into a request. A page that fails to serve because analytics
+ * could not be written would be a straight downgrade on the thing being
+ * measured, so the caller logs and moves on.
+ */
+export async function recordSiteView(row: {
+  kind: "view" | "cta";
+  path: string;
+  deviceId: string;
+  source?: string;
+  referrer?: string;
+  ua?: string;
+  isBot?: boolean;
+}): Promise<void> {
+  await getPool().query(
+    `INSERT INTO site_views (kind, path, device_id, source, referrer, ua, is_bot)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      row.kind,
+      row.path.slice(0, 200),
+      row.deviceId.slice(0, 64),
+      (row.source ?? "").slice(0, 40),
+      (row.referrer ?? "").slice(0, 200),
+      (row.ua ?? "").slice(0, 200),
+      row.isBot ?? false,
+    ],
+  );
+}
+
+export type SiteTraffic = {
+  days: number;
+  views: number;
+  devices: number;
+  returning: number;
+  cta: number;
+  ctaDevices: number;
+  referrers: { host: string; n: number }[];
+};
+
+/**
+ * What the landing page did over the last `days`.
+ *
+ * Bots are excluded here, not at write time — see the table comment. Everything
+ * is derived by query rather than kept as a running total, for the same reason
+ * card metrics are: a stored count that drifts from its rows is how a headline
+ * comes to disagree with the list under it.
+ */
+export async function siteTraffic(days: number): Promise<SiteTraffic> {
+  const since = `now() - interval '${Number(days)} days'`;
+  const real = `NOT is_bot AND created_at > ${since}`;
+  const res = await getPool().query<{
+    views: string;
+    devices: string;
+    returning: string;
+    cta: string;
+    cta_devices: string;
+  }>(
+    `SELECT
+       count(*) FILTER (WHERE kind = 'view')::text AS views,
+       count(DISTINCT device_id) FILTER (WHERE kind = 'view')::text AS devices,
+       -- A device that came back: more than one view inside the window. Not
+       -- "seen before the window", which on a page this young would count
+       -- almost nobody and read as a bug.
+       (SELECT count(*) FROM (
+          SELECT device_id FROM site_views
+           WHERE ${real} AND kind = 'view'
+           GROUP BY device_id HAVING count(*) > 1
+        ) d)::text AS returning,
+       count(*) FILTER (WHERE kind = 'cta')::text AS cta,
+       count(DISTINCT device_id) FILTER (WHERE kind = 'cta')::text AS cta_devices
+     FROM site_views WHERE ${real}`,
+  );
+  const refs = await getPool().query<{ host: string; n: string }>(
+    `SELECT CASE WHEN referrer = '' THEN 'direct' ELSE referrer END AS host,
+            count(*)::text AS n
+       FROM site_views
+      WHERE ${real} AND kind = 'view'
+      GROUP BY 1 ORDER BY count(*) DESC LIMIT 5`,
+  );
+  const r = res.rows[0]!;
+  return {
+    days,
+    views: Number(r.views),
+    devices: Number(r.devices),
+    returning: Number(r.returning),
+    cta: Number(r.cta),
+    ctaDevices: Number(r.cta_devices),
+    referrers: refs.rows.map((x) => ({ host: x.host, n: Number(x.n) })),
+  };
+}
+
+/**
+ * The demo card's own funnel over the same window: how many pressed a wallet
+ * button on the landing page, and how many still hold the card.
+ *
+ * These live in `events`, not in site_views — the press of "Apple Wallet" is a
+ * real thing that happened to a real card, and it was already being logged
+ * before any of this existed.
+ */
+export async function demoCardFunnel(
+  cardId: string,
+  days: number,
+): Promise<{ clicked: number; added: number }> {
+  const res = await getPool().query<{ clicked: string; added: string }>(
+    `SELECT
+       count(*) FILTER (WHERE type = 'wallet_click')::text AS clicked,
+       count(*) FILTER (WHERE type = 'pass_added')::text  AS added
+     FROM events
+     WHERE card_id = $1 AND NOT is_test AND created_at > now() - interval '${Number(days)} days'`,
+    [cardId],
+  );
+  return { clicked: Number(res.rows[0]!.clicked), added: Number(res.rows[0]!.added) };
+}
+
 export async function getMerchantByRef(
   ref: string,
 ): Promise<{ merchant: MerchantRow; viaSlug: boolean } | null> {

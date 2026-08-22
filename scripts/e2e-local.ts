@@ -2619,14 +2619,100 @@ async function main() {
   // carries Instagram, so the same guarantee is checked on the new shapes: a
   // real destination off this page, and nothing left pointing at the deleted
   // section.
-  const cta = /<a class="pbtn pbtn-glow"[^>]*>/.exec(home);
+  const cta = /<a class="pbtn pbtn-glow"[^>]*href="([^"]+)"/.exec(home);
   expect(Boolean(cta), "the marketing page still has a contact call to action");
+  // Not a regex on the href this time: FOLLOW it. The button goes through
+  // /go/start so the press can be counted, and a redirect that pointed back at
+  // this site, or 404ed, would be the same dead button that cost us Google
+  // Wallet publishing access — with the failure now one hop further away.
+  const ctaHref = cta![1]!;
+  const ctaDest = ctaHref.startsWith("http")
+    ? { status: 302, location: ctaHref }
+    : await (async () => {
+        const r = await fetch(base + ctaHref, { redirect: "manual" });
+        return { status: r.status, location: r.headers.get("location") ?? "" };
+      })();
   expect(
-    /href="(mailto:|https?:)/.test(cta![0]!),
-    "the contact call to action goes somewhere off this page",
+    ctaDest.status === 302 && /^https?:\/\//.test(ctaDest.location),
+    "the contact call to action ends up somewhere off this page",
+  );
+  expect(
+    !ctaDest.location.startsWith(base),
+    "...and that somewhere is not this site again",
   );
   expect(!/href="#contact"/.test(home), "nothing still points at the removed #contact section");
   expect(home.includes("instagram.com/punchme.my"), "Instagram link is real");
+
+  // --- the landing page's own traffic counting -----------------------------
+  //
+  // The half the unit tests cannot see: that the CTA actually leaves the site,
+  // that a visit is written down, that a device is counted once rather than
+  // once per page, and that the opt-out really stops it.
+  const { pool } = await import("../src/db.js").then((m) => ({ pool: m.getPool() }));
+  const countViews = async (where = "TRUE") =>
+    Number((await pool.query(`SELECT count(*)::text AS n FROM site_views WHERE ${where}`)).rows[0].n);
+
+  const svBefore = await countViews();
+  const svFirstVisit = await fetch(base + "/");
+  const svSetCookie = svFirstVisit.headers.get("set-cookie") ?? "";
+  expect(/pm_device=[a-z0-9]+/.test(svSetCookie), "a first visit mints an anonymous device id");
+  const svDevice = /pm_device=([a-z0-9]+)/.exec(svSetCookie)![1]!;
+  await new Promise((r) => setTimeout(r, 300));
+  expect((await countViews()) === svBefore + 1, "a visit to / is written down");
+
+  // Same browser, second page: one MORE row, but still one device.
+  await fetch(base + "/support", { headers: { cookie: `pm_device=${svDevice}` } });
+  await new Promise((r) => setTimeout(r, 300));
+  // Scoped to THIS browser: earlier tests in this file have already visited /
+  // and minted their own ids, so a global distinct count proves nothing. What
+  // matters is that a browser carrying a device id keeps it across pages rather
+  // than being handed a new one on each.
+  const svPaths = (
+    await pool.query<{ path: string }>(
+      `SELECT path FROM site_views WHERE device_id = $1 AND kind = 'view' ORDER BY path`,
+      [svDevice],
+    )
+  ).rows.map((r) => r.path);
+  expect(
+    svPaths.length === 2 && svPaths[0] === "/" && svPaths[1] === "/support",
+    "two pages in one browser stay one device: " + JSON.stringify(svPaths),
+  );
+
+  // The call to action leaves the site, and is counted as a press rather than a view.
+  // Relative, not absolute: the contact-button check above follows /go/start
+  // too, so by now a press has already been recorded.
+  const svCtaBefore = await countViews("kind = 'cta'");
+  const svGo = await fetch(base + "/go/start", {
+    redirect: "manual",
+    headers: { cookie: `pm_device=${svDevice}` },
+  });
+  expect(svGo.status === 302, "/go/start redirects rather than rendering");
+  expect(
+    (svGo.headers.get("location") ?? "").startsWith("https://"),
+    "...and it redirects OFF this site, over https",
+  );
+  await new Promise((r) => setTimeout(r, 300));
+  expect(
+    (await countViews("kind = 'cta'")) === svCtaBefore + 1,
+    "pressing the call to action is counted",
+  );
+
+  // The opt-out is the whole reason these numbers can mean anything yet.
+  const svOpt = await fetch(base + "/analytics-optout");
+  const svOptCookie = svOpt.headers.get("set-cookie") ?? "";
+  expect(svOpt.status === 200 && /pm_noanalytics=1/.test(svOptCookie), "the opt-out page sets its cookie");
+  const svBeforeOptOut = await countViews();
+  await fetch(base + "/", { headers: { cookie: "pm_noanalytics=1" } });
+  await fetch(base + "/go/start", { redirect: "manual", headers: { cookie: "pm_noanalytics=1" } });
+  await new Promise((r) => setTimeout(r, 300));
+  expect((await countViews()) === svBeforeOptOut, "an opted-out browser is not counted at all");
+
+  // The customer flow must NOT be swept into this. /c/:cardId has join_view and
+  // an analytics cookie there would undercut the promise that page makes.
+  const svBeforeCard = await countViews();
+  await fetch(base + "/c/default");
+  await new Promise((r) => setTimeout(r, 300));
+  expect((await countViews()) === svBeforeCard, "the customer join page is not site-tracked");
 
   const privBm = await get("/privacy?lang=bm");
   expect(

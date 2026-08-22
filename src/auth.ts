@@ -124,6 +124,55 @@ export function setCustomerCookie(res: Response, merchantId: string, customerId:
   );
 }
 
+// ------------------------------------------------- site analytics cookie ----
+
+/**
+ * An anonymous per-browser id for marketing-page traffic, and an opt-out beside
+ * it.
+ *
+ * NOT sealed, unlike every other cookie in this file. The others authorise
+ * something, so a forged one would matter; this one names nobody and grants
+ * nothing, and signing it would only imply it carries more than it does. It is
+ * a random string that means nothing anywhere else — there is no lookup that
+ * turns it into a person, which is what lets the privacy page keep its promise.
+ *
+ * Names are new, so they are free of the stampy_ prefix that CLAUDE.md pins.
+ * They still must never be renamed once shipped: a rename resets every
+ * returning-visitor count and silently un-opts-out anyone who had opted out.
+ */
+const DEVICE_COOKIE = "pm_device";
+const OPTOUT_COOKIE = "pm_noanalytics";
+const DEVICE_DAYS = 400;
+
+export function readDeviceId(req: Request): string | null {
+  const raw = readCookie(req, DEVICE_COOKIE);
+  return raw && /^[a-z0-9]{8,40}$/.test(raw) ? raw : null;
+}
+
+export function setDeviceId(res: Response, deviceId: string): void {
+  res.append(
+    "Set-Cookie",
+    `${DEVICE_COOKIE}=${deviceId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_DAYS * 24 * 60 * 60}`,
+  );
+}
+
+/** True when this browser asked not to be counted. Checked before anything is written. */
+export function hasAnalyticsOptOut(req: Request): boolean {
+  return readCookie(req, OPTOUT_COOKIE) === "1";
+}
+
+/**
+ * Opting out also clears the device id, so the cookie left behind says only
+ * "do not count me" and holds nothing else.
+ */
+export function setAnalyticsOptOut(res: Response): void {
+  res.append(
+    "Set-Cookie",
+    `${OPTOUT_COOKIE}=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=${10 * 365 * 24 * 60 * 60}`,
+  );
+  res.append("Set-Cookie", `${DEVICE_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+
 // ----------------------------------------------- LEGACY enrollment cookie ----
 
 /**
