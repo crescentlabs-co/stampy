@@ -3348,7 +3348,7 @@ export function marketingPage(contactEmail = ""): string {
            padding: clamp(10px, 1.6vw, 16px) clamp(12px, 3vw, 22px); }
     .navin { max-width: 680px; margin: 0 auto; pointer-events: auto;
              display: flex; align-items: center; gap: 14px;
-             padding: 7px 7px 7px 18px; border-radius: 999px;
+             padding: 10px 10px 10px 24px; border-radius: 999px;
              background: rgba(242,244,241,.86);
              backdrop-filter: saturate(1.4) blur(14px);
              border: 1px solid var(--hair);
@@ -3358,17 +3358,19 @@ export function marketingPage(contactEmail = ""): string {
        bar was white and became a white box the moment it turned into a tinted
        pill. multiply drops the ground into the pill; a transparent export is
        the real fix and needs a new file. */
-    .brand img { height: 22px; width: auto; display: block; mix-blend-mode: multiply; }
+    .brand img { height: 27px; width: auto; display: block; mix-blend-mode: multiply; }
     /* The two section links are gone: Instagram and Message us are the only
        things in here now, both hard right, and the pill tightens to suit. */
-    .navin { max-width: 520px; }
-    .ig { margin-left: auto; display: grid; place-items: center; width: 38px; height: 38px;
+    .navin { max-width: 580px; }
+    .ig { margin-left: auto; display: grid; place-items: center; width: 44px; height: 44px;
           border-radius: 50%; color: var(--ink); text-decoration: none;
           transition: background .15s ease; }
     .ig:hover { background: rgba(12,14,13,.08); }
     .ig svg { display: block; }
     @media (prefers-reduced-motion: reduce) { .ig { transition: none; } }
-    .nav .pbtn { padding: 10px 20px; font-size: .9rem; }
+    /* The one thing on the page that has to be pressed, so it is sized like it:
+       bigger than the body button scale, not smaller. */
+    .nav .pbtn { padding: 14px 28px; font-size: 1.02rem; }
 
     /* -------------------------------------------------------------- buttons -- */
     .pbtn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -3677,7 +3679,7 @@ export function marketingPage(contactEmail = ""): string {
    */
   const FLIP_WORDS = ["regulars", "visits", "sales", "growth"];
 
-  const ICON_INSTAGRAM = `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  const ICON_INSTAGRAM = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" stroke-width="2"/>
       <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
       <circle cx="17.4" cy="6.6" r="1.3" fill="currentColor"/></svg>`;
@@ -3816,8 +3818,28 @@ export function marketingPage(contactEmail = ""): string {
         </div>
       </div></section>
 
-      <!-- 4 - WHO ARE WE. Boxed, because on a page of full-bleed colour a plain
-           run of paragraphs on white reads as a gap rather than a section.
+      <!-- 4 - PRICE. The reasons not to worry sit here, immediately above the
+           only button on the page that asks for a decision. -->
+      <section class="band tight" id="price"><div class="shell">
+        <div class="lede shout"><h2>First month free</h2></div>
+        <div class="price">
+          <p class="amt">RM79<span class="per">/month</span></p>
+          <ul>
+            <li><mark>Unlimited</mark> loyalty members</li>
+            <li>Customizable stamp card design</li>
+            <li>Customizable reward rules</li>
+            <li>Push notifications</li>
+            <li>Basic analytics</li>
+            <li>Direct support</li>
+            <li>Done-for-you setup</li>
+          </ul>
+          <a class="pbtn pbtn-neon" href="/dashboard">Start free</a>
+        </div>
+      </div></section>
+
+      <!-- 5 - WHO WE ARE. Last on the page now, under the price: it is the thing
+           a reader who is already sold goes looking for, not something anyone
+           has to pass through on the way to what it costs.
            NOTE: DESIGN.md says a heading must carry its own benefit and names
            "Who are we?" as its anti-example. This one is the founder's explicit
            call - a page selling a service from two named people is a case where
@@ -3825,8 +3847,6 @@ export function marketingPage(contactEmail = ""): string {
       <section class="band tight"><div class="shell">
         <div class="lede shout"><h2>Who we are</h2></div>
         <div class="us">
-          <!-- TODO(founder): drop a photograph in at assets/img/us-v1.webp and it
-               appears here. Until then this is a clean panel, not a broken image. -->
           <div class="art" style="background-image:url('/assets/img/us-v1.webp')"
                role="presentation"></div>
           <div>
@@ -3838,22 +3858,6 @@ export function marketingPage(contactEmail = ""): string {
               experimenting and pushing what we think is possible.</p>
             <p class="close-line">We&rsquo;re excited to find out where it takes us.</p>
           </div>
-        </div>
-      </div></section>
-
-      <!-- 5 - PRICE. The reasons not to worry sit here, immediately above the
-           only button on the page that asks for a decision. -->
-      <section class="band tight" id="price"><div class="shell">
-        <div class="lede shout"><h2>First month free</h2></div>
-        <div class="price">
-          <p class="amt">RM79<span class="per">/month</span></p>
-          <ul>
-            <li><mark>Unlimited</mark> customers, cards, stamps</li>
-            <li>Push notifications functionality</li>
-            <li>We set your card up for you</li>
-            <li>Customizable stamp card</li>
-          </ul>
-          <a class="pbtn pbtn-neon" href="/dashboard">Start free</a>
         </div>
       </div></section>
 
