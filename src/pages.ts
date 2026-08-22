@@ -3314,8 +3314,7 @@ export function marketingPage(contactEmail = ""): string {
       --r: 28px; --r-sm: 14px;
       /* The four tile surfaces. They live here and on no other page: see
          "The marketing tiles" in DESIGN.md before adding a fifth. */
-      --tile-lime: #c9f73d; --tile-ink: #101312;
-      --tile-sky: #57c7ff; --tile-pink: #ff9ecd;
+      --tile-lime: #c9f73d; --tile-sky: #57c7ff; --tile-pink: #ff9ecd;
     }
     html { scroll-behavior: smooth; }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -3337,17 +3336,31 @@ export function marketingPage(contactEmail = ""): string {
       outline-color: var(--neon); }
 
     /* ---------------------------------------------------------------- nav -- */
-    .nav { position: sticky; top: 0; z-index: 70; background: rgba(255,255,255,.9);
-           backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--hair); }
-    .navin { max-width: 1180px; margin: 0 auto; padding: 13px clamp(18px, 4vw, 40px);
-             display: flex; align-items: center; gap: 20px; }
+    /* A pill that floats OVER the page, not a bar bolted across the top of it.
+       Full-bleed with a hairline, it read as browser chrome sitting on the
+       design rather than as part of it. The strip itself takes no pointer
+       events, so the transparent margin either side of the pill cannot swallow
+       a click meant for the page underneath. */
+    .nav { position: sticky; top: 0; z-index: 70; pointer-events: none;
+           padding: clamp(10px, 1.6vw, 16px) clamp(12px, 3vw, 22px); }
+    .navin { max-width: 680px; margin: 0 auto; pointer-events: auto;
+             display: flex; align-items: center; gap: 14px;
+             padding: 7px 7px 7px 18px; border-radius: 999px;
+             background: rgba(242,244,241,.86);
+             backdrop-filter: saturate(1.4) blur(14px);
+             border: 1px solid var(--hair);
+             box-shadow: 0 10px 30px -16px rgba(12,14,13,.4); }
     .brand { display: flex; align-items: center; text-decoration: none; }
-    .brand img { height: 27px; width: auto; display: block; }
-    .navlinks { display: none; margin-left: auto; gap: 26px; }
+    /* The logo PNG carries an opaque white ground. That was invisible while the
+       bar was white and became a white box the moment it turned into a tinted
+       pill. multiply drops the ground into the pill; a transparent export is
+       the real fix and needs a new file. */
+    .brand img { height: 22px; width: auto; display: block; mix-blend-mode: multiply; }
+    .navlinks { display: none; margin: 0 auto; gap: 22px; }
     @media (min-width: 760px) { .navlinks { display: flex; } }
-    .navlinks a { text-decoration: none; font-size: .92rem; font-weight: 500; color: var(--ink-2); }
+    .navlinks a { text-decoration: none; font-size: .88rem; font-weight: 600; color: var(--ink-2); }
     .navlinks a:hover { color: var(--ink); }
-    .nav .pbtn { margin-left: auto; }
+    .nav .pbtn { margin-left: auto; padding: 10px 20px; font-size: .9rem; }
     @media (min-width: 760px) { .nav .pbtn { margin-left: 0; } }
 
     /* -------------------------------------------------------------- buttons -- */
@@ -3361,7 +3374,25 @@ export function marketingPage(contactEmail = ""): string {
     .pbtn-line:hover { background: var(--ink); color: var(--paper); }
     .pbtn-pale { background: var(--paper); color: var(--ink); }
     .pbtn-pale:hover { background: var(--soft); }
+    /* Ink where neon would be too loud - here, because the nav pill above it is
+       already the screen's one neon button and says the same thing. */
+    .pbtn-dark { background: var(--slab); color: var(--on-slab); }
+    .pbtn-dark:hover { background: #1d2220; }
     @media (prefers-reduced-motion: reduce) { .pbtn { transition: none; } }
+
+    /* A live ring in the two brand greens, and no third hue: two backgrounds,
+       a flat neon on the padding box and the turning cone on the border box.
+       No extra element, so nothing has to sit above the pill's backdrop-filter.
+       The resting state is an ordinary neon pill, which is what a browser
+       without @property and a visitor who asked for less motion both get. */
+    @property --ring { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+    .pbtn-glow { color: var(--ink); border: 3px solid transparent; transition: none;
+                 background: linear-gradient(var(--neon), var(--neon)) padding-box,
+                             conic-gradient(from var(--ring), var(--neon), #f0ffc4,
+                                            var(--neon-2), #f0ffc4, var(--neon)) border-box;
+                 animation: ring 3.2s linear infinite; }
+    @keyframes ring { to { --ring: 360deg; } }
+    @media (prefers-reduced-motion: reduce) { .pbtn-glow { animation: none; } }
 
     /* -------------------------------------------------------------- layout -- */
     .band { padding: clamp(56px, 8vw, 108px) 0; }
@@ -3379,22 +3410,42 @@ export function marketingPage(contactEmail = ""): string {
     /* Roughly 60% of visitors never scroll, so this screen carries the whole
        argument: the outcome, what it is, one action, and a card they can put in
        their own phone in ten seconds. Everything else was cut. */
-    .hero { text-align: center; padding: clamp(40px, 6vw, 92px) 0 clamp(36px, 5vw, 76px); }
-    .hero h1 { font-size: clamp(2.9rem, 8.6vw, 6.2rem); letter-spacing: -.045em;
-               margin: 0 auto; max-width: 14ch; }
-    .hero .sub { margin: clamp(18px, 2.6vw, 28px) auto 0; max-width: 36ch; color: var(--ink-2);
-                 font-size: clamp(1.04rem, 2vw, 1.24rem); line-height: 1.5; }
-    .hero .cta { margin-top: clamp(22px, 3vw, 32px); }
-    .hero .cta .pbtn { padding: 16px 32px; font-size: 1.04rem; }
+    .hero { text-align: center; padding: clamp(24px, 3.2vw, 54px) 0 clamp(30px, 4vw, 62px); }
+    /* Caps, and short enough to hold two lines. Set through text-transform
+       rather than typed in capitals, so the accessible name stays a sentence.
+       Caps want less negative tracking than lowercase does. */
+    .hero h1 { font-size: clamp(2.5rem, 8.4vw, 6.6rem); letter-spacing: -.035em;
+               text-transform: uppercase; margin: 0 auto; max-width: 15ch; }
+    .hero .sub { margin: clamp(12px, 1.6vw, 18px) auto 0; max-width: 34ch; color: var(--ink-2);
+                 font-size: clamp(1rem, 1.7vw, 1.16rem); line-height: 1.45; }
+    .hero .cta { margin-top: clamp(14px, 1.8vw, 20px); }
+    .hero .cta .pbtn { padding: 15px 30px; font-size: 1.02rem; }
     /* The product's own object, and the one image on the page that cannot be
-       mistaken for stock: the card sitting in a real wallet, under the fold-line
-       but never far enough down to push the button off the first screen. */
-    .shot { margin: clamp(36px, 5vw, 64px) auto 0; width: min(520px, 88%);
-            border-radius: var(--r); overflow: hidden; }
+       mistaken for stock. No radius and no clipping: the art sits ON the page
+       rather than inside a panel, which is what made it read as a thumbnail in a
+       beige tile. Wide, because the phones are the proof. */
+    .shot { margin: clamp(14px, 2vw, 28px) auto 0; width: min(980px, 100%); }
+    /* While the art is a single PORTRAIT phone, the full width makes it 1300px
+       tall and pushes the whole page down. The landscape three-phone shot wants
+       all 980px; this modifier comes off the day that file lands. */
+    .shot.tall { width: min(560px, 90%); }
     /* height:auto, or the intrinsic height attribute wins and the phone renders
-       2548px tall inside a 430px box. */
-    .shot img { width: 100%; height: auto; }
-    .try { margin: clamp(26px, 3.4vw, 38px) 0 0; font-size: .78rem; font-weight: 700;
+       2548px tall inside its box.
+       The mockup carries a flat beige ground, and the brief is that the art sits
+       ON the page rather than in a tinted rectangle. multiply does NOT do this:
+       it keeps the darker of the two layers, and beige over white is still
+       beige - it only erases a WHITE ground. So the edges are feathered
+       instead, which dissolves the rectangle into the page while leaving the
+       phone itself untouched in the middle. A transparent PNG needs none of
+       this, and the mask is harmless over one. */
+    .shot img { width: 100%; height: auto;
+                -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent),
+                                    linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+                -webkit-mask-composite: source-in;
+                mask-image: linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent),
+                            linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+                mask-composite: intersect; }
+    .try { margin: clamp(12px, 1.8vw, 20px) 0 0; font-size: .78rem; font-weight: 700;
            letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
     .wallets { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
                margin-top: 12px; }
@@ -3402,25 +3453,22 @@ export function marketingPage(contactEmail = ""): string {
     .wmark { font-size: 1.06em; line-height: 1; }
 
     /* --------------------------------------------------------------- tiles -- */
-    /* Four surfaces, each its own colour, each carrying one claim. They hold no
+    /* Three surfaces, each its own colour, each carrying one claim. They hold no
        buttons and no links, which is what keeps the neon meaning "press this"
        everywhere else on the page. */
-    .tiles { display: grid; gap: 16px; }
-    @media (min-width: 820px) { .tiles { grid-template-columns: 1fr 1fr; } }
-    .tile { border-radius: var(--r); padding: clamp(22px, 3vw, 34px); color: var(--ink); }
+    .tiles { display: grid; gap: 14px; }
+    @media (min-width: 900px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
+    .tile { border-radius: var(--r); padding: clamp(18px, 2.2vw, 26px); color: var(--ink); }
     /* The art is a background, not an img, so a slot whose file has not landed
        yet is a clean coloured panel rather than a broken-image icon. */
     .tile .art { aspect-ratio: 4 / 3; border-radius: var(--r-sm);
-                 margin-bottom: clamp(18px, 2.6vw, 28px);
+                 margin-bottom: clamp(14px, 1.8vw, 20px);
                  background: rgba(12,14,13,.08) center/cover no-repeat; }
-    .tile h3 { font-size: clamp(1.42rem, 2.6vw, 2rem); margin-bottom: 9px; }
-    .tile p { margin: 0; font-size: 1.02rem; line-height: 1.5; color: rgba(12,14,13,.74); }
+    .tile h3 { font-size: clamp(1.3rem, 2vw, 1.7rem); margin-bottom: 7px; }
+    .tile p { margin: 0; font-size: .96rem; line-height: 1.45; color: rgba(12,14,13,.74); }
     .tile.lime { background: var(--tile-lime); }
     .tile.sky  { background: var(--tile-sky); }
     .tile.pink { background: var(--tile-pink); }
-    .tile.ink  { background: var(--tile-ink); color: var(--on-slab); }
-    .tile.ink .art { background-color: rgba(244,246,242,.1); }
-    .tile.ink p { color: #b7bfb0; }
 
     /* ------------------------------------------------------- how it works -- */
     .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 52px); }
@@ -3574,34 +3622,40 @@ export function marketingPage(contactEmail = ""): string {
   const marquee = oneSet + oneSet;
 
   /**
-   * The four tiles. Each art file is optional: until it lands in assets/img the
+   * The three tiles. Each art file is optional: until it lands in assets/img the
    * slot renders as a clean panel in the tile's own colour.
+   *
+   * Headings are one or two words on purpose - assume the visitor reads only
+   * those. The wallet claim leads because it is the one a rival web-app cannot
+   * truthfully copy, and it carries the privacy promise as its own last clause
+   * now that there is no separate tile for it.
+   *
+   * The third tile says NUMBERS and never identities. Every figure named there
+   * is one cardMetrics (src/db.ts) actually returns - customers counted per
+   * person, net stamps, who has gone quiet. Nothing here may imply an owner
+   * learns WHO someone is: identity is a signed cookie and nothing else, and
+   * the privacy page promises exactly that.
+   *
    * tone, art file, heading, line
    */
   const TILES: [string, string, string, string][] = [
     [
       "lime",
       "tile-wallet-v1.webp",
-      "In their real wallet",
-      "The card sits beside their bank cards, in Apple Wallet and Google Wallet. There is nothing to download.",
-    ],
-    [
-      "ink",
-      "tile-lockscreen-v1.webp",
-      "It updates on their lock screen",
-      "A stamp lands in seconds. They see it without opening anything at all.",
+      "In their wallet",
+      "Apple Wallet or Google Wallet, beside their bank cards. No app to download on either, and nothing personal ever collected.",
     ],
     [
       "sky",
-      "tile-winback-v1.webp",
-      "Bring back the ones who drifted",
-      "See who has gone quiet, and reach them with one press. Never on a timer.",
+      "tile-notify-v1.webp",
+      "Bring them back",
+      "New stamps land on their lock screen. When someone goes quiet, reach them with one press.",
     ],
     [
       "pink",
-      "tile-privacy-v1.webp",
-      "Nothing collected. Not ever.",
-      "No name, no email, no phone number. Your customers hand over nothing to join.",
+      "tile-numbers-v1.webp",
+      "Know your numbers",
+      "How many customers, how many stamps, and who is drifting away.",
     ],
   ];
   const tiles = TILES.map(
@@ -3644,7 +3698,7 @@ export function marketingPage(contactEmail = ""): string {
         <a href="#how">How it works</a>
         <a href="#price">Price</a>
       </nav>
-      <a class="pbtn pbtn-line" href="#contact">Message us</a>
+      <a class="pbtn pbtn-glow" href="#contact">Message us</a>
     </div></header>
 
     <main>
@@ -3653,11 +3707,10 @@ export function marketingPage(contactEmail = ""): string {
            can put in their own phone, because a demo they can check in ten
            seconds is worth more than any claim we could make here. -->
       <section class="shell"><div class="hero">
-        <h1>Turn your customers into regulars</h1>
-        <p class="sub">A stamp card that lives in Apple Wallet and Google Wallet.
-          Nothing for anyone to download.</p>
-        <div class="cta"><a class="pbtn pbtn-neon" href="#contact">Message us</a></div>
-        <div class="shot">
+        <h1>Turn customers into regulars</h1>
+        <p class="sub">A stamp card that lives in Apple Wallet and Google Wallet.</p>
+        <div class="cta"><a class="pbtn pbtn-dark" href="#contact">Message us</a></div>
+        <div class="shot tall">
           <img src="/assets/img/wallet-mockup-v1.webp" width="1920" height="2548"
                alt="A PunchMe stamp card in a phone wallet, three stamps of ten earned">
         </div>
@@ -3671,12 +3724,13 @@ export function marketingPage(contactEmail = ""): string {
         </div>
       </div></section>
 
-      <!-- 2 - WHAT THEY GET. Four tiles, one claim each. The wallet claim leads
-           because it is the one a rival web-app cannot truthfully copy: "no app
-           to download" is a line every one of them also runs. -->
+      <!-- 2 - WHAT THEY GET. Three tiles, one claim each, headings of a word or
+           two. The wallet claim leads because it is the one a rival web-app
+           cannot truthfully copy: "no app to download" is a line every one of
+           them also runs, so it is a clause here, not the argument. -->
       <section class="band"><div class="shell">
         <div class="lede">
-          <h2>Not another app they will never open</h2>
+          <h2>How PunchMe brings back customers</h2>
         </div>
         <div class="tiles">${tiles}</div>
       </div></section>

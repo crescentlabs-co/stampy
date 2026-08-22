@@ -182,33 +182,46 @@ on an IntersectionObserver.
 
 ## The marketing tiles
 
-Section two of the marketing page is four large tiles, each a solid colour
+Section two of the marketing page is three large tiles, each a solid colour
 carrying one claim. They are the **one** licensed exception to rule 1, and they
 are fenced so they cannot become a second palette:
 
 | Token | Value | Text on it |
 |---|---|---|
 | `--tile-lime` | `#c9f73d` | `--ink` |
-| `--tile-ink` | `#101312` | `--on-slab` |
 | `--tile-sky` | `#57c7ff` | `--ink` |
 | `--tile-pink` | `#ff9ecd` | `--ink` |
 
 The fence, in full:
 
-- **These four, and never a fifth.** A fifth is a second palette, which is the
-  thing this file exists to prevent.
+- **These three, and never a fourth.** A fourth is a second palette, which is
+  the thing this file exists to prevent.
 - **They appear on `/` and on no other surface.** Not the dashboard, not the
   sign-up page, not the counter. They are declared in `marketingPage()`'s own
   `:root`, not in `baseCss`, so nothing else can reach them.
 - **A tile contains no button and no link.** That is what keeps rule 1 true:
   with no control on a tile, nothing competes with the accent for the meaning
   "press this", and the lime tile cannot swallow a lime button.
-- **Text on a tile is dark**, exactly as `--on-accent` is dark. The ink tile is
-  the only one with light text, and it is the only one dark enough for it.
+- **Text on a tile is always dark**, exactly as `--on-accent` is dark. All three
+  are light enough that it never needs deciding.
+
+There was a fourth, `--tile-ink` at `#101312`, and it was removed rather than
+left as an unused token: an unused colour in a fenced set is an invitation. It
+was also `--slab` under another name, and it sat directly above the black
+how-it-works panel, so the section ended in two black blocks touching.
 
 The tile art is a CSS `background-image` over the tile's own colour, never an
 `<img>`: a slot whose file has not arrived yet must render as a clean coloured
 panel, not a broken-image icon.
+
+**The nav's "Message us" pill is the one control anywhere with motion in it** —
+a conic gradient turning through `--accent` and `--accent-2`, and no third hue,
+so the live ring costs the palette nothing. It is built from two backgrounds
+(flat neon on the padding box, the cone on the border box) rather than a second
+element, and its resting state is an ordinary neon pill: a browser without
+`@property`, and anyone who asked for less motion, get the button and not a
+broken one. Do not copy the ring onto a second control — two things pulsing for
+attention is neither of them getting it.
 
 ## Where the aesthetic came from
 
