@@ -3322,7 +3322,11 @@ export function marketingPage(contactEmail = ""): string {
            background: var(--paper); color: var(--ink); font-family: var(--body); }
     ::selection { background: var(--neon); color: var(--ink); }
     img { max-width: 100%; display: block; }
-    .shell { max-width: 1180px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 40px); }
+    /* The gutter's MINIMUM is what a phone gets: 4vw of a 390px screen is 15.6px,
+       so the clamp floor was doing all the work and every box and every line of
+       type sat 18px from the glass. 26px is the floor now, which is what stops
+       the page reading as edge-to-edge on a phone. */
+    .shell { max-width: 1180px; margin: 0 auto; padding: 0 clamp(26px, 4vw, 40px); }
     /* One family, two weights. The whole look rests on the display weight being
        genuinely heavy rather than merely bold. */
     h1, h2, h3, h4, .dsp { font-family: var(--display); font-weight: 800;
@@ -3355,12 +3359,16 @@ export function marketingPage(contactEmail = ""): string {
        pill. multiply drops the ground into the pill; a transparent export is
        the real fix and needs a new file. */
     .brand img { height: 22px; width: auto; display: block; mix-blend-mode: multiply; }
-    .navlinks { display: none; margin: 0 auto; gap: 22px; }
-    @media (min-width: 760px) { .navlinks { display: flex; } }
-    .navlinks a { text-decoration: none; font-size: .88rem; font-weight: 600; color: var(--ink-2); }
-    .navlinks a:hover { color: var(--ink); }
-    .nav .pbtn { margin-left: auto; padding: 10px 20px; font-size: .9rem; }
-    @media (min-width: 760px) { .nav .pbtn { margin-left: 0; } }
+    /* The two section links are gone: Instagram and Message us are the only
+       things in here now, both hard right, and the pill tightens to suit. */
+    .navin { max-width: 520px; }
+    .ig { margin-left: auto; display: grid; place-items: center; width: 38px; height: 38px;
+          border-radius: 50%; color: var(--ink); text-decoration: none;
+          transition: background .15s ease; }
+    .ig:hover { background: rgba(12,14,13,.08); }
+    .ig svg { display: block; }
+    @media (prefers-reduced-motion: reduce) { .ig { transition: none; } }
+    .nav .pbtn { padding: 10px 20px; font-size: .9rem; }
 
     /* -------------------------------------------------------------- buttons -- */
     .pbtn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -3415,6 +3423,30 @@ export function marketingPage(contactEmail = ""): string {
        Caps want less negative tracking than lowercase does. */
     .hero h1 { font-size: clamp(2.5rem, 8.4vw, 6.6rem); letter-spacing: -.035em;
                text-transform: uppercase; margin: 0 auto; max-width: 15ch; }
+    /* The last word cycles. The words are stacked absolutely inside a box the
+       height of one line, so nothing below it moves as they change.
+       Every word but the first RESTS hidden and is animated INTO view with no
+       fill-mode, so a browser that never runs the animation shows exactly one
+       word rather than four on top of each other (DESIGN.md rule 7). */
+    .flip { display: block; position: relative; height: 1.02em; }
+    .flip span { position: absolute; inset: 0; display: block; opacity: 0;
+                 animation: flipword 10s linear infinite; }
+    .flip span:nth-child(1) { opacity: 1; animation-delay: 0s; }
+    .flip span:nth-child(2) { animation-delay: 2.5s; }
+    .flip span:nth-child(3) { animation-delay: 5s; }
+    .flip span:nth-child(4) { animation-delay: 7.5s; }
+    /* 25% of 10s is one word's turn; it is fully visible for most of that and
+       hands over in the last fifth. The first word is opaque at rest, so its
+       keyframes have to put it back to 0 for the other three's turn. */
+    @keyframes flipword {
+      0%    { opacity: 0; transform: translateY(.32em); }
+      3%, 22% { opacity: 1; transform: translateY(0); }
+      25%, 100% { opacity: 0; transform: translateY(-.32em); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .flip span { animation: none; }
+      .flip span:not(:first-child) { opacity: 0; }
+    }
     .hero .sub { margin: clamp(12px, 1.6vw, 18px) auto 0; max-width: 34ch; color: var(--ink-2);
                  font-size: clamp(1rem, 1.7vw, 1.16rem); line-height: 1.45; }
 
@@ -3480,42 +3512,10 @@ export function marketingPage(contactEmail = ""): string {
     .step p { margin: 0 auto; max-width: 30ch; color: var(--ink-2);
               font-size: .98rem; line-height: 1.5; }
 
-    /* ------------------------------------------------------------- marquee -- */
-    .mq { overflow: hidden; padding: 6px 0 10px; mask-image: linear-gradient(90deg,
-          transparent, #000 6%, #000 94%, transparent); }
-    .mqtrack { display: flex; align-items: flex-start; gap: 18px; width: max-content;
-               animation: slide 52s linear infinite; }
-    .mq:hover .mqtrack, .mq:focus-within .mqtrack { animation-play-state: paused; }
+    /* --------------------------------------------------------------- slide -- */
+    /* Lives here rather than beside a component because the reassurance band is
+       the only user now. The example-card marquee that shared it is gone. */
     @keyframes slide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-    /* With motion turned off it becomes an ordinary scroller, not a still frame
-       the visitor cannot get past. */
-    @media (prefers-reduced-motion: reduce) {
-      .mq { overflow-x: auto; mask-image: none; }
-      .mqtrack { animation: none; }
-    }
-    .xc { flex: 0 0 auto; width: 320px; background: var(--paper); border: 2px solid var(--hair);
-          border-radius: 24px; overflow: hidden; }
-    .xc header { background: var(--band); color: var(--bandink); display: flex;
-                 align-items: center; gap: 6px; padding: 12px 15px; }
-    .xc header b { font-family: var(--display); font-weight: 800; font-size: 1rem;
-                   letter-spacing: -.02em; white-space: nowrap; overflow: hidden;
-                   text-overflow: ellipsis; }
-    .xc header span { margin-left: auto; font-size: .78rem; font-weight: 700; white-space: nowrap; }
-    /* The stamps are the product's own mark, faded until earned. */
-    /* A FIXED track, not 1fr: the column count varies with the target (always two
-       rows, as the real card is), and on fr units a five-stamp card drew stamps
-       twice the size of a ten-stamp one right beside it. Five 50px tracks and
-       four 9px gaps come to exactly the 286px inside a .xc. */
-    .xc .grid { display: grid; grid-template-columns: repeat(var(--cols, 5), 50px);
-                justify-content: start; gap: 9px; padding: 17px 15px 19px; }
-    .xc .grid i { aspect-ratio: 1; border-radius: 50%; background: var(--line); }
-    .xc .grid i.on { background: var(--band); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.16); }
-    .xc footer { background: var(--band); color: var(--bandink); display: flex;
-                 justify-content: space-between; gap: 10px; padding: 12px 15px; }
-    .xc footer span { display: block; font-size: .6rem; font-weight: 700; letter-spacing: .09em;
-                      text-transform: uppercase; opacity: .74; }
-    .xc footer b { font-size: .9rem; font-weight: 700; }
-    .xc footer .pg { text-align: right; }
 
     /* ------------------------------------------------------------------ us -- */
     .us { max-width: 760px; margin: 0 auto; background: var(--soft);
@@ -3524,6 +3524,11 @@ export function marketingPage(contactEmail = ""): string {
     .us h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: 18px; }
     .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 14px; }
     .us p:last-child { margin-bottom: 0; }
+    /* The one line that carries the section, set like a heading rather than
+       like body: it is the claim, the two under it are the evidence. */
+    .us .lead { font-family: var(--display); font-weight: 800; letter-spacing: -.03em;
+                line-height: 1.08; color: var(--ink);
+                font-size: clamp(1.5rem, 3vw, 2.1rem); margin-bottom: 20px; }
 
     /* ---------------------------------------------------------- ticker -- */
     /* The four reasons not to worry, as a green band pinned to the bottom of
@@ -3559,8 +3564,12 @@ export function marketingPage(contactEmail = ""): string {
     .price { max-width: 460px; margin: 0 auto; border: 2px solid var(--ink);
              border-radius: var(--r); padding: clamp(28px, 4vw, 44px); text-align: center; }
     .price .amt { font-family: var(--display); font-weight: 800; font-size: clamp(3rem, 8vw, 4.4rem);
-                  letter-spacing: -.045em; line-height: 1; }
-    .price .per { color: var(--ink-2); font-weight: 600; font-size: 1rem; margin-top: 8px; }
+                  letter-spacing: -.045em; line-height: 1;
+                  display: flex; align-items: baseline; justify-content: center; gap: 6px; }
+    /* Beside the number on its baseline, not under it: the unit belongs to the
+       price, and a line of its own read as a second fact. */
+    .price .per { font-family: var(--body); font-weight: 600; font-size: 1.02rem;
+                  letter-spacing: 0; color: var(--ink-2); }
     .price ul { list-style: none; margin: 26px 0; padding: 0; text-align: left;
                 display: flex; flex-direction: column; gap: 11px; }
     .price li { display: flex; gap: 11px; align-items: flex-start; font-size: .96rem;
@@ -3572,7 +3581,10 @@ export function marketingPage(contactEmail = ""): string {
                         background: var(--neon) center/11px 11px no-repeat;
                         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
     .price .pbtn { width: 100%; }
-    .price .fine { color: var(--ink-2); font-size: .82rem; margin-top: 14px; }
+    /* Emphasis on neon, which is what --on-accent exists for: dark text on the
+       accent, never the other way round. One word, not a surface. */
+    .price mark { background: var(--neon); color: var(--on-accent); font-weight: 700;
+                  padding: 0 5px; border-radius: 5px; }
 
     /* ---------------------------------------------------------------- foot -- */
     .foot { border-top: 1px solid var(--hair); padding: 26px 0 44px; display: flex;
@@ -3582,32 +3594,6 @@ export function marketingPage(contactEmail = ""): string {
     .foot a:hover { color: var(--ink); }
     .foot nav { display: flex; gap: 20px; }
   `;
-
-  // Placeholder example cards. TODO(founder): confirm the six trades and rewards.
-  // biz, band colour, ink on that band, stamps, filled, reward
-  const EXAMPLES: [string, string, string, number, number, string][] = [
-    ["Kopi Corner", "#c9f73d", "#0c0e0d", 10, 7, "Free drink"],
-    ["Roti Bakar Co", "#f3c969", "#3d2708", 10, 4, "Free item"],
-    ["Teh Tarik Lane", "#5b3fa6", "#f6f2ff", 10, 9, "Free drink"],
-    ["Gaya Barber", "#14161a", "#f4f6f2", 5, 3, "Free cut"],
-    ["Kilat Wash", "#2f6fed", "#f2f7ff", 5, 2, "Free upgrade"],
-    ["Paws & Co", "#ff8fb8", "#42101f", 5, 4, "Free add on"],
-  ];
-  const cardHtml = ([biz, band, ink, slots, filled, reward]: [string, string, string, number, number, string]) => {
-    let dots = "";
-    for (let i = 0; i < slots; i++) dots += `<i class="${i < filled ? "on" : ""}"></i>`;
-    return `<article class="xc" style="--band: ${band}; --bandink: ${ink}; --cols: ${Math.ceil(slots / 2)}">
-              <header><b>${biz}</b><span>${filled} earned</span></header>
-              <div class="grid">${dots}</div>
-              <footer>
-                <div><span>Reward</span><b>${reward}</b></div>
-                <div class="pg"><span>Progress</span><b>${filled}/${slots}</b></div>
-              </footer>
-            </article>`;
-  };
-  // The track is doubled so the translate can loop at exactly -50% with no seam.
-  const oneSet = EXAMPLES.map(cardHtml).join("");
-  const marquee = oneSet + oneSet;
 
   /**
    * The three tiles. Each art file is optional: until it lands in assets/img the
@@ -3630,20 +3616,20 @@ export function marketingPage(contactEmail = ""): string {
     [
       "lime",
       "tile-wallet-v1.webp",
-      "In their wallet",
-      "Apple Wallet or Google Wallet, beside their bank cards. No app to download on either, and nothing personal ever collected.",
+      "Lives in their wallet",
+      "No app to download. 3 seconds to sign up.",
     ],
     [
       "sky",
       "tile-notify-v1.webp",
-      "Bring them back",
-      "New stamps land on their lock screen. When someone goes quiet, reach them with one press.",
+      "Push notifications to their screen",
+      "Send reminders, promotions and campaigns to bring them back.",
     ],
     [
       "pink",
       "tile-numbers-v1.webp",
       "Know your numbers",
-      "How many customers, how many stamps, and who is drifting away. All of it from your phone \u2014 there is nothing to install.",
+      "All of it from your phone. Anywhere, anytime. Nothing to install.",
     ],
   ];
   const tiles = TILES.map(
@@ -3672,6 +3658,18 @@ export function marketingPage(contactEmail = ""): string {
       <circle cx="13" cy="13" r="9.6" fill="none" stroke="currentColor" stroke-width="2.2"/>
       <path d="M8.8 13.3l2.9 2.9 5.5-6.2" fill="none" stroke="currentColor"
         stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  /**
+   * The headline's last word. Order matters: "regulars" is the one that has to
+   * survive, because it is the only one a reader with motion turned off, or a
+   * screen reader, ever gets.
+   */
+  const FLIP_WORDS = ["regulars", "visits", "sales", "growth"];
+
+  const ICON_INSTAGRAM = `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" stroke-width="2"/>
+      <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
+      <circle cx="17.4" cy="6.6" r="1.3" fill="currentColor"/></svg>`;
 
   // Apple's own glyph, as the sign-up page already uses. Google has no
   // character for this, so it gets a drawn card mark at the same weight.
@@ -3719,6 +3717,8 @@ export function marketingPage(contactEmail = ""): string {
    */
   const REASSURANCE = [
     "First month free",
+    "Set up in 5 minutes",
+    "Manage everything from your phone",
     "No card details",
     "No app for your customers",
     "Cancel any time",
@@ -3737,10 +3737,8 @@ export function marketingPage(contactEmail = ""): string {
   const body = `
     <header class="nav"><div class="navin">
       <a class="brand" href="/"><img src="/assets/img/punchme-logo-v1.png" alt="PunchMe" width="220" height="54"></a>
-      <nav class="navlinks">
-        <a href="#how">How it works</a>
-        <a href="#price">Price</a>
-      </nav>
+      <a class="ig" href="https://instagram.com/punchme.my" target="_blank"
+         rel="noopener" aria-label="PunchMe on Instagram">${ICON_INSTAGRAM}</a>
       <a class="pbtn pbtn-glow" ${contactCta}>Message us</a>
     </div></header>
 
@@ -3750,8 +3748,13 @@ export function marketingPage(contactEmail = ""): string {
            can put in their own phone, because a demo they can check in ten
            seconds is worth more than any claim we could make here. -->
       <section class="shell"><div class="hero">
-        <h1>Turn customers into regulars</h1>
-        <p class="sub">A stamp card that lives in Apple Wallet and Google Wallet.</p>
+        <!-- The rotating words are aria-hidden and one plain copy follows, so
+             the headline is announced once as a sentence rather than as four
+             words running together. -->
+        <h1>Turn loyalty into more
+          <span class="flip" aria-hidden="true">${FLIP_WORDS.map((w) => `<span>${w}</span>`).join("")}</span>
+          <span class="vh">${FLIP_WORDS[0]}</span></h1>
+        <p class="sub">The stamp card that lives in your customer&rsquo;s wallet.</p>
         <div class="shot">
           <img src="/assets/img/hero-phones-v1.webp" width="2036" height="1488"
                alt="Three phones showing stamp cards in Apple Wallet: a milk tea shop, PunchMe and a kopitiam">
@@ -3772,7 +3775,7 @@ export function marketingPage(contactEmail = ""): string {
            them also runs, so it is a clause here, not the argument. -->
       <section class="band"><div class="shell">
         <div class="lede shout">
-          <h2>Why they come back</h2>
+          <h2>Why PunchMe?</h2>
         </div>
         <div class="tiles">${tiles}</div>
       </div></section>
@@ -3809,42 +3812,28 @@ export function marketingPage(contactEmail = ""): string {
            call - a page selling a service from two named people is a case where
            the plain label is the point. -->
       <section class="band tight"><div class="shell"><div class="us">
-        <h2>Who are we</h2>
-        <p>Two of us, in Kuala Lumpur. Four years in e-commerce data analytics between
-          one of us, five in fintech product for the other.</p>
-        <p>We set up every shop ourselves, so you will always be talking to the people
+        <h2>Who we are</h2>
+        <p class="lead">Two people, one goal.</p>
+        <p>4 years in e-commerce data analytics, 5 in fintech product.</p>
+        <p>We set up every shop ourselves. You&rsquo;ll always be talking to the people
           who built it.</p>
       </div></div></section>
 
       <!-- 5 - PRICE. The reasons not to worry sit here, immediately above the
            only button on the page that asks for a decision. -->
       <section class="band tight" id="price"><div class="shell">
-        <div class="lede"><h2>Everything included, for RM79 a month</h2></div>
+        <div class="lede shout"><h2>First month free</h2></div>
         <div class="price">
-          <p class="amt">RM79</p>
-          <p class="per">a month &middot; first month free</p>
+          <p class="amt">RM79<span class="per">/month</span></p>
           <ul>
-            <li>Apple Wallet and Google Wallet, one QR for both</li>
-            <li>Unlimited customers and unlimited stamps</li>
-            <li>Bring-back messages, whenever you decide to send them</li>
-            <li>We set your shop up ourselves</li>
+            <li><mark>Unlimited</mark> customers, cards, stamps</li>
+            <li>Push notifications functionality</li>
+            <li>We set your card up for you</li>
+            <li>Customizable stamp card</li>
           </ul>
           <a class="pbtn pbtn-neon" href="/dashboard">Start free</a>
-          <p class="fine">No card details to start. Cancel whenever.</p>
         </div>
       </div></section>
-
-      <!-- 6 - EXAMPLES, auto-scrolling. The one place the page shows the product
-           bending to a trade that is not a cafe. Last now: it is the flourish
-           the page goes out on, not an argument anyone has to read. -->
-      <section class="band tight"><div class="shell">
-        <div class="lede">
-          <h2>Your stamps, your reward, your rules</h2>
-          <p>Every trade counts differently. Yours is set up to match.</p>
-        </div>
-      </div>
-      <div class="mq"><div class="mqtrack">${marquee}</div></div>
-      </section>
 
       <!-- Who this is and how to reach them, on the page a stranger lands on.
            It used to say only "PunchMe - made in Kuala Lumpur" - a product and a
