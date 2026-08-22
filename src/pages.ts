@@ -3430,13 +3430,13 @@ export function marketingPage(contactEmail = ""): string {
        word rather than four on top of each other (DESIGN.md rule 7). */
     .flip { display: block; position: relative; height: 1.02em; }
     .flip span { position: absolute; inset: 0; display: block; opacity: 0;
-                 animation: flipword 10s linear infinite; }
+                 animation: flipword 7.2s linear infinite; }
     .flip span:nth-child(1) { opacity: 1; animation-delay: 0s; }
-    .flip span:nth-child(2) { animation-delay: 2.5s; }
-    .flip span:nth-child(3) { animation-delay: 5s; }
-    .flip span:nth-child(4) { animation-delay: 7.5s; }
-    /* 25% of 10s is one word's turn; it is fully visible for most of that and
-       hands over in the last fifth. The first word is opaque at rest, so its
+    .flip span:nth-child(2) { animation-delay: 1.8s; }
+    .flip span:nth-child(3) { animation-delay: 3.6s; }
+    .flip span:nth-child(4) { animation-delay: 5.4s; }
+    /* 25% of the cycle is one word's turn; it is fully visible for most of that
+       and hands over in the last fifth. The first word is opaque at rest, so its
        keyframes have to put it back to 0 for the other three's turn. */
     @keyframes flipword {
       0%    { opacity: 0; transform: translateY(.32em); }
@@ -3518,17 +3518,25 @@ export function marketingPage(contactEmail = ""): string {
     @keyframes slide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
     /* ------------------------------------------------------------------ us -- */
-    .us { max-width: 760px; margin: 0 auto; background: var(--soft);
-          border: 1px solid var(--hair); border-radius: var(--r);
-          padding: clamp(26px, 3.4vw, 48px); }
-    .us h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: 18px; }
-    .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 14px; }
+    /* No card any more: the heading sits over the section and the copy sits to
+       the RIGHT of a picture, which needs the two to be one grid rather than a
+       panel with everything stacked inside it. */
+    .us { max-width: 1100px; margin: 0 auto; display: grid; gap: clamp(24px, 4vw, 60px); }
+    @media (min-width: 900px) { .us { grid-template-columns: .82fr 1.18fr; align-items: center; } }
+    /* The picture is not here yet. Same trick the feature blocks use: a
+       background on a sized block, so the slot is a clean panel until the file
+       lands rather than a broken-image icon. */
+    .us .art { aspect-ratio: 4 / 5; border-radius: var(--r);
+               background: var(--soft) center/cover no-repeat; }
+    .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 16px; }
     .us p:last-child { margin-bottom: 0; }
     /* The one line that carries the section, set like a heading rather than
-       like body: it is the claim, the two under it are the evidence. */
+       like body: it is the claim, everything under it is the elaboration. */
     .us .lead { font-family: var(--display); font-weight: 800; letter-spacing: -.03em;
                 line-height: 1.08; color: var(--ink);
-                font-size: clamp(1.5rem, 3vw, 2.1rem); margin-bottom: 20px; }
+                font-size: clamp(1.7rem, 3.4vw, 2.5rem); margin-bottom: 22px; }
+    /* The closing line gets air above it, as a paragraph break would give it. */
+    .us .close-line { margin-top: 28px; }
 
     /* ---------------------------------------------------------- ticker -- */
     /* The four reasons not to worry, as a green band pinned to the bottom of
@@ -3544,7 +3552,7 @@ export function marketingPage(contactEmail = ""): string {
               background: var(--neon); color: var(--ink); overflow: hidden;
               display: flex; align-items: center;
               border-top: 1px solid rgba(12,14,13,.16); }
-    .tktrack { display: flex; width: max-content; animation: slide 34s linear infinite; }
+    .tktrack { display: flex; width: max-content; animation: slide 46s linear infinite; }
     .ticker:hover .tktrack, .ticker:focus-within .tktrack { animation-play-state: paused; }
     .tkitem { display: flex; align-items: center; gap: 9px; padding: 0 26px;
               font-size: .88rem; font-weight: 700; white-space: nowrap; }
@@ -3583,8 +3591,11 @@ export function marketingPage(contactEmail = ""): string {
     .price .pbtn { width: 100%; }
     /* Emphasis on neon, which is what --on-accent exists for: dark text on the
        accent, never the other way round. One word, not a surface. */
+    /* The padding and the word space after it stacked into a gap wide enough to
+       read as a missing word. The negative margin takes the padding back out of
+       the flow, so the space between the two words is just a space. */
     .price mark { background: var(--neon); color: var(--on-accent); font-weight: 700;
-                  padding: 0 5px; border-radius: 5px; }
+                  padding: 1px 5px; margin-right: -4px; border-radius: 5px; }
 
     /* ---------------------------------------------------------------- foot -- */
     .foot { border-top: 1px solid var(--hair); padding: 26px 0 44px; display: flex;
@@ -3621,7 +3632,7 @@ export function marketingPage(contactEmail = ""): string {
     ],
     [
       "sky",
-      "tile-notify-v1.webp",
+      "tile-notify-v2.webp",
       "Push notifications to their screen",
       "Send reminders, promotions and campaigns to bring them back.",
     ],
@@ -3756,7 +3767,7 @@ export function marketingPage(contactEmail = ""): string {
           <span class="vh">${FLIP_WORDS[0]}</span></h1>
         <p class="sub">The stamp card that lives in your customer&rsquo;s wallet.</p>
         <div class="shot">
-          <img src="/assets/img/hero-phones-v1.webp" width="2036" height="1488"
+          <img src="/assets/img/hero-phones-v2.webp" width="1957" height="1474"
                alt="Three phones showing stamp cards in Apple Wallet: a milk tea shop, PunchMe and a kopitiam">
         </div>
         <p class="try">Try a demo card</p>
@@ -3811,13 +3822,24 @@ export function marketingPage(contactEmail = ""): string {
            "Who are we?" as its anti-example. This one is the founder's explicit
            call - a page selling a service from two named people is a case where
            the plain label is the point. -->
-      <section class="band tight"><div class="shell"><div class="us">
-        <h2>Who we are</h2>
-        <p class="lead">Two people, one goal.</p>
-        <p>4 years in e-commerce data analytics, 5 in fintech product.</p>
-        <p>We set up every shop ourselves. You&rsquo;ll always be talking to the people
-          who built it.</p>
-      </div></div></section>
+      <section class="band tight"><div class="shell">
+        <div class="lede shout"><h2>Who we are</h2></div>
+        <div class="us">
+          <!-- TODO(founder): drop a photograph in at assets/img/us-v1.webp and it
+               appears here. Until then this is a clean panel, not a broken image. -->
+          <div class="art" style="background-image:url('/assets/img/us-v1.webp')"
+               role="presentation"></div>
+          <div>
+            <p class="lead">Two people. Too many ideas.</p>
+            <p>We like building things and solving problems.</p>
+            <p>Modern technology makes it possible to go from an idea to something real
+              faster than ever.</p>
+            <p>And we&rsquo;re here to make the most of it &mdash; to keep building,
+              experimenting and pushing what we think is possible.</p>
+            <p class="close-line">We&rsquo;re excited to find out where it takes us.</p>
+          </div>
+        </div>
+      </div></section>
 
       <!-- 5 - PRICE. The reasons not to worry sit here, immediately above the
            only button on the page that asks for a decision. -->
@@ -3849,7 +3871,6 @@ export function marketingPage(contactEmail = ""): string {
           contactEmail ? ` &middot; <a href="mailto:${esc(contactEmail)}">${esc(contactEmail)}</a>` : ""
         }</span>
         <nav>
-          <a href="https://instagram.com/punchme.my" target="_blank" rel="noopener">Instagram</a>
           <a href="/support">Support</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
