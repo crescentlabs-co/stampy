@@ -3375,6 +3375,17 @@ export function marketingPage(
     /* The one thing on the page that has to be pressed, so it is sized like it:
        bigger than the body button scale, not smaller. */
     .nav .pbtn { padding: 14px 28px; font-size: 1.02rem; }
+    /* "Start your 30 days free" is a long label for a pill that also holds a
+       logo and an icon. At 320px it ran past the pill's right edge, so the whole
+       bar steps down a size rather than the label being shortened - the offer is
+       the point of the button. */
+    @media (max-width: 460px) {
+      .navin { gap: 10px; padding: 8px 8px 8px 16px; }
+      .brand img { height: 21px; }
+      .ig { width: 36px; height: 36px; }
+      .ig svg { width: 20px; height: 20px; }
+      .nav .pbtn { padding: 11px 15px; font-size: .84rem; }
+    }
 
     /* -------------------------------------------------------------- buttons -- */
     .pbtn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -3777,7 +3788,7 @@ export function marketingPage(
       <a class="brand" href="/"><img src="/assets/img/punchme-logo-v1.png" alt="PunchMe" width="220" height="54"></a>
       <a class="ig" href="https://instagram.com/punchme.my" target="_blank"
          rel="noopener" aria-label="PunchMe on Instagram">${ICON_INSTAGRAM}</a>
-      <a class="pbtn pbtn-glow" ${contactCta}>Message us</a>
+      <a class="pbtn pbtn-glow" ${contactCta}>Start your 30 days free</a>
     </div></header>
 
     <main>
@@ -3865,7 +3876,7 @@ export function marketingPage(
             <li><span>Direct support</span></li>
             <li><span>Done-for-you setup</span></li>
           </ul>
-          <a class="pbtn pbtn-neon" ${contactCta}>Message us</a>
+          <a class="pbtn pbtn-neon" ${contactCta}>Start your 30 days free</a>
         </div>
       </div></section>
 
