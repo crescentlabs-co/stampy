@@ -87,21 +87,22 @@ async function main() {
   expect(landing.body.includes("/assets/fonts/figtree-latin.woff2"), "pages declare the Figtree @font-face inline");
   const figtree = await get("/assets/fonts/figtree-latin.woff2");
   expect(figtree.status === 200, "GET /assets/fonts/figtree-latin.woff2 serves the landing display face");
-  // Two photographs survive the rework, in the carousel and the closing band. A
-  // broken one is a visible hole, so the bytes are checked the same way the
-  // font is.
-  expect(landing.body.includes("/assets/img/quiet-table-v1.jpg"), "landing page references its carousel photograph");
-  expect(landing.body.includes("/assets/img/shopfront-v1.jpg"), "landing page references its closing photograph");
-  // The looping clips and the brand mark are the page argument now, so a
-  // missing byte is a hole in it. Checked the same way the font is.
-  for (const asset of ["/assets/vid/card-v1.mp4", "/assets/vid/card-v1.jpg",
-                       "/assets/vid/signup-v1.mp4",
+  // Every image the page names must actually serve: a broken one is a visible
+  // hole in the argument, checked the same way the font is. The hero mockup is
+  // the page's proof and the closing photograph its sign-off, so both are
+  // named here rather than left to a spot check.
+  //
+  // The four section-two tile slots (/assets/img/tile-*.webp) are deliberately
+  // ABSENT from this list. They are CSS background-images over the tile's own
+  // colour precisely so a slot with no artwork yet renders as a clean panel,
+  // and asserting 200 on them would make shipping the layout wait on the
+  // photography. Move one into this list the day its file lands.
+  for (const asset of ["/assets/img/wallet-mockup-v1.webp",
+                       "/assets/img/shopfront-v1.jpg",
                        "/assets/img/punchme-logo-v1.png"]) {
-    expect(landing.body.includes(asset) || asset.endsWith(".jpg"), `landing references ${asset}`);
+    expect(landing.body.includes(asset), `landing references ${asset}`);
     expect((await get(asset)).status === 200, `GET ${asset} serves`);
   }
-  const shot = await get("/assets/img/shopfront-v1.jpg");
-  expect(shot.status === 200, "GET /assets/img/*.jpg serves the landing photography");
 
   // The default café's Add-to-Wallet page moved to /c/default; its QR points there.
   const cafeLanding = await get("/c/default");

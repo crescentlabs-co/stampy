@@ -3291,6 +3291,20 @@ export function claimPage(
  *   Railway, and a marketing page carrying a different address from the legal
  *   pages is exactly the inconsistency a reviewer looks for.
  */
+/**
+ * The marketing page, and the reference implementation of the house style.
+ *
+ * It was eight sections and had come apart: a feature carousel whose markup was
+ * duplicated and never closed (so it rendered squeezed inside an unclosed
+ * .lede, with two orphan headings), a "run it from your phone" section that
+ * showed the same screenshot under two different labels, and a whole block of
+ * CSS for a "how it works" section that had never been written. Six sections
+ * now, in the order a visitor needs them: the hook, what they get, how it
+ * works, who it fits, who we are, what it costs.
+ *
+ * Life comes from the four colour tiles in section two, not from ornament, and
+ * they are the only place on any surface those colours appear (DESIGN.md).
+ */
 export function marketingPage(contactEmail = ""): string {
   const css = /* css */ `
     :root {
@@ -3298,6 +3312,10 @@ export function marketingPage(contactEmail = ""): string {
       --ink-2: var(--muted); --hair: var(--line);
       --neon: var(--accent); --neon-2: var(--accent-2);
       --r: 28px; --r-sm: 14px;
+      /* The four tile surfaces. They live here and on no other page: see
+         "The marketing tiles" in DESIGN.md before adding a fifth. */
+      --tile-lime: #c9f73d; --tile-ink: #101312;
+      --tile-sky: #57c7ff; --tile-pink: #ff9ecd;
     }
     html { scroll-behavior: smooth; }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -3315,7 +3333,7 @@ export function marketingPage(contactEmail = ""): string {
        invisible against the neon buttons it most needed to mark. */
     :where(a, button):focus-visible { outline: 3px solid var(--ink);
                                       outline-offset: 3px; border-radius: 6px; }
-    :where(.panel.dark, .car, .close, .herobox) :where(a, button):focus-visible {
+    :where(.panel.dark, .tile.ink, .close) :where(a, button):focus-visible {
       outline-color: var(--neon); }
 
     /* ---------------------------------------------------------------- nav -- */
@@ -3358,109 +3376,83 @@ export function marketingPage(contactEmail = ""): string {
               line-height: 1.55; }
 
     /* ---------------------------------------------------------------- hero -- */
-    .hero { display: grid; gap: clamp(30px, 4vw, 54px); align-items: center;
-            padding: clamp(40px, 6vw, 86px) 0 clamp(46px, 6vw, 92px); }
-    @media (min-width: 940px) { .hero { grid-template-columns: 1.04fr .96fr; } }
-    .hero h1 { font-size: clamp(2.6rem, 6.5vw, 4.6rem); margin: 20px 0 0; }
-    .hero .sub { margin: 20px 0 0; max-width: 40ch; color: var(--ink-2);
-                 font-size: clamp(1.02rem, 2vw, 1.14rem); line-height: 1.55; }
-    .herobtns { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 12px; }
-    /* Reasons not to worry, set quietly so they reassure without competing with
-       the button they sit under. */
-    .fud { list-style: none; margin: 18px 0 0; padding: 0; display: flex;
-           flex-wrap: wrap; gap: 8px 18px; }
-    .fud li { display: flex; align-items: center; gap: 7px; color: var(--ink-2);
-              font-size: .88rem; font-weight: 500; }
-    .fud li::before { content: ""; width: 15px; height: 15px; flex: none; border-radius: 50%;
-                      background: var(--neon) center/9px 9px no-repeat;
-                      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
-    /* The clip is the proof: a card filling up is the promise in the headline
-       actually happening. Sized so it never pushes the button below the fold. */
-    .heromedia { display: flex; justify-content: center; }
-    .heromedia video { width: 100%; max-width: 300px; height: auto; display: block;
-                       border-radius: 26px; background: var(--surface);
-                       box-shadow: 0 30px 70px -30px rgba(12,14,13,.45); }
-    .trylbl { margin: 30px 0 0; font-size: .78rem; font-weight: 700; letter-spacing: .1em;
-              text-transform: uppercase; color: var(--ink-2); }
-    .herobox { background: var(--slab); border-radius: var(--r); padding: clamp(28px, 4vw, 52px);
-               display: grid; place-items: center; min-height: 340px; }
+    /* Roughly 60% of visitors never scroll, so this screen carries the whole
+       argument: the outcome, what it is, one action, and a card they can put in
+       their own phone in ten seconds. Everything else was cut. */
+    .hero { text-align: center; padding: clamp(40px, 6vw, 92px) 0 clamp(36px, 5vw, 76px); }
+    .hero h1 { font-size: clamp(2.9rem, 8.6vw, 6.2rem); letter-spacing: -.045em;
+               margin: 0 auto; max-width: 14ch; }
+    .hero .sub { margin: clamp(18px, 2.6vw, 28px) auto 0; max-width: 36ch; color: var(--ink-2);
+                 font-size: clamp(1.04rem, 2vw, 1.24rem); line-height: 1.5; }
+    .hero .cta { margin-top: clamp(22px, 3vw, 32px); }
+    .hero .cta .pbtn { padding: 16px 32px; font-size: 1.04rem; }
+    /* The product's own object, and the one image on the page that cannot be
+       mistaken for stock: the card sitting in a real wallet, under the fold-line
+       but never far enough down to push the button off the first screen. */
+    .shot { margin: clamp(36px, 5vw, 64px) auto 0; width: min(520px, 88%);
+            border-radius: var(--r); overflow: hidden; }
+    /* height:auto, or the intrinsic height attribute wins and the phone renders
+       2548px tall inside a 430px box. */
+    .shot img { width: 100%; height: auto; }
+    .try { margin: clamp(26px, 3.4vw, 38px) 0 0; font-size: .78rem; font-weight: 700;
+           letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+    .wallets { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+               margin-top: 12px; }
+    .wallets svg { flex: none; display: block; }
+    .wmark { font-size: 1.06em; line-height: 1; }
 
-    /* ------------------------------------------------- the drawn stamp card -- */
-    /* The product's own object, drawn rather than photographed: it is the one
-       thing on the page that cannot be mistaken for stock. */
-    .card { width: 100%; max-width: 340px; background: var(--paper); border: none;
-            border-radius: 18px; padding: 20px;
-            box-shadow: 0 24px 60px -24px rgba(0,0,0,.6); }
-    .card .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .card .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--ink);
-                  color: var(--neon); display: grid; place-items: center;
-                  font-family: var(--display); font-weight: 800; font-size: 1rem; }
-    .card .shop { font-family: var(--display); font-weight: 800; font-size: 1.06rem;
-                  letter-spacing: -.02em; }
-    .card .meta { color: var(--ink-2); font-size: .76rem; font-weight: 500; }
-    .card .rowlbl { display: flex; align-items: baseline; justify-content: space-between;
-                    margin: 20px 0 9px; }
-    .card .rowlbl span { color: var(--ink-2); font-size: .72rem; font-weight: 700;
-                         letter-spacing: .09em; text-transform: uppercase; }
-    .card .rowlbl b { font-family: var(--display); font-weight: 800; font-size: .96rem; }
-    .dots { display: grid; grid-template-columns: repeat(5, 26px); gap: 8px; }
-    .dots i { width: 26px; height: 26px; border-radius: 50%; background: var(--soft);
-              border: 2px solid var(--hair); }
-    .dots i.on { background: var(--neon); border-color: var(--neon); }
-    .card .rw { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair);
-                display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .card .rw span { color: var(--ink-2); font-size: .78rem; font-weight: 600; }
-    .card .rw b { font-family: var(--display); font-weight: 800; font-size: .92rem; }
+    /* --------------------------------------------------------------- tiles -- */
+    /* Four surfaces, each its own colour, each carrying one claim. They hold no
+       buttons and no links, which is what keeps the neon meaning "press this"
+       everywhere else on the page. */
+    .tiles { display: grid; gap: 16px; }
+    @media (min-width: 820px) { .tiles { grid-template-columns: 1fr 1fr; } }
+    .tile { border-radius: var(--r); padding: clamp(22px, 3vw, 34px); color: var(--ink); }
+    /* The art is a background, not an img, so a slot whose file has not landed
+       yet is a clean coloured panel rather than a broken-image icon. */
+    .tile .art { aspect-ratio: 4 / 3; border-radius: var(--r-sm);
+                 margin-bottom: clamp(18px, 2.6vw, 28px);
+                 background: rgba(12,14,13,.08) center/cover no-repeat; }
+    .tile h3 { font-size: clamp(1.42rem, 2.6vw, 2rem); margin-bottom: 9px; }
+    .tile p { margin: 0; font-size: 1.02rem; line-height: 1.5; color: rgba(12,14,13,.74); }
+    .tile.lime { background: var(--tile-lime); }
+    .tile.sky  { background: var(--tile-sky); }
+    .tile.pink { background: var(--tile-pink); }
+    .tile.ink  { background: var(--tile-ink); color: var(--on-slab); }
+    .tile.ink .art { background-color: rgba(244,246,242,.1); }
+    .tile.ink p { color: #b7bfb0; }
 
-    /* ------------------------------------------------------- two-up panels -- */
-    .duo { display: grid; gap: 18px; }
-    @media (min-width: 860px) { .duo { grid-template-columns: 1fr 1fr; } }
-    /* The gist, in ten seconds. Three cards, no media inside them: the reason
-       this reads at a glance is that there is nothing else in it. */
-    .three { display: grid; gap: 14px; }
-    @media (min-width: 820px) { .three { grid-template-columns: repeat(3, 1fr); } }
-    .up { background: var(--soft); border: 1px solid var(--hair); border-radius: var(--r);
-          padding: clamp(22px, 3vw, 30px); }
-    .up .ico { font-size: 1.7rem; line-height: 1; display: block; margin-bottom: 14px; }
-    .up h3 { font-size: 1.16rem; letter-spacing: -.02em; margin-bottom: 7px; }
-    .up p { color: var(--ink-2); font-size: .95rem; line-height: 1.5; margin: 0; }
-    /* One demonstration under the three, centred, so the section stays one idea
-       and one proof rather than a wall of panels. */
-    .demo { display: flex; flex-direction: column; align-items: center;
-            margin-top: clamp(30px, 5vw, 54px); }
-    .demo video { width: 100%; max-width: 258px; height: auto; display: block;
-                  border-radius: 24px; background: var(--soft);
-                  box-shadow: 0 24px 60px -30px rgba(12,14,13,.45); }
-    .demo .cap { margin: 16px 0 0; color: var(--ink-2); font-size: .92rem; text-align: center; }
-    .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 42px); }
-    .panel.pale { background: var(--soft); }
+    /* ------------------------------------------------------- how it works -- */
+    .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 52px); }
     .panel.dark { background: var(--slab); color: var(--on-slab); }
     .panel .who { font-size: .78rem; font-weight: 700; letter-spacing: .1em;
                   text-transform: uppercase; color: var(--ink-2); }
     .panel.dark .who { color: #97a08f; }
-    .panel h3 { font-size: clamp(1.5rem, 2.6vw, 2rem); margin: 10px 0 26px; }
+    .panel h3 { font-size: clamp(1.6rem, 3vw, 2.4rem); margin: 10px 0 0; max-width: 18ch; }
+    .cols { display: grid; gap: clamp(26px, 4vw, 60px); }
+    @media (min-width: 900px) { .cols { grid-template-columns: 1fr 1.1fr; align-items: start; } }
     /* The journey reads downwards, with the arrow doing the joining. No images
        here on purpose: the steps are the content. */
-    .flow { list-style: none; margin: 0; padding: 0; }
+    .flow { list-style: none; margin: 0; padding: 0; max-width: 640px; }
     .flow li { display: flex; gap: 14px; align-items: flex-start; }
     .flow .n { flex: none; width: 30px; height: 30px; border-radius: 50%;
                background: var(--neon); color: var(--ink); display: grid; place-items: center;
                font-family: var(--display); font-weight: 800; font-size: .85rem; }
-    .flow .tx { padding-top: 4px; font-size: 1rem; line-height: 1.45; font-weight: 500; }
+    .flow .tx { padding-top: 4px; font-size: 1.04rem; line-height: 1.45; font-weight: 500; }
     .panel.dark .flow .tx { color: #dfe4d9; }
-    .flow .arw { height: 26px; margin: 4px 0 4px 14px; width: 2px; background: var(--hair);
-                 position: relative; }
-    .panel.dark .flow .arw { background: #2a2f28; }
+    .flow .arw { display: block; height: 26px; margin: 4px 0 4px 14px; width: 2px;
+                 background: var(--hair); position: relative; }
+    .panel.dark .flow .arw { background: #454c42; }
     .flow .arw::after { content: ""; position: absolute; left: 50%; bottom: -1px;
                         width: 7px; height: 7px; transform: translateX(-50%) rotate(45deg);
                         border-right: 2px solid var(--hair); border-bottom: 2px solid var(--hair); }
-    .panel.dark .flow .arw::after { border-color: #2a2f28; }
+    .panel.dark .flow .arw::after { border-color: #454c42; }
 
     /* ------------------------------------------------------------- marquee -- */
     .mq { overflow: hidden; padding: 6px 0 10px; mask-image: linear-gradient(90deg,
           transparent, #000 6%, #000 94%, transparent); }
-    .mqtrack { display: flex; gap: 16px; width: max-content;
-               animation: slide 46s linear infinite; }
+    .mqtrack { display: flex; align-items: flex-start; gap: 18px; width: max-content;
+               animation: slide 52s linear infinite; }
     .mq:hover .mqtrack, .mq:focus-within .mqtrack { animation-play-state: paused; }
     @keyframes slide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
     /* With motion turned off it becomes an ordinary scroller, not a still frame
@@ -3469,136 +3461,46 @@ export function marketingPage(contactEmail = ""): string {
       .mq { overflow-x: auto; mask-image: none; }
       .mqtrack { animation: none; }
     }
-    .xc { flex: 0 0 auto; width: 250px; background: var(--paper); border: 2px solid var(--hair);
-          border-radius: 20px; overflow: hidden; }
+    .xc { flex: 0 0 auto; width: 320px; background: var(--paper); border: 2px solid var(--hair);
+          border-radius: 24px; overflow: hidden; }
     .xc header { background: var(--band); color: var(--bandink); display: flex;
-                 align-items: center; gap: 6px; padding: 9px 12px; }
-    .xc header img { flex: none; display: block; }
-    .xc header b { font-family: var(--display); font-weight: 800; font-size: .84rem;
+                 align-items: center; gap: 6px; padding: 12px 15px; }
+    .xc header b { font-family: var(--display); font-weight: 800; font-size: 1rem;
                    letter-spacing: -.02em; white-space: nowrap; overflow: hidden;
                    text-overflow: ellipsis; }
-    .xc header span { margin-left: auto; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+    .xc header span { margin-left: auto; font-size: .78rem; font-weight: 700; white-space: nowrap; }
     /* The stamps are the product's own mark, faded until earned. */
-    .xc .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; padding: 13px 12px; }
+    /* A FIXED track, not 1fr: the column count varies with the target (always two
+       rows, as the real card is), and on fr units a five-stamp card drew stamps
+       twice the size of a ten-stamp one right beside it. Five 50px tracks and
+       four 9px gaps come to exactly the 286px inside a .xc. */
+    .xc .grid { display: grid; grid-template-columns: repeat(var(--cols, 5), 50px);
+                justify-content: start; gap: 9px; padding: 17px 15px 19px; }
     .xc .grid i { aspect-ratio: 1; border-radius: 50%; background: var(--line); }
     .xc .grid i.on { background: var(--band); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.16); }
     .xc footer { background: var(--band); color: var(--bandink); display: flex;
-                 justify-content: space-between; gap: 10px; padding: 10px 12px; }
-    .xc footer span { display: block; font-size: .58rem; font-weight: 700; letter-spacing: .09em;
+                 justify-content: space-between; gap: 10px; padding: 12px 15px; }
+    .xc footer span { display: block; font-size: .6rem; font-weight: 700; letter-spacing: .09em;
                       text-transform: uppercase; opacity: .74; }
-    .xc footer b { font-size: .82rem; font-weight: 700; }
+    .xc footer b { font-size: .9rem; font-weight: 700; }
     .xc footer .pg { text-align: right; }
-    .xc .grid { padding-bottom: 15px; }
 
-    /* ------------------------------------------------------------ carousel -- */
-    .car { background: var(--slab); color: var(--on-slab); border-radius: var(--r);
-           overflow: hidden; touch-action: pan-y; }
-    /* One track that slides, rather than slides that appear and disappear. The
-       flex items stay full width so the transform maps 1:1 to slide index. */
-    .cartrack { display: block; }
-    .slide { display: grid; }
-    .slide + .slide { border-top: 1px solid rgba(244,246,242,.14); }
-    @media (min-width: 900px) { .slide { grid-template-columns: 1fr 1fr; } }
-    @media (prefers-reduced-motion: reduce) { .cartrack { transition: none; } }
-    .slidetx { padding: clamp(30px, 4vw, 60px); display: flex; flex-direction: column;
-               justify-content: center; }
-    .slidetx h3 { font-size: clamp(1.7rem, 3.2vw, 2.5rem); }
-    .slidetx p { margin: 18px 0 0; color: #b7bfb0; font-size: 1rem; line-height: 1.6;
-                 max-width: 40ch; }
-    .slideart { position: relative; min-height: 300px; background: #1a1f19;
-                display: grid; place-items: center; padding: 30px; overflow: hidden; }
-    .slideart .shot { position: static; width: auto; height: auto; max-height: 340px;
-                      border-radius: 18px; box-shadow: 0 20px 50px -24px rgba(0,0,0,.6);
-                      filter: none; }
-    .slideart > img { position: absolute; inset: 0; width: 100%; height: 100%;
-                      object-fit: cover; filter: grayscale(.92) contrast(1.06) brightness(.62); }
-    .slideart > :not(img) { position: relative; z-index: 1; }
-
-    /* -------------------------------------------------- drawn lock screen -- */
-    .lock { width: 100%; max-width: 300px; }
-    .lock .clock { font-family: var(--display); font-weight: 800; color: #fff;
-                   text-align: center; font-size: 3.4rem; letter-spacing: -.04em; line-height: 1; }
-    .lock .date { text-align: center; color: rgba(255,255,255,.8); font-size: .82rem;
-                  font-weight: 600; margin-bottom: 14px; }
-    .notif { background: rgba(240,242,238,.94); backdrop-filter: blur(8px); border-radius: 16px;
-             padding: 12px 14px; display: flex; gap: 11px; align-items: flex-start;
-             color: var(--ink); text-align: left; }
-    .notif .ic { flex: none; width: 32px; height: 32px; border-radius: 8px; background: var(--ink);
-                 color: var(--neon); display: grid; place-items: center;
-                 font-family: var(--display); font-weight: 800; font-size: .82rem; }
-    .notif .hd { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .notif b { font-size: .84rem; font-weight: 700; }
-    .notif .tm { color: var(--ink-2); font-size: .72rem; font-weight: 600; }
-    .notif p { margin: 2px 0 0; font-size: .84rem; line-height: 1.35; color: #333832; }
-
-    /* ------------------------------------------------------- nudge composer -- */
-    .nudge { width: 100%; max-width: 320px; background: var(--paper); color: var(--ink);
-             border-radius: 18px; padding: 18px; box-shadow: 0 24px 60px -22px rgba(0,0,0,.7); }
-    .nudge h4 { font-size: 1rem; }
-    .nudge .grp { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-                  padding: 11px 0; border-bottom: 1px solid var(--hair); font-size: .86rem; }
-    .nudge .grp:last-of-type { border-bottom: none; }
-    .nudge .grp b { font-weight: 700; }
-    .nudge .grp .cnt { color: var(--ink-2); font-weight: 600; font-size: .8rem; }
-    .nudge .pbtn { width: 100%; margin-top: 12px; font-size: .88rem; padding: 11px 16px; }
-    .nudge .rule { margin: 10px 0 0; color: var(--ink-2); font-size: .72rem; line-height: 1.4; }
-
-    /* -------------------------------------------------------- owner phone -- */
-    .own { display: grid; gap: clamp(24px, 3vw, 40px); align-items: center; }
-    @media (min-width: 1000px) { .own { grid-template-columns: 1fr auto 1fr; } }
-    /* The four points ARE the controls: a caption you can press beats a caption
-       beside a row of pills that say the same thing twice. */
-    .owncap { display: block; width: 100%; text-align: left; cursor: pointer;
-              font-family: var(--body); background: transparent; color: inherit;
-              border: 2px solid transparent; border-left: 3px solid var(--hair);
-              border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 14px 18px;
-              transition: border-color .2s ease, background .2s ease; }
-    .owncap h4 { font-size: 1.1rem; margin-bottom: 6px; }
-    .owncap p { color: var(--ink-2); font-size: .93rem; line-height: 1.5; margin: 0; }
-    .owncap + .owncap { margin-top: 14px; }
-    .owncap:hover { background: var(--soft); border-left-color: var(--ink-2); }
-    .owncap[aria-pressed="true"] { background: var(--soft); border-left-color: var(--neon); }
-    .owncap[aria-pressed="true"] p { color: var(--ink); }
-    @media (prefers-reduced-motion: reduce) { .owncap { transition: none; } }
-    .phone { width: min(380px, 100%); margin: 0 auto; background: var(--ink);
-             border-radius: 42px; padding: 11px; box-shadow: 0 30px 70px -30px rgba(12,14,13,.5); }
-    .screen { background: var(--paper); border-radius: 32px; overflow: hidden; }
-    .sbar { display: flex; align-items: center; justify-content: space-between;
-            padding: 14px 20px 6px; font-size: .74rem; font-weight: 700; color: var(--ink); }
-    .scr { display: none; }
-    .scr img { width: 100%; height: auto; display: block; }
-    /* No fill-mode and no to-frame: the resting state is the element's own, so a
-       screen that never gets to animate is simply visible. With "both" it was
-       pinned at opacity 0, and the phone rendered empty. */
-    .scr[data-on] { display: block; animation: scrin .34s cubic-bezier(.32, .72, 0, 1); }
-    @keyframes scrin { from { opacity: 0; transform: translateX(14px); } }
-    @media (prefers-reduced-motion: reduce) { .scr[data-on] { animation: none; } }
-    .scr h5 { font-family: var(--display); font-weight: 800; font-size: 1.3rem;
-              letter-spacing: -.03em; margin-bottom: 3px; }
-    .scr .hint { color: var(--ink-2); font-size: .8rem; font-weight: 500; margin-bottom: 16px; }
-    .box { background: var(--soft); border-radius: 14px; padding: 13px 14px; margin-bottom: 10px; }
-    .box.line { background: transparent; border: 2px solid var(--hair); }
-    .box .t { font-size: .86rem; font-weight: 700; }
-    .box .s { color: var(--ink-2); font-size: .76rem; font-weight: 500; margin-top: 2px; }
-    .scan { aspect-ratio: 1.25; border-radius: 14px; background: var(--ink); position: relative;
-            display: grid; place-items: center; margin-bottom: 12px; }
-    .scan .frame { width: 54%; aspect-ratio: 1; border-radius: 10px;
-                   box-shadow: 0 0 0 3px var(--neon); }
-    .scan .cap { position: absolute; bottom: 12px; color: #cfd6c8; font-size: .74rem;
-                 font-weight: 600; }
-    .toast { background: var(--neon); color: var(--ink); border-radius: 12px; padding: 11px 13px;
-             font-size: .86rem; font-weight: 700; margin-bottom: 10px; }
-    .fld { margin-bottom: 10px; }
-    .fld label { display: block; color: var(--ink-2); font-size: .74rem; font-weight: 700;
-                 letter-spacing: .05em; text-transform: uppercase; margin-bottom: 5px; }
-    .fld .val { border: 2px solid var(--hair); border-radius: 12px; padding: 11px 13px;
-                font-size: .88rem; font-weight: 600; }
-    .tabbar { display: flex; border-top: 1px solid var(--hair); }
-    .tabbar span { flex: 1; text-align: center; padding: 11px 0 14px; color: var(--ink-2);
-                   font-size: .68rem; font-weight: 700; }
-    .tabbar span.on { color: var(--ink); }
+    /* ------------------------------------------------------------------ us -- */
+    .us { max-width: 720px; margin: 0 auto; }
+    .us h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: 18px; }
+    .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 14px; }
+    .us p:last-child { margin-bottom: 0; }
 
     /* --------------------------------------------------------------- price -- */
+    /* Reasons not to worry, set quietly so they reassure without competing with
+       the button they sit above. */
+    .fud { list-style: none; margin: 0 auto clamp(26px, 3.4vw, 38px); padding: 0; display: flex;
+           flex-wrap: wrap; justify-content: center; gap: 9px 20px; max-width: 660px; }
+    .fud li { display: flex; align-items: center; gap: 7px; color: var(--ink-2);
+              font-size: .9rem; font-weight: 500; }
+    .fud li::before { content: ""; width: 15px; height: 15px; flex: none; border-radius: 50%;
+                      background: var(--neon) center/9px 9px no-repeat;
+                      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
     .price { max-width: 460px; margin: 0 auto; border: 2px solid var(--ink);
              border-radius: var(--r); padding: clamp(28px, 4vw, 44px); text-align: center; }
     .price .amt { font-family: var(--display); font-weight: 800; font-size: clamp(3rem, 8vw, 4.4rem);
@@ -3616,12 +3518,6 @@ export function marketingPage(contactEmail = ""): string {
                         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
     .price .pbtn { width: 100%; }
     .price .fine { color: var(--ink-2); font-size: .82rem; margin-top: 14px; }
-
-    /* ------------------------------------------------------------------ us -- */
-    .us { max-width: 720px; margin: 0 auto; }
-    .us h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: 18px; }
-    .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 14px; }
-    .us p:last-child { margin-bottom: 0; }
 
     /* --------------------------------------------------------------- close -- */
     .close { position: relative; border-radius: var(--r); overflow: hidden; isolation: isolate;
@@ -3664,7 +3560,7 @@ export function marketingPage(contactEmail = ""): string {
   const cardHtml = ([biz, band, ink, slots, filled, reward]: [string, string, string, number, number, string]) => {
     let dots = "";
     for (let i = 0; i < slots; i++) dots += `<i class="${i < filled ? "on" : ""}"></i>`;
-    return `<article class="xc" style="--band: ${band}; --bandink: ${ink}">
+    return `<article class="xc" style="--band: ${band}; --bandink: ${ink}; --cols: ${Math.ceil(slots / 2)}">
               <header><b>${biz}</b><span>${filled} earned</span></header>
               <div class="grid">${dots}</div>
               <footer>
@@ -3677,49 +3573,67 @@ export function marketingPage(contactEmail = ""): string {
   const oneSet = EXAMPLES.map(cardHtml).join("");
   const marquee = oneSet + oneSet;
 
+  /**
+   * The four tiles. Each art file is optional: until it lands in assets/img the
+   * slot renders as a clean panel in the tile's own colour.
+   * tone, art file, heading, line
+   */
+  const TILES: [string, string, string, string][] = [
+    [
+      "lime",
+      "tile-wallet-v1.webp",
+      "In their real wallet",
+      "The card sits beside their bank cards, in Apple Wallet and Google Wallet. There is nothing to download.",
+    ],
+    [
+      "ink",
+      "tile-lockscreen-v1.webp",
+      "It updates on their lock screen",
+      "A stamp lands in seconds. They see it without opening anything at all.",
+    ],
+    [
+      "sky",
+      "tile-winback-v1.webp",
+      "Bring back the ones who drifted",
+      "See who has gone quiet, and reach them with one press. Never on a timer.",
+    ],
+    [
+      "pink",
+      "tile-privacy-v1.webp",
+      "Nothing collected. Not ever.",
+      "No name, no email, no phone number. Your customers hand over nothing to join.",
+    ],
+  ];
+  const tiles = TILES.map(
+    ([tone, art, head, line]) => `<article class="tile ${tone}">
+        <div class="art" style="background-image:url('/assets/img/${art}')" role="presentation"></div>
+        <h3>${head}</h3>
+        <p>${line}</p>
+      </article>`,
+  ).join("");
+
+  // Apple's own glyph, as the sign-up page already uses. Google has no
+  // character for this, so it gets a drawn card mark at the same weight.
+  // TODO(founder): swap this for Google's official "Add to Google Wallet"
+  // badge artwork, which their brand guidelines ask for.
+  const googleMark = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.6" y="5.4" width="18.8" height="13.6" rx="3.4" stroke="currentColor" stroke-width="2"/>
+      <path d="M2.6 10.4h18.8" stroke="currentColor" stroke-width="2"/>
+    </svg>`;
+
   const script = /* js */ `
     (function () {
-      var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-      // ---- looping clips ----------------------------------------------------
-      var clips = [].slice.call(document.querySelectorAll('[data-loop]'));
-      if (clips.length && !reduce) {
-        var start = function (v) {
-          if (v.dataset.started) return;
-          v.dataset.started = '1';
-          if (v.preload === 'none') v.load();
-          var p = v.play();
-          if (p && p.catch) p.catch(function () {});
-        };
-        if ('IntersectionObserver' in window) {
-          var io = new IntersectionObserver(function (entries) {
-            entries.forEach(function (e) {
-              if (!e.isIntersecting) return;
-              start(e.target);
-              io.unobserve(e.target);
-            });
-          }, { rootMargin: '200px' });
-          clips.forEach(function (v) { io.observe(v); });
-        } else {
-          clips.forEach(start);
-        }
-      }
-
-      // ---- owner phone screens ---------------------------------------------
-      // The captions are the controls, so the screen follows whichever point
-      // the visitor pressed.
-      var tabs = [].slice.call(document.querySelectorAll('[data-scr]'));
-      var screens = [].slice.call(document.querySelectorAll('[data-screen]'));
-      tabs.forEach(function (t) {
-        t.addEventListener('click', function () {
-          var want = t.getAttribute('data-scr');
-          tabs.forEach(function (o) { o.setAttribute('aria-pressed', String(o === t)); });
-          screens.forEach(function (s) {
-            if (s.getAttribute('data-screen') === want) s.setAttribute('data-on', '');
-            else s.removeAttribute('data-on');
-          });
-        });
-      });
+      // Lead with the wallet native to the phone, exactly as the sign-up page
+      // does: an iPhone visitor pressing "try a demo card" should land on the
+      // Apple sheet without first having to spot which button is theirs.
+      var ua = navigator.userAgent || "";
+      var prefer = /iPhone|iPad|iPod/.test(ua) ? "apple" : /Android/.test(ua) ? "google" : "";
+      var btns = Array.prototype.slice.call(document.querySelectorAll(".wallets [data-w]"));
+      if (!prefer || btns.length < 2) return;
+      // Order only. Neither half goes neon: the hero already has the page's one
+      // neon button, and these two offer the same thing on two platforms.
+      btns.sort(function (a, b) { return (b.dataset.w === prefer) - (a.dataset.w === prefer); });
+      btns.forEach(function (b) { b.parentNode.appendChild(b); });
     })();
   `;
 
@@ -3728,75 +3642,70 @@ export function marketingPage(contactEmail = ""): string {
       <a class="brand" href="/"><img src="/assets/img/punchme-logo-v1.png" alt="PunchMe" width="220" height="54"></a>
       <nav class="navlinks">
         <a href="#how">How it works</a>
-        <a href="#owner">For owners</a>
         <a href="#price">Price</a>
       </nav>
-      <a class="pbtn pbtn-neon" href="#contact">Get started</a>
+      <a class="pbtn pbtn-line" href="#contact">Message us</a>
     </div></header>
 
     <main>
-      <!-- 1 · HERO. The only section 100% of visitors see, so it carries the
-           whole argument on its own: outcome, what it is, the action, the
-           reasons not to worry, and proof you can check in ten seconds. -->
+      <!-- 1 - THE HOOK. The outcome first, never what the product is; what it
+           is goes in the line underneath. One action, then a card the visitor
+           can put in their own phone, because a demo they can check in ten
+           seconds is worth more than any claim we could make here. -->
       <section class="shell"><div class="hero">
-        <div>
-          <h1>Turn your customers into regulars</h1>
-          <p class="sub">Reward repeat visits and win back quiet customers, with a stamp
-            card that lives in Apple Wallet and Google Wallet.</p>
-          <p class="trylbl">Try a real card on your own phone</p>
-          <div class="herobtns">
-            <!-- TODO(founder): both point at the live demo pass once it is wired. -->
-            <a class="pbtn pbtn-neon" href="/dashboard">Apple Wallet</a>
-            <a class="pbtn pbtn-line" href="/dashboard">Google Wallet</a>
-          </div>
-          <!-- The fear-killers, immediately under the button. Every one of these
-               is true today; none of them is a number we cannot back. -->
-          <ul class="fud">
-            <li>First month free</li>
-            <li>No card details</li>
-            <li>No app for your customers</li>
-            <li>Cancel any time</li>
-          </ul>
+        <h1>Turn your customers into regulars</h1>
+        <p class="sub">A stamp card that lives in Apple Wallet and Google Wallet.
+          Nothing for anyone to download.</p>
+        <div class="cta"><a class="pbtn pbtn-neon" href="#contact">Message us</a></div>
+        <div class="shot">
+          <img src="/assets/img/wallet-mockup-v1.webp" width="1920" height="2548"
+               alt="A PunchMe stamp card in a phone wallet, three stamps of ten earned">
         </div>
-        <div class="heromedia">
-          <video src="/assets/vid/card-v1.mp4" poster="/assets/vid/card-v1.jpg"
-                 width="439" height="849" muted loop playsinline preload="metadata"
-                 data-loop aria-label="A loyalty card in a phone wallet filling up to its reward"></video>
+        <p class="try">Try a demo card</p>
+        <!-- Real destinations. These used to point at /dashboard, which is not a
+             demo and not a wallet; both now issue an actual pass. -->
+        <div class="wallets">
+          <a class="pbtn pbtn-line" data-w="apple" href="/enroll"><span class="wmark"
+            aria-hidden="true">&#63743;</span> Apple Wallet</a>
+          <a class="pbtn pbtn-line" data-w="google" href="/enroll/google">${googleMark} Google Wallet</a>
         </div>
       </div></section>
 
-      <!-- 2 · THE DIFFERENCE, in ten seconds. Three cards and nothing else:
-           what makes this readable is that there is nothing else in it. -->
-      <section class="band" id="how"><div class="shell">
+      <!-- 2 - WHAT THEY GET. Four tiles, one claim each. The wallet claim leads
+           because it is the one a rival web-app cannot truthfully copy: "no app
+           to download" is a line every one of them also runs. -->
+      <section class="band"><div class="shell">
         <div class="lede">
-          <h2>Not another app they'll never open</h2>
+          <h2>Not another app they will never open</h2>
         </div>
-        <div class="three">
-          <div class="up">
-            <span class="ico" aria-hidden="true">&#128179;</span>
-            <h3>In their real wallet</h3>
-            <p>The card sits next to their bank cards, in Apple Wallet and Google Wallet.</p>
-          </div>
-          <div class="up">
-            <span class="ico" aria-hidden="true">&#128276;</span>
-            <h3>Updates on the lock screen</h3>
-            <p>They see the new stamp without opening anything at all.</p>
-          </div>
-          <div class="up">
-            <span class="ico" aria-hidden="true">&#128274;</span>
-            <h3>Nothing collected</h3>
-            <p>No name, no email, no phone number. Not now, not ever.</p>
-          </div>
-        </div>
-        <div class="demo">
-          <video src="/assets/vid/signup-v1.mp4" poster="/assets/vid/signup-v1.jpg"
-                 width="439" height="849" muted loop playsinline preload="metadata"
-                 data-loop aria-label="Scanning the QR and the card saving into a phone wallet"></video>
-          <p class="cap">One scan, and it&rsquo;s in their wallet. No app, no sign-up.</p>
-        </div>
+        <div class="tiles">${tiles}</div>
       </div></section>
 
-      <!-- 3 · EXAMPLES, auto-scrolling -->
+      <!-- 3 - HOW IT WORKS -->
+      <section class="band tight" id="how"><div class="shell">
+        <div class="panel dark"><div class="cols">
+          <div>
+            <p class="who">How it works</p>
+            <h3>Four steps, and the fourth is them coming back</h3>
+          </div>
+          <ul class="flow">
+            <li><span class="n">1</span><span class="tx">We send you a QR poster. It goes on your
+              counter.</span></li>
+            <li class="arw" aria-hidden="true"></li>
+            <li><span class="n">2</span><span class="tx">A customer scans it once. The card saves
+              straight into their wallet.</span></li>
+            <li class="arw" aria-hidden="true"></li>
+            <li><span class="n">3</span><span class="tx">Your staff stamp it from any phone, behind
+              one PIN.</span></li>
+            <li class="arw" aria-hidden="true"></li>
+            <li><span class="n">4</span><span class="tx">They fill the card, claim the reward, and
+              start the next one.</span></li>
+          </ul>
+        </div></div>
+      </div></section>
+
+      <!-- 4 - EXAMPLES, auto-scrolling. The one place the page shows the product
+           bending to a trade that is not a cafe. -->
       <section class="band tight"><div class="shell">
         <div class="lede">
           <h2>Your stamps, your reward, your rules</h2>
@@ -3806,113 +3715,25 @@ export function marketingPage(contactEmail = ""): string {
       <div class="mq"><div class="mqtrack">${marquee}</div></div>
       </section>
 
-      <!-- 4 · FEATURE CAROUSEL -->
-      <section class="band"><div class="shell">
-        <div class="lede">
-        <div class="car"><div class="cartrack">
-          <div class="slide" data-slide>
-            <div class="slidetx">
-              <h3>You can see who is slipping away</h3>
-              <p>Paper tells you nothing until a regular has already gone. This tells you
-                the week they start coming less.</p>
-            </div>
-            <div class="slideart">
-              <img class="shot" src="/assets/img/screen-customers-v1.jpg"
-                   alt="The dashboard customer list" width="780" height="1688" loading="lazy">
-            </div>
-          </div>
-          <div class="slide" data-slide>
-            <div class="slidetx">
-              <h3>Change the rules without asking anyone to rescan</h3>          </div>
-          <div class="slide" data-slide>
-            <div class="slidetx">
-              <h3>Change the rules without asking anyone to rescan</h3>
-              <p>Raise the target or change the reward whenever you like. Everyone part
-                way through keeps the deal they were promised.</p>
-            </div>
-            <div class="slideart">
-              <img class="shot" src="/assets/img/screen-card-v1.jpg"
-                   alt="The card settings: stamps, reward and staff PIN" width="780" height="1688" loading="lazy">
-            </div>
-          </div>
-          <div class="slide" data-slide>
-            <div class="slidetx">
-              <h3>Bring back the ones who stopped coming</h3>          </div>
-          <div class="slide" data-slide>
-            <div class="slidetx">
-              <h3>Bring back the ones who stopped coming</h3>
-              <p>See who has gone quiet and reach them with one press. Never on a timer,
-                never more than once a week.</p>
-            </div>
-            <div class="slideart">
-              <img src="/assets/img/quiet-table-v1.jpg" alt="" width="1200" height="780" loading="lazy">
-              <div class="nudge">
-                <h4>Who has gone quiet</h4>
-                <div class="grp"><b>Slipping away</b><span class="cnt">14 people</span></div>
-                <div class="grp"><b>Nearly gone</b><span class="cnt">31 people</span></div>
-                <div class="grp"><b>Regulars</b><span class="cnt">88 people</span></div>
-                <button class="pbtn pbtn-neon" type="button">Send a nudge</button>
-                <p class="rule">One message per person per week, and never on a schedule.</p>
-              </div>
-            </div>
-          </div>
-        </div></div>
-      </div></section>
+      <!-- 5 - WHO WE ARE -->
+      <section class="band tight"><div class="shell"><div class="us">
+        <h2>Built by two people in KL who set up every shop themselves</h2>
+        <p>Two of us, in Kuala Lumpur. Four years in e-commerce data analytics between
+          one of us, five in fintech product for the other.</p>
+        <p>We set up every shop ourselves, so you will always be talking to the people
+          who built it.</p>
+      </div></div></section>
 
-      <!-- 5 · FOR THE OWNER -->
-      <section class="band" id="owner"><div class="shell">
-        <div class="lede">
-          <h2>You run the whole thing from your phone</h2>
-          <p>Tap a point to see the screen.</p>
-        </div>
-        <div class="own">
-          <div>
-            <button class="owncap" type="button" data-scr="stamp" aria-pressed="true">
-              <h4>Stamping</h4>
-              <p>Any phone on the counter, behind one PIN.</p>
-            </button>
-            <button class="owncap" type="button" data-scr="notify" aria-pressed="false">
-              <h4>Bringing people back</h4>
-              <p>See who has gone quiet, and reach them.</p>
-            </button>
-          </div>
-          <div class="phone">
-            <div class="screen">
-
-              <div class="scr" data-screen="stamp" data-on>
-                <img src="/assets/img/screen-stamping-v1.jpg" alt="The stamper, with a stamp just added" width="430" height="860" loading="lazy">
-              </div>
-
-              <div class="scr" data-screen="notify">
-                <img src="/assets/img/screen-notify-v1.jpg" alt="The dashboard composing a win-back message" width="430" height="860" loading="lazy">
-              </div>
-
-              <div class="scr" data-screen="customers">
-                <img src="/assets/img/screen-customers-v1.jpg" alt="The dashboard customer list" width="430" height="860" loading="lazy">
-              </div>
-
-              <div class="scr" data-screen="settings">
-                <img src="/assets/img/screen-card-v1.jpg" alt="The card settings: stamps, reward and staff PIN" width="430" height="860" loading="lazy">
-              </div>
-
-            </div>
-          </div>
-          <div>
-            <button class="owncap" type="button" data-scr="customers" aria-pressed="false">
-              <h4>Your customers</h4>
-              <p>Counted once each, and never asked for a name.</p>
-            </button>
-            <button class="owncap" type="button" data-scr="settings" aria-pressed="false">
-              <h4>Your card</h4>
-              <p>Stamps, reward and staff PIN, changed any time.</p>
-            </button>
-          </div>
-        </div>
-      </div></section>
-
-      <!-- 6 · PRICE -->
+      <!-- 6 - PRICE. The reasons not to worry sit here now, immediately above the
+           only button on the page that asks for a decision. -->
       <section class="band tight" id="price"><div class="shell">
         <div class="lede"><h2>Everything included, for RM79 a month</h2></div>
+        <ul class="fud">
+          <li>First month free</li>
+          <li>No card details</li>
+          <li>No app for your customers</li>
+          <li>Cancel any time</li>
+        </ul>
         <div class="price">
           <p class="amt">RM79</p>
           <p class="per">a month &middot; first month free</p>
@@ -3927,17 +3748,8 @@ export function marketingPage(contactEmail = ""): string {
         </div>
       </div></section>
 
-      <!-- 7 · WHO WE ARE -->
-      <section class="band tight"><div class="shell"><div class="us">
-        <h2>Built by two people in KL who set up every shop themselves</h2>
-        <p>Two of us, in Kuala Lumpur. Four years in e-commerce data analytics between
-          one of us, five in fintech product for the other.</p>
-        <p>We set up every shop ourselves, so you will always be talking to the people
-          who built it.</p>
-      </div></div></section>
-
-      <!-- 8 · CLOSE. Every button here goes somewhere real. All three used to be
-           href="#contact" — the section they already sit in — so the page's whole
+      <!-- CLOSE. Every button here goes somewhere real. All three used to be
+           href="#contact" - the section they already sit in - so the page's whole
            call to action did nothing when clicked. That is what cost us Google
            Wallet publishing access: a reviewer checking "can I reach this
            business" pressed Email and stayed exactly where they were. A button
@@ -3962,7 +3774,7 @@ export function marketingPage(contactEmail = ""): string {
       </div></section>
 
       <!-- Who this is and how to reach them, on the page a stranger lands on.
-           It used to say only "PunchMe · made in Kuala Lumpur" — a product and a
+           It used to say only "PunchMe - made in Kuala Lumpur" - a product and a
            city, with no way to verify the name on our Google business profile
            and nothing to write to. -->
       <div class="shell"><div class="foot">

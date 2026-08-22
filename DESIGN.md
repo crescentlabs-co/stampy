@@ -58,7 +58,8 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
 1. **Neon marks the next action and nothing else.** A primary button, an active
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
-   why `--on-accent` exists and why `--accent-dark` is dark.
+   why `--on-accent` exists and why `--accent-dark` is dark. The marketing
+   page's four tiles are the one exception and are fenced below.
 2. **Weight comes from the black panel, not from colour.** If something needs to
    dominate, put it on `--slab`.
 3. **Focus rings are ink on light and neon on dark.** A neon ring on a white
@@ -167,9 +168,44 @@ burned-in captions would argue with the page's headings in someone else's type.
 Budget is ~1.5MB for the set; below the fold they use `preload="none"` and start
 on an IntersectionObserver.
 
+## The marketing tiles
+
+Section two of the marketing page is four large tiles, each a solid colour
+carrying one claim. They are the **one** licensed exception to rule 1, and they
+are fenced so they cannot become a second palette:
+
+| Token | Value | Text on it |
+|---|---|---|
+| `--tile-lime` | `#c9f73d` | `--ink` |
+| `--tile-ink` | `#101312` | `--on-slab` |
+| `--tile-sky` | `#57c7ff` | `--ink` |
+| `--tile-pink` | `#ff9ecd` | `--ink` |
+
+The fence, in full:
+
+- **These four, and never a fifth.** A fifth is a second palette, which is the
+  thing this file exists to prevent.
+- **They appear on `/` and on no other surface.** Not the dashboard, not the
+  sign-up page, not the counter. They are declared in `marketingPage()`'s own
+  `:root`, not in `baseCss`, so nothing else can reach them.
+- **A tile contains no button and no link.** That is what keeps rule 1 true:
+  with no control on a tile, nothing competes with the accent for the meaning
+  "press this", and the lime tile cannot swallow a lime button.
+- **Text on a tile is dark**, exactly as `--on-accent` is dark. The ink tile is
+  the only one with light text, and it is the only one dark enough for it.
+
+The tile art is a CSS `background-image` over the tile's own colour, never an
+`<img>`: a slot whose file has not arrived yet must render as a clean coloured
+panel, not a broken-image icon.
+
 ## Where the aesthetic came from
 
 The marketing page (`marketingPage()`, src/pages.ts) is the reference
-implementation and the most finished expression of it: the drawn wallet card,
-the two-up panels, the sliding feature panel, the phone with switchable screens.
-Read it before designing a new surface.
+implementation and the most finished expression of it: the four colour tiles,
+the numbered flow on a black panel, and the marquee of example cards in six
+trades' colours. Read it before designing a new surface.
+
+It was eight sections and is now six. What was removed is as instructive as what
+stayed: a feature carousel whose markup was duplicated and never closed, and a
+"run it from your phone" block that showed one screenshot under two different
+labels. Both were built to fill space. Neither survived a reader.
