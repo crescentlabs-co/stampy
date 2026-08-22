@@ -41,6 +41,13 @@ export const config = {
   /** Public contact email shown on the Privacy/Terms pages (PDPA requests).
    *  Set CONTACT_EMAIL in Railway; when unset the pages say to use your dashboard account. */
   contactEmail: process.env.CONTACT_EMAIL ?? "",
+  /**
+   * The WhatsApp number the marketing page's "Message us" buttons open, digits
+   * only and including the country code (a Malaysian number looks like
+   * 60123456789). Empty until it is set in Railway's Variables UI, and the page
+   * falls back to email, then to Instagram - it never renders a dead button.
+   */
+  whatsappNumber: (process.env.WHATSAPP_NUMBER ?? "").replace(/[^0-9]/g, ""),
 
   /** Apple Developer Team ID (10 chars, from developer.apple.com membership page). */
   teamId: (process.env.APPLE_TEAM_ID ?? "").trim(),

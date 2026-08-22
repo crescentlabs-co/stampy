@@ -3305,7 +3305,7 @@ export function claimPage(
  * Life comes from the four colour tiles in section two, not from ornament, and
  * they are the only place on any surface those colours appear (DESIGN.md).
  */
-export function marketingPage(contactEmail = ""): string {
+export function marketingPage(contactEmail = "", whatsappNumber = ""): string {
   const css = /* css */ `
     :root {
       --paper: var(--bg); --soft: var(--surface);
@@ -3408,6 +3408,10 @@ export function marketingPage(contactEmail = ""): string {
     .lede h2 { font-size: clamp(2rem, 5vw, 3.2rem); max-width: 20ch; margin: 0 auto; }
     .lede p { margin: 16px auto 0; max-width: 46ch; color: var(--ink-2); font-size: 1.02rem;
               line-height: 1.55; }
+    /* Emphasis inside a shouted heading, sized in em so it tracks the clamp
+       rather than needing a breakpoint of its own. */
+    .lede.shout h2 mark { background: var(--neon); color: var(--on-accent);
+                          padding: 0 .08em; margin-right: -.03em; border-radius: .06em; }
     /* The two mid-page section headings set like the hero. It stops there: a
        page where every heading shouts has no emphasis left to spend, which is
        the whole reason the hero lands. Price, Who are we and the marquee keep
@@ -3592,12 +3596,14 @@ export function marketingPage(contactEmail = ""): string {
                         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
     .price .pbtn { width: 100%; }
     /* Emphasis on neon, which is what --on-accent exists for: dark text on the
-       accent, never the other way round. One word, not a surface. */
-    /* The padding and the word space after it stacked into a gap wide enough to
-       read as a missing word. The negative margin takes the padding back out of
-       the flow, so the space between the two words is just a space. */
+       accent, never the other way round. One word, not a surface.
+       The gap after it was 7px against a 3.7px word space on the same line, and
+       the cause was structural, not padding: .price li is a flex row, so a bare
+       <mark> became its own flex ITEM and the row's 11px gap landed between it
+       and the words after it. The text is wrapped in a span now, which puts the
+       mark back in normal inline flow - so what follows it is a space. */
     .price mark { background: var(--neon); color: var(--on-accent); font-weight: 700;
-                  padding: 1px 5px; margin-right: -4px; border-radius: 5px; }
+                  padding: 1px 5px; border-radius: 5px; }
 
     /* ---------------------------------------------------------------- foot -- */
     .foot { border-top: 1px solid var(--hair); padding: 26px 0 44px; display: flex;
@@ -3743,9 +3749,24 @@ export function marketingPage(contactEmail = ""): string {
     (t) => `<span class="tkitem">${tick}${t}</span>`,
   ).join("").repeat(3);
 
-  const contactCta = contactEmail
-    ? `href="mailto:${esc(contactEmail)}"`
-    : `href="https://instagram.com/punchme.my" target="_blank" rel="noopener"`;
+  /**
+   * Where every "Message us" on the page goes - the nav pill and the price
+   * button, deliberately the same destination.
+   *
+   * WhatsApp first, with the opening line already written, because a button that
+   * drops someone into a chat with the message typed is the shortest path there
+   * is. Then the mailbox, then Instagram.
+   *
+   * It never falls through to nothing. This button once pointed at #contact -
+   * the section it sat in - and a reviewer pressing it and staying exactly where
+   * they were is what cost us Google Wallet publishing access.
+   */
+  const waText = encodeURIComponent("Hi! I'd like to try PunchMe for my shop.");
+  const contactCta = whatsappNumber
+    ? `href="https://wa.me/${whatsappNumber}?text=${waText}" target="_blank" rel="noopener"`
+    : contactEmail
+      ? `href="mailto:${esc(contactEmail)}"`
+      : `href="https://instagram.com/punchme.my" target="_blank" rel="noopener"`;
 
   const body = `
     <header class="nav"><div class="navin">
@@ -3821,19 +3842,19 @@ export function marketingPage(contactEmail = ""): string {
       <!-- 4 - PRICE. The reasons not to worry sit here, immediately above the
            only button on the page that asks for a decision. -->
       <section class="band tight" id="price"><div class="shell">
-        <div class="lede shout"><h2>First month free</h2></div>
+        <div class="lede shout"><h2>First month <mark>free</mark></h2></div>
         <div class="price">
           <p class="amt">RM79<span class="per">/month</span></p>
           <ul>
-            <li><mark>Unlimited</mark> loyalty members</li>
-            <li>Customizable stamp card design</li>
-            <li>Customizable reward rules</li>
-            <li>Push notifications</li>
-            <li>Basic analytics</li>
-            <li>Direct support</li>
-            <li>Done-for-you setup</li>
+            <li><span><mark>Unlimited</mark> loyalty members</span></li>
+            <li><span>Customizable stamp card design</span></li>
+            <li><span>Customizable reward rules</span></li>
+            <li><span>Push notifications</span></li>
+            <li><span>Basic analytics</span></li>
+            <li><span>Direct support</span></li>
+            <li><span>Done-for-you setup</span></li>
           </ul>
-          <a class="pbtn pbtn-neon" href="/dashboard">Start free</a>
+          <a class="pbtn pbtn-neon" ${contactCta}>Message us</a>
         </div>
       </div></section>
 
@@ -3847,7 +3868,7 @@ export function marketingPage(contactEmail = ""): string {
       <section class="band tight"><div class="shell">
         <div class="lede shout"><h2>Who we are</h2></div>
         <div class="us">
-          <div class="art" style="background-image:url('/assets/img/us-v1.webp')"
+          <div class="art" style="background-image:url('/assets/img/us-v2.webp')"
                role="presentation"></div>
           <div>
             <p class="lead">Two people. Too many ideas.</p>
@@ -3878,7 +3899,6 @@ export function marketingPage(contactEmail = ""): string {
           <a href="/support">Support</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
-          <a href="/dashboard">Log in</a>
         </nav>
       </div></div>
     </main>

@@ -432,7 +432,9 @@ const merchantQr = (merchantId: string, res: import("express").Response) =>
   // simply count as unattributed.
   qrFor(`/j/${merchantId}?s=poster`, res);
 
-publicRouter.get("/", (_req, res) => res.type("html").send(marketingPage(config.contactEmail)));
+publicRouter.get("/", (_req, res) =>
+  res.type("html").send(marketingPage(config.contactEmail, config.whatsappNumber)),
+);
 // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia. One route, one
 // query param, a plain <a> to switch — no JS, so the page stays script-free.
 publicRouter.get("/privacy", (req, res) =>
