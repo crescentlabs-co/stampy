@@ -96,7 +96,7 @@ async function main() {
   // are still CSS background-images over the block's own colour, so a missing
   // one degrades to a clean coloured panel rather than a broken-image icon -
   // but a slot that HAS art and 404s is a hole, and that is what this catches.
-  for (const asset of ["/assets/img/hero-phones-v3.webp",
+  for (const asset of ["/assets/img/hero-phones-v4.webp",
                        "/assets/img/us-v2.webp",
                        "/assets/img/tile-wallet-v1.webp",
                        "/assets/img/tile-notify-v2.webp",

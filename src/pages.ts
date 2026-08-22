@@ -3475,7 +3475,11 @@ export function marketingPage(
        mistaken for stock. No radius and no clipping: the art sits ON the page
        rather than inside a panel, which is what made it read as a thumbnail in a
        beige tile. Wide, because the phones are the proof. */
-    .shot { margin: clamp(18px, 2.4vw, 34px) auto 0; width: min(1020px, 100%); }
+    /* 940, not 1020, and the number is not arbitrary: the file is 1885px wide,
+       so 940 CSS px is exactly 1:1 on a 2x screen. At 1020 the browser was
+       stretching it 8% and the QR codes and the code line under them went soft -
+       they are the finest detail in the shot and the first thing to smear. */
+    .shot { margin: clamp(18px, 2.4vw, 34px) auto 0; width: min(940px, 100%); }
     /* No mask and no blend mode: the ground in this file IS the page's white,
        keyed to it when the art was brought in (scripts note in the commit), so
        the phones already sit on the page. Doing it in the pixels rather than in
@@ -3805,7 +3809,7 @@ export function marketingPage(
           <span class="vh">${FLIP_WORDS[0]}</span></h1>
         <p class="sub">The stamp card that lives in your customer&rsquo;s wallet.</p>
         <div class="shot">
-          <img src="/assets/img/hero-phones-v3.webp" width="1889" height="1465"
+          <img src="/assets/img/hero-phones-v4.webp" width="1885" height="1485"
                alt="Three phones showing stamp cards in Apple Wallet: a milk tea shop, PunchMe and a kopitiam">
         </div>
         <p class="try">Try a demo card</p>
