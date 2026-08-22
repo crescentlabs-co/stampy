@@ -3643,7 +3643,7 @@ export function marketingPage(contactEmail = ""): string {
       "pink",
       "tile-numbers-v1.webp",
       "Know your numbers",
-      "How many customers, how many stamps, and who is drifting away.",
+      "How many customers, how many stamps, and who is drifting away. All of it from your phone \u2014 there is nothing to install.",
     ],
   ];
   const tiles = TILES.map(
