@@ -3560,8 +3560,10 @@ export function marketingPage(
     .us .lead { font-family: var(--display); font-weight: 800; letter-spacing: -.03em;
                 line-height: 1.08; color: var(--ink);
                 font-size: clamp(1.7rem, 3.4vw, 2.5rem); margin-bottom: 22px; }
-    /* The closing line gets air above it, as a paragraph break would give it. */
-    .us .close-line { margin-top: 28px; }
+    /* The closing line gets air above it, as a paragraph break would give it,
+       and carries the section out in ink rather than the muted body colour -
+       bold at --ink-2 reads as a heavier grey, not as emphasis. */
+    .us .close-line { margin-top: 28px; font-weight: 700; color: var(--ink); }
 
     /* ---------------------------------------------------------- ticker -- */
     /* The four reasons not to worry, as a green band pinned to the bottom of
@@ -3903,7 +3905,7 @@ export function marketingPage(
               faster than ever.</p>
             <p>And we&rsquo;re here to make the most of it &mdash; to keep building,
               experimenting and pushing what we think is possible.</p>
-            <p class="close-line">We&rsquo;re excited to find out where it takes us.</p>
+            <p class="close-line">We&rsquo;re very excited to find out where this takes us.</p>
           </div>
         </div>
       </div></section>
