@@ -59,8 +59,9 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
    why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
-   **two** fenced exceptions: the marketing page's four tiles (below), and the
-   dashboard's `.greet` header.
+   **three** fenced exceptions, each described below: the marketing page's three
+   tile colours, the neon reassurance band pinned to the bottom of that page,
+   and the dashboard's `.greet` header.
 
    `.greet` is neon on purpose, decided by the founder. It is not decoration:
    it is the shop's identity plus the whole of the app's navigation in one
@@ -199,6 +200,10 @@ The fence, in full:
 - **They appear on `/` and on no other surface.** Not the dashboard, not the
   sign-up page, not the counter. They are declared in `marketingPage()`'s own
   `:root`, not in `baseCss`, so nothing else can reach them.
+- **Two places on that page, in the same order both times:** the three feature
+  blocks in section two, and the three step icon chips in How it works directly
+  under them. The order matching is the point — it is what makes the two
+  sections read as one system rather than two colour schemes.
 - **A tile contains no button and no link.** That is what keeps rule 1 true:
   with no control on a tile, nothing competes with the accent for the meaning
   "press this", and the lime tile cannot swallow a lime button.
@@ -226,6 +231,31 @@ and a global levels lift that whitens the ground shifts every other colour with
 it, which on a mockup of our own card means shipping the wrong green. Key the
 ground colour to white per pixel, leave everything beyond a tolerance alone, and
 the art needs no CSS at all to sit on the page.
+
+## The reassurance band
+
+The marketing page carries a **fixed neon band** across the bottom of the
+viewport holding the four reasons not to worry. It is the largest departure from
+rule 1 in this file — a big neon background is precisely what that rule forbids —
+and it is a deliberate founder call, recorded here rather than left to be
+discovered in the CSS.
+
+What keeps the rule's *intent* alive is that **the band carries no control**.
+Nothing on it is pressable, so nothing on it competes with the nav pill for the
+meaning "press this". **Never put a link or a button in the band.** Its height is
+fixed and `body` reserves exactly that height, so it can never sit over the
+footer.
+
+Know what it costs: with a permanent neon strip on screen, every other neon fill
+has less force. If a screen ends up showing the band, the nav pill and a third
+neon button at once, the third one should go ink.
+
+**The marketing page has no `--slab` surface at all any more.** The black
+how-it-works panel was the last one, and rule 2 — weight comes from the black
+panel — now describes the app rather than `/`. That page takes its weight from
+display type at hero scale and from full-bleed colour instead. This is a fact
+about that one page, not permission to drop `--slab` from a dashboard surface
+that needs to dominate.
 
 **The nav's "Message us" pill is the one control anywhere with motion in it** —
 a conic gradient turning through `--accent` and `--accent-2`, and no third hue,

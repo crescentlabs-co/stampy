@@ -3318,7 +3318,7 @@ export function marketingPage(contactEmail = ""): string {
     }
     html { scroll-behavior: smooth; }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-    body { display: block; padding: 0; align-items: stretch;
+    body { display: block; padding: 0 0 46px; align-items: stretch;
            background: var(--paper); color: var(--ink); font-family: var(--body); }
     ::selection { background: var(--neon); color: var(--ink); }
     img { max-width: 100%; display: block; }
@@ -3328,12 +3328,11 @@ export function marketingPage(contactEmail = ""): string {
     h1, h2, h3, h4, .dsp { font-family: var(--display); font-weight: 800;
                            letter-spacing: -.03em; line-height: 1.02; text-wrap: balance; }
     a { color: inherit; }
-    /* Ink on the white page, neon on the black panels. A neon ring alone was
-       invisible against the neon buttons it most needed to mark. */
+    /* Ink, everywhere. A neon ring is invisible against the neon buttons it most
+       needs to mark, and this page no longer has a dark surface to need the
+       other direction - the black how-it-works panel was the last one. */
     :where(a, button):focus-visible { outline: 3px solid var(--ink);
                                       outline-offset: 3px; border-radius: 6px; }
-    :where(.panel.dark) :where(a, button):focus-visible {
-      outline-color: var(--neon); }
 
     /* ---------------------------------------------------------------- nav -- */
     /* A pill that floats OVER the page, not a bar bolted across the top of it.
@@ -3399,8 +3398,10 @@ export function marketingPage(contactEmail = ""): string {
     .lede h2 { font-size: clamp(2rem, 5vw, 3.2rem); max-width: 20ch; margin: 0 auto; }
     .lede p { margin: 16px auto 0; max-width: 46ch; color: var(--ink-2); font-size: 1.02rem;
               line-height: 1.55; }
-    /* The one section heading set like the hero. If every heading shouts there
-       is no emphasis left to spend, so this class stays on section two. */
+    /* The two mid-page section headings set like the hero. It stops there: a
+       page where every heading shouts has no emphasis left to spend, which is
+       the whole reason the hero lands. Price, Who are we and the marquee keep
+       the ordinary .lede h2. */
     .lede.shout h2 { text-transform: uppercase; letter-spacing: -.035em;
                      font-size: clamp(2.2rem, 6.6vw, 4.8rem); max-width: 15ch; }
 
@@ -3458,30 +3459,26 @@ export function marketingPage(contactEmail = ""): string {
     .art.pink { background-color: var(--tile-pink); }
 
     /* ------------------------------------------------------- how it works -- */
-    .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 52px); }
-    .panel.dark { background: var(--slab); color: var(--on-slab); }
-    .panel .who { font-size: .78rem; font-weight: 700; letter-spacing: .1em;
-                  text-transform: uppercase; color: var(--ink-2); }
-    .panel.dark .who { color: #97a08f; }
-    .panel h3 { font-size: clamp(1.6rem, 3vw, 2.4rem); margin: 10px 0 0; max-width: 18ch; }
-    .cols { display: grid; gap: clamp(26px, 4vw, 60px); }
-    @media (min-width: 900px) { .cols { grid-template-columns: 1fr 1.1fr; align-items: start; } }
-    /* The journey reads downwards, with the arrow doing the joining. No images
-       here on purpose: the steps are the content. */
-    .flow { list-style: none; margin: 0; padding: 0; max-width: 640px; }
-    .flow li { display: flex; gap: 14px; align-items: flex-start; }
-    .flow .n { flex: none; width: 30px; height: 30px; border-radius: 50%;
-               background: var(--neon); color: var(--ink); display: grid; place-items: center;
-               font-family: var(--display); font-weight: 800; font-size: .85rem; }
-    .flow .tx { padding-top: 4px; font-size: 1.04rem; line-height: 1.45; font-weight: 500; }
-    .panel.dark .flow .tx { color: #dfe4d9; }
-    .flow .arw { display: block; height: 26px; margin: 4px 0 4px 14px; width: 2px;
-                 background: var(--hair); position: relative; }
-    .panel.dark .flow .arw { background: #454c42; }
-    .flow .arw::after { content: ""; position: absolute; left: 50%; bottom: -1px;
-                        width: 7px; height: 7px; transform: translateX(-50%) rotate(45deg);
-                        border-right: 2px solid var(--hair); border-bottom: 2px solid var(--hair); }
-    .panel.dark .flow .arw::after { border-color: #454c42; }
+    /* Three steps in three boxes, matching section two's three blocks above
+       them. This was a black panel with a numbered flow down it; the panel was
+       the page's only --slab surface, so losing it means the weight now comes
+       from the shouted heading and the colour chips rather than from a dark
+       block. That is a deliberate trade, not an oversight: see DESIGN.md. */
+    .steps { display: grid; gap: 14px; }
+    @media (min-width: 900px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+    .step { background: var(--soft); border: 1px solid var(--hair); border-radius: var(--r);
+            padding: clamp(28px, 3.2vw, 44px) clamp(22px, 2.6vw, 34px); text-align: center; }
+    /* The chips run lime, sky, pink in the same order as the blocks above, so
+       the two sections read as one system rather than two colour schemes. */
+    .chip { display: inline-grid; place-items: center; width: 60px; height: 60px;
+            border-radius: 18px; margin-bottom: clamp(14px, 1.8vw, 20px); color: var(--ink); }
+    .chip svg { display: block; }
+    .chip.lime { background: var(--tile-lime); }
+    .chip.sky  { background: var(--tile-sky); }
+    .chip.pink { background: var(--tile-pink); }
+    .step h3 { font-size: clamp(1.18rem, 1.9vw, 1.46rem); margin-bottom: 8px; }
+    .step p { margin: 0 auto; max-width: 30ch; color: var(--ink-2);
+              font-size: .98rem; line-height: 1.5; }
 
     /* ------------------------------------------------------------- marquee -- */
     .mq { overflow: hidden; padding: 6px 0 10px; mask-image: linear-gradient(90deg,
@@ -3528,16 +3525,37 @@ export function marketingPage(contactEmail = ""): string {
     .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 14px; }
     .us p:last-child { margin-bottom: 0; }
 
+    /* ---------------------------------------------------------- ticker -- */
+    /* The four reasons not to worry, as a green band pinned to the bottom of
+       the viewport. They were a quiet row above the price button.
+       This is the biggest departure from rule 1 in the file - a large neon
+       background is exactly what that rule forbids - and it is the founder's
+       explicit call. It carries NO control, which is the one thing that keeps
+       the rule's intent alive: nothing on the band competes with the nav pill
+       for the meaning "press this". Do not put a link in here.
+       Height is fixed at 46px and body reserves it, so the band can never sit
+       over the footer. */
+    .ticker { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; height: 46px;
+              background: var(--neon); color: var(--ink); overflow: hidden;
+              display: flex; align-items: center;
+              border-top: 1px solid rgba(12,14,13,.16); }
+    .tktrack { display: flex; width: max-content; animation: slide 34s linear infinite; }
+    .ticker:hover .tktrack, .ticker:focus-within .tktrack { animation-play-state: paused; }
+    .tkitem { display: flex; align-items: center; gap: 9px; padding: 0 26px;
+              font-size: .88rem; font-weight: 700; white-space: nowrap; }
+    .tkitem svg { flex: none; display: block; }
+    /* The one accessible copy of the band's claims. Not display:none, which
+       would take it out of the accessibility tree along with everything else. */
+    .vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+          overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    /* Same treatment the example-card marquee gets: with motion off it becomes
+       an ordinary scroller, not a frozen strip the reader cannot get past. */
+    @media (prefers-reduced-motion: reduce) {
+      .ticker { overflow-x: auto; }
+      .tktrack { animation: none; }
+    }
+
     /* --------------------------------------------------------------- price -- */
-    /* Reasons not to worry, set quietly so they reassure without competing with
-       the button they sit above. */
-    .fud { list-style: none; margin: 0 auto clamp(26px, 3.4vw, 38px); padding: 0; display: flex;
-           flex-wrap: wrap; justify-content: center; gap: 9px 20px; max-width: 660px; }
-    .fud li { display: flex; align-items: center; gap: 7px; color: var(--ink-2);
-              font-size: .9rem; font-weight: 500; }
-    .fud li::before { content: ""; width: 15px; height: 15px; flex: none; border-radius: 50%;
-                      background: var(--neon) center/9px 9px no-repeat;
-                      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
     .price { max-width: 460px; margin: 0 auto; border: 2px solid var(--ink);
              border-radius: var(--r); padding: clamp(28px, 4vw, 44px); text-align: center; }
     .price .amt { font-family: var(--display); font-weight: 800; font-size: clamp(3rem, 8vw, 4.4rem);
@@ -3636,6 +3654,25 @@ export function marketingPage(contactEmail = ""): string {
       </article>`,
   ).join("");
 
+  /**
+   * The three step icons, drawn here rather than pulled in: there is no icon
+   * library and no build step to add one (CLAUDE.md 12). Line weight and the
+   * 26px box are shared so the three sit at the same visual size, and they take
+   * currentColor so the chip decides the ink.
+   */
+  const ICON_FRAME = `<path d="M3 8V5.4A2.4 2.4 0 0 1 5.4 3H8M18 3h2.6A2.4 2.4 0 0 1 23 5.4V8M23 18v2.6a2.4 2.4 0 0 1-2.4 2.4H18M8 23H5.4A2.4 2.4 0 0 1 3 20.6V18"
+      fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`;
+  const ICON_ADD = `<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+      ${ICON_FRAME}<path d="M13 9.4v7.2M9.4 13h7.2" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round"/></svg>`;
+  const ICON_STAMP = `<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+      ${ICON_FRAME}<path d="M3.4 13h19.2" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round"/></svg>`;
+  const ICON_REWARD = `<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+      <circle cx="13" cy="13" r="9.6" fill="none" stroke="currentColor" stroke-width="2.2"/>
+      <path d="M8.8 13.3l2.9 2.9 5.5-6.2" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
   // Apple's own glyph, as the sign-up page already uses. Google has no
   // character for this, so it gets a drawn card mark at the same weight.
   // TODO(founder): swap this for Google's official "Add to Google Wallet"
@@ -3670,6 +3707,29 @@ export function marketingPage(contactEmail = ""): string {
    * access the first time, so it gets a real destination or none at all:
    * the mailbox when one is configured, Instagram when it is not.
    */
+  /**
+   * The reassurance band. Four claims, every one of them true today and none of
+   * them a number we cannot back (PRODUCT.md): the free first month and the
+   * price are founder-confirmed, and no app / no card details are facts about
+   * how the product works.
+   *
+   * The set is repeated three times and then doubled, so the track can loop at
+   * exactly -50% with no seam AND still fill an ultrawide viewport - one set
+   * doubled leaves a gap past about 1700px.
+   */
+  const REASSURANCE = [
+    "First month free",
+    "No card details",
+    "No app for your customers",
+    "Cancel any time",
+  ];
+  const tick = `<svg width="15" height="15" viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M1.6 6.5l2.9 2.9 5.9-6.8" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const tickerSet = REASSURANCE.map(
+    (t) => `<span class="tkitem">${tick}${t}</span>`,
+  ).join("").repeat(3);
+
   const contactCta = contactEmail
     ? `href="mailto:${esc(contactEmail)}"`
     : `href="https://instagram.com/punchme.my" target="_blank" rel="noopener"`;
@@ -3717,27 +3777,29 @@ export function marketingPage(contactEmail = ""): string {
         <div class="tiles">${tiles}</div>
       </div></section>
 
-      <!-- 3 - HOW IT WORKS -->
-      <section class="band tight" id="how"><div class="shell">
-        <div class="panel dark"><div class="cols">
-          <div>
-            <p class="who">How it works</p>
-            <h3>Four steps, and the fourth is them coming back</h3>
-          </div>
-          <ul class="flow">
-            <li><span class="n">1</span><span class="tx">We send you a QR poster. It goes on your
-              counter.</span></li>
-            <li class="arw" aria-hidden="true"></li>
-            <li><span class="n">2</span><span class="tx">A customer scans it once. The card saves
-              straight into their wallet.</span></li>
-            <li class="arw" aria-hidden="true"></li>
-            <li><span class="n">3</span><span class="tx">Your staff stamp it from any phone, behind
-              one PIN.</span></li>
-            <li class="arw" aria-hidden="true"></li>
-            <li><span class="n">4</span><span class="tx">They fill the card, claim the reward, and
-              start the next one.</span></li>
-          </ul>
-        </div></div>
+      <!-- 3 - HOW IT WORKS. Three steps, not four: "we send you a poster" is
+           our job, not a step the owner performs, and it was padding the list
+           out to a number rather than to the work. -->
+      <section class="band" id="how"><div class="shell">
+        <div class="lede shout"><h2>How PunchMe works</h2></div>
+        <div class="steps">
+          <article class="step">
+            <span class="chip lime">${ICON_ADD}</span>
+            <h3>Scan to add</h3>
+            <p>Customers scan a QR to add their card to Apple or Google Wallet.
+              No app to download.</p>
+          </article>
+          <article class="step">
+            <span class="chip sky">${ICON_STAMP}</span>
+            <h3>Scan to stamp</h3>
+            <p>When they return, staff scan the QR in the customer&rsquo;s wallet.</p>
+          </article>
+          <article class="step">
+            <span class="chip pink">${ICON_REWARD}</span>
+            <h3>Rewards, tracked</h3>
+            <p>Progress updates automatically. They view it and redeem anytime.</p>
+          </article>
+        </div>
       </div></section>
 
       <!-- 4 - WHO ARE WE. Boxed, because on a page of full-bleed colour a plain
@@ -3758,12 +3820,6 @@ export function marketingPage(contactEmail = ""): string {
            only button on the page that asks for a decision. -->
       <section class="band tight" id="price"><div class="shell">
         <div class="lede"><h2>Everything included, for RM79 a month</h2></div>
-        <ul class="fud">
-          <li>First month free</li>
-          <li>No card details</li>
-          <li>No app for your customers</li>
-          <li>Cancel any time</li>
-        </ul>
         <div class="price">
           <p class="amt">RM79</p>
           <p class="per">a month &middot; first month free</p>
@@ -3811,7 +3867,16 @@ export function marketingPage(contactEmail = ""): string {
           <a href="/dashboard">Log in</a>
         </nav>
       </div></div>
-    </main>`;
+    </main>
+    <!-- Pinned to the viewport, so the reasons not to worry are on screen at the
+         moment the reader decides, wherever on the page that happens.
+         The band itself is aria-hidden: the set is repeated six times to fill an
+         ultrawide track, and a screen reader announcing "First month free" six
+         times is noise, not reassurance. These claims used to sit in the price
+         section, which is where they were read from - so one plain copy follows
+         it, off screen, and that is the one assistive tech gets. -->
+    <div class="ticker" aria-hidden="true"><div class="tktrack">${tickerSet}${tickerSet}</div></div>
+    <ul class="vh">${REASSURANCE.map((t) => `<li>${t}</li>`).join("")}</ul>`;
   // No footer: this page IS the brand, and it signs off in its own footer.
   return page("PunchMe: the stamp card that lives in your customer's phone", body, css, script, false);
 }
