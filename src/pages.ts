@@ -3305,7 +3305,11 @@ export function claimPage(
  * Life comes from the four colour tiles in section two, not from ornament, and
  * they are the only place on any surface those colours appear (DESIGN.md).
  */
-export function marketingPage(contactEmail = "", whatsappNumber = ""): string {
+export function marketingPage(
+  contactEmail = "",
+  whatsappNumber = "",
+  demoCardId = DEFAULT_CARD_ID,
+): string {
   const css = /* css */ `
     :root {
       --paper: var(--bg); --soft: var(--surface);
@@ -3790,16 +3794,23 @@ export function marketingPage(contactEmail = "", whatsappNumber = ""): string {
           <span class="vh">${FLIP_WORDS[0]}</span></h1>
         <p class="sub">The stamp card that lives in your customer&rsquo;s wallet.</p>
         <div class="shot">
-          <img src="/assets/img/hero-phones-v2.webp" width="1957" height="1474"
+          <img src="/assets/img/hero-phones-v3.webp" width="1889" height="1465"
                alt="Three phones showing stamp cards in Apple Wallet: a milk tea shop, PunchMe and a kopitiam">
         </div>
         <p class="try">Try a demo card</p>
         <!-- Real destinations. These used to point at /dashboard, which is not a
              demo and not a wallet; both now issue an actual pass. -->
+        <!-- The PunchMe Demo shop's own card. These used to issue from the seeded
+             default card, which is still named Kopi Corner in production - so a
+             visitor pressing "Apple Wallet" was handed somebody else's brand.
+             Both routes log a wallet_click before anything can fail, so that
+             shop's dashboard is also the count of who tried the card from this
+             page, and pass_added is how many kept it. -->
         <div class="wallets">
-          <a class="pbtn pbtn-line" data-w="apple" href="/enroll"><span class="wmark"
+          <a class="pbtn pbtn-line" data-w="apple" href="/c/${demoCardId}/enroll"><span class="wmark"
             aria-hidden="true">&#63743;</span> Apple Wallet</a>
-          <a class="pbtn pbtn-line" data-w="google" href="/enroll/google">${googleMark} Google Wallet</a>
+          <a class="pbtn pbtn-line" data-w="google"
+             href="/c/${demoCardId}/enroll/google">${googleMark} Google Wallet</a>
         </div>
       </div></section>
 

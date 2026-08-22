@@ -48,6 +48,18 @@ export const config = {
    * falls back to email, then to Instagram - it never renders a dead button.
    */
   whatsappNumber: (process.env.WHATSAPP_NUMBER ?? "").replace(/[^0-9]/g, ""),
+  /**
+   * The card the marketing page's "try a demo card" buttons issue. It is the
+   * PunchMe Demo shop, which exists to be that demo and nothing else — so its
+   * dashboard doubles as the count of who tried the card from the website.
+   *
+   * Defaulted rather than left empty on purpose: production is then correct with
+   * no variable set, and forgetting one would silently hand visitors a card
+   * belonging to a different shop. A card id can never change (CLAUDE.md), so
+   * this string is safe to hold. `pnpm dev:local` overrides it to the seeded
+   * card, since the demo shop does not exist in a local database.
+   */
+  demoCardId: (process.env.DEMO_CARD_ID ?? "fbe9ghdk").trim(),
 
   /** Apple Developer Team ID (10 chars, from developer.apple.com membership page). */
   teamId: (process.env.APPLE_TEAM_ID ?? "").trim(),

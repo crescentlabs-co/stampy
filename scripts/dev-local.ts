@@ -25,6 +25,9 @@ async function main() {
   process.env.PORT = "3010";
   process.env.SESSION_SECRET = "dev-secret";
   process.env.ADMIN_EMAIL = "dev@stampy.test";
+  // The real demo shop only exists in production, so the marketing page's demo
+  // buttons point at the card this script seeds instead of 404ing.
+  process.env.DEMO_CARD_ID = "default";
 
   const db = await import("../src/db.js");
   await db.migrate();

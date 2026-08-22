@@ -433,7 +433,9 @@ const merchantQr = (merchantId: string, res: import("express").Response) =>
   qrFor(`/j/${merchantId}?s=poster`, res);
 
 publicRouter.get("/", (_req, res) =>
-  res.type("html").send(marketingPage(config.contactEmail, config.whatsappNumber)),
+  res
+    .type("html")
+    .send(marketingPage(config.contactEmail, config.whatsappNumber, config.demoCardId)),
 );
 // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia. One route, one
 // query param, a plain <a> to switch — no JS, so the page stays script-free.
