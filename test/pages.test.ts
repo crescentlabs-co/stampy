@@ -1921,19 +1921,18 @@ describe("palette maths", () => {
 describe("the marketing page can actually be contacted", () => {
   const html = marketingPage("hello@punchme.test");
 
-  it("gives every contact button a destination off this page", () => {
-    // Scoped to the contact block, not the whole page: the nav's "Get started"
-    // legitimately scrolls to #contact, because it does not claim to BE a way of
-    // reaching us. These buttons do, and pointing them at the section they sit
-    // in is the precise shape of what got us rejected.
-    const block = /<div class="closebtns">([\s\S]*?)<\/div>/.exec(html);
-    expect(block, "the contact block moved — this test is now checking nothing").toBeTruthy();
-    const buttons = block![1]!.match(/<a\b[^>]*>/g) ?? [];
-    expect(buttons.length).toBeGreaterThan(0);
-    for (const b of buttons) {
-      expect(b, `contact button goes nowhere: ${b}`).not.toContain("#contact");
-      expect(b, `contact button has no href: ${b}`).toMatch(/href="(mailto:|https?:)/);
-    }
+  it("gives the contact call to action a destination off this page", () => {
+    // The closing block that used to hold Email and Instagram has been removed,
+    // so the nav's "Message us" is now the page's ONE contact button. It used to
+    // scroll to #contact, which was defensible while that section existed and is
+    // exactly the rejected shape now that it does not — a button claiming to be
+    // a way of reaching us that leaves the reader where they were.
+    const cta = /<a class="pbtn pbtn-glow"[^>]*>/.exec(html);
+    expect(cta, "the contact CTA moved — this test is now checking nothing").toBeTruthy();
+    expect(cta![0], "the contact CTA goes nowhere").not.toContain("#contact");
+    expect(cta![0], "the contact CTA has no real href").toMatch(/href="(mailto:|https?:)/);
+    // And nothing anywhere may still point at the section that was deleted.
+    expect(html, "a link still points at the removed #contact section").not.toContain('href="#contact"');
   });
 
   it("offers a real mailto and a real Instagram link", () => {

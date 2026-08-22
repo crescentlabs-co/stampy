@@ -88,17 +88,16 @@ async function main() {
   const figtree = await get("/assets/fonts/figtree-latin.woff2");
   expect(figtree.status === 200, "GET /assets/fonts/figtree-latin.woff2 serves the landing display face");
   // Every image the page names must actually serve: a broken one is a visible
-  // hole in the argument, checked the same way the font is. The hero mockup is
-  // the page's proof and the closing photograph its sign-off, so both are
-  // named here rather than left to a spot check.
+  // hole in the argument, checked the same way the font is. The hero shot is
+  // the page's proof, so it is named here rather than left to a spot check.
+  // The closing photograph went out with the "Want it on your counter" block.
   //
-  // The four section-two tile slots (/assets/img/tile-*.webp) are deliberately
+  // The three section-two tile slots (/assets/img/tile-*.webp) are deliberately
   // ABSENT from this list. They are CSS background-images over the tile's own
   // colour precisely so a slot with no artwork yet renders as a clean panel,
   // and asserting 200 on them would make shipping the layout wait on the
   // photography. Move one into this list the day its file lands.
-  for (const asset of ["/assets/img/wallet-mockup-v1.webp",
-                       "/assets/img/shopfront-v1.jpg",
+  for (const asset of ["/assets/img/hero-phones-v1.webp",
                        "/assets/img/punchme-logo-v1.png"]) {
     expect(landing.body.includes(asset), `landing references ${asset}`);
     expect((await get(asset)).status === 200, `GET ${asset} serves`);
@@ -2612,13 +2611,19 @@ async function main() {
   );
   const home = (await get("/")).body;
   expect(home.includes('href="/support"'), "the marketing footer links Support");
-  const closeBtns = /<div class="closebtns">([\s\S]*?)<\/div>/.exec(home);
-  expect(Boolean(closeBtns), "the marketing page still has a contact block");
+  // The closing "Want it on your counter" block that used to hold these is gone.
+  // The nav's "Message us" is the page's one contact button now, and the footer
+  // carries Instagram, so the same guarantee is checked on the new shapes: a
+  // real destination off this page, and nothing left pointing at the deleted
+  // section.
+  const cta = /<a class="pbtn pbtn-glow"[^>]*>/.exec(home);
+  expect(Boolean(cta), "the marketing page still has a contact call to action");
   expect(
-    !/#contact/.test(closeBtns![1]!),
-    "no contact button points back at the page it sits on",
+    /href="(mailto:|https?:)/.test(cta![0]!),
+    "the contact call to action goes somewhere off this page",
   );
-  expect(closeBtns![1]!.includes("instagram.com/punchme.my"), "Instagram link is real");
+  expect(!/href="#contact"/.test(home), "nothing still points at the removed #contact section");
+  expect(home.includes("instagram.com/punchme.my"), "Instagram link is real");
 
   const privBm = await get("/privacy?lang=bm");
   expect(

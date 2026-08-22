@@ -3332,7 +3332,7 @@ export function marketingPage(contactEmail = ""): string {
        invisible against the neon buttons it most needed to mark. */
     :where(a, button):focus-visible { outline: 3px solid var(--ink);
                                       outline-offset: 3px; border-radius: 6px; }
-    :where(.panel.dark, .tile.ink, .close) :where(a, button):focus-visible {
+    :where(.panel.dark) :where(a, button):focus-visible {
       outline-color: var(--neon); }
 
     /* ---------------------------------------------------------------- nav -- */
@@ -3372,12 +3372,6 @@ export function marketingPage(contactEmail = ""): string {
     .pbtn-neon:hover { background: var(--neon-2); }
     .pbtn-line { background: transparent; color: var(--ink); border-color: var(--ink); }
     .pbtn-line:hover { background: var(--ink); color: var(--paper); }
-    .pbtn-pale { background: var(--paper); color: var(--ink); }
-    .pbtn-pale:hover { background: var(--soft); }
-    /* Ink where neon would be too loud - here, because the nav pill above it is
-       already the screen's one neon button and says the same thing. */
-    .pbtn-dark { background: var(--slab); color: var(--on-slab); }
-    .pbtn-dark:hover { background: #1d2220; }
     @media (prefers-reduced-motion: reduce) { .pbtn { transition: none; } }
 
     /* A live ring in the two brand greens, and no third hue: two backgrounds,
@@ -3418,33 +3412,19 @@ export function marketingPage(contactEmail = ""): string {
                text-transform: uppercase; margin: 0 auto; max-width: 15ch; }
     .hero .sub { margin: clamp(12px, 1.6vw, 18px) auto 0; max-width: 34ch; color: var(--ink-2);
                  font-size: clamp(1rem, 1.7vw, 1.16rem); line-height: 1.45; }
-    .hero .cta { margin-top: clamp(14px, 1.8vw, 20px); }
-    .hero .cta .pbtn { padding: 15px 30px; font-size: 1.02rem; }
+
     /* The product's own object, and the one image on the page that cannot be
        mistaken for stock. No radius and no clipping: the art sits ON the page
        rather than inside a panel, which is what made it read as a thumbnail in a
        beige tile. Wide, because the phones are the proof. */
-    .shot { margin: clamp(14px, 2vw, 28px) auto 0; width: min(980px, 100%); }
-    /* While the art is a single PORTRAIT phone, the full width makes it 1300px
-       tall and pushes the whole page down. The landscape three-phone shot wants
-       all 980px; this modifier comes off the day that file lands. */
-    .shot.tall { width: min(560px, 90%); }
-    /* height:auto, or the intrinsic height attribute wins and the phone renders
-       2548px tall inside its box.
-       The mockup carries a flat beige ground, and the brief is that the art sits
-       ON the page rather than in a tinted rectangle. multiply does NOT do this:
-       it keeps the darker of the two layers, and beige over white is still
-       beige - it only erases a WHITE ground. So the edges are feathered
-       instead, which dissolves the rectangle into the page while leaving the
-       phone itself untouched in the middle. A transparent PNG needs none of
-       this, and the mask is harmless over one. */
-    .shot img { width: 100%; height: auto;
-                -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent),
-                                    linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
-                -webkit-mask-composite: source-in;
-                mask-image: linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent),
-                            linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
-                mask-composite: intersect; }
+    .shot { margin: clamp(18px, 2.4vw, 34px) auto 0; width: min(1020px, 100%); }
+    /* No mask and no blend mode: the ground in this file IS the page's white,
+       keyed to it when the art was brought in (scripts note in the commit), so
+       the phones already sit on the page. Doing it in the pixels rather than in
+       CSS is what keeps the lime card the right lime - a global levels lift
+       whitens the ground and shifts every other colour with it.
+       height:auto, or the intrinsic height attribute wins. */
+    .shot img { width: 100%; height: auto; }
     .try { margin: clamp(12px, 1.8vw, 20px) 0 0; font-size: .78rem; font-weight: 700;
            letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
     .wallets { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
@@ -3453,22 +3433,25 @@ export function marketingPage(contactEmail = ""): string {
     .wmark { font-size: 1.06em; line-height: 1; }
 
     /* --------------------------------------------------------------- tiles -- */
-    /* Three surfaces, each its own colour, each carrying one claim. They hold no
-       buttons and no links, which is what keeps the neon meaning "press this"
-       everywhere else on the page. */
-    .tiles { display: grid; gap: 14px; }
+    /* The COLOUR is the art block and the words sit under it on the page. They
+       were cards, and a card puts a box round type that reads perfectly well on
+       white - the boxes were competing with the images for the eye. The blocks
+       hold no buttons and no links, which is what keeps the neon meaning
+       "press this" everywhere else on the page. */
+    .tiles { display: grid; gap: clamp(22px, 3vw, 34px); }
     @media (min-width: 900px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
-    .tile { border-radius: var(--r); padding: clamp(18px, 2.2vw, 26px); color: var(--ink); }
+    .tile { color: var(--ink); }
     /* The art is a background, not an img, so a slot whose file has not landed
-       yet is a clean coloured panel rather than a broken-image icon. */
-    .tile .art { aspect-ratio: 4 / 3; border-radius: var(--r-sm);
+       yet is a clean coloured panel rather than a broken-image icon. Taller than
+       it is wide: these are the focus of the section. */
+    .tile .art { aspect-ratio: 4 / 5; border-radius: var(--r);
                  margin-bottom: clamp(14px, 1.8vw, 20px);
-                 background: rgba(12,14,13,.08) center/cover no-repeat; }
+                 background: center/cover no-repeat; }
     .tile h3 { font-size: clamp(1.3rem, 2vw, 1.7rem); margin-bottom: 7px; }
-    .tile p { margin: 0; font-size: .96rem; line-height: 1.45; color: rgba(12,14,13,.74); }
-    .tile.lime { background: var(--tile-lime); }
-    .tile.sky  { background: var(--tile-sky); }
-    .tile.pink { background: var(--tile-pink); }
+    .tile p { margin: 0; font-size: .96rem; line-height: 1.45; color: var(--ink-2); }
+    .art.lime { background-color: var(--tile-lime); }
+    .art.sky  { background-color: var(--tile-sky); }
+    .art.pink { background-color: var(--tile-pink); }
 
     /* ------------------------------------------------------- how it works -- */
     .panel { border-radius: var(--r); padding: clamp(26px, 3.4vw, 52px); }
@@ -3534,7 +3517,9 @@ export function marketingPage(contactEmail = ""): string {
     .xc footer .pg { text-align: right; }
 
     /* ------------------------------------------------------------------ us -- */
-    .us { max-width: 720px; margin: 0 auto; }
+    .us { max-width: 760px; margin: 0 auto; background: var(--soft);
+          border: 1px solid var(--hair); border-radius: var(--r);
+          padding: clamp(26px, 3.4vw, 48px); }
     .us h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: 18px; }
     .us p { color: var(--ink-2); font-size: 1.04rem; line-height: 1.62; margin-bottom: 14px; }
     .us p:last-child { margin-bottom: 0; }
@@ -3566,25 +3551,6 @@ export function marketingPage(contactEmail = ""): string {
                         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M1.6 6.5l2.9 2.9 5.9-6.8' fill='none' stroke='%230c0e0d' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
     .price .pbtn { width: 100%; }
     .price .fine { color: var(--ink-2); font-size: .82rem; margin-top: 14px; }
-
-    /* --------------------------------------------------------------- close -- */
-    .close { position: relative; border-radius: var(--r); overflow: hidden; isolation: isolate;
-             padding: clamp(46px, 7vw, 96px) clamp(22px, 4vw, 56px); text-align: center;
-             color: var(--on-slab); }
-    .close > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
-                   object-position: 50% 62%; z-index: 0;
-                   filter: grayscale(.94) contrast(1.05) brightness(.5); }
-    .close::after { content: ""; position: absolute; inset: 0; z-index: 1;
-                    background: linear-gradient(180deg, rgba(16,19,18,.62), rgba(16,19,18,.86)); }
-    .close > :not(img) { position: relative; z-index: 2; }
-    .close h2 { font-size: clamp(2rem, 5vw, 3.2rem); }
-    .close p.sup { margin: 18px auto 0; max-width: 42ch; color: #ccd3c6; font-size: 1.02rem;
-                   line-height: 1.55; }
-    .closebtns { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
-                 margin-top: 30px; }
-    .tel { margin-top: 22px; font-family: var(--display); font-weight: 800; font-size: 1.24rem;
-           letter-spacing: -.02em; }
-    .tel a { text-decoration: none; }
 
     /* ---------------------------------------------------------------- foot -- */
     .foot { border-top: 1px solid var(--hair); padding: 26px 0 44px; display: flex;
@@ -3659,8 +3625,8 @@ export function marketingPage(contactEmail = ""): string {
     ],
   ];
   const tiles = TILES.map(
-    ([tone, art, head, line]) => `<article class="tile ${tone}">
-        <div class="art" style="background-image:url('/assets/img/${art}')" role="presentation"></div>
+    ([tone, art, head, line]) => `<article class="tile">
+        <div class="art ${tone}" style="background-image:url('/assets/img/${art}')" role="presentation"></div>
         <h3>${head}</h3>
         <p>${line}</p>
       </article>`,
@@ -3691,6 +3657,19 @@ export function marketingPage(contactEmail = ""): string {
     })();
   `;
 
+  /**
+   * Where "Message us" actually goes.
+   *
+   * It pointed at #contact - the closing block - and that block has been
+   * removed, which would have left the page's one call to action scrolling
+   * nowhere. That is the precise fault that cost us Google Wallet publishing
+   * access the first time, so it gets a real destination or none at all:
+   * the mailbox when one is configured, Instagram when it is not.
+   */
+  const contactCta = contactEmail
+    ? `href="mailto:${esc(contactEmail)}"`
+    : `href="https://instagram.com/punchme.my" target="_blank" rel="noopener"`;
+
   const body = `
     <header class="nav"><div class="navin">
       <a class="brand" href="/"><img src="/assets/img/punchme-logo-v1.png" alt="PunchMe" width="220" height="54"></a>
@@ -3698,7 +3677,7 @@ export function marketingPage(contactEmail = ""): string {
         <a href="#how">How it works</a>
         <a href="#price">Price</a>
       </nav>
-      <a class="pbtn pbtn-glow" href="#contact">Message us</a>
+      <a class="pbtn pbtn-glow" ${contactCta}>Message us</a>
     </div></header>
 
     <main>
@@ -3709,10 +3688,9 @@ export function marketingPage(contactEmail = ""): string {
       <section class="shell"><div class="hero">
         <h1>Turn customers into regulars</h1>
         <p class="sub">A stamp card that lives in Apple Wallet and Google Wallet.</p>
-        <div class="cta"><a class="pbtn pbtn-dark" href="#contact">Message us</a></div>
-        <div class="shot tall">
-          <img src="/assets/img/wallet-mockup-v1.webp" width="1920" height="2548"
-               alt="A PunchMe stamp card in a phone wallet, three stamps of ten earned">
+        <div class="shot">
+          <img src="/assets/img/hero-phones-v1.webp" width="2036" height="1488"
+               alt="Three phones showing stamp cards in Apple Wallet: a milk tea shop, PunchMe and a kopitiam">
         </div>
         <p class="try">Try a demo card</p>
         <!-- Real destinations. These used to point at /dashboard, which is not a
@@ -3758,27 +3736,21 @@ export function marketingPage(contactEmail = ""): string {
         </div></div>
       </div></section>
 
-      <!-- 4 - EXAMPLES, auto-scrolling. The one place the page shows the product
-           bending to a trade that is not a cafe. -->
-      <section class="band tight"><div class="shell">
-        <div class="lede">
-          <h2>Your stamps, your reward, your rules</h2>
-          <p>Every trade counts differently. Yours is set up to match.</p>
-        </div>
-      </div>
-      <div class="mq"><div class="mqtrack">${marquee}</div></div>
-      </section>
-
-      <!-- 5 - WHO WE ARE -->
+      <!-- 4 - WHO ARE WE. Boxed, because on a page of full-bleed colour a plain
+           run of paragraphs on white reads as a gap rather than a section.
+           NOTE: DESIGN.md says a heading must carry its own benefit and names
+           "Who are we?" as its anti-example. This one is the founder's explicit
+           call - a page selling a service from two named people is a case where
+           the plain label is the point. -->
       <section class="band tight"><div class="shell"><div class="us">
-        <h2>Built by two people in KL who set up every shop themselves</h2>
+        <h2>Who are we</h2>
         <p>Two of us, in Kuala Lumpur. Four years in e-commerce data analytics between
           one of us, five in fintech product for the other.</p>
         <p>We set up every shop ourselves, so you will always be talking to the people
           who built it.</p>
       </div></div></section>
 
-      <!-- 6 - PRICE. The reasons not to worry sit here now, immediately above the
+      <!-- 5 - PRICE. The reasons not to worry sit here, immediately above the
            only button on the page that asks for a decision. -->
       <section class="band tight" id="price"><div class="shell">
         <div class="lede"><h2>Everything included, for RM79 a month</h2></div>
@@ -3802,40 +3774,33 @@ export function marketingPage(contactEmail = ""): string {
         </div>
       </div></section>
 
-      <!-- CLOSE. Every button here goes somewhere real. All three used to be
-           href="#contact" - the section they already sit in - so the page's whole
-           call to action did nothing when clicked. That is what cost us Google
-           Wallet publishing access: a reviewer checking "can I reach this
-           business" pressed Email and stayed exactly where they were. A button
-           with no destination is removed, never left in as decoration. -->
-      <section class="band tight" id="contact"><div class="shell">
-        <div class="close">
-          <img src="/assets/img/shopfront-v1.jpg" alt="" width="1800" height="1170" loading="lazy">
-          <h2>Want it on your counter?</h2>
-          <p class="sup">Message us and we will set the whole thing up for you, card
-            design included.</p>
-          <div class="closebtns">
-            ${
-              contactEmail
-                ? `<a class="pbtn pbtn-neon" href="mailto:${esc(contactEmail)}">Email us</a>`
-                : ""
-            }
-            <a class="pbtn pbtn-pale" href="https://instagram.com/punchme.my"
-               target="_blank" rel="noopener">Instagram</a>
-          </div>
-          <p class="tel">We reply the same day</p>
+      <!-- 6 - EXAMPLES, auto-scrolling. The one place the page shows the product
+           bending to a trade that is not a cafe. Last now: it is the flourish
+           the page goes out on, not an argument anyone has to read. -->
+      <section class="band tight"><div class="shell">
+        <div class="lede">
+          <h2>Your stamps, your reward, your rules</h2>
+          <p>Every trade counts differently. Yours is set up to match.</p>
         </div>
-      </div></section>
+      </div>
+      <div class="mq"><div class="mqtrack">${marquee}</div></div>
+      </section>
 
       <!-- Who this is and how to reach them, on the page a stranger lands on.
            It used to say only "PunchMe - made in Kuala Lumpur" - a product and a
            city, with no way to verify the name on our Google business profile
-           and nothing to write to. -->
+           and nothing to write to.
+           The "Want it on your counter" block that used to carry Email and
+           Instagram is gone, so this footer and the nav button are now the only
+           ways off the page to a person. Google refused Wallet publishing once
+           because a reviewer pressed a contact button and stayed exactly where
+           they were; keep every one of these pointing somewhere real. -->
       <div class="shell"><div class="foot">
         <span>PunchMe &middot; made in Kuala Lumpur${
           contactEmail ? ` &middot; <a href="mailto:${esc(contactEmail)}">${esc(contactEmail)}</a>` : ""
         }</span>
         <nav>
+          <a href="https://instagram.com/punchme.my" target="_blank" rel="noopener">Instagram</a>
           <a href="/support">Support</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>

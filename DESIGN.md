@@ -214,6 +214,19 @@ The tile art is a CSS `background-image` over the tile's own colour, never an
 `<img>`: a slot whose file has not arrived yet must render as a clean coloured
 panel, not a broken-image icon.
 
+**The colour is the block; the words sit under it on the page.** These were
+cards — the colour ran behind the heading and the line too — and the box was
+competing with the image for the eye on a section whose whole job is the images.
+A heading and one line read perfectly well on white and do not need a container.
+
+**Photography destined for the page gets its ground keyed to white in the
+pixels, not blended in CSS.** `mix-blend-mode: multiply` keeps the darker of two
+layers, so it erases a *white* ground and leaves a beige one exactly as it was —
+and a global levels lift that whitens the ground shifts every other colour with
+it, which on a mockup of our own card means shipping the wrong green. Key the
+ground colour to white per pixel, leave everything beyond a tolerance alone, and
+the art needs no CSS at all to sit on the page.
+
 **The nav's "Message us" pill is the one control anywhere with motion in it** —
 a conic gradient turning through `--accent` and `--accent-2`, and no third hue,
 so the live ring costs the palette nothing. It is built from two backgrounds
