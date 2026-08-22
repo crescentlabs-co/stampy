@@ -1398,33 +1398,49 @@ describe("dashboard information architecture", () => {
     });
 
     /**
-     * Summed, never read off cards[0]. A merchant running two programmes has
-     * ONE shop, and showing one programme's figures as the whole business is
-     * the shape of bug this codebase has already had twice.
+     * The counts and the share link are NOT here any more.
+     *
+     * Both were third copies: the numbers belong to the Customers tab this
+     * block opens on, and the link to the Shop tab, which is where a person
+     * goes looking for it. A header that restates the page under it is a
+     * header nobody reads.
      */
-    it("adds its numbers up across every card", () => {
-      expect(greet).toContain("S.cards.reduce((a, c) => a + ((c.metrics || {}).active || 0), 0)");
-      expect(greet).toContain("S.cards.reduce((a, c) => a + ((c.metrics || {}).stamps || 0), 0)");
-    });
-
-    /** "0 customers · 0 stamps" is a bleak thing to open a new shop on. */
-    it("says what to do instead of counting nothing", () => {
-      expect(greet).toContain("Nobody has taken a card yet");
-      expect(greet).toContain("const line = people");
+    it("greets, names the account, and counts nothing", () => {
+      expect(greet).toContain("Hello, ");
+      expect(greet).toContain("S.email");
+      expect(greet).not.toContain("Nobody has taken a card yet");
+      expect(greet).not.toContain("Share your sign-up link");
+      expect(greet).not.toContain('class="stat"');
     });
 
     /**
-     * The tab strip's active thumb is this screen's one neon fill — DESIGN.md
-     * Components: ".btn-neon is the only neon one on a screen". The block sits
-     * on --slab because rule 2 says weight comes from the black panel, not
-     * from a colour, and the reference for it was another product's blue.
+     * The navigation lives INSIDE the header, so the shop, the account and the
+     * tabs are one fixed object that the panel changes underneath — rather
+     * than two stacked blocks that looked like they might both scroll away.
      */
-    it("spends no second neon, and takes its weight from the slab", () => {
-      expect(html).toContain(".greet { background: var(--slab)");
-      expect(greet).not.toContain("btn-neon");
-      expect(greet).not.toContain("--accent");
-      // Focus on a dark panel is neon; ink would vanish (rule 3).
-      expect(html).toContain(".greet .act:focus-visible { outline: 3px solid var(--accent)");
+    it("carries the tab strip inside itself, not as a sibling", () => {
+      expect(greet).toContain('id="tabs"');
+      // The shell renders the greeting and then the panel: no loose tab strip
+      // in between any more.
+      const at = html.indexOf('id="pinwarn"');
+      const shell = html.slice(html.lastIndexOf('$("#app").innerHTML', at), at);
+      expect(shell).not.toContain('id="tabs"');
+    });
+
+    /**
+     * The ONE neon surface on the dashboard, and DESIGN.md rule 1's single
+     * named exception — see the carve-out written into the rule.
+     *
+     * Text is --on-accent and never white: #c9f73d is a pale green, so white
+     * on it lands near 1.3:1. The tab thumb inside goes WHITE for the mirror
+     * reason — neon on neon is invisible.
+     */
+    it("is the one neon surface, dark-texted, with a white thumb", () => {
+      expect(html).toContain(".greet { background: var(--accent)");
+      expect(html).toContain("color: var(--on-accent)");
+      expect(html).toContain(".greet #tabs .thumb { background: #fff");
+      // Never white text on the neon.
+      expect(html).not.toContain(".greet h1 { font-size: 1.45rem; margin: 0; color: var(--on-slab)");
     });
   });
 

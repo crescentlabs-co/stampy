@@ -58,10 +58,22 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
 1. **Neon marks the next action and nothing else.** A primary button, an active
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
-   why `--on-accent` exists and why `--accent-dark` is dark. The marketing
-   page's four tiles are the one exception and are fenced below.
+   why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
+   **two** fenced exceptions: the marketing page's four tiles (below), and the
+   dashboard's `.greet` header.
+
+   `.greet` is neon on purpose, decided by the founder. It is not decoration:
+   it is the shop's identity plus the whole of the app's navigation in one
+   object, and it is the only thing on the dashboard that never changes as you
+   move around — so it is the one surface that can hold the colour without
+   competing with anything. Its text is `--on-accent`, never white, and the tab
+   thumb inside it is **white**, because a neon thumb on a neon ground is
+   invisible. Nothing else on that screen may take the accent as a fill while
+   this stands: with the header carrying it, a second neon area would leave the
+   page with no single place the eye goes.
 2. **Weight comes from the black panel, not from colour.** If something needs to
-   dominate, put it on `--slab`.
+   dominate, put it on `--slab`. The dashboard header is the exception named in
+   rule 1; it used to be `--slab` for exactly this reason.
 3. **Focus rings are ink on light and neon on dark.** A neon ring on a white
    page is too low-contrast to be an accessibility feature, and an ink ring
    vanishes on a black panel. Both directions are declared; keep them.

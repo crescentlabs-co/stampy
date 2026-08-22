@@ -4529,30 +4529,37 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        says how the card is doing, and it doubles as the rule between the page
        and the tab strip — there was nothing separating navigation from content.
 
-       --slab, not a colour. DESIGN.md rule 2: weight comes from the black
-       panel. The reference for this was a blue header from another product, and
-       taking the blue would have been inventing a second palette rule 6 forbids.
-       Nothing in here is neon: the tab strip's active thumb is the one neon
-       fill this screen gets (Components — ".btn-neon is the only neon one on a
-       screen"), so the action below is an outlined pill instead. */
-    .greet { background: var(--slab); color: var(--on-slab); border-radius: var(--r-lg);
-            padding: 20px 22px; margin-top: 4px; }
-    .greet h1 { font-size: 1.45rem; margin: 0; color: var(--on-slab); }
-    /* The login email. Quiet, but it must stay legible on the slab — it is the
-       only thing on screen answering "which account am I in?", which matters
-       the moment somebody runs two shops. */
-    .greet .who { font-size: .8rem; margin: 3px 0 0; opacity: .62; word-break: break-all; }
-    .greet .stat { font-size: .95rem; margin: 14px 0 0; font-variant-numeric: tabular-nums; }
-    .greet .stat b { font-weight: 700; }
-    /* The quiet third, on a dark ground: an outline rather than a fill. Focus is
-       neon here and ink on light — rule 3, both directions declared. */
-    .greet .act { display: inline-block; width: auto; margin-top: 14px; padding: 9px 16px;
-                 border-radius: 999px; font-size: .88rem; font-weight: 700;
-                 background: none; color: var(--on-slab); cursor: pointer;
-                 border: 1px solid rgba(244,246,242,.35); text-decoration: none; }
-    .greet .act:hover { border-color: var(--on-slab); background: rgba(244,246,242,.08); }
-    .greet .act:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-    #tabs { margin: 18px 0 24px; overflow-x: auto; scrollbar-width: none; }
+       NEON, and deliberately the one exception to DESIGN.md rule 1 — see the
+       rule's own carve-out, which was written for this block. It was --slab.
+       The header is not decoration: it is the shop's identity and the whole of
+       the app's navigation in one object, and it is the only thing on the page
+       that never changes, so it is the one surface that can carry the colour
+       without competing with anything. Nothing else on the dashboard is neon
+       now — the tab thumb inside it goes WHITE precisely because a neon thumb
+       on a neon ground is invisible.
+
+       Text is --on-accent (near-black) and never white: #c9f73d is a pale
+       green, so white on it is about 1.3:1 and unreadable, which is the reason
+       --on-accent exists and is always dark. */
+    .greet { background: var(--accent); color: var(--on-accent); border-radius: var(--r-lg);
+            padding: 20px 22px 16px; margin-top: 4px; }
+    .greet h1 { font-size: 1.45rem; margin: 0; color: var(--on-accent); }
+    /* The login email. Quiet, but it must stay legible — it is the only thing
+       on screen answering "which account am I in?", which matters the moment
+       somebody runs two shops. Tinted from the ink rather than greyed: a grey
+       on this green reads as dirt. */
+    .greet .who { font-size: .8rem; margin: 3px 0 0; color: rgba(12,14,13,.66);
+                  word-break: break-all; }
+    /* The tab strip, now inside the header. Its trough is a darker wash of the
+       same ground rather than --ghost-bg, which is a neutral grey and turns
+       muddy on green. */
+    .greet #tabs { background: rgba(12,14,13,.11); }
+    .greet #tabs button { color: rgba(12,14,13,.62); }
+    .greet #tabs button.on { color: var(--ink); }
+    /* White, not neon: the thumb has to be the thing that stands OUT of the
+       ground it sits on, and on neon that is white. */
+    .greet #tabs .thumb { background: #fff; box-shadow: 0 2px 6px rgba(12,14,13,.18); }
+    #tabs { margin: 16px 0 0; overflow-x: auto; scrollbar-width: none; }
     #tabs::-webkit-scrollbar { display: none; }
     #tabs button { padding: 10px 9px; font-size: .84rem; }
     @media (max-width: 430px) {
@@ -4627,6 +4634,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        a box round every one of them. Amber rather than red — nothing is broken,
        a step is outstanding — and the button is ghost, because the neon one on
        the page belongs to whatever the owner came here to do (DESIGN.md 1). */
+    /* The tab strip used to carry 24px under itself; it is inside the header
+       now, so the gap between that block and the panel it switches belongs
+       here instead. */
+    #pinwarn:not(:empty), #panel { margin-top: 22px; }
+    #pinwarn:not(:empty) + #panel { margin-top: 0; }
     .pinwarn { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
                background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
                border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;
@@ -5314,24 +5326,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        */
       function greetHtml() {
         const shop = (S.cards[0] || {}).shopName || "your shop";
-        const people = S.cards.reduce((a, c) => a + ((c.metrics || {}).active || 0), 0);
-        const stamps = S.cards.reduce((a, c) => a + ((c.metrics || {}).stamps || 0), 0);
-        const link = S.joinRef ? location.origin + "/j/" + S.joinRef : "";
-        // "0 customers · 0 stamps" is a bleak thing to open a new shop on, so
-        // a shop nobody has joined says so plainly and lets the button below
-        // carry the action — spelling out "share your sign-up link" here as
-        // well put the same instruction on screen twice, two lines apart.
-        const line = people
-          ? "<b>" + people + "</b> customer" + (people === 1 ? "" : "s") +
-            " · <b>" + stamps + "</b> stamp" + (stamps === 1 ? "" : "s") + " given"
-          : "Nobody has taken a card yet.";
+        // Who you are, and where you are going. The counts and the share link
+        // that used to sit here are both said better further down — the numbers
+        // by the Customers tab this block opens on, and the link by the Shop
+        // tab, which is where somebody goes looking for it. Repeating them here
+        // made the header the third place each appeared.
         return '<div class="greet">' +
           "<h1>Hello, " + esc(shop) + "</h1>" +
           '<p class="who">' + esc(S.email) + "</p>" +
-          '<p class="stat">' + line + "</p>" +
-          (link
-            ? '<a class="act" href="' + esc(link) + '" target="_blank" rel="noopener">Share your sign-up link</a>'
-            : "") +
+          // The tabs live INSIDE this block, so the shop, the account and the
+          // navigation read as one fixed thing that the panel changes under.
+          '<div class="seg" id="tabs" role="tablist">' +
+            '<button data-tab="customers" class="on">Customers</button>' +
+            '<button data-tab="card">Card</button>' +
+            '<button data-tab="shop">Shop</button>' +
+            '<span class="thumb"></span>' +
+          "</div>" +
           "</div>";
       }
 
@@ -5342,12 +5352,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // to be a page of its own.
       $("#app").innerHTML = \`
         \${greetHtml()}
-        <div class="seg" id="tabs" role="tablist">
-          <button data-tab="customers" class="on">Customers</button>
-          <button data-tab="card">Card</button>
-          <button data-tab="shop">Shop</button>
-          <span class="thumb"></span>
-        </div>
         <div id="pinwarn"></div>
         <div id="panel"></div>\`;
       $("#tabs").querySelectorAll("button").forEach((b) => {
