@@ -18,3 +18,14 @@ apple_certs/
 sreenshots/
 screenshots/
 *.mov
+# The same rule, for where those files live now. images/ was reorganised out of
+# sreenshots/ and brand/, and the two folders below hold 123 MB of competitor
+# recordings and the pitch video — reference material, not source. The .mov rule
+# above already caught the two big ones; these catch the rest, so a stray
+# `git add -A` can never sweep them into history where they cannot be removed.
+#
+# images/img assets/ and images/brand/ are NOT ignored on purpose: those are the
+# originals the site's artwork in assets/img/ is processed from, and losing them
+# would mean losing the only copy that can be re-cropped or re-exported.
+images/references/
+images/videos/
