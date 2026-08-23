@@ -3354,11 +3354,11 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
              border: 1px solid var(--hair);
              box-shadow: 0 10px 30px -16px rgba(12,14,13,.4); }
     .brand { display: flex; align-items: center; text-decoration: none; }
-    /* The logo PNG carries an opaque white ground. That was invisible while the
-       bar was white and became a white box the moment it turned into a tinted
-       pill. multiply drops the ground into the pill; a transparent export is
-       the real fix and needs a new file. */
-    .brand img { height: 27px; width: auto; display: block; mix-blend-mode: multiply; }
+    /* No blend mode any more: the logo is a genuinely transparent PNG now.
+       multiply was papering over an opaque white ground, and it only ever
+       half-worked - against the translucent pill it left a white rim that
+       showed the moment anything scrolled behind it. */
+    .brand img { height: 27px; width: auto; display: block; }
     /* The two section links are gone: Instagram and Message us are the only
        things in here now, both hard right, and the pill tightens to suit. */
     .navin { max-width: 580px; }
@@ -3419,6 +3419,17 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
     .lede h2 { font-size: clamp(2rem, 5vw, 3.2rem); max-width: 20ch; margin: 0 auto; }
     .lede p { margin: 16px auto 0; max-width: 46ch; color: var(--ink-2); font-size: 1.02rem;
               line-height: 1.55; }
+    /* The brand LETTERING set into a heading, in place of the word typed out.
+       The full lockup does not work here. Its letters are only 133px of a 230px
+       file, so matching them to the heading's caps makes the hexagon tower 70%
+       above the line, and matching the hexagon leaves the letters at 60% of the
+       size of the word beside them. The icon is already in the nav; what was
+       asked for was the font.
+       .72em is Figtree's cap height at 800, and "PunchMe" has no descender, so
+       the file's ink bottom IS its baseline — which is where an inline image on
+       vertical-align: baseline already sits. No nudge needed. */
+    .lede.shout h2 .wordmark { height: .72em; width: auto; display: inline-block;
+                               vertical-align: baseline; margin: 0 .04em; }
     /* Emphasis inside a shouted heading, sized in em so it tracks the clamp
        rather than needing a breakpoint of its own. */
     .lede.shout h2 mark { background: var(--neon); color: var(--on-accent);
@@ -3471,11 +3482,11 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
        mistaken for stock. No radius and no clipping: the art sits ON the page
        rather than inside a panel, which is what made it read as a thumbnail in a
        beige tile. Wide, because the phones are the proof. */
-    /* 940, not 1020, and the number is not arbitrary: the file is 1885px wide,
-       so 940 CSS px is exactly 1:1 on a 2x screen. At 1020 the browser was
-       stretching it 8% and the QR codes and the code line under them went soft -
-       they are the finest detail in the shot and the first thing to smear. */
-    .shot { margin: clamp(18px, 2.4vw, 34px) auto 0; width: min(940px, 100%); }
+    /* The number tracks the file: it is 1933px wide, so 960 CSS px is 1:1 on a
+       2x screen. Stretching it even 8% softens the QR codes and the code line
+       under them, which are the finest detail in the shot and the first thing
+       to smear. Re-check this if the art is replaced again. */
+    .shot { margin: clamp(18px, 2.4vw, 34px) auto 0; width: min(960px, 100%); }
     /* No mask and no blend mode: the ground in this file IS the page's white,
        keyed to it when the art was brought in (scripts note in the commit), so
        the phones already sit on the page. Doing it in the pixels rather than in
@@ -3789,7 +3800,7 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
 
   const body = `
     <header class="nav"><div class="navin">
-      <a class="brand" href="/"><img src="/assets/img/punchme-logo-v1.png" alt="PunchMe" width="220" height="54"></a>
+      <a class="brand" href="/"><img src="/assets/img/punchme-logo-v2.png" alt="PunchMe" width="1034" height="230"></a>
       <a class="ig" href="https://instagram.com/punchme.my" target="_blank"
          rel="noopener" aria-label="PunchMe on Instagram">${ICON_INSTAGRAM}</a>
       <a class="pbtn pbtn-glow" ${contactCta}>Start your 30 days free</a>
@@ -3809,7 +3820,7 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
           <span class="vh">${FLIP_WORDS[0]}</span></h1>
         <p class="sub">The stamp card that lives in your customer&rsquo;s wallet.</p>
         <div class="shot">
-          <img src="/assets/img/hero-phones-v4.webp" width="1885" height="1485"
+          <img src="/assets/img/hero-phones-v5.webp" width="1933" height="1517"
                alt="Three phones showing stamp cards in Apple Wallet: a milk tea shop, PunchMe and a kopitiam">
         </div>
         <p class="try">Try a demo card</p>
@@ -3835,7 +3846,8 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
            them also runs, so it is a clause here, not the argument. -->
       <section class="band"><div class="shell">
         <div class="lede shout">
-          <h2>Why PunchMe?</h2>
+          <h2>Why <img class="wordmark" src="/assets/img/punchme-wordmark-v1.png"
+            alt="PunchMe" width="808" height="133">?</h2>
         </div>
         <div class="tiles">${tiles}</div>
       </div></section>
@@ -3844,7 +3856,8 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
            our job, not a step the owner performs, and it was padding the list
            out to a number rather than to the work. -->
       <section class="band" id="how"><div class="shell">
-        <div class="lede shout"><h2>How PunchMe works</h2></div>
+        <div class="lede shout"><h2>How <img class="wordmark"
+          src="/assets/img/punchme-wordmark-v1.png" alt="PunchMe" width="808" height="133"> works</h2></div>
         <div class="steps">
           <article class="step">
             <span class="chip lime">${ICON_ADD}</span>
