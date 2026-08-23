@@ -23,6 +23,7 @@ import {
   buildLoyaltyClass,
   buildLoyaltyObject,
   buildLoyaltyPatch,
+  buildHeroClearPatch,
   buildSaveJwtClaims,
   classId,
   objectId,
@@ -345,4 +346,33 @@ function safeParse(text: string): Record<string, unknown> {
 function uriOf(image: unknown): string | undefined {
   const src = (image as { sourceUri?: { uri?: string } } | null | undefined)?.sourceUri?.uri;
   return typeof src === "string" && src ? src : undefined;
+}
+
+/**
+ * Take the band OFF one customer's card, so the shop's design shows through.
+ *
+ * Google renders an object's own `heroImage` over the class's. Between fd665e8
+ * and c53cc79 every stamp put one on the object — first the stamp grid, then
+ * `banner.png` — and a PATCH leaves an omitted field alone, so those images are
+ * still there, frozen, on every card issued or stamped in that window. On a card
+ * whose band colour was white, that frozen image is a white rectangle, which is
+ * the "blank strip on Android" an owner cannot explain and cannot fix: resync
+ * rewrites the CLASS, and the picture winning is on the OBJECT.
+ *
+ * `null`, not an omitted field. Omitting is precisely what froze them. 439b1d8
+ * already relied on an explicit null clearing the slot, for this same reason.
+ *
+ * **No `notifyPreference`** — this is a repair, not an event. Google notifies
+ * only when asked to (patchBalance asks; class patches deliberately do not), so
+ * a customer's phone must not buzz because an operator tidied up their artwork.
+ */
+export async function clearObjectHero(serial: string): Promise<GoogleResult> {
+  if (!setupStatus().canGoogleWallet) return notConfigured();
+  try {
+    return toResult(
+      await api("PATCH", `/loyaltyObject/${config.googleIssuerId}.${serial}`, buildHeroClearPatch()),
+    );
+  } catch (err) {
+    return { ok: false, reason: String(err) };
+  }
 }

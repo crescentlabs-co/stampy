@@ -56,6 +56,7 @@ import {
   getOwner,
   merchantForCard,
   updateMerchant,
+  googleSerialsForCard,
   oldestGoogleSerials,
   cardsForMerchant,
   setStampStrips,
@@ -72,7 +73,7 @@ import {
   type ArtKind,
 } from "../cardView.js";
 import { refreshCardArt } from "../cardActions.js";
-import { ensureClass, readClass, readObject } from "../googleWallet.js";
+import { clearObjectHero, ensureClass, readClass, readObject } from "../googleWallet.js";
 import { stageOf, triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng } from "../imageValidate.js";
 import { adminPage } from "../pages.js";
@@ -250,7 +251,8 @@ adminRouter.post("/api/merchant/:id/unarchive", requireAdmin, async (req, res) =
 });
 
 /**
- * Re-send every card's Google Wallet class.
+ * Re-send every card's Google Wallet class, and unstick any card in a wallet
+ * that is drawing its own band over the shop's.
  *
  * The class carries the things built from BASE_URL — the hosted logo and banner
  * URLs, the Terms and Privacy links, and the issuer callback URL — and none of
@@ -264,25 +266,48 @@ adminRouter.post("/api/merchant/:id/unarchive", requireAdmin, async (req, res) =
  * shell history, and invariant 2 says secrets stay in Railway's UI. Pressing a
  * button runs it where the key already is.
  *
- * Safe to press repeatedly: a class PATCH carries no notifyPreference, so it
- * notifies nobody (invariant 3), and it touches no object, so no stamp count
- * can move. Sequential rather than parallel — a burst of writes against one
- * issuer is how you find a rate limit you did not know about.
+ * Safe to press repeatedly: neither the class PATCH nor the object repair below
+ * carries a notifyPreference, so both notify nobody (invariant 3), and the
+ * repair sends only `heroImage`, so no stamp count can move. Sequential rather
+ * than parallel — a burst of writes against one issuer is how you find a rate
+ * limit you did not know about.
  */
 adminRouter.post("/api/google-resync", requireAdmin, async (_req, res) => {
   if (!setupStatus().canGoogleWallet) {
     return void res.status(409).json({ error: "google-not-configured" });
   }
   const cards = await allCards();
-  const results: { id: string; name: string; ok: boolean; reason: string }[] = [];
+  const results: { id: string; name: string; ok: boolean; reason: string; cleared: number }[] = [];
   for (const card of cards) {
     const r = await ensureClass(card);
-    results.push({ id: card.id, name: card.name, ok: r.ok, reason: r.ok ? "" : (r.reason ?? "") });
+    // The class is only half of it. An object's own heroImage renders OVER the
+    // class's band, and every Google pass issued or stamped before c53cc79
+    // still carries one — so this button could rewrite a perfect design, report
+    // success, and change nothing a customer could see. Read each object first
+    // and only write to the ones actually holding a stale image: that makes the
+    // repair idempotent, keeps a resync of a healthy shop free, and lets the
+    // count below mean "something was wrong and is now fixed".
+    let cleared = 0;
+    if (r.ok) {
+      for (const serial of await googleSerialsForCard(card.id).catch(() => [])) {
+        const obj = await readObject(serial);
+        if (!obj.ownHeroUri) continue;
+        if ((await clearObjectHero(serial)).ok) cleared++;
+      }
+    }
+    results.push({
+      id: card.id,
+      name: card.name,
+      ok: r.ok,
+      reason: r.ok ? "" : (r.reason ?? ""),
+      cleared,
+    });
   }
   res.json({
     ok: true,
     total: results.length,
     failed: results.filter((r) => !r.ok).length,
+    cleared: results.reduce((n, r) => n + r.cleared, 0),
     results,
   });
 });

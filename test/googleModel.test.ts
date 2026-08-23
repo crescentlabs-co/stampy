@@ -7,8 +7,10 @@ import type { CardRow, PassRow } from "../src/db.js";
 process.env.GOOGLE_ISSUER_ID = "3388000000012345678";
 process.env.BASE_URL = "https://stampy.example.test";
 
-const { buildLoyaltyClass, buildLoyaltyObject, buildLoyaltyPatch, buildSaveJwtClaims, logoUrl } =
-  await import("../src/googleModel.js");
+const {
+  buildHeroClearPatch, buildLoyaltyClass, buildLoyaltyObject, buildLoyaltyPatch,
+  buildSaveJwtClaims, logoUrl,
+} = await import("../src/googleModel.js");
 const { rgbToHex } = await import("../src/color.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
@@ -463,5 +465,30 @@ describe("buildLoyaltyPatch", () => {
     expect(JSON.stringify(plain)).not.toContain("Some Other Shop");
     const nudged = buildLoyaltyPatch(row({ message: "Miss you" }), card(), "Some Other Shop") as any;
     expect(nudged.textModulesData.find((t: any) => t.id === "message").header).toBe("Some Other Shop");
+  });
+});
+
+// The repair that unsticks an Android card. Both halves of this patch are load
+// bearing and neither is obvious from reading it, so both are pinned.
+describe("buildHeroClearPatch", () => {
+  // Omitting the field is what froze these images in the first place: PATCH
+  // leaves an omitted field alone, so "stop sending it" never removed anything.
+  it("sends heroImage as an explicit null, not an absent key", () => {
+    const patch = buildHeroClearPatch();
+    expect("heroImage" in patch).toBe(true);
+    expect(patch.heroImage).toBeNull();
+    expect(JSON.stringify(patch)).toContain('"heroImage":null');
+  });
+
+  // A repair is not an event. Google notifies only when asked, and an operator
+  // tidying up artwork must not buzz a customer's phone (invariant 3).
+  it("asks for no notification", () => {
+    expect(buildHeroClearPatch()).not.toHaveProperty("notifyPreference");
+  });
+
+  // It must touch NOTHING else. A stray loyaltyPoints or textModulesData here
+  // would overwrite a real customer's progress with whatever this file guessed.
+  it("carries nothing but the image", () => {
+    expect(Object.keys(buildHeroClearPatch())).toEqual(["heroImage"]);
   });
 });

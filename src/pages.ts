@@ -7102,11 +7102,22 @@ export function adminPage(): string {
           // Name the failures. "3 of 10 failed" with no names is a message you
           // cannot act on, and this is the screen you act from.
           const bad = (r.results || []).filter((x) => !x.ok);
+          // And name the REPAIR, separately from the resync. This button rewrote
+          // shop designs and reported success while the thing an operator
+          // pressed it to fix — a card in a wallet drawing its own old band over
+          // the shop's — sat untouched on the object, where a class write cannot
+          // reach. A count of zero is meaningful now: nothing was stuck.
+          const fixed = (r.results || []).filter((x) => x.cleared > 0);
           out.innerHTML = '<p class="dnote" style="margin:8px 0 0">' +
             (r.failed
               ? esc(r.failed + " of " + r.total + " failed: ") +
                 bad.map((x) => esc(x.name) + " (" + esc(x.reason) + ")").join(", ")
-              : esc(r.total + " shop" + (r.total === 1 ? "" : "s") + " resynced ✓")) + "</p>";
+              : esc(r.total + " shop" + (r.total === 1 ? "" : "s") + " resynced ✓")) +
+            (r.cleared
+              ? "<br>" + esc(r.cleared + " card" + (r.cleared === 1 ? "" : "s") +
+                  " in a wallet showed their own old band — cleared, so the shop’s design shows through: ") +
+                fixed.map((x) => esc(x.name) + " (" + x.cleared + ")").join(", ")
+              : "") + "</p>";
         };
       }
 

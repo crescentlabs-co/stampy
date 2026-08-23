@@ -368,6 +368,42 @@ async function main(): Promise<void> {
   )).rows[0]!.n;
   expect(Number(preClaimed) === 0, "an upgraded merchant carries no invented claim history");
 
+  // --- the band flag a restart used to erase --------------------------------
+  // migrate() flattens dead band textures, and for a long time its predicate was
+  // "anything that is not 'flat'". That was written when 'flat' was the only
+  // live value, and it silently started eating 'image' — the flag that says the
+  // banner is the owner's UPLOADED artwork rather than one we generated. Every
+  // restart cleared it, and the next colour save would have painted over a file
+  // with no other copy. So: a dead texture must still be flattened, and a live
+  // one must survive a boot.
+  await sql.query(`UPDATE cards SET band_texture = 'image' WHERE id = 'default'`);
+  const otherCard = (await sql.query<{ id: string }>(
+    `SELECT id FROM cards WHERE id <> 'default' ORDER BY id LIMIT 1`,
+  )).rows[0]!.id;
+  await sql.query(`UPDATE cards SET band_texture = 'chevron' WHERE id = $1`, [otherCard]);
+  await db.migrate();
+  const bands = Object.fromEntries((await sql.query<{ id: string; band_texture: string }>(
+    `SELECT id, band_texture FROM cards`,
+  )).rows.map((r) => [r.id, r.band_texture]));
+  expect(
+    bands.default === "image",
+    `an uploaded band survives a restart (got ${bands.default})`,
+  );
+  expect(
+    bands[otherCard] === "flat",
+    `a dead texture is still flattened (got ${bands[otherCard]})`,
+  );
+  // New cards must be born with a live value too — the column default was
+  // 'gradient', one of the removed textures, long after they were removed.
+  const bandDefault = (await sql.query<{ column_default: string | null }>(
+    `SELECT column_default FROM information_schema.columns
+      WHERE table_name = 'cards' AND column_name = 'band_texture'`,
+  )).rows[0]?.column_default;
+  expect(
+    String(bandDefault).includes("'flat'"),
+    `a new card is born with a flat band, not a dead texture (default is ${bandDefault})`,
+  );
+
   console.log(failures === 0 ? "\nMIGRATION OK ✅" : `\n${failures} FAILURE(S) ❌`);
 
   // Close the pool BEFORE stopping Postgres. Otherwise the server terminates

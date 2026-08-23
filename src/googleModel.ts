@@ -343,3 +343,18 @@ export function buildSaveJwtClaims(
     },
   };
 }
+
+/**
+ * The body that takes the band OFF one customer's card.
+ *
+ * Trivial enough to inline, and deliberately not inlined: it is the one patch
+ * in this file whose CONTENTS are the whole point, and both halves have to be
+ * asserted. `heroImage: null` rather than an omitted field — omitting is
+ * exactly what left these images frozen on every card issued between fd665e8
+ * and c53cc79, because PATCH leaves an omitted field alone. And no
+ * `notifyPreference`, because a repair is not an event: nobody's phone may buzz
+ * because an operator tidied up their artwork (invariant 3).
+ */
+export function buildHeroClearPatch(): Record<string, unknown> {
+  return { heroImage: null };
+}

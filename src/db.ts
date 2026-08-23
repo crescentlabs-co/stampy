@@ -781,19 +781,45 @@ export async function migrate(): Promise<void> {
     console.log(`[migrate] band_color seeded from background_color on ${bands.rowCount} card(s)`);
   }
   await getPool().query(
-    `ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_texture text NOT NULL DEFAULT 'gradient'`,
+    `ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_texture text NOT NULL DEFAULT 'flat'`,
   );
+  // The default was 'gradient' — one of ten textures that no longer exist — so
+  // every card created since they were removed was born holding a dead value.
+  // Harmless to draw (the flatten below catches it on the next boot) but it
+  // meant a brand-new card and a migrated one disagreed about the same band.
+  await getPool().query(`ALTER TABLE cards ALTER COLUMN band_texture SET DEFAULT 'flat'`);
   // v2.4: the band is one flat colour, and the ten textures are gone. The column
-  // stays (additive-only), but every row is flattened once, because leaving the
-  // old value is not harmless: the renderer's fall-through for an unrecognised
-  // style was GRADIENT, not flat, so a card stored as 'chevron' would have come
-  // back as a gradient — a look its owner never chose and could no longer
-  // change. Runs once; after it, there is nothing left to flatten.
+  // stays (additive-only), but every row carrying a dead texture is flattened,
+  // because leaving the old value is not harmless: the renderer's fall-through
+  // for an unrecognised style was GRADIENT, not flat, so a card stored as
+  // 'chevron' would have come back as a gradient — a look its owner never chose
+  // and could no longer change.
+  //
+  // It must NEVER touch the two values that are alive. This ran as
+  // `WHERE band_texture <> 'flat'` on the strength of "runs once; after it there
+  // is nothing left to flatten", and that stopped being true the day 'image'
+  // was introduced to mean *the banner is the owner's uploaded artwork, do not
+  // regenerate over it*. Every restart then erased that flag, and the next
+  // colour save would have painted a generated band over artwork with no other
+  // copy. Name the live values; never write a predicate that means "everything
+  // I did not think of".
   const flattened = await getPool().query(
-    `UPDATE cards SET band_texture = 'flat' WHERE band_texture <> 'flat'`,
+    `UPDATE cards SET band_texture = 'flat' WHERE band_texture NOT IN ('flat', 'image')`,
   );
   if (flattened.rowCount) {
     console.log(`[migrate] band flattened on ${flattened.rowCount} card(s)`);
+  }
+  // A dated one-off, not a pattern. These two cards hold an uploaded banner
+  // whose 'image' flag a restart erased before the predicate above was fixed;
+  // nothing in the stored PNG says whether it was uploaded or generated, so the
+  // repair cannot be derived and has to name them. Guarded on 'flat' so it is a
+  // no-op the moment an owner legitimately presses Remove.
+  const repaired = await getPool().query(
+    `UPDATE cards SET band_texture = 'image'
+      WHERE id IN ('b29zgjvm', 'fbe9ghdk') AND band_texture = 'flat'`,
+  );
+  if (repaired.rowCount) {
+    console.log(`[migrate] band-upload flag restored on ${repaired.rowCount} card(s)`);
   }
 
   // v1.8: put the target into the stamp-grid key. See the ALTER above for what
@@ -4056,6 +4082,24 @@ export async function oldestGoogleSerials(cardId: string, limit = 5): Promise<st
       ORDER BY created_at ASC
       LIMIT $2`,
     [cardId, limit],
+  );
+  return res.rows.map((r) => r.serial);
+}
+
+/**
+ * Every Google pass on a card — the objects a repair has to walk.
+ *
+ * Separate from `oldestGoogleSerials`, which caps at 5 because it answers a
+ * diagnostic question ("is anything shadowing the band?"). A repair that
+ * stopped at 5 would report success while leaving customers 6 and up looking at
+ * the wrong picture, which is the failure mode this whole change exists to end.
+ */
+export async function googleSerialsForCard(cardId: string): Promise<string[]> {
+  const res = await getPool().query<{ serial: string }>(
+    `SELECT serial FROM passes
+      WHERE card_id = $1 AND platform = 'google'
+      ORDER BY created_at ASC`,
+    [cardId],
   );
   return res.rows.map((r) => r.serial);
 }

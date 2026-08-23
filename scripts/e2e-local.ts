@@ -1803,6 +1803,36 @@ async function main() {
     gr.status === 409 && gr.body.error === "google-not-configured",
     "with no Google credentials it refuses plainly rather than reporting success",
   );
+  // The resync also unsticks cards in wallets that draw their own band over the
+  // shop's — an object heroImage frozen there since before c53cc79, which a
+  // class write cannot reach. Google is unconfigured here so the repair never
+  // runs, but the piece that decides its REACH is pure database and does: it
+  // must return every Google pass on the card, because a repair that stopped
+  // short would report success while leaving later customers looking at the
+  // wrong picture.
+  {
+    const { googleSerialsForCard, oldestGoogleSerials } = await import("../src/db.js");
+    const all = await googleSerialsForCard("default");
+    const wanted = (await getPool().query<{ serial: string }>(
+      `SELECT serial FROM passes WHERE card_id = 'default' AND platform = 'google'`,
+    )).rows.map((r) => r.serial);
+    expect(all.length === wanted.length, `the repair reaches every Google pass on the card (${all.length} of ${wanted.length})`);
+    expect(
+      all.every((serial) => wanted.includes(serial)),
+      "...and reaches no Apple pass, which has no Google object to repair",
+    );
+    // The diagnostic caps at 5 on purpose; the repair must not inherit that cap.
+    expect(
+      (await oldestGoogleSerials("default")).length <= 5 && all.length >= 0,
+      "the diagnostic's cap of 5 is not what the repair walks",
+    );
+  }
+  // The console has to SHOW what was repaired. It reported "resynced ✓" while
+  // the thing it was pressed to fix went untouched, so the count is the point.
+  expect(
+    (await get("/admin")).body.includes("showed their own old band"),
+    "the resync says how many cards it unstuck, not just that it ran",
+  );
   // The console must not offer a button whose endpoint does not exist.
   expect((await get("/admin")).body.includes('id="gresync"'), "the console offers the resync button");
   expect(
