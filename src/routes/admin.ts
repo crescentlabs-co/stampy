@@ -308,17 +308,21 @@ adminRouter.post("/api/demo-barcode-resync", requireAdmin, async (_req, res) => 
   // in a way that should stop the Google half from running.
   const apple = await refreshCardArt(card).catch(() => null);
 
-  const want = passBarcode(
-    { serial: "", short_code: "" },
-    card,
-  ).message;
+  // BOTH halves. The first version of this compared only the URL, and the very
+  // next change was to the line under it - so it would have read every card,
+  // found the value already right, skipped them all and reported success while
+  // fixing nothing.
+  const want = passBarcode({ serial: "", short_code: "" }, card);
   let checked = 0, fixed = 0, failed = 0, skipped = 0;
   if (setupStatus().canGoogleWallet) {
     for (const serial of await googleSerialsForCard(card.id).catch(() => [])) {
       checked++;
       const obj = await readObject(serial);
       if (!obj.found) { failed++; continue; }
-      if (obj.barcodeValue === want) { skipped++; continue; }
+      if (obj.barcodeValue === want.message && obj.barcodeAltText === want.altText) {
+        skipped++;
+        continue;
+      }
       const row = await getPass(serial);
       if (!row) { failed++; continue; }
       if ((await createObject(row, card)).ok) fixed++;
@@ -328,7 +332,8 @@ adminRouter.post("/api/demo-barcode-resync", requireAdmin, async (_req, res) => 
   res.json({
     ok: true,
     cardId: card.id,
-    want,
+    want: want.message,
+    wantAltText: want.altText,
     google: { checked, fixed, skipped, failed, configured: setupStatus().canGoogleWallet },
     applePushed: apple?.sent ?? 0,
   });

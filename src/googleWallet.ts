@@ -287,6 +287,15 @@ export interface GoogleObjectReport {
    * not, and the only way its count can mean anything.
    */
   barcodeValue?: string;
+  /**
+   * The line printed UNDER the QR, as Google has it.
+   *
+   * Read back alongside the value because the two change independently: the
+   * demo card's altText changed while its URL did not, and a repair comparing
+   * only the value would have skipped every card as "already correct" and
+   * fixed nothing.
+   */
+  barcodeAltText?: string;
   state?: string;
 }
 
@@ -342,6 +351,10 @@ export async function readObject(serial: string): Promise<GoogleObjectReport> {
     barcodeValue:
       obj.barcode && typeof obj.barcode === "object"
         ? ((obj.barcode as Record<string, unknown>).value as string | undefined)
+        : undefined,
+    barcodeAltText:
+      obj.barcode && typeof obj.barcode === "object"
+        ? ((obj.barcode as Record<string, unknown>).alternateText as string | undefined)
         : undefined,
     state: typeof obj.state === "string" ? obj.state : undefined,
   };
