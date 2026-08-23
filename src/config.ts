@@ -122,6 +122,13 @@ export interface SetupStatus {
   canGoogleWallet: boolean;
   /** True when transactional email (password reset / welcome) can be sent. */
   canEmail: boolean;
+  /**
+   * True when the marketing page's call to action opens WhatsApp rather than
+   * falling back to Instagram. Reported here because there was no way to SEE
+   * whether the variable had landed — the button keeps working either way,
+   * which is correct behaviour and also exactly what makes a typo invisible.
+   */
+  canWhatsapp: boolean;
 }
 
 export function setupStatus(): SetupStatus {
@@ -142,6 +149,7 @@ export function setupStatus(): SetupStatus {
     canPush: apnsKey && Boolean(config.passTypeId),
     canGoogleWallet: googleIssuer && googleServiceAccount,
     canEmail: Boolean(config.resendApiKey && config.emailFrom),
+    canWhatsapp: Boolean(config.whatsappNumber),
   };
 }
 

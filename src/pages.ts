@@ -7439,12 +7439,14 @@ export function setupPage(s: SetupStatus, baseUrl: string): string {
         ${check(s.googleIssuer, "Google Wallet Issuer ID (GOOGLE_ISSUER_ID)", "From the Google Wallet Business Console — needed for Android cards.")}
         ${check(s.googleServiceAccount, "Google service account (GOOGLE_SERVICE_ACCOUNT_B64)", "Produced by pnpm prepare-google from the downloaded JSON key.")}
         ${check(s.canEmail, "Email for password resets (RESEND_API_KEY + EMAIL_FROM)", "Optional but recommended: make a free Resend account, verify a sender, then set both in Railway → Variables. Without it, owners recover via the admin console instead.")}
+        ${check(s.canWhatsapp, "WhatsApp for “Start your 30 days free” (WHATSAPP_NUMBER)", "In Railway → your app service (not Postgres) → Variables, add WHATSAPP_NUMBER. Digits only, country code first, no + and no spaces: a Malaysian 012-345 6789 is 60123456789. Press Deploy after adding it. Until it is set the button still works — it opens Instagram instead.")}
       </ul>
       <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
       <p><strong>Apple — can issue cards:</strong> ${s.canSignPasses ? "YES ✅" : "not yet"}</p>
       <p><strong>Apple — can push updates:</strong> ${s.canPush ? "YES ✅" : "not yet"}</p>
       <p><strong>Google Wallet (Android):</strong> ${s.canGoogleWallet ? "YES ✅" : "not yet"}</p>
       <p><strong>Email (password resets):</strong> ${s.canEmail ? "YES ✅" : "not yet"}</p>
+      <p><strong>“Start your 30 days free” opens:</strong> ${s.canWhatsapp ? "WhatsApp ✅" : "Instagram (WHATSAPP_NUMBER not set)"}</p>
       <p style="margin-top:14px">Owner dashboard: <a href="/dashboard">${baseUrl || ""}/dashboard</a></p>
       ${
         s.canSignPasses
