@@ -183,7 +183,7 @@ describe("buildPassJson", () => {
   it("puts a link in the demo card's barcode, and a serial in everyone else's", () => {
     const demo = buildPassJson(row(), card({ id: "demo-card" })) as any;
     expect(demo.barcodes[0].message).toBe("https://stampy.example.test/?s=card");
-    expect(demo.barcodes[0].altText).toBe("stampy.example.test");
+    expect(demo.barcodes[0].altText).toBe("Scan for more info");
 
     const shop = buildPassJson(row(), card({ id: "some-real-shop" })) as any;
     expect(shop.barcodes[0].message).toBe(row().serial);
@@ -201,11 +201,15 @@ describe("buildPassJson", () => {
     expect(back.value).toContain("ABC234");
   });
 
-  it("falls back to a readable altText when BASE_URL has no scheme", () => {
-    // Not hypothetical: BASE_URL is set by hand in Railway and has been wrong
-    // before. The QR would be useless either way, but the line under it should
-    // not read "https://".
-    expect(passBarcode(row(), { id: "demo-card" }).altText).not.toContain("//");
+  // The line under the barcode must never name a code that is not in it. That
+  // is the whole reason altText moved: "Code ABC234" under a URL sends staff
+  // hunting for a card that does not exist.
+  it("never prints a code or an address under the demo card's QR", () => {
+    const alt = passBarcode(row(), { id: "demo-card" }).altText;
+    expect(alt).not.toContain("Code");
+    expect(alt).not.toContain("ABC234");
+    expect(alt).not.toContain("//");
+    expect(alt).not.toContain(row().serial);
   });
 
   // The stamp grid lives in the strip IMAGE, so nothing may be laid over it and

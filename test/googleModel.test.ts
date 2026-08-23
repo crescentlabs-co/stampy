@@ -227,8 +227,9 @@ describe("buildLoyaltyObject", () => {
     // scanning it should reach the pitch.
     expect(g.barcode.value).toBe("https://stampy.example.test/?s=card");
     // What a human reads under the QR. "Code ABC234" here would name a code
-    // that is not in the barcode.
-    expect(g.barcode.alternateText).toBe("stampy.example.test");
+    // that is not in the barcode, and an address is not typeable with that
+    // query string on it - so it says why to scan instead.
+    expect(g.barcode.alternateText).toBe("Scan for more info");
     expect(g.barcode.type).toBe("QR_CODE");
   });
 

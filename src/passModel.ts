@@ -159,12 +159,15 @@ export function passBarcode(
   card: Pick<CardRow, "id">,
 ): { message: string; altText: string } {
   if (config.demoCardId && card.id === config.demoCardId) {
-    const base = config.baseUrl || "";
     return {
-      message: `${base}/?s=card`,
-      // The bare host, which is what a person reads and can type. Not the full
-      // URL with its query string - that is for the scanner, not the reader.
-      altText: base.replace(/^https?:\/\//, "") || "punchme",
+      message: `${config.baseUrl || ""}/?s=card`,
+      // An instruction, not the address. On a normal card this line is the
+      // typed fallback for when a camera will not read the code - but there is
+      // nothing to type here, because this card cannot be stamped and the
+      // barcode is a URL with a query string nobody would key in by hand. So it
+      // does the only useful job left: telling whoever is looking at the card
+      // why they would point a phone at it.
+      altText: "Scan for more info",
     };
   }
   return { message: row.serial, altText: `Code ${row.short_code}` };
