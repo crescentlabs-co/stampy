@@ -130,6 +130,46 @@ export function legalText(): string {
  * card_stamp_strips), not in a field — nothing is overlaid on top of it, which is
  * why there is no primary field and why the old unicode-dots field is gone.
  */
+/**
+ * What goes in the QR on the card, for BOTH platforms.
+ *
+ * It lives in one function because CLAUDE.md invariant 4 says Apple and Google
+ * carry the same barcode and must not diverge — and until now that was kept true
+ * by writing `row.serial` out twice, in two files, and hoping. One decision
+ * point means they cannot drift apart, whatever rules get added here later.
+ *
+ * The demo card is the one exception, and it is deliberate. That card exists to
+ * be handed out at a pitch and passed around afterwards; a stranger scanning it
+ * is the best moment this product gets, and a serial does nothing for them. So
+ * its QR opens the landing page instead. It stops being stampable by camera as
+ * a result — the staff scanner keys on a UUID shape (src/pages.ts) and a URL
+ * fails that test. The typed short code and the recent-customer list still
+ * work on it.
+ *
+ * `altText` is printed under the barcode, so it has to describe what the code
+ * actually IS. "Code K8FFZ3" under a QR that is not that code is a small lie
+ * told to whoever is squinting at it.
+ *
+ * NOTE: this bakes BASE_URL into every demo pass ever issued, alongside
+ * webServiceURL and the art URLs. Point a new domain at the service and keep the
+ * old one resolving, or these QRs go dark like everything else.
+ */
+export function passBarcode(
+  row: Pick<PassRow, "serial" | "short_code">,
+  card: Pick<CardRow, "id">,
+): { message: string; altText: string } {
+  if (config.demoCardId && card.id === config.demoCardId) {
+    const base = config.baseUrl || "";
+    return {
+      message: `${base}/?s=card`,
+      // The bare host, which is what a person reads and can type. Not the full
+      // URL with its query string - that is for the scanner, not the reader.
+      altText: base.replace(/^https?:\/\//, "") || "punchme",
+    };
+  }
+  return { message: row.serial, altText: `Code ${row.short_code}` };
+}
+
 export function buildPassJson(
   row: PassRow,
   card: CardRow,
@@ -137,6 +177,7 @@ export function buildPassJson(
   business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
+  const barcode = passBarcode(row, card);
 
   return {
     formatVersion: 1,
@@ -167,10 +208,12 @@ export function buildPassJson(
     barcodes: [
       {
         format: "PKBarcodeFormatQR",
-        message: row.serial,
+        // Shared with the Google object through passBarcode, so the two
+        // platforms cannot disagree about what is in the QR.
+        message: barcode.message,
         messageEncoding: "iso-8859-1",
         // Staff fallback: if the camera won't read, they type this code.
-        altText: `Code ${row.short_code}`,
+        altText: barcode.altText,
       },
     ],
     storeCard: {

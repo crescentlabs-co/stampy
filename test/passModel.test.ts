@@ -5,9 +5,12 @@ import type { CardRow, PassRow } from "../src/db.js";
 // import). The policy links on the back of the card are absolute URLs built
 // from it — a relative path in a pass back field is not tappable.
 process.env.BASE_URL = "https://stampy.example.test";
+// The demo card is picked out by id, so it needs one no other fixture uses.
+process.env.DEMO_CARD_ID = "demo-card";
 
-const { buildPassJson, getHeaderFieldValue, isRewardReady, progressText, stampDots, stampGrid } =
-  await import("../src/passModel.js");
+const {
+  buildPassJson, getHeaderFieldValue, isRewardReady, passBarcode, progressText, stampDots, stampGrid,
+} = await import("../src/passModel.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
@@ -169,6 +172,40 @@ describe("buildPassJson", () => {
     expect(p.authenticationToken.length).toBeGreaterThanOrEqual(16);
     expect(p.barcodes[0].message).toBe(row().serial);
     expect(p.storeCard.headerFields[0].value).toBe("3 earned");
+  });
+
+  /*
+   * The demo card is handed out at pitches and passed around afterwards, so its
+   * QR opens the landing page rather than carrying a serial nobody but a staff
+   * scanner can use. Every other card is untouched — that is the half worth
+   * testing, because getting it wrong would break stamping for real shops.
+   */
+  it("puts a link in the demo card's barcode, and a serial in everyone else's", () => {
+    const demo = buildPassJson(row(), card({ id: "demo-card" })) as any;
+    expect(demo.barcodes[0].message).toBe("https://stampy.example.test/?s=card");
+    expect(demo.barcodes[0].altText).toBe("stampy.example.test");
+
+    const shop = buildPassJson(row(), card({ id: "some-real-shop" })) as any;
+    expect(shop.barcodes[0].message).toBe(row().serial);
+    expect(shop.barcodes[0].altText).toBe("Code ABC234");
+  });
+
+  // The serial still identifies the pass everywhere ELSE on it. Only what the
+  // camera reads changed — a demo pass is still a real pass, and the web
+  // service, the push registration and the staff typed-code path all key on
+  // these, not on the barcode.
+  it("still carries the demo card's serial and short code on the pass itself", () => {
+    const demo = buildPassJson(row(), card({ id: "demo-card" })) as any;
+    expect(demo.serialNumber).toBe(row().serial);
+    const back = demo.storeCard.backFields.find((f: any) => f.key === "code");
+    expect(back.value).toContain("ABC234");
+  });
+
+  it("falls back to a readable altText when BASE_URL has no scheme", () => {
+    // Not hypothetical: BASE_URL is set by hand in Railway and has been wrong
+    // before. The QR would be useless either way, but the line under it should
+    // not read "https://".
+    expect(passBarcode(row(), { id: "demo-card" }).altText).not.toContain("//");
   });
 
   // The stamp grid lives in the strip IMAGE, so nothing may be laid over it and

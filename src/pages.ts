@@ -6397,7 +6397,8 @@ export function adminPage(): string {
       // The landing page's own figures. Defaulted here rather than guarded at
       // every use: a console that has never had a visit is a normal state, not
       // an error, and it should render zeros rather than dashes.
-      const emptyTraffic = { views: 0, devices: 0, returning: 0, cta: 0, ctaDevices: 0, referrers: [] };
+      const emptyTraffic = { views: 0, devices: 0, returning: 0, cta: 0, ctaDevices: 0,
+                             cardScans: 0, referrers: [] };
       const traffic = body.traffic || { week: emptyTraffic, month: emptyTraffic };
       const demoFunnel = body.demo || { week: { clicked: 0, added: 0 }, month: { clicked: 0, added: 0 } };
       const live = merchants.filter((m) => !m.archived_at);
@@ -6930,7 +6931,7 @@ export function adminPage(): string {
             '</div></div>' +
             '<div class="trafbox">' +
               '<p class="leadlab">Landing page' +
-                info("Visits to the public pages, counted with an anonymous per-browser id and nothing else. Bots are recorded but excluded from these figures. Your own devices are excluded once you have visited /analytics-optout on each of them - without that, at this stage almost every visit here is you.") +
+                info("Visits to the public pages, counted with an anonymous per-browser id and nothing else. Bots are recorded but excluded from these figures. Your own devices are excluded once you have visited /analytics-optout on each of them - without that, at this stage almost every visit here is you. Card QR scans are landings from the QR printed on a demo card in somebody's wallet - a pitch scan and a passed-around scan both count here, deliberately not split.") +
               "</p>" +
               '<div class="trafrow">' +
                 traf("Visits", t.views, m2.views) +
@@ -6939,6 +6940,7 @@ export function adminPage(): string {
                 traf("Pressed start", t.cta, m2.cta) +
                 traf("Tried the card", d.clicked, dm.clicked) +
                 traf("Kept it", d.added, dm.added) +
+                traf("Card QR scans", t.cardScans, m2.cardScans) +
               "</div>" +
               (t.referrers.length
                 ? '<p class="dnote">From ' + t.referrers.map(function (r) {
@@ -7000,6 +7002,8 @@ export function adminPage(): string {
             '<details class="fold" style="margin-top:26px"><summary>Maintenance</summary>' +
               '<p class="dnote" style="margin:8px 0">Press this after the public address changes. Android cards load their logo, banner and stamp images from that address, and the link Google calls back on is stored with each shop — none of it moves by itself. iPhone cards need nothing. It notifies nobody and cannot change anyone’s stamps, so it is safe to press twice.</p>' +
               '<button class="btn btn-ghost" id="gresync">Resync Google Wallet</button><div id="gresync-out"></div>' +
+              '<p class="dnote" style="margin:18px 0 8px">The demo card\u2019s QR opens the landing page instead of being a stamp code. New cards get that when they are issued; ones already in a wallet do not, and only Android is affected \u2014 iPhone rebuilds its card on every check, Google writes the barcode once and never again. Press this after changing what that QR points at. It reads each card first and only rewrites the ones actually holding the old value, so a count of zero means nothing was stuck.</p>' +
+              '<button class="btn btn-ghost" id="dresync">Fix demo card QR codes</button><div id="dresync-out"></div>' +
             "</details>" +
           "</div>" +
 
@@ -7075,9 +7079,45 @@ export function adminPage(): string {
           renderConsole();
         };
         wireResync();
+        wireDemoResync();
         wireNewShop();
         seatSegs();
         if (building) drawSteps();
+      }
+
+      function wireDemoResync() {
+        const dr = $("#dresync");
+        if (!dr) return;
+        dr.onclick = async () => {
+          const out = $("#dresync-out");
+          dr.disabled = true;
+          dr.textContent = "Fixing\u2026";
+          out.innerHTML = "";
+          const { body: r } = await api("/demo-barcode-resync", { method: "POST" });
+          dr.disabled = false;
+          dr.textContent = "Fix demo card QR codes";
+          if (!r.ok) {
+            out.innerHTML = '<p class="dnote" style="margin:8px 0 0">' + (r.error === "no-demo-card"
+              ? "No card with id " + esc(String(r.id || "")) + ". Check DEMO_CARD_ID in Railway."
+              : "Couldn\u2019t fix \u2014 " + esc(String(r.error || "unknown"))) + "</p>";
+            return;
+          }
+          const g = r.google || {};
+          // Say what it DID, not that it ran. "Fixed 0 of 0" reads as a failure;
+          // "nothing needed fixing" is the same fact and is actionable.
+          const line = !g.configured
+            ? "Google Wallet isn\u2019t set up, so only the iPhone half ran."
+            : g.checked === 0
+              ? "No Android demo cards exist yet, so there was nothing to fix."
+              : g.fixed
+                ? g.fixed + " Android card" + (g.fixed === 1 ? "" : "s") + " now point at the site" +
+                  (g.skipped ? " (" + g.skipped + " already did)" : "")
+                : "All " + g.checked + " Android demo card" + (g.checked === 1 ? "" : "s") +
+                  " already point at the site.";
+          out.innerHTML = '<p class="dnote" style="margin:8px 0 0">' + esc(line) +
+            (g.failed ? esc(" " + g.failed + " could not be read or written.") : "") +
+            esc(" iPhone cards nudged: " + (r.applePushed || 0) + ".") + "</p>";
+        };
       }
 
       function wireResync() {

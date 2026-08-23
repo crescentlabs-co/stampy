@@ -1209,6 +1209,8 @@ export type SiteTraffic = {
   returning: number;
   cta: number;
   ctaDevices: number;
+  /** Landings from a demo card's own QR - see passBarcode in passModel.ts. */
+  cardScans: number;
   referrers: { host: string; n: number }[];
 };
 
@@ -1229,6 +1231,7 @@ export async function siteTraffic(days: number): Promise<SiteTraffic> {
     returning: string;
     cta: string;
     cta_devices: string;
+    card_scans: string;
   }>(
     `SELECT
        count(*) FILTER (WHERE kind = 'view')::text AS views,
@@ -1242,7 +1245,12 @@ export async function siteTraffic(days: number): Promise<SiteTraffic> {
            GROUP BY device_id HAVING count(*) > 1
         ) d)::text AS returning,
        count(*) FILTER (WHERE kind = 'cta')::text AS cta,
-       count(DISTINCT device_id) FILTER (WHERE kind = 'cta')::text AS cta_devices
+       count(DISTINCT device_id) FILTER (WHERE kind = 'cta')::text AS cta_devices,
+       -- Somebody pointed a camera at a demo card. The barcode on that card is
+       -- the landing page tagged ?s=card, so this needs no table and no event
+       -- type of its own - sourceOf and countView were already storing it and
+       -- nothing had ever read it back.
+       count(*) FILTER (WHERE kind = 'view' AND source = 'card')::text AS card_scans
      FROM site_views WHERE ${real}`,
   );
   const refs = await getPool().query<{ host: string; n: string }>(
@@ -1260,6 +1268,7 @@ export async function siteTraffic(days: number): Promise<SiteTraffic> {
     returning: Number(r.returning),
     cta: Number(r.cta),
     ctaDevices: Number(r.cta_devices),
+    cardScans: Number(r.card_scans),
     referrers: refs.rows.map((x) => ({ host: x.host, n: Number(x.n) })),
   };
 }

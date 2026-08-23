@@ -6,11 +6,17 @@ import type { CardRow, PassRow } from "../src/db.js";
 // Set the Google env BEFORE importing the modules under test (config reads env at import).
 process.env.GOOGLE_ISSUER_ID = "3388000000012345678";
 process.env.BASE_URL = "https://stampy.example.test";
+// The demo card is picked out by id, so the tests need one that is not the id
+// every other fixture here uses.
+process.env.DEMO_CARD_ID = "demo-card";
 
 const {
   buildHeroClearPatch, buildLoyaltyClass, buildLoyaltyObject, buildLoyaltyPatch,
   buildSaveJwtClaims, logoUrl,
 } = await import("../src/googleModel.js");
+// Imported here on purpose: the point of the block below is to compare the two
+// platforms against each other, which no single-platform test file can do.
+const { buildPassJson } = await import("../src/passModel.js");
 const { rgbToHex } = await import("../src/color.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
@@ -192,6 +198,44 @@ describe("buildLoyaltyObject", () => {
     expect(obj.barcode.type).toBe("QR_CODE");
     expect(obj.barcode.value).toBe(row().serial);
     expect(obj.barcode.alternateText).toBe("Code ABC234");
+  });
+
+  /*
+   * The barcode is the one field where Apple and Google MUST agree: one staff
+   * scanner reads both, so a difference between them is a card that cannot be
+   * stamped on one platform. It used to be kept in step by writing row.serial
+   * out in two files and hoping. These tests compare the two builders against
+   * each other rather than each against a literal, so a change to one that is
+   * not made to the other fails here instead of at somebody's counter.
+   */
+  it("gives an ordinary card the same barcode on both platforms", () => {
+    const g = buildLoyaltyObject(row(), card()) as any;
+    const a = buildPassJson(row(), card()) as any;
+    expect(g.barcode.value).toBe(a.barcodes[0].message);
+    expect(g.barcode.alternateText).toBe(a.barcodes[0].altText);
+    expect(g.barcode.value).toBe(row().serial);
+  });
+
+  it("gives the DEMO card the same barcode on both platforms, and it is a link", () => {
+    const demo = card({ id: "demo-card" });
+    const g = buildLoyaltyObject(row(), demo) as any;
+    const a = buildPassJson(row(), demo) as any;
+    expect(g.barcode.value).toBe(a.barcodes[0].message);
+    expect(g.barcode.alternateText).toBe(a.barcodes[0].altText);
+    // The landing page, tagged so the scan is counted apart from ordinary
+    // web traffic. Not the serial: this card is handed out, and a stranger
+    // scanning it should reach the pitch.
+    expect(g.barcode.value).toBe("https://stampy.example.test/?s=card");
+    // What a human reads under the QR. "Code ABC234" here would name a code
+    // that is not in the barcode.
+    expect(g.barcode.alternateText).toBe("stampy.example.test");
+    expect(g.barcode.type).toBe("QR_CODE");
+  });
+
+  it("leaves every OTHER card alone when the demo card is configured", () => {
+    const other = buildLoyaltyObject(row(), card({ id: "some-real-shop" })) as any;
+    expect(other.barcode.value).toBe(row().serial);
+    expect(other.barcode.alternateText).toBe("Code ABC234");
   });
 
   it("shows stamp progress as the points balance", () => {

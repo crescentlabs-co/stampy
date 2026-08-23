@@ -2737,6 +2737,28 @@ async function main() {
   await new Promise((r) => setTimeout(r, 300));
   expect((await countViews()) === svBeforeOptOut, "an opted-out browser is not counted at all");
 
+  // The demo card's QR is the landing page tagged ?s=card, and siteTraffic
+  // counts rows whose source is exactly that. Those two strings live in
+  // different files — passModel.ts writes it, db.ts reads it — and nothing else
+  // would notice if one changed: the tile would just quietly read 0 forever.
+  // So the tag is taken from the barcode itself rather than typed here.
+  const { passBarcode } = await import("../src/passModel.js");
+  const { config: cfg } = await import("../src/config.js");
+  // config.demoCardId, not an env read: it has a built-in default, so reading
+  // the raw variable gets the wrong card and the barcode comes back as a bare
+  // serial that is not a URL at all.
+  const demoTag = new URL(
+    passBarcode({ serial: "x", short_code: "y" }, { id: cfg.demoCardId }).message,
+  ).searchParams.get("s");
+  expect(demoTag === "card", "the demo barcode still tags its landings ?s=card");
+  const svScansBefore = await countViews("kind = 'view' AND source = 'card'");
+  await fetch(base + "/?s=" + demoTag, { headers: { cookie: `pm_device=${svDevice}` } });
+  await new Promise((r) => setTimeout(r, 300));
+  expect(
+    (await countViews("kind = 'view' AND source = 'card'")) === svScansBefore + 1,
+    "a scan of a demo card is counted as a card scan",
+  );
+
   // The customer flow must NOT be swept into this. /c/:cardId has join_view and
   // an analytics cookie there would undercut the promise that page makes.
   const svBeforeCard = await countViews();

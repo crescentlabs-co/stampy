@@ -277,6 +277,16 @@ export interface GoogleObjectReport {
    * wallet a while.
    */
   ownHeroUri?: string;
+  /**
+   * What the QR on the card ACTUALLY holds right now, as Google has it.
+   *
+   * Needed because barcode is written once, at createObject, and every stamp
+   * since is a PATCH that omits it — so a change to what the barcode should
+   * contain does not reach an object that already exists. Reading it back is
+   * the only way a repair can tell a card it has already fixed from one it has
+   * not, and the only way its count can mean anything.
+   */
+  barcodeValue?: string;
   state?: string;
 }
 
@@ -329,6 +339,10 @@ export async function readObject(serial: string): Promise<GoogleObjectReport> {
     found: true,
     status: res.status,
     ownHeroUri: uriOf(obj.heroImage),
+    barcodeValue:
+      obj.barcode && typeof obj.barcode === "object"
+        ? ((obj.barcode as Record<string, unknown>).value as string | undefined)
+        : undefined,
     state: typeof obj.state === "string" ? obj.state : undefined,
   };
 }

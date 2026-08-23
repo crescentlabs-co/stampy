@@ -12,7 +12,7 @@
 import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
 import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
-import { isRewardReady, rewardTerms } from "./passModel.js";
+import { isRewardReady, passBarcode, rewardTerms } from "./passModel.js";
 
 /** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
 export function classId(card: Pick<CardRow, "id">): string {
@@ -311,12 +311,14 @@ export function buildLoyaltyObject(
     state: "ACTIVE",
     accountId: row.serial,
     accountName: `Card ${row.short_code}`,
-    // Same QR content as the Apple pass (the serial), so the SAME staff
-    // scanner stamps both platforms; altText covers the typed fallback.
+    // Same QR content as the Apple pass, from the SAME function, so the one
+    // staff scanner reads both platforms and neither can drift from the other.
+    // For most cards that is the serial; the demo card's is a link - see
+    // passBarcode in passModel.ts for why.
     barcode: {
       type: "QR_CODE",
-      value: row.serial,
-      alternateText: `Code ${row.short_code}`,
+      value: passBarcode(row, card).message,
+      alternateText: passBarcode(row, card).altText,
     },
     ...buildLoyaltyPatch(row, card, business),
   };

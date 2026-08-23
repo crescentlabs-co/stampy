@@ -44,6 +44,7 @@ import {
   setMerchantPaid,
   unarchiveCard,
   getCard,
+  getPass,
   merchantEdits,
   demoCardFunnel,
   merchantHealth,
@@ -73,7 +74,8 @@ import {
   type ArtKind,
 } from "../cardView.js";
 import { refreshCardArt } from "../cardActions.js";
-import { clearObjectHero, ensureClass, readClass, readObject } from "../googleWallet.js";
+import { clearObjectHero, createObject, ensureClass, readClass, readObject } from "../googleWallet.js";
+import { passBarcode } from "../passModel.js";
 import { stageOf, triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng } from "../imageValidate.js";
 import { adminPage } from "../pages.js";
@@ -272,6 +274,66 @@ adminRouter.post("/api/merchant/:id/unarchive", requireAdmin, async (req, res) =
  * than parallel — a burst of writes against one issuer is how you find a rate
  * limit you did not know about.
  */
+/**
+ * Push the demo card's barcode onto passes that were issued before it changed.
+ *
+ * The demo card's QR is a link to the landing page rather than a serial (see
+ * passBarcode, src/passModel.ts). New passes get that from the moment they are
+ * issued; already-issued ones do not, and the two platforms fail differently:
+ *
+ *  - Apple regenerates pass.json from scratch on every device fetch, so it only
+ *    needs waking. refreshCardArt does that and nothing else is required.
+ *  - Google writes `barcode` ONCE, at createObject. Every stamp since is a
+ *    PATCH that omits it, so an existing object keeps the old serial forever
+ *    unless something deliberately rewrites it. That is what makes this button
+ *    exist: without it the change is live on iPhones and silently absent on
+ *    Android, which is precisely the platforms-disagree state invariant 4 is
+ *    there to prevent.
+ *
+ * createObject already answers a 409 with a full-object PATCH, which does carry
+ * the barcode — so the repair is just "create it again" and needs no new Google
+ * call. Each object is read first and skipped if it already holds the right
+ * value, which makes the button idempotent, free to press on a healthy card,
+ * and lets `fixed` mean "was wrong, now is not". Sequential, for the same
+ * reason the resync below is: a burst against one issuer finds rate limits.
+ *
+ * Notifies nobody. createObject carries no notifyPreference (invariant 3) and
+ * the stamp count is untouched.
+ */
+adminRouter.post("/api/demo-barcode-resync", requireAdmin, async (_req, res) => {
+  const card = await getCard(config.demoCardId);
+  if (!card) return void res.status(404).json({ error: "no-demo-card", id: config.demoCardId });
+
+  // Apple first and on its own: it is a wake-up, not a write, and it cannot fail
+  // in a way that should stop the Google half from running.
+  const apple = await refreshCardArt(card).catch(() => null);
+
+  const want = passBarcode(
+    { serial: "", short_code: "" },
+    card,
+  ).message;
+  let checked = 0, fixed = 0, failed = 0, skipped = 0;
+  if (setupStatus().canGoogleWallet) {
+    for (const serial of await googleSerialsForCard(card.id).catch(() => [])) {
+      checked++;
+      const obj = await readObject(serial);
+      if (!obj.found) { failed++; continue; }
+      if (obj.barcodeValue === want) { skipped++; continue; }
+      const row = await getPass(serial);
+      if (!row) { failed++; continue; }
+      if ((await createObject(row, card)).ok) fixed++;
+      else failed++;
+    }
+  }
+  res.json({
+    ok: true,
+    cardId: card.id,
+    want,
+    google: { checked, fixed, skipped, failed, configured: setupStatus().canGoogleWallet },
+    applePushed: apple?.sent ?? 0,
+  });
+});
+
 adminRouter.post("/api/google-resync", requireAdmin, async (_req, res) => {
   if (!setupStatus().canGoogleWallet) {
     return void res.status(409).json({ error: "google-not-configured" });
