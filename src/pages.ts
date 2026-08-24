@@ -5264,26 +5264,39 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const q = (s) => div.querySelector(s);
       // perWeek is the server's cap (limits.perWeek), never a number typed here:
       // the browser has told an owner the wrong limit twice now.
-      let all = [], ready = 0, cooling = 0, health = [], readyAll = 0, perWeek = 0;
+      let all = [], ready = 0, cooling = 0, removed = 0, everyone = 0,
+          health = [], readyAll = 0, perWeek = 0;
 
       /**
-       * How many the chosen audience will actually reach.
+       * Who the chosen audience IS, and how many of them this will reach.
        *
-       * eligible, never customers: the group's size and the number of
-       * messages it will produce are different figures, and the button has to
-       * promise the smaller one. The server filters again on the way out
-       * regardless — this is the honest preview of that, not a substitute.
+       * The dropdown names the group's real size — nine customers is nine
+       * customers — and this line accounts for the gap between that and the
+       * number the button will actually send. Showing only the sendable figure
+       * made a group of nine read as five with no explanation, which looks like
+       * customers going missing rather than a limit doing its job.
+       *
+       * The server filters again on the way out regardless: this is the honest
+       * preview of that, never a substitute for it.
        */
       function paintAudience() {
         const sel = q("[data-audience]");
         const key = sel.value || "ready";
         const group = health.find((h) => h.key === key);
         ready = group ? group.eligible : readyAll;
+        const total = group ? group.customers : everyone;
+        const onCap = group ? group.cooling : cooling;
+        const gone = group ? group.removed : removed;
         const bits = [];
         bits.push(ready
-          ? "Will be sent to <strong>" + ready + "</strong>" + (ready === 1 ? " customer" : " customers")
+          ? "Will be sent to <strong>" + ready + "</strong> of " + total +
+            (total === 1 ? " customer" : " customers")
           : "Nobody to message in this group right now");
-        if (cooling) bits.push(cooling + " already had their " + perWeek + " this week");
+        if (onCap) {
+          bits.push(onCap + (onCap === 1 ? " is" : " are") +
+            " at the weekly limit of " + perWeek);
+        }
+        if (gone) bits.push(gone + " deleted the card");
         q("[data-who]").innerHTML = bits.join(" · ");
         q("[data-send]").disabled = !ready;
       }
@@ -5455,9 +5468,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const buckets = body.buckets || [];
         const find = (k) => (buckets.find((b) => b.key === k) || {});
         cooling = find("cooling").customers || 0;
+        removed = find("removed").customers || 0;
         perWeek = (body.limits || {}).perWeek || perWeek;
         health = body.health || [];
         readyAll = find("ready").eligible || 0;
+        // Everyone means everyone, so the count is every customer — not the
+        // sendable ones. The four health groups partition the same people, so
+        // this is also the number the tiles above add up to.
+        everyone = health.reduce((a, h) => a + h.customers, 0);
 
         // Everyone, then one option per health group. The groups are the
         // audiences worth choosing — chase the Lost, thank the Regulars — while
@@ -5465,10 +5483,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // reason somebody is skipped, never a group to aim at.
         const sel = q("[data-audience]");
         const keep = sel.value;
+        // Group SIZE in the dropdown, not the sendable count: the dropdown is
+        // for choosing who to talk to, and "Regulars (2)" when a shop has five
+        // regulars is simply a wrong label. What will actually go out is the
+        // line under the button.
         sel.innerHTML =
-          '<option value="ready">Everyone (' + readyAll + ")</option>" +
+          '<option value="ready">Everyone (' + everyone + ")</option>" +
           health.map((h) =>
-            '<option value="' + h.key + '">' + esc(h.label) + " (" + h.eligible + ")</option>",
+            '<option value="' + h.key + '">' + esc(h.label) + " (" + h.customers + ")</option>",
           ).join("");
         if (keep) sel.value = keep;
         paintAudience();

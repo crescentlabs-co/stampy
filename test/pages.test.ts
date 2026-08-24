@@ -1576,8 +1576,10 @@ describe("dashboard information architecture", () => {
     expect(html).toContain("Notifications");
     expect(html).toContain("Push notification");
     // Built from the server's cap, not typed here — the number has moved twice.
-    expect(html).toContain('already had their " + perWeek + " this week');
-    expect(html).not.toMatch(/already had their (one|two|three) this week/);
+    expect(html).toContain('" at the weekly limit of " + perWeek');
+    expect(html).not.toMatch(/at the weekly limit of (one|two|three|\d)/);
+    // The line accounts for the whole group, not just the sendable part.
+    expect(html).toContain('</strong> of " + total');
     expect(html).not.toContain("data-buckets");
     expect(html).not.toContain("Bring people back");
     expect(html).toContain("Find a customer");
@@ -2232,5 +2234,30 @@ describe("the four all-time tiles", () => {
    */
   it("share their number size with the health tiles", () => {
     expect(html).not.toMatch(/\.totals\.health \.metric b \{[^}]*font-size/);
+  });
+});
+
+/**
+ * The Send-to dropdown names how many customers are in each group; the line
+ * under the button says how many of them this message will actually reach, and
+ * where the rest went. Showing only the sendable figure made a group of nine
+ * read as five with no explanation — customers appearing to go missing rather
+ * than a limit doing its job.
+ */
+describe("the notification audience", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+
+  it("counts the whole group in the dropdown, not the sendable part", () => {
+    expect(html).toContain('>Everyone (\' + everyone +');
+  });
+
+  it("names the group size, never the eligible count, in the options", () => {
+    expect(html).toContain("h.customers +");
+    expect(html).not.toContain("h.eligible + \")</option>\"");
+  });
+
+  it("accounts for everyone the message will not reach", () => {
+    expect(html).toContain("at the weekly limit of");
+    expect(html).toContain("deleted the card");
   });
 });

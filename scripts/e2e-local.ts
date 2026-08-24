@@ -2987,6 +2987,15 @@ async function main() {
       body.health.map((h: any) => h.key).join(",") === "regular,returning,new,lost",
       "...and they are the four, in the order the dashboard shows them",
     );
+    // The dropdown names the group's SIZE and the line under the button
+    // accounts for the gap, so every group has to carry both, plus the reasons.
+    // An owner shown "5 of 9" is owed the other four.
+    expect(
+      body.health.every((h: any) =>
+        h.eligible <= h.customers && h.cooling + h.removed <= h.customers &&
+        h.eligible + h.cooling + h.removed >= h.customers),
+      "every group accounts for all of its customers: sendable, capped or gone",
+    );
 
     // The cycle is what makes them mean anything, and changing it re-cohorts
     // the same people with no new events at all.

@@ -927,6 +927,12 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
       hint: h.hint,
       customers: members.length,
       eligible: members.filter((c) => c.canNudge).length,
+      // Why the rest cannot be reached, split by reason. The dropdown names the
+      // group's SIZE and the line under the box accounts for the gap — an owner
+      // who sees "5 of 9" is owed the other four, and "at the weekly limit" and
+      // "deleted the card" are not the same news.
+      cooling: members.filter((c) => c.bucket === "cooling").length,
+      removed: members.filter((c) => c.removed).length,
     };
   });
 
