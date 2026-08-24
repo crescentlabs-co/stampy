@@ -1575,7 +1575,9 @@ describe("dashboard information architecture", () => {
   it("sends notifications from one box with one button", () => {
     expect(html).toContain("Notifications");
     expect(html).toContain("Push notification");
-    expect(html).toContain("already had their two this week");
+    // Built from the server's cap, not typed here — the number has moved twice.
+    expect(html).toContain('already had their " + perWeek + " this week');
+    expect(html).not.toMatch(/already had their (one|two|three) this week/);
     expect(html).not.toContain("data-buckets");
     expect(html).not.toContain("Bring people back");
     expect(html).toContain("Find a customer");
@@ -2093,7 +2095,7 @@ describe("customer health tiles", () => {
       group("new", "New", counts[2]!),
       group("lost", "Lost", counts[3]!),
     ],
-    cycle: { days: 28, chosen: true, label: "3-4 weeks", regularGapDays: 25, lostAfterDays: 49, ...cycle },
+    cycle: { days: 28, chosen: true, label: "3-4 weeks", regularGapDays: 25, regularStamps: 3, lostAfterDays: 49, ...cycle },
   });
 
   const render = (counts: number[], cycle?: Record<string, unknown>) => {
@@ -2136,8 +2138,11 @@ describe("customer health tiles", () => {
   it("spells each rule out in the shop's own numbers", () => {
     const hint = /data-info="([^"]*)"/.exec(render([1, 1, 1, 1]))![1]!;
     expect(hint).toContain("once every 3-4 weeks");
-    expect(hint).toContain("New: 1 stamp and hasn\u2019t returned.");
-    expect(hint).toContain("Regulars: 3+ stamps");
+    expect(hint).toContain("New: signed up and hasn\u2019t been back yet.");
+    expect(hint).toContain("Regulars: 3+ stamps from your counter (4+ visits with the sign-up)");
+    // The sign-up is visit 1, and the welcome stamps are not visits 2 and 3.
+    expect(hint).toContain("Signing up is visit 1");
+    expect(hint).toContain("Welcome stamps fill their card but are not extra visits");
     expect(hint).toContain("average gap of 25 days or less");
     expect(hint).toContain("Returning: has come back, but doesn\u2019t yet meet the Regular criteria.");
     expect(hint).toContain("Lost: hasn\u2019t returned for more than 2\u00d7 your selected cycle (7 weeks).");

@@ -17,6 +17,7 @@ import {
   healthOf,
   LOST_AFTER,
   REGULAR_GAP,
+  REGULAR_STAMPS,
   RETURN_CYCLES,
   returnCycleOf,
   RETURN_CYCLE_FALLBACK,
@@ -41,6 +42,7 @@ describe("the return cycle", () => {
   it("has a regular gap and a lost window for each of the three", () => {
     expect(REGULAR_GAP).toEqual({ 14: 11, 21: 18, 28: 25 });
     expect(LOST_AFTER).toEqual({ 14: 21, 21: 35, 28: 49 });
+    expect(REGULAR_STAMPS).toBe(3);
   });
 });
 
@@ -100,16 +102,30 @@ describe("healthOf", () => {
      * and three stamps over three months were the same number. Regular is a
      * claim about RHYTHM, so it is judged on the rhythm.
      */
-    it("needs three stamps AND a gap inside the cycle", () => {
+    it("needs three COUNTER stamps AND a gap inside the cycle", () => {
+      // The sign-up is visit 1, so three stamps is four visits. The bar is
+      // written in stamps precisely so that counting the sign-up towards it
+      // could not quietly loosen Regular to two stamps.
+      const visitsFor = (stamps: number) => stamps + 1;
       for (const cycle of RETURN_CYCLES) {
         const ok = REGULAR_GAP[cycle];
-        expect(healthOf(3, 0, ok, cycle)).toBe("regular");
-        expect(healthOf(3, 0, ok + 1, cycle)).toBe("returning");
+        expect(healthOf(visitsFor(REGULAR_STAMPS), 0, ok, cycle)).toBe("regular");
+        expect(healthOf(visitsFor(REGULAR_STAMPS), 0, ok + 1, cycle)).toBe("returning");
         // Three stamps in one day is a rhythm of nothing, and used to be enough.
-        expect(healthOf(3, 0, 0, cycle)).toBe("regular");
+        expect(healthOf(visitsFor(REGULAR_STAMPS), 0, 0, cycle)).toBe("regular");
         // Two stamps at a perfect rhythm is still not three.
-        expect(healthOf(2, 0, ok, cycle)).toBe("returning");
+        expect(healthOf(visitsFor(REGULAR_STAMPS - 1), 0, ok, cycle)).toBe("returning");
       }
+    });
+
+    /**
+     * The sign-up counts as a visit but must NOT count towards the stamp bar —
+     * that would have made Regular reachable on two counter stamps in the same
+     * change that started counting it.
+     */
+    it("does not let the sign-up itself pay for a third stamp", () => {
+      expect(healthOf(3, 0, 1, 14)).toBe("returning");
+      expect(healthOf(4, 0, 1, 14)).toBe("regular");
     });
 
     /**
@@ -119,8 +135,8 @@ describe("healthOf", () => {
      * unreachable in the other.
      */
     it("calls the same customer regular at a slow cycle and not at a fast one", () => {
-      expect(healthOf(4, 0, 17, 28)).toBe("regular");
-      expect(healthOf(4, 0, 17, 14)).toBe("returning");
+      expect(healthOf(5, 0, 17, 28)).toBe("regular");
+      expect(healthOf(5, 0, 17, 14)).toBe("returning");
     });
 
     /**
@@ -136,7 +152,7 @@ describe("healthOf", () => {
   });
 
   describe("returning and new", () => {
-    it("separates a second stamp from a first", () => {
+    it("separates a customer who came back from one who only signed up", () => {
       expect(healthOf(2, 0, 3, 14)).toBe("returning");
       expect(healthOf(1, 0, Infinity, 14)).toBe("new");
     });
@@ -148,7 +164,8 @@ describe("healthOf", () => {
      * report a base of returning customers it had never served.
      */
     it("counts a freshly issued card with welcome stamps as new", () => {
-      expect(healthOf(0, 0, Infinity, 14)).toBe("new");
+      // One visit — the sign-up — however many welcome stamps it was worth.
+      expect(healthOf(1, 0, Infinity, 14)).toBe("new");
     });
 
     /**
@@ -156,7 +173,7 @@ describe("healthOf", () => {
      * a perfect one — Infinity, not zero. If it were zero, the arithmetic would
      * say "inside the cycle" about somebody who has been in once.
      */
-    it("never makes a one-stamp customer regular, whatever the cycle", () => {
+    it("never makes a just-signed-up customer regular, whatever the cycle", () => {
       for (const cycle of RETURN_CYCLES) {
         expect(healthOf(1, 0, Infinity, cycle)).toBe("new");
         expect(healthOf(0, 0, Infinity, cycle)).toBe("new");

@@ -2899,15 +2899,17 @@ function drawHealth(host, body) {
   const share = shares(groups.map((g) => g.customers));
   const cycle = body.cycle || {};
   const gap = cycle.regularGapDays || 11;
+  const need = cycle.regularStamps || 3;
   const lostWeeks = Math.round((cycle.lostAfterDays || 21) / 7);
   // Each rule, then the shop's own number for it in brackets. The words are
   // fixed; the numbers come from what the server sent rather than from a copy
   // of the thresholds here, so a hint can never describe a rule the server has
   // stopped applying.
   const band = {
-    new: "1 stamp and hasn\u2019t returned.",
-    regular: "3+ stamps and typically visits within your selected cycle " +
-      "(an average gap of " + gap + " days or less).",
+    new: "signed up and hasn\u2019t been back yet.",
+    regular: need + "+ stamps from your counter (" + (need + 1) + "+ visits with the sign-up) " +
+      "and typically comes back within your selected cycle (an average gap of " +
+      gap + " days or less).",
     returning: "has come back, but doesn\u2019t yet meet the Regular criteria.",
     lost: "hasn\u2019t returned for more than 2\u00d7 your selected cycle (" + lostWeeks + " weeks).",
   };
@@ -2928,8 +2930,9 @@ function drawHealth(host, body) {
     if (g) lines.push(g.label + ": " + (band[key] || g.hint));
   });
   lines.push("",
-    "A stamp is one from your counter. Welcome stamps are not stamps here, " +
-    "an undo takes one back off, and claiming a reward does not reset the count. " +
+    "Signing up is visit 1 \u2014 they were in your shop to do it. Welcome stamps fill " +
+    "their card but are not extra visits; after that every visit is one stamp from your " +
+    "counter. An undo takes one back off, and claiming a reward does not reset the count. " +
     "Everybody is in exactly one group, so the four add up to your customers number above.");
   if (!cycle.chosen) lines.push("", "You have not chosen a cycle yet \u2014 set it in Shop.");
   const hint = lines.join(NL);
@@ -5264,7 +5267,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           <div data-results style="margin-top:10px"></div>
         </details>\` : ""}\`;
       const q = (s) => div.querySelector(s);
-      let all = [], ready = 0, cooling = 0, health = [], readyAll = 0;
+      // perWeek is the server's cap (limits.perWeek), never a number typed here:
+      // the browser has told an owner the wrong limit twice now.
+      let all = [], ready = 0, cooling = 0, health = [], readyAll = 0, perWeek = 0;
 
       /**
        * How many the chosen audience will actually reach.
@@ -5283,7 +5288,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         bits.push(ready
           ? "Will be sent to <strong>" + ready + "</strong>" + (ready === 1 ? " customer" : " customers")
           : "Nobody to message in this group right now");
-        if (cooling) bits.push(cooling + " already had their two this week");
+        if (cooling) bits.push(cooling + " already had their " + perWeek + " this week");
         q("[data-who]").innerHTML = bits.join(" · ");
         q("[data-send]").disabled = !ready;
       }
@@ -5455,6 +5460,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const buckets = body.buckets || [];
         const find = (k) => (buckets.find((b) => b.key === k) || {});
         cooling = find("cooling").customers || 0;
+        perWeek = (body.limits || {}).perWeek || perWeek;
         health = body.health || [];
         readyAll = find("ready").eligible || 0;
 

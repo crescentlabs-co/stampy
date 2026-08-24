@@ -586,13 +586,16 @@ const BUCKETS = [
   {
     key: "ready",
     label: "Can be messaged",
-    hint: "had fewer than two messages in the last 7 days",
+    // Worded FROM the constant, all of it. The cap has moved twice, and each
+    // time a hard-coded "two" somewhere told an owner a rule the server was no
+    // longer applying.
+    hint: `had fewer than ${MAX_NUDGES_PER_WEEK} messages in the last 7 days`,
     nudgeable: true,
   },
   {
     key: "cooling",
-    label: "Had their two this week",
-    hint: "at the two-a-week cap — they move back up on their own",
+    label: `Had their ${MAX_NUDGES_PER_WEEK} this week`,
+    hint: `at the ${MAX_NUDGES_PER_WEEK}-a-week cap — they move back up on their own`,
     nudgeable: false,
   },
   {
@@ -656,6 +659,13 @@ export function returnCycleOf(days: number | null | undefined): ReturnCycle {
 export const REGULAR_GAP: Record<ReturnCycle, number> = { 14: 11, 21: 18, 28: 25 };
 
 /**
+ * Stamps from the counter — NOT visits — before anyone is a Regular. The
+ * sign-up is visit 1, so this is four visits on screen; the bar is written in
+ * stamps so that counting the sign-up did not silently move it.
+ */
+export const REGULAR_STAMPS = 3;
+
+/**
  * Silence that means gone: twice the MIDDLE of the shop's range, so a shop that
  * says "every 1-2 weeks" writes somebody off after three weeks rather than
  * after two or after four.
@@ -700,19 +710,19 @@ export const HEALTH = [
   {
     key: "new",
     label: "New",
-    hint: "one stamp, and not back yet",
+    hint: "signed up, and not back since",
   },
   {
     key: "lost",
     label: "Lost",
-    hint: "no stamp for more than twice your cycle",
+    hint: "not in for more than twice your cycle",
   },
 ] as const;
 
 export type HealthKey = (typeof HEALTH)[number]["key"];
 
 /**
- * @param visits      lifetime, net, per person
+ * @param visits      lifetime, net, per person — the sign-up itself is visit 1
  * @param lastDays    days since their last stamp
  * @param avgGapDays  mean days between their visits; Infinity with fewer than two
  */
@@ -723,12 +733,16 @@ export function healthOf(
   cycle: ReturnCycle,
 ): HealthKey {
   if (lastDays > LOST_AFTER[cycle]) return "lost";
-  // Before Regular on purpose: nobody with one stamp has a rhythm to judge, and
-  // "New" says more about them than "Returning" would. Zero stamps lands here
-  // too — someone who has the card and has never used it has not returned
-  // either, and Returning is the one label that would be a lie about them.
+  // Before Regular on purpose: somebody who has only taken the card has no
+  // rhythm to judge, and "New" says more about them than "Returning" would.
+  // Since the sign-up is visit 1, ONE visit is exactly that person: they have
+  // the card, they have their welcome stamps, they have not been back.
   if (visits <= 1) return "new";
-  if (visits >= 3 && avgGapDays <= REGULAR_GAP[cycle]) return "regular";
+  // Three stamps FROM THE COUNTER, which is four visits now that the sign-up is
+  // one of them. Expressed in stamps because that is the bar the founder set,
+  // and because counting the sign-up towards it would have quietly loosened
+  // Regular to two stamps in the same change that started counting it.
+  if (visits - 1 >= REGULAR_STAMPS && avgGapDays <= REGULAR_GAP[cycle]) return "regular";
   // The catch-all, so the four partition everybody: been back at least once,
   // not yet often enough or not yet regularly enough.
   return "returning";
@@ -774,14 +788,14 @@ async function customerViews(cards: CardRow[], cycle: ReturnCycle = RETURN_CYCLE
       // last_visit, not updated_at — a nudge must not reset the lapse clock.
       const lastDays = Math.floor((now - new Date(c.last_visit).getTime()) / 86400000);
       // The rhythm: their whole span divided by the gaps in it, so three visits
-      // give two gaps. Infinity — not zero — when there is no second visit to
-      // measure against, because a missing rhythm must never read as a perfect
-      // one. Divided by net `visits` while the span comes from stamp times: an
-      // undone stamp is not a visit, and counting it as one would flatter the
-      // gap of somebody whose mis-scan was corrected.
+      // give two gaps. The span runs from the day they took the card (visit 1)
+      // to their last stamp. Infinity — not zero — when there is no second
+      // visit to measure against, because a missing rhythm must never read as a
+      // perfect one. Floored at zero for the same reason netStamps is: a clock
+      // that ran backwards must not hand somebody a negative rhythm.
       const firstMs = c.first_visit ? new Date(c.first_visit).getTime() : 0;
       const avgGapDays = c.visits >= 2 && firstMs
-        ? (new Date(c.last_visit).getTime() - firstMs) / 86400000 / (c.visits - 1)
+        ? Math.max(0, (new Date(c.last_visit).getTime() - firstMs) / 86400000 / (c.visits - 1))
         : Infinity;
       const allowed = canNudge({
         nudges7d: c.nudges_7d,
@@ -929,6 +943,7 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
       // The two numbers the groups actually turn on. Sent rather than
       // recomputed in the browser, so the hint on screen cannot describe a
       // rule the server has stopped using.
+      regularStamps: REGULAR_STAMPS,
       regularGapDays: REGULAR_GAP[cycle],
       lostAfterDays: LOST_AFTER[cycle],
     },

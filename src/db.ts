@@ -2134,8 +2134,9 @@ export interface CustomerRow {
   stamps: number;
   /**
    * How many times this PERSON has been served, ever. Net of undos, free of
-   * welcome stamps, untouched by a redemption — see CUSTOMER_VISITS_SQL. This
-   * is the one to judge a customer by; `stamps` above is the one to show them.
+   * welcome stamps, untouched by a redemption, and counting the sign-up itself
+   * as visit 1 — see CUSTOMER_VISITS_SQL. This is the one to judge a customer
+   * by; `stamps` above is the one to show them.
    */
   visits: number;
   target: number;
@@ -2143,7 +2144,7 @@ export interface CustomerRow {
   created_at: Date;
   /** Last visit by this PERSON — the last stamp on any pass they hold. */
   last_visit: Date;
-  /** First visit by this PERSON. Null until they have been stamped at all. */
+  /** First visit by this PERSON — when they took their earliest card. */
   first_visit: Date | null;
   /** Messages sent to this person since their last visit, across every pass. */
   unanswered_nudges: number;
@@ -2309,6 +2310,12 @@ const REMOVED_PASS_SQL = `(
  *   a redeem and restart  no stamp event, so the count does not move
  *   an undo               its own event, so a mis-scan comes back off
  *
+ * Plus ONE for getting the card at all. Somebody was standing in the shop when
+ * they scanned the poster — that is a visit, and the welcome stamps are what it
+ * was worth. The +1 is per PERSON, not per pass and not per welcome stamp: a
+ * card handing out two welcome stamps did not see them twice, and someone
+ * holding an Apple and a Google card did not walk in twice either.
+ *
  * `NOT e.is_test` for the same reason netStamps carries it: the owner's own
  * card in their own wallet is not a customer visiting. It matters here even
  * though cardCustomers filters test PASSES out of the list — an owner who
@@ -2319,23 +2326,28 @@ const REMOVED_PASS_SQL = `(
  * Same floor at zero as netStamps, and the same reason: a window can begin
  * mid-correction, and a negative visit count is not a fact about anybody.
  */
-const CUSTOMER_VISITS_SQL = `(
+const CUSTOMER_VISITS_SQL = `(1 + (
        SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
                      - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
          FROM events e WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND NOT e.is_test
-     )`;
+     ))`;
 
 /**
- * The FIRST time this person was served, ever.
+ * The FIRST time this person was in, ever — the day they took the card.
+ *
+ * Their first stamp would be the wrong end of the span now that signing up is
+ * visit 1: a customer who joined in June and was first stamped in August has
+ * been coming for two months, and measuring from the stamp would throw the
+ * first gap away and flatter their rhythm. The earliest pass they hold is the
+ * earliest they can possibly have been in, and unlike a first stamp it always
+ * exists.
  *
  * With `last_visit` and `visits` it gives the average gap between visits, which
- * is what "Regular" turns on: three stamps in one afternoon and three stamps
- * over three months are the same count and very different customers. NULL until
- * they have been stamped at all, which is why the caller treats it as no rhythm
- * rather than as a gap of zero.
+ * is what "Regular" turns on: three visits in one afternoon and three visits
+ * over three months are the same count and very different customers.
  */
-const FIRST_VISIT_SQL = `(SELECT min(e.created_at) FROM events e
-       WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp' AND NOT e.is_test)`;
+const FIRST_VISIT_SQL = `(SELECT min(q.created_at) FROM passes q
+       WHERE q.serial IN ${CUSTOMER_SERIALS_SQL})`;
 
 const CUSTOMER_COLUMNS_SQL = `p.serial, p.customer_id, p.short_code AS code, p.stamp_count AS stamps,
             p.stamps_target AS target, p.updated_at, p.created_at,

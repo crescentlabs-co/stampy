@@ -76,16 +76,25 @@ target nobody holds any more. Never key card art by a number a card can change.
    one NOTIFY_ON_UPDATE patch or one TEXT_AND_NOTIFY message per event;
    Google hard-caps 3 notifications/card/24h.
    **Nudge limits are enforced server-side, in one place:** `canNudge` in
-   src/winback.ts — **two messages per customer per rolling 7 days**
-   (`MAX_NUDGES_PER_WEEK`; it was one until v2.3). Per PERSON, not per pass:
-   their other wallet card must not buy a third message. The Customers tab's
-   `BUCKETS` are that same rule, so what an owner sees and what the button
-   sends to cannot disagree. Never police this in the browser; it used to live
-   in a `confirm()` dialog and was therefore not a limit at all.
+   src/winback.ts — **three messages per customer per rolling 7 days**
+   (`MAX_NUDGES_PER_WEEK`; one until v2.3, two until v2.5). Per PERSON, not per
+   pass: their other wallet card must not buy an extra message. The Customers
+   tab's `BUCKETS` are that same rule and are WORDED from the constant, as is
+   the line under the send button — a hard-coded "two" on screen has twice
+   outlived the rule it described. Never police this in the browser; it used to
+   live in a `confirm()` dialog and was therefore not a limit at all.
    **`HEALTH` (routes/dashboard.ts) is a different axis and not a second copy
    of this one.** BUCKETS say whether a customer *may* be messaged; HEALTH says
    whether they are a Regular, Returning, New or Lost — judged on lifetime net
-   visits and the shop's own `merchants.expected_return_days`. The nudge
+   visits, their average GAP between visits, and the shop's own
+   `merchants.expected_return_days`. **Signing up is visit 1** (they were in the
+   shop to scan the poster); welcome stamps fill the card and are not extra
+   visits. Regular is written in counter STAMPS (`REGULAR_STAMPS`, 3) rather
+   than visits for exactly that reason — counting the sign-up towards it would
+   have loosened the bar to two stamps in the same change that started counting
+   it. A count alone is not enough either: three stamps in one afternoon and
+   three over three months are the same number, so Regular also needs an
+   average gap inside the shop's cycle (`REGULAR_GAP`). The nudge
    dropdown targets a HEALTH group and `canNudge` still filters it, so a group
    send can never outrun the cap. Both are computed over the same
    `onePerCustomer` array so they cannot disagree about who exists.

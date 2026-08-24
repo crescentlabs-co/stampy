@@ -2213,7 +2213,7 @@ async function main() {
     "each customer row carries joined-days and unanswered-nudge counts (the grouping inputs)",
   );
   expect(
-    ownerCust.limits.perWeek === 2 && ownerCust.limits.maxUnanswered === undefined,
+    ownerCust.limits.perWeek === 3 && ownerCust.limits.maxUnanswered === undefined,
     "the customers response states the one nudge limit — two a week — and no second rule",
   );
   // The groups and the gap counts are computed server-side, so the browser
@@ -2256,12 +2256,20 @@ async function main() {
   const oNudgeOut = JSON.parse(await oNudge.text());
   expect(oNudge.status === 200 && oNudgeOut.total === 1, "owner-level nudge messages a single customer");
 
-  // Their SECOND of the week, which the cap allows — and which puts them at it.
-  const oNudge2 = await fetch(base + "/dashboard/api/nudge", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ message: "Owner-level hello again", target: [p2.serial] }),
-  });
-  expect(JSON.parse(await oNudge2.text()).total === 1, "...and a second time, up to the two-a-week cap");
+  // The rest of their week's allowance, which the cap allows — and which puts
+  // them AT it. Driven by the constant: the cap has moved twice, and each time
+  // a hard-coded second message here left the test measuring nothing.
+  const { MAX_NUDGES_PER_WEEK: capNow } = await import("../src/winback.js");
+  for (let n = 2; n <= capNow; n++) {
+    const again = await fetch(base + "/dashboard/api/nudge", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ message: "Owner-level hello again", target: [p2.serial] }),
+    });
+    expect(
+      JSON.parse(await again.text()).total === 1,
+      `...and again, message ${n} of the ${capNow} a week`,
+    );
+  }
 
   // "All" means everyone the cap allows, which now excludes the customer who
   // has had both of theirs — no exceptions for pressing a different button.
@@ -2599,21 +2607,25 @@ async function main() {
       method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
       body: JSON.stringify({ message: msg, target: [googlePass.serial] }),
     }).then(async (r) => JSON.parse(await r.text()));
+  // Spend the rest of the week's allowance through the OTHER pass, then ask for
+  // one more. Driven by the cap so the shape survives the next change to it.
+  for (let n = 2; n <= capNow; n++) {
+    expect(
+      (await viaOther("Again")).total === 1,
+      `their other pass draws on the SAME weekly allowance (message ${n} of ${capNow})`,
+    );
+  }
+  const overCap = await viaOther("And again");
   expect(
-    (await viaOther("Again")).total === 1,
-    "their other pass draws on the SAME weekly allowance (this is their second)",
-  );
-  const thirdTry = await viaOther("And again");
-  expect(
-    thirdTry.total === 0 && thirdTry.skipped.rateLimited === 1,
-    "...and once the person is at two, neither pass buys a third",
+    overCap.total === 0 && overCap.skipped.rateLimited === 1,
+    `...and once the person is at ${capNow}, neither pass buys another`,
   );
   expect(
     Number((await getPool().query<{ n: string }>(
       `SELECT count(*) AS n FROM events WHERE type = 'nudge' AND serial = ANY($1)`,
       [[applePass.serial, googlePass.serial]],
-    )).rows[0]!.n) === 2,
-    "…and exactly two nudge events exist across both their passes — their week's worth",
+    )).rows[0]!.n) === capNow,
+    `…and exactly ${capNow} nudge events exist across both their passes — their week's worth`,
   );
 
   // --- Legal pages + consent ---
@@ -2799,12 +2811,12 @@ async function main() {
   expect(terms.body.includes("One stamp per visit"), "the terms carry the reward terms");
   expect(terms.body.includes("data processor"), "the terms carry the processor clauses");
 
-  // --- Nudging: one rule, TWO messages per customer per rolling 7 days ---
+  // --- Nudging: one rule, N messages per customer per rolling 7 days ---
   // Automated win-back was removed in v1.5. Nothing messages a customer on a
   // timer any more, so what has to hold is the cooldown — and it has to hold on
   // the SERVER, because the browser is not where a limit can live.
   const { MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
-  expect(MAX_NUDGES_PER_WEEK === 2, "the limit is two messages per customer per 7 days");
+  expect(MAX_NUDGES_PER_WEEK === 3, "the limit is three messages per customer per 7 days");
 
   const { cardMetrics, pruneAbandonedPasses, upsertRegistration, setMessage, canNudgeSerial } =
     await import("../src/db.js").then(async (db) => ({
@@ -2815,11 +2827,22 @@ async function main() {
   const cool = await mk();
   await logEvent("default", cool.serial, "stamp"); // a real customer
   expect((await canNudgeSerial(cool.serial)).ok, "a customer who has never been messaged can be");
-  await logEvent("default", cool.serial, "nudge");
-  expect((await canNudgeSerial(cool.serial)).ok, "a SECOND message inside 7 days is allowed");
+  // Walk right up to the cap, one message at a time, then ask for one more.
+  // Written against the constant so raising the cap moves the test with it
+  // rather than leaving it asserting a rule the product no longer has.
+  for (let n = 1; n < MAX_NUDGES_PER_WEEK; n++) {
+    await logEvent("default", cool.serial, "nudge");
+    expect(
+      (await canNudgeSerial(cool.serial)).ok,
+      `message ${n + 1} of ${MAX_NUDGES_PER_WEEK} inside 7 days is allowed`,
+    );
+  }
   await logEvent("default", cool.serial, "nudge");
   const blocked = await canNudgeSerial(cool.serial);
-  expect(!blocked.ok && blocked.reason === "rate-limited", "a third message inside 7 days is refused");
+  expect(
+    !blocked.ok && blocked.reason === "rate-limited",
+    `message ${MAX_NUDGES_PER_WEEK + 1} inside 7 days is refused`,
+  );
   // 6 days is still inside the cooldown; 8 days is out of it. The boundary is
   // the whole rule, so it is checked from both sides.
   const ageNudge = (days: number) =>
@@ -2828,7 +2851,7 @@ async function main() {
       [cool.serial, String(days)],
     );
   await ageNudge(6);
-  expect(!(await canNudgeSerial(cool.serial)).ok, "still on cooldown 6 days after two messages");
+  expect(!(await canNudgeSerial(cool.serial)).ok, "still on cooldown 6 days after their allowance");
   await ageNudge(8);
   expect((await canNudgeSerial(cool.serial)).ok, "off cooldown 8 days after them");
 
@@ -2852,7 +2875,10 @@ async function main() {
     const hp = await mk();
     await logEvent("default", hp.serial, "pass_added");
     expect((await mine(hp.serial)).stamps >= 2, "a new card carries its welcome stamps as a balance");
-    expect((await mine(hp.serial)).visits === 0, "...but no visits — welcome stamps write no event");
+    // Taking the card IS a visit — somebody was in the shop to scan the poster.
+    // Exactly one, however many welcome stamps that scan was worth: the stamps
+    // fill the card, they are not three separate trips.
+    expect((await mine(hp.serial)).visits === 1, "...and signing up is visit 1, not 0 and not 2");
     expect((await mine(hp.serial)).health === "new", "...so they are New, not Returning");
 
     // force:true throughout — the counter refuses a repeat inside 60s
@@ -2864,30 +2890,30 @@ async function main() {
         method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: hp.serial, force: true }),
       });
     await stampIt();
-    expect((await mine(hp.serial)).visits === 1, "a counter stamp is one visit");
+    expect((await mine(hp.serial)).visits === 2, "a counter stamp is the next visit after the sign-up");
     await fetch(base + "/staff/api/undo", {
       method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: hp.serial }),
     });
-    expect((await mine(hp.serial)).visits === 0, "an undo takes the visit back off");
+    expect((await mine(hp.serial)).visits === 1, "an undo takes that visit back off, leaving the sign-up");
 
     // Enough visits to earn the reward, then take it — the moment the balance
     // resets and the visit count must not.
     for (let i = 0; i < 8; i++) await stampIt();
     const earned = await mine(hp.serial);
-    expect(earned.visits === 8, `eight stamps is eight visits (${earned.visits})`);
+    expect(earned.visits === 9, `eight stamps plus the sign-up is nine visits (${earned.visits})`);
     await fetch(base + "/staff/api/redeem", {
       method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: hp.serial }),
     });
     const after = await mine(hp.serial);
     expect(
-      after.visits === 8,
+      after.visits === 9,
       `a redeem-and-restart leaves the visit count alone (${earned.visits} → ${after.visits})`,
     );
     expect(
       after.stamps === 0,
       `...while the BALANCE restarts at zero (${earned.stamps} → ${after.stamps})`,
     );
-    expect(after.health === "regular", "...and eight visits is still a Regular afterwards");
+    expect(after.health === "regular", "...and nine visits is still a Regular afterwards");
 
     // --- the restart takes TODAY's rules, and starts at zero ----------------
     //
@@ -2941,7 +2967,7 @@ async function main() {
     await logEvent("default", ownCard.serial, "stamp", { actor: "staff:e2e" });
     const withTest = await mine(hp.serial);
     expect(
-      withTest.visits === 8,
+      withTest.visits === 9,
       `a stamp on the owner's own test card is not a visit (${withTest.visits})`,
     );
     expect(
@@ -2982,7 +3008,14 @@ async function main() {
     // be spread over real weeks — nothing else can produce a gap.
     const slow = await mk();
     await logEvent("default", slow.serial, "pass_added");
-    for (const daysAgo of [40, 20, 1]) {
+    // The card itself has to be backdated too, not just the stamps: the sign-up
+    // is visit 1 and the span is measured FROM it, so a pass minted this second
+    // with stamps from six weeks ago is a customer who cannot exist.
+    await getPool().query(
+      `UPDATE passes SET created_at = now() - interval '61 days' WHERE serial = $1`,
+      [slow.serial],
+    );
+    for (const daysAgo of [41, 21, 1]) {
       await getPool().query(
         `INSERT INTO events (card_id, serial, type, created_at)
          VALUES ('default', $1, 'stamp', now() - ($2 || ' days')::interval)`,
@@ -2990,7 +3023,10 @@ async function main() {
       );
     }
     const spread = await mine(slow.serial);
-    expect(spread.visits === 3, `three stamps over six weeks is three visits (${spread.visits})`);
+    expect(
+      spread.visits === 4,
+      `signing up plus three stamps over two months is four visits (${spread.visits})`,
+    );
     expect(
       Math.round(spread.avgGapDays) === 20,
       `...at an average gap of about 20 days (${Math.round(spread.avgGapDays)})`,
@@ -3055,14 +3091,14 @@ async function main() {
     });
     return JSON.parse(await r.text());
   };
-  const first = await nudgeTwice();
-  expect(first.total === 1, "an off-cooldown customer is nudged");
-  const second = await nudgeTwice();
-  expect(second.total === 1, "...and a second time, because the cap is two a week");
-  const third = await nudgeTwice();
+  expect((await nudgeTwice()).total === 1, "an off-cooldown customer is nudged");
+  for (let n = 2; n <= MAX_NUDGES_PER_WEEK; n++) {
+    expect((await nudgeTwice()).total === 1, `...and again, message ${n} of the week's ${MAX_NUDGES_PER_WEEK}`);
+  }
+  const overTheCap = await nudgeTwice();
   expect(
-    third.total === 0 && third.skipped.rateLimited === 1,
-    "a third immediately after sends nothing and says why",
+    overTheCap.total === 0 && overTheCap.skipped.rateLimited === 1,
+    `one more immediately after sends nothing and says why`,
   );
 
   // --- "Last seen" is measured from the last visit, not updated_at (regression) ---
@@ -3595,9 +3631,11 @@ async function main() {
       body: JSON.stringify({ message: "Again", target: [ch.serial] }),
     })).text());
   expect((await nudgeCh()).total === 1, "a tenth message still goes out — no give-up rule");
-  // But the week genuinely is a limit: those sends are not back-dated, so the
-  // allowance runs out at two and the next is refused, for the only reason left.
-  expect((await nudgeCh()).total === 1, "...an eleventh too, which is their second this week");
+  // But the week genuinely is a limit: these sends are NOT back-dated, so the
+  // allowance runs out and the next is refused, for the only reason left.
+  for (let n = 2; n <= MAX_NUDGES_PER_WEEK; n++) {
+    expect((await nudgeCh()).total === 1, `...and another, which is their ${n} this week`);
+  }
   const capped = await nudgeCh();
   expect(capped.total === 0 && capped.skipped.rateLimited === 1, "...and the cap refuses the one after that");
   expect(capped.skipped.ignored === undefined, "there is no longer an 'ignored' refusal to report");
