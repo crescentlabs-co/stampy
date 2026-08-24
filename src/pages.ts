@@ -2930,10 +2930,9 @@ function drawHealth(host, body) {
     if (g) lines.push(g.label + ": " + (band[key] || g.hint));
   });
   lines.push("",
-    "Signing up is visit 1 \u2014 they were in your shop to do it. Welcome stamps fill " +
-    "their card but are not extra visits; after that every visit is one stamp from your " +
-    "counter. An undo takes one back off, and claiming a reward does not reset the count. " +
-    "Everybody is in exactly one group, so the four add up to your customers number above.");
+    "Signing up counts as visit 1. After that, every stamp from your counter is a visit \u2014 " +
+    "welcome stamps are not. Everyone is in exactly one group, so the four add up to your " +
+    "customer count above.");
   if (!cycle.chosen) lines.push("", "You have not chosen a cycle yet \u2014 set it in Shop.");
   const hint = lines.join(NL);
   host.innerHTML =
@@ -4895,17 +4894,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .totals { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
     .totals .metric { padding: 16px 14px 13px; }
     .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
-    /* Customer health: four smaller tiles under the four big ones. Quieter on
-       purpose — these describe the SHAPE of the base, and reading larger than
-       the headline count would make them look like a second headline. */
+    /* Customer health: four more tiles under the four above, and the SAME size.
+       They were smaller, on the theory that the shape of the base should read
+       quieter than its size; on screen it just looked like two grids that had
+       not been designed together. Colour is what separates them now. */
     .totals.health { margin-top: 6px; }
-    .totals.health .metric { padding: 12px 12px 10px; background: var(--hue-bg);
+    .totals.health .metric { background: var(--hue-bg);
                              border-color: transparent; border-left: 3px solid var(--hue); }
-    .totals.health .metric b { font-size: clamp(1.1rem, 5vw, 1.5rem); color: var(--hue); }
+    .totals.health .metric b { color: var(--hue); }
     /* The share of the base, beside the count and deliberately smaller: the
        count is the fact, the percentage is how to read it. Tabular so four
        tiles line up down the column instead of shuffling by digit width. */
-    .totals.health .metric b i { font-style: normal; font-size: .62em; font-weight: 700;
+    .totals.health .metric b i { font-style: normal; font-size: .48em; font-weight: 700;
                                  letter-spacing: 0; margin-left: 6px; opacity: .72; }
     .totals.health .metric span { color: var(--ink2); font-weight: 600; }
     /* Semantic colour, rule 6 of DESIGN.md, plus the one blue this app has:
@@ -4915,11 +4915,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .h-returning { --hue: #1d4ed8; --hue-bg: #e9eefb; }
     .h-new       { --hue: #b45309; --hue-bg: #fdf4e3; }
     .h-lost      { --hue: #9a3412; --hue-bg: #fbedeb; }
-    /* The visit-cadence picker. Wraps to one per line on a phone rather than
-       squeezing three ranges into a row nobody can read. */
-    .cyclerow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-    .cyclerow .btn { width: auto; padding: 9px 13px; font-size: .85rem; flex: 1 1 auto; }
-    .cyclerow .btn.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
     .breakdown th { text-align: left; color: var(--muted); font-size: .78rem; letter-spacing: .01em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     .breakdown td { padding: 10px; border-bottom: 1px solid var(--line); }
@@ -5150,7 +5145,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
              above a heading read as part of it, and these are a different
              question: how much has happened, against what shape the base is.
              "so far" answers the one an owner always asks next: since when? -->
-        <h2 class="sec first">Everything so far</h2>
+        <h2 class="sec first">Overview</h2>
         <div class="totals" data-totals></div>
         <p class="muted" data-gap style="margin:-6px 0 4px"></p>
         <div data-health></div>
@@ -5557,12 +5552,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
              before anything works properly, and the setup banner asks for both
              — so they are the first two things on this tab, in that order. -->
         <h2 class="sec first">Your customers</h2>
-        <p class="muted">How often should a customer come back?\${info("It is the only thing that makes Customer health mean anything: five visits is a loyal regular at a cafe and a remarkable year at a barber. Nothing about your card, your reward or your stamps changes — this only decides which group a customer is counted in.")}</p>
-        <div class="cyclerow" data-cycles>
-          <button class="btn btn-ghost" data-days="14">Once every 1–2 weeks</button>
-          <button class="btn btn-ghost" data-days="21">Once every 2–3 weeks</button>
-          <button class="btn btn-ghost" data-days="28">Once every 3–4 weeks</button>
-        </div>
+        <p class="muted">How often should a customer come back?\${info("How often you'd expect a regular to come in. It only sorts your customers into New, Returning, Regular and Lost on the Customers tab. It changes nothing about your card, your stamps or your reward.")}</p>
+        <select data-cycle style="margin-top:8px">
+          <option value="">Choose one…</option>
+          <option value="14">Once every 1–2 weeks</option>
+          <option value="21">Once every 2–3 weeks</option>
+          <option value="28">Once every 3–4 weeks</option>
+        </select>
         <p class="muted" data-cycleout style="margin:6px 0 0;font-size:.84rem"></p>
 
         <h2 class="sec">Staff stamper</h2>
@@ -5646,28 +5642,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        * re-cohort the same people with no new events, so pressing it is safe to
        * do twice while you decide.
        */
-      const cycles = div.querySelector("[data-cycles]");
+      const cycles = div.querySelector("[data-cycle]");
       const cycleOut = div.querySelector("[data-cycleout]");
       const paintCycle = () => {
-        cycles.querySelectorAll("button").forEach((b) => {
-          b.classList.toggle("on", Number(b.dataset.days) === S.cycleDays);
-        });
+        cycles.value = S.cycleDays ? String(S.cycleDays) : "";
         cycleOut.textContent = S.cycleDays
-          ? "Your Customer health groups use this."
-          : "Not set yet — Customer health is using every 2 weeks meanwhile.";
+          ? "Used to group your customers."
+          : "Not set — we're assuming every 2 weeks for now.";
       };
       paintCycle();
-      cycles.querySelectorAll("button").forEach((b) => {
-        b.onclick = async () => {
-          const days = Number(b.dataset.days);
-          const { body } = await api("/return-cycle", { method: "POST", body: JSON.stringify({ days }) });
-          if (!body.ok) return toast(body.error || "Couldn't save that");
-          S.cycleDays = days;
-          paintCycle();
-          renderPinWarning();
-          toast("Saved ✓");
-        };
-      });
+      cycles.onchange = async () => {
+        const days = Number(cycles.value);
+        if (!days) return paintCycle();
+        const { body } = await api("/return-cycle", { method: "POST", body: JSON.stringify({ days }) });
+        if (!body.ok) { paintCycle(); return toast(body.error || "Couldn't save that"); }
+        S.cycleDays = days;
+        paintCycle();
+        renderPinWarning();
+        toast("Saved ✓");
+      };
 
       div.querySelector("[data-setpin]").onclick = () => {
         const el = div.querySelector("[data-pin]");
@@ -5825,8 +5818,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           "Staff sign in to the stamper with a PIN, and you haven’t picked one.");
       }
       if (!S.cycleDays) {
-        todo.push("<strong>Customer health is guessing.</strong> " +
-          "Tell us how often customers should come back and the groups will fit your shop.");
+        todo.push("<strong>Pick how often customers should come back.</strong> " +
+          "It's what sorts your customers into New, Returning, Regular and Lost.");
       }
       if (!todo.length) { box.innerHTML = ""; return; }
       box.innerHTML =

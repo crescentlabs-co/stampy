@@ -2141,8 +2141,8 @@ describe("customer health tiles", () => {
     expect(hint).toContain("New: signed up and hasn\u2019t been back yet.");
     expect(hint).toContain("Regulars: 3+ stamps from your counter (4+ visits with the sign-up)");
     // The sign-up is visit 1, and the welcome stamps are not visits 2 and 3.
-    expect(hint).toContain("Signing up is visit 1");
-    expect(hint).toContain("Welcome stamps fill their card but are not extra visits");
+    expect(hint).toContain("Signing up counts as visit 1");
+    expect(hint).toContain("welcome stamps are not");
     expect(hint).toContain("average gap of 25 days or less");
     expect(hint).toContain("Returning: has come back, but doesn\u2019t yet meet the Regular criteria.");
     expect(hint).toContain("Lost: hasn\u2019t returned for more than 2\u00d7 your selected cycle (7 weeks).");
@@ -2175,5 +2175,62 @@ describe("customer health tiles", () => {
   it("owns up to the fallback until the shop has answered", () => {
     const hint = /data-info="([^"]*)"/.exec(render([1, 1, 1, 1], { chosen: false }))![1]!;
     expect(hint).toContain("set it in Shop");
+  });
+});
+
+describe("the visit-cycle setting", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+
+  /**
+   * A dropdown, not a row of buttons. Three ranges as buttons wrapped to three
+   * lines on a phone and read as three actions rather than one choice.
+   */
+  it("is one dropdown holding the three ranges", () => {
+    expect(html).toContain("<select data-cycle");
+    expect(html).toContain('<option value="14">Once every 1–2 weeks</option>');
+    expect(html).toContain('<option value="21">Once every 2–3 weeks</option>');
+    expect(html).toContain('<option value="28">Once every 3–4 weeks</option>');
+    // The old button row, and the CSS that only it used, are gone.
+    expect(html).not.toContain("data-cycles");
+    expect(html).not.toContain("cyclerow");
+  });
+
+  /** Nothing is preselected until the shop has actually answered. */
+  it("offers an unchosen option so the fallback is never shown as a choice", () => {
+    expect(html).toContain('<option value="">Choose one…</option>');
+  });
+
+  /**
+   * The hint has to tell a shop owner what the setting DOES and what it does
+   * not touch. It is not the place to explain the segmentation maths.
+   */
+  it("explains itself in plain words, briefly", () => {
+    // The panel is built in the browser, so this hint is still an info("…")
+    // CALL in the page source rather than a rendered data-info attribute.
+    const hint = /How often you'd expect a regular to come in\.[^"]*/.exec(html)?.[0] ?? "";
+    expect(hint).toContain("New, Returning, Regular and Lost");
+    expect(hint).toContain("changes nothing about your card");
+    // Short enough to read in the bubble. It used to open with a line about
+    // barbers and cafes that told an owner nothing about what the setting does.
+    expect(hint.length).toBeLessThan(260);
+    expect(hint).not.toContain("barber");
+  });
+});
+
+describe("the four all-time tiles", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+
+  it("are titled, and titled Overview", () => {
+    expect(html).toContain('<h2 class="sec first">Overview</h2>');
+    expect(html).not.toContain("Everything so far</h2>\n        <div class=\"totals\"");
+  });
+
+  /**
+   * The health tiles sit directly under these four and must read as the same
+   * family. They carried their own smaller type, which made the page look like
+   * two grids that had not been designed together.
+   */
+  it("share their number size with the health tiles", () => {
+    expect(html).not.toMatch(/\.totals\.health \.metric b \{[^}]*font-size/);
   });
 });
