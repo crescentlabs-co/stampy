@@ -5262,10 +5262,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           <div data-results style="margin-top:10px"></div>
         </details>\` : ""}\`;
       const q = (s) => div.querySelector(s);
-      // perWeek is the server's cap (limits.perWeek), never a number typed here:
-      // the browser has told an owner the wrong limit twice now.
-      let all = [], ready = 0, cooling = 0, removed = 0, everyone = 0,
-          health = [], readyAll = 0, perWeek = 0;
+      let all = [], ready = 0, everyone = 0, health = [], readyAll = 0;
 
       /**
        * Who the chosen audience IS, and how many of them this will reach.
@@ -5285,19 +5282,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const group = health.find((h) => h.key === key);
         ready = group ? group.eligible : readyAll;
         const total = group ? group.customers : everyone;
-        const onCap = group ? group.cooling : cooling;
-        const gone = group ? group.removed : removed;
-        const bits = [];
-        bits.push(ready
+        // EVERYBODY the message will not reach, described as the weekly limit.
+        // Some of them deleted the card instead, and the server knows exactly
+        // which — see health[].removed — but that is a number an owner can do
+        // nothing about and reads as a scoreline against themselves. One reason
+        // on screen, both counted behind it, and the two lines always add up to
+        // the number in the dropdown.
+        const held = Math.max(0, total - ready);
+        const lines = [];
+        lines.push(ready
           ? "Will be sent to <strong>" + ready + "</strong> of " + total +
             (total === 1 ? " customer" : " customers")
           : "Nobody to message in this group right now");
-        if (onCap) {
-          bits.push(onCap + (onCap === 1 ? " is" : " are") +
-            " at the weekly limit of " + perWeek);
-        }
-        if (gone) bits.push(gone + " deleted the card");
-        q("[data-who]").innerHTML = bits.join(" · ");
+        if (held) lines.push(held + (held === 1 ? " is" : " are") + " at the weekly limit");
+        q("[data-who]").innerHTML = lines.join("<br>");
         q("[data-send]").disabled = !ready;
       }
 
@@ -5467,9 +5465,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         all = body.customers || [];
         const buckets = body.buckets || [];
         const find = (k) => (buckets.find((b) => b.key === k) || {});
-        cooling = find("cooling").customers || 0;
-        removed = find("removed").customers || 0;
-        perWeek = (body.limits || {}).perWeek || perWeek;
         health = body.health || [];
         readyAll = find("ready").eligible || 0;
         // Everyone means everyone, so the count is every customer — not the

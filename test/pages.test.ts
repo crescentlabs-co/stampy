@@ -1575,11 +1575,9 @@ describe("dashboard information architecture", () => {
   it("sends notifications from one box with one button", () => {
     expect(html).toContain("Notifications");
     expect(html).toContain("Push notification");
-    // Built from the server's cap, not typed here — the number has moved twice.
-    expect(html).toContain('" at the weekly limit of " + perWeek');
-    expect(html).not.toMatch(/at the weekly limit of (one|two|three|\d)/);
     // The line accounts for the whole group, not just the sendable part.
     expect(html).toContain('</strong> of " + total');
+    expect(html).toContain('" at the weekly limit"');
     expect(html).not.toContain("data-buckets");
     expect(html).not.toContain("Bring people back");
     expect(html).toContain("Find a customer");
@@ -2256,8 +2254,24 @@ describe("the notification audience", () => {
     expect(html).not.toContain("h.eligible + \")</option>\"");
   });
 
-  it("accounts for everyone the message will not reach", () => {
-    expect(html).toContain("at the weekly limit of");
-    expect(html).toContain("deleted the card");
+  /**
+   * Two lines that add up to the dropdown's number, and one reason for the gap.
+   * The rest of the group is described as being at the weekly limit even when
+   * some of them deleted the card: that second number is one an owner can do
+   * nothing about, and it reads as a scoreline against themselves. The server
+   * still counts it — health[].removed — it just is not on this screen.
+   */
+  it("says how many will get it and how many will not, in two lines", () => {
+    expect(html).toContain("const held = Math.max(0, total - ready);");
+    expect(html).toContain('lines.join("<br>")');
+    expect(html).toContain('" at the weekly limit"');
+  });
+
+  it("never tells an owner how many customers deleted their card", () => {
+    // The parked customer-search fold names it per card; the audience line and
+    // the send result must not put a COUNT of it on screen.
+    const panel = html.slice(html.indexOf("function paintAudience"), html.indexOf("function load"));
+    expect(panel).not.toContain("deleted the card");
+    expect(panel).not.toContain("removed");
   });
 });
