@@ -2887,6 +2887,34 @@ async function main() {
     );
     expect(after.health === "regular", "...and eight visits is still a Regular afterwards");
 
+    // The owner's OWN card, added from the same browser and therefore hanging
+    // off the same customer row. Their testing must not count as somebody
+    // visiting: every other counting query in the app says NOT e.is_test, and
+    // this one has to as well or a shop a fortnight old reports Regulars it
+    // has never served.
+    const ownCard = await createPass({
+      serial: crypto.randomUUID(),
+      cardId: "default",
+      customerId: hp.customer_id,
+      platform: "google",
+      shortCode: generateShortCode(),
+      authToken: "t".repeat(24),
+      stampCount: 0,
+      stampsTarget: 8,
+      reward: "Free latte",
+      isTest: true,
+    });
+    await logEvent("default", ownCard.serial, "stamp", { actor: "staff:e2e" });
+    const withTest = await mine(hp.serial);
+    expect(
+      withTest.visits === 8,
+      `a stamp on the owner's own test card is not a visit (${withTest.visits})`,
+    );
+    expect(
+      !(await health()).customers.some((c: any) => c.serial === ownCard.serial),
+      "...and the test card is not a customer either",
+    );
+
     // The four groups partition everybody — the same tallying rule the console
     // now follows. A customer in two groups, or in none, shows up here.
     const body = await health();

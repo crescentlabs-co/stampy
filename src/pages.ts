@@ -2878,6 +2878,88 @@ export const DESIGN_PANEL_JS = /* js */ `
     }
 `;
 
+/**
+ * Customer health: the four groups, the share each one is of the base, and the
+ * hint that says how a customer lands in one.
+ *
+ * Exported as source like DESIGN_PANEL_JS, for the same reason: `shares` has
+ * real arithmetic in it and this is the only way a test can run the code the
+ * dashboard actually ships rather than a second copy of it. Depends on `info`
+ * and `esc` from the page around it.
+ */
+export const HEALTH_JS = /* js */ `
+function drawHealth(host, body) {
+  if (!host) return;
+  const groups = body.health || [];
+  const total = groups.reduce((a, g) => a + g.customers, 0);
+  if (!groups.length || !total) {
+    host.innerHTML = "";
+    return;
+  }
+  const share = shares(groups.map((g) => g.customers));
+  const cycle = body.cycle || {};
+  const bar = cycle.regularAt || 5;
+  const lostWeeks = Math.round((cycle.lostAfterDays || 28) / 7);
+  // The ladder in the shop's own numbers, one line per group, in the order
+  // the tiles appear. Built from what the server sent rather than from a
+  // copy of REGULAR_AT here, so a hint can never describe a rule the server
+  // has stopped applying.
+  const band = {
+    regular: bar + " or more visits",
+    returning: bar > 3 ? "2 to " + (bar - 1) + " visits" : "2 visits",
+    new: "1 visit, or none yet",
+    lost: "no visit in " + lostWeeks + " weeks",
+  };
+  // A newline built rather than written: this whole panel lives inside a
+  // template literal, which would turn a backslash-n into a REAL newline
+  // and break the string it sits in. The bubble is white-space: pre-line,
+  // so these are the line breaks the reader sees.
+  const NL = String.fromCharCode(10);
+  const lines = [
+    "Based on your answer that customers come back about once every " +
+      (cycle.label || "2 weeks") + ".",
+    "",
+  ];
+  groups.forEach((g) => lines.push(g.label + " \u2014 " + (band[g.key] || g.hint)));
+  lines.push("",
+    "A visit is one stamp from your counter. Welcome stamps are not visits, " +
+    "an undo takes one back off, and claiming a reward does not reset the count. " +
+    "Everybody is in exactly one group, so the four add up to your customers number above.");
+  if (!cycle.chosen) lines.push("", "You have not answered yet \u2014 set it in Shop.");
+  const hint = lines.join(NL);
+  host.innerHTML =
+    '<h2 class="sec">Customer health' + info(hint) + "</h2>" +
+    '<div class="totals health">' +
+      groups.map((g, i) =>
+        '<div class="metric h-' + esc(g.key) + '"><b>' + g.customers +
+          "<i>" + share[i] + "%</i></b>" +
+          "<span>" + esc(g.label.toLowerCase()) + "</span></div>",
+      ).join("") +
+    "</div>";
+}
+
+/**
+ * Whole percentages that add up to exactly 100.
+ *
+ * Rounding each share on its own gives 33/33/33/33 and a reader who can
+ * count. Largest remainder hands the leftover points to the groups that
+ * lost the most in rounding, which is the only way four numbers under a
+ * heading promising they add up actually do.
+ */
+function shares(counts) {
+  const total = counts.reduce((a, n) => a + n, 0);
+  if (!total) return counts.map(() => 0);
+  const exact = counts.map((n) => (n * 100) / total);
+  const out = exact.map(Math.floor);
+  let left = 100 - out.reduce((a, n) => a + n, 0);
+  exact
+    .map((v, i) => ({ i, rem: v - Math.floor(v) }))
+    .sort((a, b) => b.rem - a.rem)
+    .forEach((e) => { if (left > 0) { out[e.i]++; left--; } });
+  return out;
+}
+`;
+
 /** Styles for MODAL_JS. Both pages that use the popup must include this. */
 export const MODAL_CSS = /* css */ `
   .mdl { position: fixed; inset: 0; z-index: 50; background: rgba(24,20,16,.55);
@@ -2914,6 +2996,10 @@ export const MODAL_CSS = /* css */ `
           box-shadow: 0 8px 24px -6px rgba(24,20,16,.45);
           opacity: 0; visibility: hidden; transition: opacity .12s;
           pointer-events: none; left: 0; top: 0; }
+  /* pre-line so a hint can be a short LIST — a rule with four groups reads as
+     four lines and is unreadable as one paragraph. Existing hints hold no
+     newlines, so they are unchanged. */
+  .itip { white-space: pre-line; }
   .itip.on { opacity: 1; visibility: visible; }
   @media (prefers-reduced-motion: reduce) { .itip { transition: none; } }
 `;
@@ -4804,8 +4890,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        purpose — these describe the SHAPE of the base, and reading larger than
        the headline count would make them look like a second headline. */
     .totals.health { margin-top: 6px; }
-    .totals.health .metric { padding: 12px 12px 10px; background: var(--bg); }
-    .totals.health .metric b { font-size: clamp(1.1rem, 5vw, 1.5rem); }
+    .totals.health .metric { padding: 12px 12px 10px; background: var(--hue-bg);
+                             border-color: transparent; border-left: 3px solid var(--hue); }
+    .totals.health .metric b { font-size: clamp(1.1rem, 5vw, 1.5rem); color: var(--hue); }
+    /* The share of the base, beside the count and deliberately smaller: the
+       count is the fact, the percentage is how to read it. Tabular so four
+       tiles line up down the column instead of shuffling by digit width. */
+    .totals.health .metric b i { font-style: normal; font-size: .62em; font-weight: 700;
+                                 letter-spacing: 0; margin-left: 6px; opacity: .72; }
+    .totals.health .metric span { color: var(--ink2); font-weight: 600; }
+    /* Semantic colour, rule 6 of DESIGN.md, plus the one blue this app has:
+       these four are read against each other at a glance, and the hue does the
+       sorting the eye would otherwise have to do by reading every label. */
+    .h-regular   { --hue: #15803d; --hue-bg: #e9f7ee; }
+    .h-returning { --hue: #1d4ed8; --hue-bg: #e9eefb; }
+    .h-new       { --hue: #b45309; --hue-bg: #fdf4e3; }
+    .h-lost      { --hue: #9a3412; --hue-bg: #fbedeb; }
     /* The visit-cadence picker. Wraps to one per line on a phone rather than
        squeezing three ranges into a row nobody can read. */
     .cyclerow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -5024,6 +5124,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // two sections with their own Save, because they're two different jobs — the
     // old single panel mixed a colour picker with the staff PIN behind one button.
     ${DESIGN_PANEL_JS}
+    ${HEALTH_JS}
 
     // ---- Home: totals across ALL cards + per-card breakdown + customer preview ----
     function homePanel() {
@@ -5101,39 +5202,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * shop's own expected return cycle, so a cafe and a barber both get an
      * honest answer without either of them tuning anything.
      */
-    function drawHealth(host, body) {
-      if (!host) return;
-      const groups = body.health || [];
-      const total = groups.reduce((a, g) => a + g.customers, 0);
-      if (!groups.length || !total) {
-        host.innerHTML = "";
-        return;
-      }
-      const cycle = (body.cycle || {});
-      const weeks = Math.round((cycle.days || 14) / 7);
-      // The prompt only while they have never answered. Once they have, the
-      // line states what the groups were computed with, because a group called
-      // "Regulars" means nothing without the cadence behind it.
-      const note = cycle.chosen
-        ? "Based on customers coming back about every " + weeks + " weeks. Change it in Shop."
-        : '<button class="rlink" data-gocycle>Tell us how often customers come back</button>' +
-          " and these groups will fit your shop. Using every 2 weeks meanwhile.";
-      host.innerHTML =
-        '<h2 class="sec">Customer health' +
-          info("Every customer is in exactly one group, so these four add up to your customers number above. Which group somebody lands in depends on how often you expect customers back — a shop people visit weekly and one they visit monthly should not be judged the same way. Lost means no visit in two of your cycles.") +
-        "</h2>" +
-        '<div class="totals health">' +
-          groups.map((g) =>
-            '<div class="metric"><b>' + g.customers + "</b><span>" + esc(g.label.toLowerCase()) + "</span></div>",
-          ).join("") +
-        "</div>" +
-        '<p class="muted" style="margin:6px 0 0;font-size:.84rem">' + note + "</p>";
-      // NOT named go: that is the tab switcher this handler calls, and a local
-      // of the same name would shadow it into a DOM element.
-      const cycleLink = host.querySelector("[data-gocycle]");
-      if (cycleLink) cycleLink.onclick = () => go("shop");
-    }
-
     // ---- Notifications: one message, one button, one line saying who gets it ----
     // This was three cohort rows, a card dropdown and two paragraphs explaining
     // the limit. All of it said what one sentence under the button says, and the

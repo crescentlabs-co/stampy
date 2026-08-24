@@ -2169,7 +2169,7 @@ const CUSTOMER_SERIALS_SQL = `(
 
 const LAST_VISIT_SQL = `COALESCE(
        (SELECT max(e.created_at) FROM events e
-         WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp'),
+         WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp' AND NOT e.is_test),
        p.created_at
      )`;
 
@@ -2307,13 +2307,20 @@ const REMOVED_PASS_SQL = `(
  *   a redeem and restart  no stamp event, so the count does not move
  *   an undo               its own event, so a mis-scan comes back off
  *
+ * `NOT e.is_test` for the same reason netStamps carries it: the owner's own
+ * card in their own wallet is not a customer visiting. It matters here even
+ * though cardCustomers filters test PASSES out of the list — an owner who
+ * added a test card and then a real one in the same browser is one CUSTOMER
+ * row holding both serials, and without this their own testing would push
+ * them into Regulars.
+ *
  * Same floor at zero as netStamps, and the same reason: a window can begin
  * mid-correction, and a negative visit count is not a fact about anybody.
  */
 const CUSTOMER_VISITS_SQL = `(
        SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
                      - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
-         FROM events e WHERE e.serial IN ${CUSTOMER_SERIALS_SQL}
+         FROM events e WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND NOT e.is_test
      )`;
 
 const CUSTOMER_COLUMNS_SQL = `p.serial, p.customer_id, p.short_code AS code, p.stamp_count AS stamps,

@@ -85,8 +85,12 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    blocks of colour. It is read at arm's length, one-handed, with a queue
    waiting. If a change there trades legibility for looks, it is wrong.
 6. **Semantic colour is separate from the accent** and is not up for
-   redesign: green for good, amber for attention, red for danger. These are the
-   only other hues in the app.
+   redesign: green for good, amber for attention, red for danger — plus **one
+   blue**, for a state that is neither good nor bad but on its way (the
+   Returning group in Customer health). These four are the only other hues in
+   the app. The health tiles declare them once as `--hue` / `--hue-bg` on
+   `.h-regular` / `.h-returning` / `.h-new` / `.h-lost`; anything else needing a
+   semantic colour reads those, and does not pick a fifth.
 7. **Motion never holds the resting state.** Animate *from* a hidden state with
    no `animation-fill-mode` and no end frame, so anything that fails to animate
    is simply visible. `both` once pinned a panel at `opacity: 0` and rendered it

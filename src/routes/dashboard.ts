@@ -646,7 +646,19 @@ export function returnCycleOf(days: number | null | undefined): ReturnCycle {
  * month at a cafe and most of a year at a barber. A single number would have
  * made "regular" mean loyal in one trade and almost unreachable in another.
  */
-const REGULAR_AT: Record<ReturnCycle, number> = { 14: 5, 21: 4, 28: 3 };
+export const REGULAR_AT: Record<ReturnCycle, number> = { 14: 5, 21: 4, 28: 3 };
+
+/**
+ * What each cycle is CALLED, once. The Shop buttons, the Customer health hint
+ * and anything else naming a cadence read it from here — three copies of
+ * "3-4 weeks" is how a screen ends up describing a rule the server no longer
+ * applies.
+ */
+export const CYCLE_LABEL: Record<ReturnCycle, string> = {
+  14: "1\u20132 weeks",
+  21: "2\u20133 weeks",
+  28: "3\u20134 weeks",
+};
 
 /**
  * Four groups, FIRST MATCH WINS, one per person.
@@ -867,7 +879,16 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
     health,
     // What the groups were computed with, and whether the owner ever said so.
     // The dashboard asks for it in the setup banner while `chosen` is false.
-    cycle: { days: cycle, chosen: merchant?.expected_return_days != null },
+    cycle: {
+      days: cycle,
+      chosen: merchant?.expected_return_days != null,
+      label: CYCLE_LABEL[cycle],
+      // The two numbers the groups actually turn on. Sent rather than
+      // recomputed in the browser, so the hint on screen cannot describe a
+      // ladder the server has stopped using.
+      regularAt: REGULAR_AT[cycle],
+      lostAfterDays: cycle * 2,
+    },
     counts: { active, issuedNeverAdded, removed },
     limits: { perWeek: MAX_NUDGES_PER_WEEK },
     cards: owned.map((c) => ({ id: c.id, name: c.name })),

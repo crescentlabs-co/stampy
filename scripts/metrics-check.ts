@@ -30,6 +30,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "stampy-metrics-"));
+import { startupHint, stopPg } from "./pgStop.js";
+
 const pg = new EmbeddedPostgres({
   databaseDir: dataDir,
   user: "s",
@@ -349,13 +351,15 @@ if (mi !== -1) {
 } else {
   main()
     .then(async () => {
-      await pg.stop();
+      process.exitCode = failures === 0 ? 0 : 1;
+      await stopPg(pg);
       console.log(failures === 0 ? "\nALL TEN QUESTIONS ANSWERED ✅" : `\n${failures} UNANSWERED ❌`);
-      process.exit(failures === 0 ? 0 : 1);
+      process.exit(process.exitCode);
     })
     .catch(async (err) => {
-      console.error(err);
-      await pg.stop().catch(() => {});
+      process.exitCode = 1;
+      console.error(startupHint(err, 5486));
+      await stopPg(pg);
       process.exit(1);
     });
 }

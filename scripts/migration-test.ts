@@ -20,6 +20,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "stampy-mig-"));
+import { startupHint, stopPg } from "./pgStop.js";
+
 const pg = new EmbeddedPostgres({
   databaseDir: dataDir,
   user: "s",
@@ -414,10 +416,13 @@ async function main(): Promise<void> {
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error(startupHint(e, 5477));
     failures++;
   })
   .finally(async () => {
-    await pg.stop();
-    process.exit(failures === 0 ? 0 : 1);
+    // Set first, stopped second: pg.stop() never resolves when the server
+    // failed to start, and this used to exit 0 through it. See stopPg.
+    process.exitCode = failures === 0 ? 0 : 1;
+    await stopPg(pg);
+    process.exit(process.exitCode);
   });

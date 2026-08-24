@@ -13,6 +13,7 @@ import {
   cardPickerPage,
   claimPage,
   dashboardPage,
+  HEALTH_JS,
   landingPage,
   marketingPage,
   MODAL_JS,
@@ -2059,5 +2060,100 @@ describe("the rebrand renamed the label, not the identifiers", () => {
     // Re-sent on every stamp. Change the prefix and Google treats it as a new
     // class, leaving every issued card pointed at one nothing updates.
     expect(model.classId({ id: "abc123" })).toContain(".stampy-abc123");
+  });
+});
+
+/**
+ * Customer health, running the shipped source.
+ *
+ * The four counts sit under a heading that promises they add up, and the
+ * percentages sit beside them making the same promise a second time. Naive
+ * rounding breaks the second one silently — four groups of three read 25% each
+ * and total 100, four of one-third read 33 and total 99 — so the arithmetic is
+ * worth running rather than eyeballing.
+ */
+describe("customer health tiles", () => {
+  const H = new Function(
+    'function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){' +
+      'return {"&":"&amp;","<":"&lt;",">":"&gt;",\'"\':"&quot;"}[c];});}' +
+      'function info(t){return \'<button data-info="\' + esc(t) + \'"></button>\';}' +
+      HEALTH_JS +
+      "; return { drawHealth, shares };",
+  )() as {
+    drawHealth: (host: { innerHTML: string }, body: unknown) => void;
+    shares: (counts: number[]) => number[];
+  };
+
+  const group = (key: string, label: string, customers: number) =>
+    ({ key, label, customers, eligible: customers, hint: "" });
+  const body = (counts: number[], cycle: Record<string, unknown> = {}) => ({
+    health: [
+      group("regular", "Regulars", counts[0]!),
+      group("returning", "Returning", counts[1]!),
+      group("new", "New", counts[2]!),
+      group("lost", "Lost", counts[3]!),
+    ],
+    cycle: { days: 28, chosen: true, label: "3-4 weeks", regularAt: 3, lostAfterDays: 56, ...cycle },
+  });
+
+  const render = (counts: number[], cycle?: Record<string, unknown>) => {
+    const host = { innerHTML: "" };
+    H.drawHealth(host, body(counts, cycle));
+    return host.innerHTML;
+  };
+
+  it("shares always total exactly 100", () => {
+    for (const counts of [[1, 1, 1, 0], [1, 1, 1, 1], [2, 3, 5, 7], [0, 0, 0, 9], [1, 2, 2, 2]]) {
+      expect(H.shares(counts).reduce((a, n) => a + n, 0)).toBe(100);
+    }
+  });
+
+  it("gives the leftover point to the group that lost most in rounding", () => {
+    // 1/3 each: 33.33 floors to 33 and leaves one point over.
+    expect(H.shares([1, 1, 1, 0])).toEqual([34, 33, 33, 0]);
+  });
+
+  it("says nothing at all rather than 0% four times when a shop is empty", () => {
+    expect(H.shares([0, 0, 0, 0])).toEqual([0, 0, 0, 0]);
+    expect(render([0, 0, 0, 0])).toBe("");
+  });
+
+  it("colours each group and prints its share beside the count", () => {
+    const html = render([3, 1, 4, 2]);
+    for (const key of ["regular", "returning", "new", "lost"]) {
+      expect(html).toContain('class="metric h-' + key + '"');
+    }
+    expect(html).toContain("<b>3<i>30%</i></b>");
+    expect(html).toContain("<b>4<i>40%</i></b>");
+  });
+
+  it("no longer asks for the cycle in the tiles - the hint carries it", () => {
+    const html = render([3, 1, 4, 2]);
+    expect(html).not.toContain("data-gocycle");
+    expect(html).not.toContain("Tell us how often");
+  });
+
+  it("spells the ladder out in the shop's own numbers", () => {
+    const hint = /data-info="([^"]*)"/.exec(render([1, 1, 1, 1]))![1]!;
+    expect(hint).toContain("once every 3-4 weeks");
+    expect(hint).toContain("Regulars \u2014 3 or more visits");
+    expect(hint).toContain("Returning \u2014 2 visits");
+    expect(hint).toContain("Lost \u2014 no visit in 8 weeks");
+    // One line per group, so it reads as a rule and not as a paragraph.
+    expect(hint.split(String.fromCharCode(10)).length).toBeGreaterThan(6);
+  });
+
+  it("widens the middle band when a faster cycle raises the bar", () => {
+    const hint = /data-info="([^"]*)"/.exec(
+      render([1, 1, 1, 1], { days: 14, label: "1-2 weeks", regularAt: 5, lostAfterDays: 28 }),
+    )![1]!;
+    expect(hint).toContain("Regulars \u2014 5 or more visits");
+    expect(hint).toContain("Returning \u2014 2 to 4 visits");
+    expect(hint).toContain("Lost \u2014 no visit in 4 weeks");
+  });
+
+  it("owns up to the fallback until the shop has answered", () => {
+    const hint = /data-info="([^"]*)"/.exec(render([1, 1, 1, 1], { chosen: false }))![1]!;
+    expect(hint).toContain("set it in Shop");
   });
 });

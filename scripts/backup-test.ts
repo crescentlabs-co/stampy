@@ -19,13 +19,17 @@ import EmbeddedPostgres from "embedded-postgres";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { startupHint, stopPg } from "./pgStop.js";
+
+/** Its own port. 5488 is dev:local's, and a test must not need it stopped. */
+const PORT = 5487;
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "stampy-backup-"));
 const pg = new EmbeddedPostgres({
   databaseDir: dataDir,
   user: "s",
   password: "s",
-  port: 5488,
+  port: PORT,
   persistent: false,
 });
 
@@ -69,7 +73,7 @@ async function main() {
   await pg.initialise();
   await pg.start();
   await pg.createDatabase("stampy");
-  process.env.DATABASE_URL = "postgresql://s:s@localhost:5488/stampy";
+  process.env.DATABASE_URL = `postgresql://s:s@localhost:${PORT}/stampy`;
 
   const db = await import("../src/db.js");
   const { dumpDatabase, restoreDatabase } = await import("../src/backup.js");
@@ -162,16 +166,16 @@ async function main() {
 
 main()
   .then(async () => {
-    await pg.stop();
-    if (failures) {
-      console.error(`\n${failures} CHECK(S) FAILED ❌`);
-      process.exit(1);
-    }
-    console.log("\nBACKUP ROUND-TRIP OK ✅");
-    process.exit(0);
+    // The verdict is decided BEFORE the database is touched again — see stopPg.
+    process.exitCode = failures ? 1 : 0;
+    await stopPg(pg);
+    if (failures) console.error(`\n${failures} CHECK(S) FAILED ❌`);
+    else console.log("\nBACKUP ROUND-TRIP OK ✅");
+    process.exit(process.exitCode);
   })
   .catch(async (err) => {
-    console.error(err);
-    await pg.stop().catch(() => {});
+    process.exitCode = 1;
+    console.error(startupHint(err, PORT));
+    await stopPg(pg);
     process.exit(1);
   });
