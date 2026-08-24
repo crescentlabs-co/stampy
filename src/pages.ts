@@ -1375,7 +1375,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         <label class="dlbl">Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2 row3">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
-          <div><label>Free stamps\${info("Stamps a new card starts with — and where a card restarts after a reward, so a regular is never worse off than a first-timer.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
+          <div><label>Free stamps\${info("Stamps a NEW card starts with, as a welcome. A card that has just paid out a reward restarts at zero — the visit that earned the reward is that stamp.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
           <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
         </div>
 
@@ -2898,17 +2898,18 @@ function drawHealth(host, body) {
   }
   const share = shares(groups.map((g) => g.customers));
   const cycle = body.cycle || {};
-  const bar = cycle.regularAt || 5;
-  const lostWeeks = Math.round((cycle.lostAfterDays || 28) / 7);
-  // The ladder in the shop's own numbers, one line per group, in the order
-  // the tiles appear. Built from what the server sent rather than from a
-  // copy of REGULAR_AT here, so a hint can never describe a rule the server
-  // has stopped applying.
+  const gap = cycle.regularGapDays || 11;
+  const lostWeeks = Math.round((cycle.lostAfterDays || 21) / 7);
+  // Each rule, then the shop's own number for it in brackets. The words are
+  // fixed; the numbers come from what the server sent rather than from a copy
+  // of the thresholds here, so a hint can never describe a rule the server has
+  // stopped applying.
   const band = {
-    regular: bar + " or more visits",
-    returning: bar > 3 ? "2 to " + (bar - 1) + " visits" : "2 visits",
-    new: "1 visit, or none yet",
-    lost: "no visit in " + lostWeeks + " weeks",
+    new: "1 stamp and hasn\u2019t returned.",
+    regular: "3+ stamps and typically visits within your selected cycle " +
+      "(an average gap of " + gap + " days or less).",
+    returning: "has come back, but doesn\u2019t yet meet the Regular criteria.",
+    lost: "hasn\u2019t returned for more than 2\u00d7 your selected cycle (" + lostWeeks + " weeks).",
   };
   // A newline built rather than written: this whole panel lives inside a
   // template literal, which would turn a backslash-n into a REAL newline
@@ -2916,16 +2917,21 @@ function drawHealth(host, body) {
   // so these are the line breaks the reader sees.
   const NL = String.fromCharCode(10);
   const lines = [
-    "Based on your answer that customers come back about once every " +
-      (cycle.label || "2 weeks") + ".",
+    "Customer segments are based on your selected visit cycle \u2014 yours is once every " +
+      (cycle.label || "1\u20132 weeks") + ".",
     "",
   ];
-  groups.forEach((g) => lines.push(g.label + " \u2014 " + (band[g.key] || g.hint)));
+  // New first, then Regular, Returning, Lost: the order the rules read in, not
+  // the order the tiles sit in. A reader meets one stamp before three.
+  ["new", "regular", "returning", "lost"].forEach((key) => {
+    const g = groups.find((h) => h.key === key);
+    if (g) lines.push(g.label + ": " + (band[key] || g.hint));
+  });
   lines.push("",
-    "A visit is one stamp from your counter. Welcome stamps are not visits, " +
+    "A stamp is one from your counter. Welcome stamps are not stamps here, " +
     "an undo takes one back off, and claiming a reward does not reset the count. " +
     "Everybody is in exactly one group, so the four add up to your customers number above.");
-  if (!cycle.chosen) lines.push("", "You have not answered yet \u2014 set it in Shop.");
+  if (!cycle.chosen) lines.push("", "You have not chosen a cycle yet \u2014 set it in Shop.");
   const hint = lines.join(NL);
   host.innerHTML =
     '<h2 class="sec">Customer health' + info(hint) + "</h2>" +
@@ -5137,6 +5143,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
            </table>\`
         : "";
       div.innerHTML = \`
+        <!-- Named, because the section under it is named. Four unlabelled tiles
+             above a heading read as part of it, and these are a different
+             question: how much has happened, against what shape the base is.
+             "so far" answers the one an owner always asks next: since when? -->
+        <h2 class="sec first">Everything so far</h2>
         <div class="totals" data-totals></div>
         <p class="muted" data-gap style="margin:-6px 0 4px"></p>
         <div data-health></div>

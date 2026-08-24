@@ -640,13 +640,27 @@ export function returnCycleOf(days: number | null | undefined): ReturnCycle {
 }
 
 /**
- * How many visits make a regular, at each cycle.
+ * A regular's average gap between visits, at each cycle.
  *
- * Fewer as the cycle lengthens, because fewer are POSSIBLE: five visits is a
- * month at a cafe and most of a year at a barber. A single number would have
- * made "regular" mean loyal in one trade and almost unreachable in another.
+ * A COUNT alone said the wrong thing: three stamps in one afternoon and three
+ * stamps over three months are the same number and completely different
+ * customers, and a shop a fortnight old was reporting Regulars it had served
+ * three times in a week. The rhythm is the claim "Regular" actually makes, so
+ * the rhythm is what it is measured on — a count of three, and an average gap
+ * inside the cycle the shop chose.
+ *
+ * Each figure is the top of the shop's own range, with a few days of slack:
+ * 1-2 weeks allows 11 days, 2-3 allows 18, 3-4 allows 25. Someone who is a day
+ * or two late every time is still a regular, and everybody knows it.
  */
-export const REGULAR_AT: Record<ReturnCycle, number> = { 14: 5, 21: 4, 28: 3 };
+export const REGULAR_GAP: Record<ReturnCycle, number> = { 14: 11, 21: 18, 28: 25 };
+
+/**
+ * Silence that means gone: twice the MIDDLE of the shop's range, so a shop that
+ * says "every 1-2 weeks" writes somebody off after three weeks rather than
+ * after two or after four.
+ */
+export const LOST_AFTER: Record<ReturnCycle, number> = { 14: 21, 21: 35, 28: 49 };
 
 /**
  * What each cycle is CALLED, once. The Shop buttons, the Customer health hint
@@ -676,32 +690,48 @@ export const HEALTH = [
   {
     key: "regular",
     label: "Regulars",
-    hint: "coming as often as you expect, or more",
+    hint: "3+ stamps, and typically back inside your cycle",
   },
   {
     key: "returning",
     label: "Returning",
-    hint: "been back at least once — the habit is forming",
+    hint: "has come back — but not yet at a regular's rhythm",
   },
   {
     key: "new",
     label: "New",
-    hint: "one visit so far, or none yet",
+    hint: "one stamp, and not back yet",
   },
   {
     key: "lost",
     label: "Lost",
-    hint: "no visit in two of your cycles",
+    hint: "no stamp for more than twice your cycle",
   },
 ] as const;
 
 export type HealthKey = (typeof HEALTH)[number]["key"];
 
-export function healthOf(visits: number, lastDays: number, cycle: ReturnCycle): HealthKey {
-  if (lastDays > cycle * 2) return "lost";
-  if (visits >= REGULAR_AT[cycle]) return "regular";
-  if (visits >= 2) return "returning";
-  return "new";
+/**
+ * @param visits      lifetime, net, per person
+ * @param lastDays    days since their last stamp
+ * @param avgGapDays  mean days between their visits; Infinity with fewer than two
+ */
+export function healthOf(
+  visits: number,
+  lastDays: number,
+  avgGapDays: number,
+  cycle: ReturnCycle,
+): HealthKey {
+  if (lastDays > LOST_AFTER[cycle]) return "lost";
+  // Before Regular on purpose: nobody with one stamp has a rhythm to judge, and
+  // "New" says more about them than "Returning" would. Zero stamps lands here
+  // too — someone who has the card and has never used it has not returned
+  // either, and Returning is the one label that would be a lie about them.
+  if (visits <= 1) return "new";
+  if (visits >= 3 && avgGapDays <= REGULAR_GAP[cycle]) return "regular";
+  // The catch-all, so the four partition everybody: been back at least once,
+  // not yet often enough or not yet regularly enough.
+  return "returning";
 }
 
 interface CustomerView {
@@ -715,6 +745,8 @@ interface CustomerView {
   stamps: number;
   /** Lifetime visits, net, per person. What health is judged on. */
   visits: number;
+  /** Mean days between their visits. Infinity with fewer than two. */
+  avgGapDays: number;
   target: number;
   lastDays: number;
   joinedDays: number;
@@ -741,6 +773,16 @@ async function customerViews(cards: CardRow[], cycle: ReturnCycle = RETURN_CYCLE
     for (const c of await cardCustomers(card.id)) {
       // last_visit, not updated_at — a nudge must not reset the lapse clock.
       const lastDays = Math.floor((now - new Date(c.last_visit).getTime()) / 86400000);
+      // The rhythm: their whole span divided by the gaps in it, so three visits
+      // give two gaps. Infinity — not zero — when there is no second visit to
+      // measure against, because a missing rhythm must never read as a perfect
+      // one. Divided by net `visits` while the span comes from stamp times: an
+      // undone stamp is not a visit, and counting it as one would flatter the
+      // gap of somebody whose mis-scan was corrected.
+      const firstMs = c.first_visit ? new Date(c.first_visit).getTime() : 0;
+      const avgGapDays = c.visits >= 2 && firstMs
+        ? (new Date(c.last_visit).getTime() - firstMs) / 86400000 / (c.visits - 1)
+        : Infinity;
       const allowed = canNudge({
         nudges7d: c.nudges_7d,
         unanswered: c.unanswered_nudges,
@@ -754,6 +796,7 @@ async function customerViews(cards: CardRow[], cycle: ReturnCycle = RETURN_CYCLE
         cardName: card.name,
         stamps: c.stamps,
         visits: c.visits,
+        avgGapDays,
         target: c.target,
         lastDays,
         /** Days since the card was issued — independent of visits. */
@@ -763,7 +806,7 @@ async function customerViews(cards: CardRow[], cycle: ReturnCycle = RETURN_CYCLE
         nudges7d: c.nudges_7d,
         removed: c.removed,
         bucket: bucketOf(c.nudges_7d, c.removed),
-        health: healthOf(c.visits, lastDays, cycle),
+        health: healthOf(c.visits, lastDays, avgGapDays, cycle),
         canNudge: allowed.ok,
         blocked: allowed.ok ? "" : allowed.reason,
       });
@@ -885,9 +928,9 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
       label: CYCLE_LABEL[cycle],
       // The two numbers the groups actually turn on. Sent rather than
       // recomputed in the browser, so the hint on screen cannot describe a
-      // ladder the server has stopped using.
-      regularAt: REGULAR_AT[cycle],
-      lostAfterDays: cycle * 2,
+      // rule the server has stopped using.
+      regularGapDays: REGULAR_GAP[cycle],
+      lostAfterDays: LOST_AFTER[cycle],
     },
     counts: { active, issuedNeverAdded, removed },
     limits: { perWeek: MAX_NUDGES_PER_WEEK },

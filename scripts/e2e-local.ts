@@ -30,7 +30,7 @@ async function main() {
   // it again where the closed behaviour is what is being asserted.
   process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
-  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -343,11 +343,13 @@ async function main() {
   const redeem = await fetch(base + "/staff/api/redeem", {
     method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p1.serial }),
   });
-  // Redeem restarts the card at the café's welcome-stamp count, NOT 0 — a
-  // returning customer must never be worse off than a brand-new one.
+  // Redeem restarts the card at ZERO, whatever the welcome-stamp setting: the
+  // visit that just earned the reward IS the stamp a head start would hand
+  // over, and paying for it twice is what the founder called out. Welcome
+  // stamps are for new cards, which is exactly what the field is labelled.
   expect(
-    JSON.parse(await redeem.text()).pass.stamps === card.stamps_start,
-    `redeem restarts at the welcome-stamp count (${card.stamps_start})`,
+    JSON.parse(await redeem.text()).pass.stamps === 0,
+    `redeem restarts at zero, not the welcome count (card gives ${card.stamps_start} to new cards)`,
   );
 
   // --- Anti-spam cooldown: a fresh card stamps once, then blocks rapid repeats ---
@@ -2882,10 +2884,42 @@ async function main() {
       `a redeem-and-restart leaves the visit count alone (${earned.visits} → ${after.visits})`,
     );
     expect(
-      after.stamps < earned.stamps,
-      `...while the BALANCE resets to the welcome count (${earned.stamps} → ${after.stamps})`,
+      after.stamps === 0,
+      `...while the BALANCE restarts at zero (${earned.stamps} → ${after.stamps})`,
     );
     expect(after.health === "regular", "...and eight visits is still a Regular afterwards");
+
+    // --- the restart takes TODAY's rules, and starts at zero ----------------
+    //
+    // The founder's question: a shop raises its target from 10 to 12 in the
+    // morning, and a customer holding the old card claims their reward in the
+    // afternoon. A pass keeps the ruleset it was issued with — that promise is
+    // outstanding and must not move under the customer — but the promise has
+    // just been KEPT, so the restart is the one honest moment to move them on,
+    // and the only one that does not need them to delete the card and rescan.
+    {
+      const held = await mk();
+      await getPool().query(`UPDATE passes SET stamp_count = 8 WHERE serial = $1`, [held.serial]);
+      const asIssued = await getCard("default");
+      await updateCard("default", { stamps_target: 12, reward: "Free pastry" });
+      const restarted = (await redeemPass(held.serial))!;
+      expect(restarted.stamp_count === 0, `a restarted card starts at zero (${restarted.stamp_count})`);
+      expect(
+        restarted.stamps_target === 12,
+        `...on the target in force TODAY, not the one it was issued with (${restarted.stamps_target})`,
+      );
+      expect(restarted.reward === "Free pastry", "...and on today's reward");
+      // Welcome stamps are for NEW cards only now — the visit that earned the
+      // reward is the stamp a restart would otherwise hand over.
+      expect(
+        asIssued!.stamps_start > 0,
+        `...even though the card still gives new customers a head start (${asIssued!.stamps_start})`,
+      );
+      await updateCard("default", {
+        stamps_target: asIssued!.stamps_target,
+        reward: asIssued!.reward,
+      });
+    }
 
     // The owner's OWN card, added from the same browser and therefore hanging
     // off the same customer row. Their testing must not count as somebody
@@ -2940,6 +2974,42 @@ async function main() {
     expect((await health()).cycle.chosen === true, "...and it counts as chosen, so the banner clears");
     expect((await cycleTo(9)).status === 400, "a cycle that is not one of the three is refused");
     await cycleTo(14);
+
+    // RHYTHM, not just a count. This is the rule that changed: three stamps in
+    // one afternoon and three stamps over two months are the same number and
+    // completely different customers, and counting alone had a fortnight-old
+    // shop reporting Regulars. Written straight into events so the stamps can
+    // be spread over real weeks — nothing else can produce a gap.
+    const slow = await mk();
+    await logEvent("default", slow.serial, "pass_added");
+    for (const daysAgo of [40, 20, 1]) {
+      await getPool().query(
+        `INSERT INTO events (card_id, serial, type, created_at)
+         VALUES ('default', $1, 'stamp', now() - ($2 || ' days')::interval)`,
+        [slow.serial, String(daysAgo)],
+      );
+    }
+    const spread = await mine(slow.serial);
+    expect(spread.visits === 3, `three stamps over six weeks is three visits (${spread.visits})`);
+    expect(
+      Math.round(spread.avgGapDays) === 20,
+      `...at an average gap of about 20 days (${Math.round(spread.avgGapDays)})`,
+    );
+    expect(
+      spread.health === "returning",
+      "three stamps 20 days apart is NOT a regular at a 1-2 week shop",
+    );
+    await cycleTo(28);
+    expect(
+      (await mine(slow.serial)).health === "regular",
+      "...but the same customer IS one at a 3-4 week shop",
+    );
+    // Seven weeks of silence is what writes somebody off at that cycle, not two.
+    await cycleTo(14);
+    expect(
+      (await mine(slow.serial)).health !== "lost",
+      "a customer stamped yesterday is never lost, whatever their rhythm",
+    );
 
     // Targeting a group sends to that group and to nobody else.
     const toGroup = async (target: string) => {
@@ -3699,7 +3769,7 @@ async function main() {
   )).rows[0]!;
   expect(rolled.stamps_target === 6, "redeeming rolls the card onto today's target");
   expect(rolled.reward === "Free muffin", "...and today's reward");
-  expect(rolled.stamp_count === 2, "...restarting at the welcome-stamp count, not 0");
+  expect(rolled.stamp_count === 0, "...restarting at zero, however many welcome stamps a new card gets");
   // Once nobody is left on 8, the next re-render prunes it — a replace, not a merge.
   expect((await putGrid([6])).status === 200, "a re-render with only the live target succeeds");
   expect((await getStampStrip(gridCard, 8, 7)) === null, "and the abandoned target's grids are pruned");

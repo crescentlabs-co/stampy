@@ -2093,7 +2093,7 @@ describe("customer health tiles", () => {
       group("new", "New", counts[2]!),
       group("lost", "Lost", counts[3]!),
     ],
-    cycle: { days: 28, chosen: true, label: "3-4 weeks", regularAt: 3, lostAfterDays: 56, ...cycle },
+    cycle: { days: 28, chosen: true, label: "3-4 weeks", regularGapDays: 25, lostAfterDays: 49, ...cycle },
   });
 
   const render = (counts: number[], cycle?: Record<string, unknown>) => {
@@ -2133,23 +2133,38 @@ describe("customer health tiles", () => {
     expect(html).not.toContain("Tell us how often");
   });
 
-  it("spells the ladder out in the shop's own numbers", () => {
+  it("spells each rule out in the shop's own numbers", () => {
     const hint = /data-info="([^"]*)"/.exec(render([1, 1, 1, 1]))![1]!;
     expect(hint).toContain("once every 3-4 weeks");
-    expect(hint).toContain("Regulars \u2014 3 or more visits");
-    expect(hint).toContain("Returning \u2014 2 visits");
-    expect(hint).toContain("Lost \u2014 no visit in 8 weeks");
-    // One line per group, so it reads as a rule and not as a paragraph.
+    expect(hint).toContain("New: 1 stamp and hasn\u2019t returned.");
+    expect(hint).toContain("Regulars: 3+ stamps");
+    expect(hint).toContain("average gap of 25 days or less");
+    expect(hint).toContain("Returning: has come back, but doesn\u2019t yet meet the Regular criteria.");
+    expect(hint).toContain("Lost: hasn\u2019t returned for more than 2\u00d7 your selected cycle (7 weeks).");
+    // One line per rule, so it reads as a rule and not as a paragraph.
     expect(hint.split(String.fromCharCode(10)).length).toBeGreaterThan(6);
   });
 
-  it("widens the middle band when a faster cycle raises the bar", () => {
+  /**
+   * The numbers in the hint come from the server, so a shop on a faster cycle
+   * is told the faster shop's rule. A copy of the thresholds in the browser is
+   * how a screen ends up describing a rule the server has stopped applying.
+   */
+  it("tightens the numbers when the shop picks a faster cycle", () => {
     const hint = /data-info="([^"]*)"/.exec(
-      render([1, 1, 1, 1], { days: 14, label: "1-2 weeks", regularAt: 5, lostAfterDays: 28 }),
+      render([1, 1, 1, 1], { days: 14, label: "1-2 weeks", regularGapDays: 11, lostAfterDays: 21 }),
     )![1]!;
-    expect(hint).toContain("Regulars \u2014 5 or more visits");
-    expect(hint).toContain("Returning \u2014 2 to 4 visits");
-    expect(hint).toContain("Lost \u2014 no visit in 4 weeks");
+    expect(hint).toContain("average gap of 11 days or less");
+    expect(hint).toContain("2\u00d7 your selected cycle (3 weeks)");
+  });
+
+  /** New before Regular before Returning before Lost — one stamp before three. */
+  it("reads the rules in the order a customer meets them", () => {
+    const hint = /data-info="([^"]*)"/.exec(render([1, 1, 1, 1]))![1]!;
+    const at = (s: string) => hint.indexOf(s);
+    expect(at("New:")).toBeLessThan(at("Regulars:"));
+    expect(at("Regulars:")).toBeLessThan(at("Returning:"));
+    expect(at("Returning:")).toBeLessThan(at("Lost:"));
   });
 
   it("owns up to the fallback until the shop has answered", () => {

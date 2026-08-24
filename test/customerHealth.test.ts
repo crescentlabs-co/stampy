@@ -12,10 +12,15 @@
  * collapsing one into the other.
  */
 import { describe, expect, it } from "vitest";
-import { HEALTH, healthOf, RETURN_CYCLES, returnCycleOf, RETURN_CYCLE_FALLBACK } from "../src/routes/dashboard.js";
-
-/** Visits needed to be a Regular, per cycle — fewer as the cycle lengthens. */
-const REGULAR_AT: Record<number, number> = { 14: 5, 21: 4, 28: 3 };
+import {
+  HEALTH,
+  healthOf,
+  LOST_AFTER,
+  REGULAR_GAP,
+  RETURN_CYCLES,
+  returnCycleOf,
+  RETURN_CYCLE_FALLBACK,
+} from "../src/routes/dashboard.js";
 
 describe("the return cycle", () => {
   it("accepts only the three the dashboard offers", () => {
@@ -31,17 +36,27 @@ describe("the return cycle", () => {
       expect(returnCycleOf(junk as never)).toBe(RETURN_CYCLE_FALLBACK);
     }
   });
+
+  /** The two thresholds a shop is judged on, at every cycle it can pick. */
+  it("has a regular gap and a lost window for each of the three", () => {
+    expect(REGULAR_GAP).toEqual({ 14: 11, 21: 18, 28: 25 });
+    expect(LOST_AFTER).toEqual({ 14: 21, 21: 35, 28: 49 });
+  });
 });
 
 describe("healthOf", () => {
   it("puts every customer in exactly one of the four", () => {
     const keys = HEALTH.map((h) => h.key).sort();
     expect(keys).toEqual(["lost", "new", "regular", "returning"]);
-    // Exhaustive over a realistic grid: no combination falls through.
+    // Exhaustive over a realistic grid, gaps included: nothing falls through,
+    // and nothing lands in two groups. Infinity is in the gaps on purpose — it
+    // is what a customer with one visit actually carries.
     for (const cycle of RETURN_CYCLES) {
       for (let visits = 0; visits <= 30; visits++) {
         for (let days = 0; days <= 200; days += 7) {
-          expect(keys).toContain(healthOf(visits, days, cycle));
+          for (const gap of [0, 3, 11, 18, 25, 60, Infinity]) {
+            expect(keys).toContain(healthOf(visits, days, gap, cycle));
+          }
         }
       }
     }
@@ -54,38 +69,58 @@ describe("healthOf", () => {
    * news over two groups that each still look half-healthy.
    */
   describe("lost", () => {
-    it("takes anyone overdue by more than two cycles, however loyal", () => {
+    it("takes anyone past the window, however loyal", () => {
       for (const cycle of RETURN_CYCLES) {
-        expect(healthOf(50, cycle * 2 + 1, cycle)).toBe("lost");
-        expect(healthOf(0, cycle * 2 + 1, cycle)).toBe("lost");
+        const out = LOST_AFTER[cycle] + 1;
+        expect(healthOf(50, out, 1, cycle)).toBe("lost");
+        expect(healthOf(0, out, Infinity, cycle)).toBe("lost");
       }
     });
 
-    /** The boundary itself is NOT lost — two cycles exactly is still in touch. */
-    it("does not take someone exactly two cycles out", () => {
+    /** The boundary itself is NOT lost — exactly the window is still in touch. */
+    it("does not take someone sitting exactly on the boundary", () => {
       for (const cycle of RETURN_CYCLES) {
-        expect(healthOf(50, cycle * 2, cycle)).not.toBe("lost");
+        expect(healthOf(50, LOST_AFTER[cycle], 1, cycle)).not.toBe("lost");
       }
+    });
+
+    /** Three weeks, five weeks, seven weeks — twice the middle of each range. */
+    it("waits longer the longer the shop's cycle", () => {
+      expect(healthOf(9, 22, 1, 14)).toBe("lost");
+      expect(healthOf(9, 22, 1, 21)).toBe("regular");
+      expect(healthOf(9, 36, 1, 21)).toBe("lost");
+      expect(healthOf(9, 36, 1, 28)).toBe("regular");
     });
   });
 
   describe("regular", () => {
-    it("needs fewer visits the longer the cycle", () => {
+    /**
+     * The whole reason this rule changed. A count on its own said a shop a
+     * fortnight old had three Regulars, because three stamps in one afternoon
+     * and three stamps over three months were the same number. Regular is a
+     * claim about RHYTHM, so it is judged on the rhythm.
+     */
+    it("needs three stamps AND a gap inside the cycle", () => {
       for (const cycle of RETURN_CYCLES) {
-        const bar = REGULAR_AT[cycle]!;
-        expect(healthOf(bar, 0, cycle)).toBe("regular");
-        expect(healthOf(bar - 1, 0, cycle)).not.toBe("regular");
+        const ok = REGULAR_GAP[cycle];
+        expect(healthOf(3, 0, ok, cycle)).toBe("regular");
+        expect(healthOf(3, 0, ok + 1, cycle)).toBe("returning");
+        // Three stamps in one day is a rhythm of nothing, and used to be enough.
+        expect(healthOf(3, 0, 0, cycle)).toBe("regular");
+        // Two stamps at a perfect rhythm is still not three.
+        expect(healthOf(2, 0, ok, cycle)).toBe("returning");
       }
     });
 
     /**
-     * The founder's point, and the reason the bar moves at all: five visits is
-     * a month at a cafe and most of a year at a barber. One fixed number would
-     * make "regular" mean loyal in one trade and unreachable in the other.
+     * The founder's point, and the reason the threshold moves at all: a
+     * fortnight between visits is a regular at a barber and a stranger at a
+     * cafe. One fixed number would make "regular" mean loyal in one trade and
+     * unreachable in the other.
      */
     it("calls the same customer regular at a slow cycle and not at a fast one", () => {
-      expect(healthOf(3, 0, 28)).toBe("regular");
-      expect(healthOf(3, 0, 14)).toBe("returning");
+      expect(healthOf(4, 0, 17, 28)).toBe("regular");
+      expect(healthOf(4, 0, 17, 14)).toBe("returning");
     });
 
     /**
@@ -94,16 +129,16 @@ describe("healthOf", () => {
      * two opposite things — building a habit, and losing one.
      */
     it("keeps a lapsing regular until they cross into lost", () => {
-      expect(healthOf(8, 5, 14)).toBe("regular");
-      expect(healthOf(8, 27, 14)).toBe("regular");
-      expect(healthOf(8, 29, 14)).toBe("lost");
+      expect(healthOf(8, 5, 7, 14)).toBe("regular");
+      expect(healthOf(8, 21, 7, 14)).toBe("regular");
+      expect(healthOf(8, 22, 7, 14)).toBe("lost");
     });
   });
 
   describe("returning and new", () => {
-    it("separates a second visit from a first", () => {
-      expect(healthOf(2, 0, 14)).toBe("returning");
-      expect(healthOf(1, 0, 14)).toBe("new");
+    it("separates a second stamp from a first", () => {
+      expect(healthOf(2, 0, 3, 14)).toBe("returning");
+      expect(healthOf(1, 0, Infinity, 14)).toBe("new");
     });
 
     /**
@@ -113,7 +148,19 @@ describe("healthOf", () => {
      * report a base of returning customers it had never served.
      */
     it("counts a freshly issued card with welcome stamps as new", () => {
-      expect(healthOf(0, 0, 14)).toBe("new");
+      expect(healthOf(0, 0, Infinity, 14)).toBe("new");
+    });
+
+    /**
+     * One stamp carries no gap at all, and a missing rhythm must never read as
+     * a perfect one — Infinity, not zero. If it were zero, the arithmetic would
+     * say "inside the cycle" about somebody who has been in once.
+     */
+    it("never makes a one-stamp customer regular, whatever the cycle", () => {
+      for (const cycle of RETURN_CYCLES) {
+        expect(healthOf(1, 0, Infinity, cycle)).toBe("new");
+        expect(healthOf(0, 0, Infinity, cycle)).toBe("new");
+      }
     });
   });
 });

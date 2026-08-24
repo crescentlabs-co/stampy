@@ -2143,6 +2143,8 @@ export interface CustomerRow {
   created_at: Date;
   /** Last visit by this PERSON — the last stamp on any pass they hold. */
   last_visit: Date;
+  /** First visit by this PERSON. Null until they have been stamped at all. */
+  first_visit: Date | null;
   /** Messages sent to this person since their last visit, across every pass. */
   unanswered_nudges: number;
   /** Messages to this person in the last 7 days — gates the "2 per week" limit. */
@@ -2323,10 +2325,23 @@ const CUSTOMER_VISITS_SQL = `(
          FROM events e WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND NOT e.is_test
      )`;
 
+/**
+ * The FIRST time this person was served, ever.
+ *
+ * With `last_visit` and `visits` it gives the average gap between visits, which
+ * is what "Regular" turns on: three stamps in one afternoon and three stamps
+ * over three months are the same count and very different customers. NULL until
+ * they have been stamped at all, which is why the caller treats it as no rhythm
+ * rather than as a gap of zero.
+ */
+const FIRST_VISIT_SQL = `(SELECT min(e.created_at) FROM events e
+       WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp' AND NOT e.is_test)`;
+
 const CUSTOMER_COLUMNS_SQL = `p.serial, p.customer_id, p.short_code AS code, p.stamp_count AS stamps,
             p.stamps_target AS target, p.updated_at, p.created_at,
             ${CUSTOMER_VISITS_SQL} AS visits,
             ${LAST_VISIT_SQL} AS last_visit,
+            ${FIRST_VISIT_SQL} AS first_visit,
             ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges,
             ${NUDGES_7D_SQL} AS nudges_7d,
             ${REMOVED_PASS_SQL} AS removed`;
@@ -3408,13 +3423,20 @@ export async function addStamps(serial: string, delta: number): Promise<PassRow 
  *
  * Two things happen in one statement, and they belong together:
  *
- * 1. It restarts at the café's welcome-stamp count, not 0, so a loyal returning
- *    customer is never worse off than someone walking in for the first time.
+ * 1. It restarts at ZERO — always, whatever the card's welcome-stamp setting.
+ *    It used to restart at `stamps_start` so a returning customer was never
+ *    behind a first-timer; the founder's call, and the clearer reading, is that
+ *    the visit which earned the reward IS the stamp they would otherwise be
+ *    handed, so starting them above zero pays for the same visit twice.
+ *    `stamps_start` is now exactly what its label says: stamps a NEW card
+ *    starts with.
  * 2. It takes the card's CURRENT reward and target. A pass otherwise keeps the
  *    ruleset it was issued with forever, which is right while the promise is
  *    outstanding — but the promise has just been kept, so this is the honest
  *    moment to move them on, and it is the only one that doesn't require the
- *    customer to delete their card and rescan the QR.
+ *    customer to delete their card and rescan the QR. A shop that raised its
+ *    target from 10 to 12 this morning restarts this afternoon's redeemer at
+ *    0 of 12, on this morning's reward.
  *
  * One statement so a pass can never be observed half-way between two rulesets.
  * Callers that log this must read the pass AFTER it, not before: `logEvent`
@@ -3423,7 +3445,7 @@ export async function addStamps(serial: string, delta: number): Promise<PassRow 
 export async function redeemPass(serial: string): Promise<PassRow | null> {
   const res = await getPool().query<PassRow>(
     `UPDATE passes p
-        SET stamp_count   = LEAST(GREATEST(c.stamps_start, 0), c.stamps_target),
+        SET stamp_count   = 0,
             stamps_target = c.stamps_target,
             reward        = c.reward,
             updated_at    = now()

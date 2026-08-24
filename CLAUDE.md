@@ -44,8 +44,12 @@ never kill a printed poster).
 `reward`. Editing the card never rewrites them — the promise on a card already
 in a wallet stands. `redeemPass` is the one exception and the only one there
 should be: the reward has just been given, so it restarts the card on **today's**
-target and reward. That is what lets a rules change reach existing customers
-without asking anyone to delete their card and rescan.
+target and reward, **at zero stamps**. That is what lets a rules change reach
+existing customers without asking anyone to delete their card and rescan — raise
+a target from 10 to 12 in the morning and this afternoon's redeemer restarts at
+0 of 12. The restart ignores `stamps_start`: those are welcome stamps for a NEW
+card, and the visit that earned the reward is the stamp a head start would
+otherwise hand over.
 
 Because of that, **`card_stamp_strips` is keyed `(card_id, target, filled)`**.
 It was keyed without the target, and saving a card replaced the whole set at
