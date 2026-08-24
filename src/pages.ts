@@ -2891,11 +2891,16 @@ export const HEALTH_JS = /* js */ `
 function drawHealth(host, body) {
   if (!host) return;
   const groups = body.health || [];
-  const total = groups.reduce((a, g) => a + g.customers, 0);
-  if (!groups.length || !total) {
+  // Rendered at zero as well as at thirteen. A section that appears only once
+  // it has something to say is a section nobody knows exists, and this one has
+  // to be found BEFORE a shop has customers — it is half the reason to pick a
+  // return cycle. The percentages are dropped while there is nothing to take a
+  // percentage of; four tiles reading "0 0%" is noise, not information.
+  if (!groups.length) {
     host.innerHTML = "";
     return;
   }
+  const total = groups.reduce((a, g) => a + g.customers, 0);
   const share = shares(groups.map((g) => g.customers));
   const cycle = body.cycle || {};
   const gap = cycle.regularGapDays || 11;
@@ -2940,7 +2945,7 @@ function drawHealth(host, body) {
     '<div class="totals health">' +
       groups.map((g, i) =>
         '<div class="metric h-' + esc(g.key) + '"><b>' + g.customers +
-          "<i>" + share[i] + "%</i></b>" +
+          (total ? "<i>" + share[i] + "%</i>" : "") + "</b>" +
           "<span>" + esc(g.label.toLowerCase()) + "</span></div>",
       ).join("") +
     "</div>";
@@ -5970,6 +5975,7 @@ export function posterPage(
     .pfoot { border-top: 1px solid var(--line); padding: 12px 28px; text-align: center;
              color: var(--muted); font-size: .76rem; letter-spacing: .02em; }
     .noprint { margin-top: 18px; }
+    .phint { margin-top: 10px; font-size: .85rem; color: var(--muted); line-height: 1.5; }
     @media print {
       .noprint { display: none; }
       /* One sheet. A 120-character message used to push the QR over the page
@@ -6002,8 +6008,33 @@ export function posterPage(
       <div class="pfoot">Powered by ${PRODUCT_NAME}</div>
     </div>
     <div class="noprint">
-      <button class="btn btn-dark" onclick="window.print()">Print this poster</button>
-    </div>`;
+      <button class="btn btn-dark" data-print>Print this poster</button>
+      <button class="btn btn-ghost" data-share style="display:none;margin-top:8px">Share this poster</button>
+      <p class="phint" data-phint style="display:none">On a phone, Print is not always offered.
+        Share this page to a computer that has a printer — or, in the share sheet, pick Print.</p>
+    </div>
+    <script>
+      (function () {
+        var shareBtn = document.querySelector("[data-share]");
+        var hint = document.querySelector("[data-phint]");
+        document.querySelector("[data-print]").onclick = function () {
+          // Wrapped, because on a phone window.print() is present and does
+          // nothing at all in several browsers, and throws in a few others.
+          // Either way the reader gets the hint below instead of a dead button.
+          try { window.print(); } catch (err) { /* the hint is already showing */ }
+        };
+        // navigator.share exists where there IS a share sheet, which is the one
+        // reliable route to a printer from a phone. It is also the honest test
+        // for "this is a phone" — far better than sniffing the user agent.
+        if (navigator.share) {
+          shareBtn.style.display = "";
+          hint.style.display = "";
+          shareBtn.onclick = function () {
+            navigator.share({ title: document.title, url: location.href }).catch(function () {});
+          };
+        }
+      })();
+    </script>`;
   // No shell footer: the poster carries its own, inside the printed area, where
   // it will actually appear on paper.
   return page(`${business} — sign-up poster`, body, css, "", false);

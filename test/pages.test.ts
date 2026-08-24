@@ -67,8 +67,9 @@ const pages: [string, string][] = [
       "default",
     ),
   ],
-  // The poster is deliberately absent: it carries no inline <script> at all, so
-  // there is nothing here to compile. It gets its own block below instead.
+  // The poster carries one small script — print, and a share sheet for phones,
+  // where print() is often a no-op. It gets its own block below as well.
+  ["poster", posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 3)],
 ];
 
 describe("inline page scripts parse", () => {
@@ -2116,9 +2117,28 @@ describe("customer health tiles", () => {
     expect(H.shares([1, 1, 1, 0])).toEqual([34, 33, 33, 0]);
   });
 
-  it("says nothing at all rather than 0% four times when a shop is empty", () => {
+  /**
+   * Shown at zero, not hidden. A section that appears only once it has
+   * something to say is a section nobody knows exists — and this one has to be
+   * found BEFORE a shop has customers, since it is half the reason to answer
+   * the return-cycle question at all.
+   */
+  it("still renders the four groups when a shop has no customers yet", () => {
+    const html = render([0, 0, 0, 0]);
+    expect(html).toContain("Customer health");
+    for (const key of ["regular", "returning", "new", "lost"]) {
+      expect(html).toContain('class="metric h-' + key + '"');
+    }
+    // But no percentages: four tiles reading "0 0%" is noise, not information.
+    expect(html).not.toContain("%</i>");
     expect(H.shares([0, 0, 0, 0])).toEqual([0, 0, 0, 0]);
-    expect(render([0, 0, 0, 0])).toBe("");
+  });
+
+  /** Nothing to draw at all is still nothing — an API with no groups. */
+  it("draws nothing when the server sent no groups", () => {
+    const host = { innerHTML: "" };
+    H.drawHealth(host, { health: [], cycle: {} });
+    expect(host.innerHTML).toBe("");
   });
 
   it("colours each group and prints its share beside the count", () => {
@@ -2274,5 +2294,33 @@ describe("the notification audience", () => {
     const panel = html.slice(html.indexOf("function paintAudience"), html.indexOf("function load"));
     expect(panel).not.toContain("deleted the card");
     expect(panel).not.toContain("removed");
+  });
+});
+
+describe("the poster's print button on a phone", () => {
+  const html = posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 3);
+
+  /**
+   * window.print() is present on phones and, in several browsers, simply does
+   * nothing — so the button looked broken. It is now wrapped, and a share sheet
+   * (the one reliable route from a phone to a printer, or to a computer that
+   * has one) appears wherever navigator.share exists.
+   */
+  it("wraps print rather than trusting it", () => {
+    expect(html).toContain("try { window.print(); }");
+    expect(html).not.toContain('onclick="window.print()"');
+  });
+
+  it("offers a share sheet, and only where there is one", () => {
+    expect(html).toContain("if (navigator.share)");
+    expect(html).toContain("navigator.share({ title: document.title, url: location.href })");
+    // Hidden by default: on a laptop the share button would be a dead end.
+    expect(html).toContain('data-share style="display:none');
+    expect(html).toContain('data-phint style="display:none');
+  });
+
+  /** The hint has to say what to DO, not that something is unsupported. */
+  it("tells a phone user how to actually get paper", () => {
+    expect(html).toContain("Share this page to a computer that has a printer");
   });
 });
