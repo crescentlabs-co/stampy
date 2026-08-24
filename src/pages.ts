@@ -5234,7 +5234,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <h2 class="sec">Notifications\${info("Each customer can be messaged twice every 7 days. Anyone who has had their two is skipped automatically — you never have to track it.")}</h2>
+        <!-- No hint here on purpose. The two lines under the send button already
+             say who this reaches and who it does not, in this shop's own
+             numbers; a bubble restating the rule in words was one more thing to
+             open and one more place for the cap to be written down wrongly. -->
+        <h2 class="sec">Notifications</h2>
         <!-- Who first, then what. Choosing the audience changes what the line
              under the button says, so the count is always about the people
              actually being messaged. -->

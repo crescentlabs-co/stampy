@@ -15,18 +15,23 @@
 import { nudgeState, type NudgeState } from "./db.js";
 
 /**
- * THREE messages per customer per 7 days, however they were triggered. This is
- * THE rule, and the only one: a customer who has had three messages inside a
- * rolling week cannot have a fourth, whichever button was pressed and however
+ * FIVE messages per customer per 7 days, however they were triggered. This is
+ * THE rule, and the only one: a customer who has had five messages inside a
+ * rolling week cannot have a sixth, whichever button was pressed and however
  * many of the shop's cards they hold.
  *
- * It was one a week, then two. Three still sits under Google's own ceiling of
- * three notifications per card per 24 HOURS — this is three per WEEK — and the
- * window is rolling rather than a calendar week: three on Monday means nothing
- * more until the following Monday, three spread across the week means the next
- * is due as the first ages out. Nothing else in the product knows this number:
- * change it here and the cap, the groups on screen and the button that sends
- * all move together.
+ * One a week, then two, then three, now five. The window is rolling rather than
+ * a calendar week: five on Monday means nothing more until the following
+ * Monday, five spread across the week means the next is due as the first ages
+ * out. Nothing else in the product knows this number: change it here and the
+ * cap, the groups on screen and the button that sends all move together.
+ *
+ * FIVE A WEEK IS NOT FIVE A DAY, and Google is the reason. Google Wallet hard-
+ * caps THREE notifications per card per 24 HOURS and drops the rest silently —
+ * no error reaches us, and `messages` will record a send that no Android phone
+ * ever showed. Spread across a week that ceiling is never touched; five to the
+ * same customer in one afternoon quietly loses two. If this number goes higher
+ * again, the honest fix is a per-day rule here, not a bigger weekly one.
  *
  * There used to be a second rule — give up after six messages with no visit in
  * between. It was removed because it read a run of silence as proof somebody
@@ -36,7 +41,7 @@ import { nudgeState, type NudgeState } from "./db.js";
  * one was stopping them. The unanswered count is still shown on the customer —
  * it is a useful thing to know, it just no longer decides anything.
  */
-export const MAX_NUDGES_PER_WEEK = 3;
+export const MAX_NUDGES_PER_WEEK = 5;
 
 export type NudgeRefusal = "rate-limited" | "removed";
 

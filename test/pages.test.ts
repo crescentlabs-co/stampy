@@ -1581,10 +1581,11 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("data-buckets");
     expect(html).not.toContain("Bring people back");
     expect(html).toContain("Find a customer");
-    // The rule is the thing people ask about, so it is on the heading — and it
-    // is TWO a week now, everywhere it is stated.
-    expect(html).toContain("twice every 7 days");
-    expect(html).not.toContain("once every 7 days");
+    // The heading carries NO hint. The cap has moved four times, and a bubble
+    // restating it in words is one more place for it to be written down wrongly
+    // — the two lines under the button say who this reaches, in live numbers.
+    expect(html).toContain('<h2 class="sec">Notifications</h2>');
+    expect(html).not.toMatch(/every 7 days/);
     // Who first, then what: the audience picker drives the count under the
     // button, so the promise is always about the people actually being sent to.
     expect(html).toContain("data-audience");

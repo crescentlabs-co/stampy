@@ -2213,7 +2213,7 @@ async function main() {
     "each customer row carries joined-days and unanswered-nudge counts (the grouping inputs)",
   );
   expect(
-    ownerCust.limits.perWeek === 3 && ownerCust.limits.maxUnanswered === undefined,
+    ownerCust.limits.perWeek === 5 && ownerCust.limits.maxUnanswered === undefined,
     "the customers response states the one nudge limit — two a week — and no second rule",
   );
   // The groups and the gap counts are computed server-side, so the browser
@@ -2816,7 +2816,7 @@ async function main() {
   // timer any more, so what has to hold is the cooldown — and it has to hold on
   // the SERVER, because the browser is not where a limit can live.
   const { MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
-  expect(MAX_NUDGES_PER_WEEK === 3, "the limit is three messages per customer per 7 days");
+  expect(MAX_NUDGES_PER_WEEK === 5, "the limit is five messages per customer per 7 days");
 
   const { cardMetrics, pruneAbandonedPasses, upsertRegistration, setMessage, canNudgeSerial } =
     await import("../src/db.js").then(async (db) => ({

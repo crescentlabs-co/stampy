@@ -76,13 +76,18 @@ target nobody holds any more. Never key card art by a number a card can change.
    one NOTIFY_ON_UPDATE patch or one TEXT_AND_NOTIFY message per event;
    Google hard-caps 3 notifications/card/24h.
    **Nudge limits are enforced server-side, in one place:** `canNudge` in
-   src/winback.ts — **three messages per customer per rolling 7 days**
-   (`MAX_NUDGES_PER_WEEK`; one until v2.3, two until v2.5). Per PERSON, not per
-   pass: their other wallet card must not buy an extra message. The Customers
-   tab's `BUCKETS` are that same rule and are WORDED from the constant, as is
-   the line under the send button — a hard-coded "two" on screen has twice
-   outlived the rule it described. Never police this in the browser; it used to
-   live in a `confirm()` dialog and was therefore not a limit at all.
+   src/winback.ts — **five messages per customer per rolling 7 days**
+   (`MAX_NUDGES_PER_WEEK`; one, then two, then three, five since v2.6). Per
+   PERSON, not per pass: their other wallet card must not buy an extra message.
+   The Customers tab's `BUCKETS` are that same rule and are WORDED from the
+   constant; nothing on screen states the number any more, because a hard-coded
+   "two" outlived the rule it described twice. Never police this in the browser;
+   it used to live in a `confirm()` dialog and was therefore not a limit at all.
+   **Five a week is not five a day.** Google hard-caps THREE notifications per
+   card per 24h and drops the rest silently — no error, and `messages` records a
+   send no Android phone ever showed. Spread over a week that ceiling is never
+   met; five to one customer in an afternoon quietly loses two. Raising the cap
+   again means a per-DAY rule in `canNudge`, not a bigger weekly one.
    **`HEALTH` (routes/dashboard.ts) is a different axis and not a second copy
    of this one.** BUCKETS say whether a customer *may* be messaged; HEALTH says
    whether they are a Regular, Returning, New or Lost — judged on lifetime net
