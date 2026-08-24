@@ -4800,6 +4800,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .totals { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 14px 0; }
     .totals .metric { padding: 16px 14px 13px; }
     .totals .metric b { font-size: clamp(1.4rem, 6.5vw, 2rem); }
+    /* Customer health: four smaller tiles under the four big ones. Quieter on
+       purpose — these describe the SHAPE of the base, and reading larger than
+       the headline count would make them look like a second headline. */
+    .totals.health { margin-top: 6px; }
+    .totals.health .metric { padding: 12px 12px 10px; background: var(--bg); }
+    .totals.health .metric b { font-size: clamp(1.1rem, 5vw, 1.5rem); }
+    /* The visit-cadence picker. Wraps to one per line on a phone rather than
+       squeezing three ranges into a row nobody can read. */
+    .cyclerow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .cyclerow .btn { width: auto; padding: 9px 13px; font-size: .85rem; flex: 1 1 auto; }
+    .cyclerow .btn.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
     .breakdown { width: 100%; border-collapse: collapse; font-size: .9rem; margin-top: 6px; }
     .breakdown th { text-align: left; color: var(--muted); font-size: .78rem; letter-spacing: .01em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     .breakdown td { padding: 10px; border-bottom: 1px solid var(--line); }
@@ -5027,6 +5038,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       div.innerHTML = \`
         <div class="totals" data-totals></div>
         <p class="muted" data-gap style="margin:-6px 0 4px"></p>
+        <div data-health></div>
         \${breakdown}\`;
 
       // Money influenced = stamps × that card's average spend, summed per card
@@ -5071,8 +5083,55 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           line.insertAdjacentHTML("afterend",
             '<p class="muted" style="margin:2px 0 4px">Set an average spend in Card → Rules to see tracked spend.</p>');
         }
+        drawHealth(div.querySelector("[data-health]"), body);
       })();
       return div;
+    }
+
+    /**
+     * Customer health: the shape of the base, not its size.
+     *
+     * The four tiles above say how many customers and how many stamps. These
+     * four say whether the same people keep coming back, which is the question
+     * a shop actually lives or dies on. Every customer is in exactly one, so
+     * the four ALWAYS add up to the customers tile — checkable by eye, which is
+     * the only reason a number like this can be trusted.
+     *
+     * The groups are computed server-side (HEALTH / healthOf) against the
+     * shop's own expected return cycle, so a cafe and a barber both get an
+     * honest answer without either of them tuning anything.
+     */
+    function drawHealth(host, body) {
+      if (!host) return;
+      const groups = body.health || [];
+      const total = groups.reduce((a, g) => a + g.customers, 0);
+      if (!groups.length || !total) {
+        host.innerHTML = "";
+        return;
+      }
+      const cycle = (body.cycle || {});
+      const weeks = Math.round((cycle.days || 14) / 7);
+      // The prompt only while they have never answered. Once they have, the
+      // line states what the groups were computed with, because a group called
+      // "Regulars" means nothing without the cadence behind it.
+      const note = cycle.chosen
+        ? "Based on customers coming back about every " + weeks + " weeks. Change it in Shop."
+        : '<button class="rlink" data-gocycle>Tell us how often customers come back</button>' +
+          " and these groups will fit your shop. Using every 2 weeks meanwhile.";
+      host.innerHTML =
+        '<h2 class="sec">Customer health' +
+          info("Every customer is in exactly one group, so these four add up to your customers number above. Which group somebody lands in depends on how often you expect customers back — a shop people visit weekly and one they visit monthly should not be judged the same way. Lost means no visit in two of your cycles.") +
+        "</h2>" +
+        '<div class="totals health">' +
+          groups.map((g) =>
+            '<div class="metric"><b>' + g.customers + "</b><span>" + esc(g.label.toLowerCase()) + "</span></div>",
+          ).join("") +
+        "</div>" +
+        '<p class="muted" style="margin:6px 0 0;font-size:.84rem">' + note + "</p>";
+      // NOT named go: that is the tab switcher this handler calls, and a local
+      // of the same name would shadow it into a DOM element.
+      const cycleLink = host.querySelector("[data-gocycle]");
+      if (cycleLink) cycleLink.onclick = () => go("shop");
     }
 
     // ---- Notifications: one message, one button, one line saying who gets it ----
@@ -5098,8 +5157,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function customersPanel() {
       const div = document.createElement("div");
       div.innerHTML = \`
-        <h2 class="sec">Notifications\${info("Each customer can be messaged once every 7 days. Anyone inside that window is skipped automatically.")}</h2>
-        <label>Message</label>
+        <h2 class="sec">Notifications\${info("Each customer can be messaged twice every 7 days. Anyone who has had their two is skipped automatically — you never have to track it.")}</h2>
+        <!-- Who first, then what. Choosing the audience changes what the line
+             under the button says, so the count is always about the people
+             actually being messaged. -->
+        <label>Send to</label>
+        <select data-audience></select>
+        <label style="margin-top:12px">Message</label>
         <!-- Button UNDER the field, not beside it. Side by side, "Push
              notification" ate most of a phone's width and left the message —
              the thing being written — in a sliver. -->
@@ -5121,7 +5185,29 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           <div data-results style="margin-top:10px"></div>
         </details>\` : ""}\`;
       const q = (s) => div.querySelector(s);
-      let all = [], ready = 0, cooling = 0;
+      let all = [], ready = 0, cooling = 0, health = [], readyAll = 0;
+
+      /**
+       * How many the chosen audience will actually reach.
+       *
+       * eligible, never customers: the group's size and the number of
+       * messages it will produce are different figures, and the button has to
+       * promise the smaller one. The server filters again on the way out
+       * regardless — this is the honest preview of that, not a substitute.
+       */
+      function paintAudience() {
+        const sel = q("[data-audience]");
+        const key = sel.value || "ready";
+        const group = health.find((h) => h.key === key);
+        ready = group ? group.eligible : readyAll;
+        const bits = [];
+        bits.push(ready
+          ? "Will be sent to <strong>" + ready + "</strong>" + (ready === 1 ? " customer" : " customers")
+          : "Nobody to message in this group right now");
+        if (cooling) bits.push(cooling + " already had their two this week");
+        q("[data-who]").innerHTML = bits.join(" · ");
+        q("[data-send]").disabled = !ready;
+      }
 
       // ---- At the counter ---------------------------------------------------
       // Every cell is a count, and tapping one shows the times behind it. The
@@ -5289,13 +5375,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         all = body.customers || [];
         const buckets = body.buckets || [];
         const find = (k) => (buckets.find((b) => b.key === k) || {});
-        ready = find("ready").eligible || 0;
         cooling = find("cooling").customers || 0;
-        const bits = [];
-        bits.push(ready ? "Will be sent to <strong>" + ready + "</strong>" + (ready === 1 ? " customer" : " customers") : "Nobody to message right now");
-        if (cooling) bits.push(cooling + " already messaged this week");
-        q("[data-who]").innerHTML = bits.join(" · ");
-        q("[data-send]").disabled = !ready;
+        health = body.health || [];
+        readyAll = find("ready").eligible || 0;
+
+        // Everyone, then one option per health group. The groups are the
+        // audiences worth choosing — chase the Lost, thank the Regulars — while
+        // the cooldown buckets stay a read-out: "messaged this week" is a
+        // reason somebody is skipped, never a group to aim at.
+        const sel = q("[data-audience]");
+        const keep = sel.value;
+        sel.innerHTML =
+          '<option value="ready">Everyone (' + readyAll + ")</option>" +
+          health.map((h) =>
+            '<option value="' + h.key + '">' + esc(h.label) + " (" + h.eligible + ")</option>",
+          ).join("");
+        if (keep) sel.value = keep;
+        paintAudience();
         // Pre-fill with the shop's stored starting message, so the box is never
         // empty. It is edited here and nowhere else now — the duplicate field in
         // Card → Rules was two places to set one message, on a page the owner
@@ -5304,7 +5400,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         renderResults();
       }
       q("[data-msg]").oninput = (e) => { e.target.dataset.touched = "1"; };
-      q("[data-send]").onclick = () => confirmSend(ready, { target: "ready" });
+      q("[data-audience]").onchange = paintAudience;
+      q("[data-send]").onclick = () =>
+        confirmSend(ready, { target: q("[data-audience]").value || "ready" });
       const searchBox = q("[data-search]");
       if (searchBox) searchBox.oninput = renderResults;
       load();
@@ -5370,7 +5468,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const div = document.createElement("div");
       const c = S.cards[0] || {};
       div.innerHTML = \`
-        <h2 class="sec first">Staff stamper</h2>
+        <!-- Above the PIN on purpose. Both are set-once answers a shop owes
+             before anything works properly, and the setup banner asks for both
+             — so they are the first two things on this tab, in that order. -->
+        <h2 class="sec first">Your customers</h2>
+        <p class="muted">How often should a customer come back?\${info("It is the only thing that makes Customer health mean anything: five visits is a loyal regular at a cafe and a remarkable year at a barber. Nothing about your card, your reward or your stamps changes — this only decides which group a customer is counted in.")}</p>
+        <div class="cyclerow" data-cycles>
+          <button class="btn btn-ghost" data-days="14">Once every 1–2 weeks</button>
+          <button class="btn btn-ghost" data-days="21">Once every 2–3 weeks</button>
+          <button class="btn btn-ghost" data-days="28">Once every 3–4 weeks</button>
+        </div>
+        <p class="muted" data-cycleout style="margin:6px 0 0;font-size:.84rem"></p>
+
+        <h2 class="sec">Staff stamper</h2>
         <p class="muted">Staff use this tool to punch cards.\${info("One PIN for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
         <label style="margin-top:14px" data-pinlabel>Staff PIN</label>
         <div class="copyrow" style="margin-top:6px">
@@ -5442,6 +5552,38 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         S.hasStaffPin = true;
         renderPinWarning();
       };
+      /**
+       * How often customers should come back.
+       *
+       * Saves on the tap — like the logo upload, not like the colours. There is
+       * one value, it is instantly reversible, and a Save button for a single
+       * radio is a step that only exists to be forgotten. The health groups
+       * re-cohort the same people with no new events, so pressing it is safe to
+       * do twice while you decide.
+       */
+      const cycles = div.querySelector("[data-cycles]");
+      const cycleOut = div.querySelector("[data-cycleout]");
+      const paintCycle = () => {
+        cycles.querySelectorAll("button").forEach((b) => {
+          b.classList.toggle("on", Number(b.dataset.days) === S.cycleDays);
+        });
+        cycleOut.textContent = S.cycleDays
+          ? "Your Customer health groups use this."
+          : "Not set yet — Customer health is using every 2 weeks meanwhile.";
+      };
+      paintCycle();
+      cycles.querySelectorAll("button").forEach((b) => {
+        b.onclick = async () => {
+          const days = Number(b.dataset.days);
+          const { body } = await api("/return-cycle", { method: "POST", body: JSON.stringify({ days }) });
+          if (!body.ok) return toast(body.error || "Couldn't save that");
+          S.cycleDays = days;
+          paintCycle();
+          renderPinWarning();
+          toast("Saved ✓");
+        };
+      });
+
       div.querySelector("[data-setpin]").onclick = () => {
         const el = div.querySelector("[data-pin]");
         const pin = el.value.trim();
@@ -5463,7 +5605,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
     ${SEG_JS}
     // ---- app shell: owner-scoped tabs ----
-    const S = { cards: [], email: "", tab: "customers", selCard: 0, hasStaffPin: false, joinRef: "" };
+    const S = { cards: [], email: "", tab: "customers", selCard: 0, hasStaffPin: false,
+                joinRef: "", cycleDays: 0 };
 
     /**
      * A screen with no tabs behind it: a message and a way out. EVERY dead end
@@ -5507,6 +5650,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       }
       S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "customers";
       S.hasStaffPin = !!body.hasStaffPin;
+      // 0 means never chosen — the setup banner asks for it, and the Shop tab
+      // shows nothing selected rather than a default they never picked.
+      S.cycleDays = Number(body.returnCycleDays) || 0;
       S.joinRef = body.joinRef || "";
       // An account that holds no shop. It happens when a shop is handed to
       // somebody else: the login survives — deleting it would take an account
@@ -5584,11 +5730,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function renderPinWarning() {
       const box = $("#pinwarn");
       if (!box) return;
-      if (S.hasStaffPin) { box.innerHTML = ""; return; }
+      // Two set-once answers a shop owes before the product works properly, in
+      // ONE banner rather than two stacked warnings — a second amber box beside
+      // the first is how a page teaches people to ignore both. Each line names
+      // what is broken meanwhile, not what the field is called.
+      const todo = [];
+      if (!S.hasStaffPin) {
+        todo.push("<strong>Your counter can’t stamp yet.</strong> " +
+          "Staff sign in to the stamper with a PIN, and you haven’t picked one.");
+      }
+      if (!S.cycleDays) {
+        todo.push("<strong>Customer health is guessing.</strong> " +
+          "Tell us how often customers should come back and the groups will fit your shop.");
+      }
+      if (!todo.length) { box.innerHTML = ""; return; }
       box.innerHTML =
-        '<div class="pinwarn"><p><strong>Your counter can’t stamp yet.</strong> ' +
-        'Staff sign in to the stamper with a PIN, and you haven’t picked one.</p>' +
-        '<button class="btn btn-ghost" id="gopin">Set a staff PIN</button></div>';
+        '<div class="pinwarn"><p>' + todo.join('</p><p style="margin-top:6px">') + "</p>" +
+        '<button class="btn btn-ghost" id="gopin">' +
+          (todo.length > 1 ? "Finish setting up" : !S.hasStaffPin ? "Set a staff PIN" : "Set it") +
+        "</button></div>";
       $("#gopin").onclick = () => go("shop");
     }
 

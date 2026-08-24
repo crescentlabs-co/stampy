@@ -658,6 +658,15 @@ export async function migrate(): Promise<void> {
     -- rows that already exist, because a stored status is a second source of
     -- truth that drifts the first time a write is missed.
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+    -- v2.3: how often this shop expects a customer back, in days.
+    --
+    -- NULLABLE on purpose, and it is the only nullable setting here. NULL means
+    -- "not chosen yet", which is what the dashboard's setup banner reads to ask
+    -- for it — a NOT NULL DEFAULT would make every existing shop indistinguishable
+    -- from one that had answered, and the answer is the thing that makes the
+    -- customer groups mean anything. Until it is set the groups fall back to 14
+    -- days rather than showing nothing.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS expected_return_days integer;
     -- v2.2: a logo that already says the shop's name.
     --
     -- Apple draws logoText BESIDE the logo image, so a proper brand lockup —
@@ -1067,6 +1076,15 @@ export interface MerchantRow {
   default_card_id: string | null;
   average_spend_cents: number;
   currency: string;
+  /**
+   * Days a shop expects between one customer's visits — 14, 21 or 28.
+   *
+   * NULL until the owner picks one; `RETURN_CYCLE_FALLBACK` stands in meanwhile.
+   * It is what turns "5 visits" into a judgement: five visits is a regular at a
+   * cafe and an unusually good year at a barber, and one number cannot be right
+   * for both without the shop saying which it is.
+   */
+  expected_return_days: number | null;
   created_at: Date;
   archived_at: Date | null;
   /** Set when the claim link is used. Left standing after a hand-back. */
@@ -1518,7 +1536,8 @@ export async function setMerchantPaid(id: string, paid: boolean): Promise<void> 
 
 export async function updateMerchant(
   id: string,
-  fields: Partial<Pick<MerchantRow, "name" | "default_card_id" | "average_spend_cents" | "currency">>,
+  fields: Partial<Pick<MerchantRow,
+    "name" | "default_card_id" | "average_spend_cents" | "currency" | "expected_return_days">>,
 ): Promise<MerchantRow | null> {
   const keys = Object.keys(fields) as (keyof typeof fields)[];
   if (!keys.length) return getMerchant(id);
@@ -2111,7 +2130,14 @@ export interface CustomerRow {
   /** Who holds it. Two rows sharing this are one person with two passes. */
   customer_id: string | null;
   code: string;
+  /** The card's BALANCE — what their progress chip shows. Resets on redeem. */
   stamps: number;
+  /**
+   * How many times this PERSON has been served, ever. Net of undos, free of
+   * welcome stamps, untouched by a redemption — see CUSTOMER_VISITS_SQL. This
+   * is the one to judge a customer by; `stamps` above is the one to show them.
+   */
+  visits: number;
   target: number;
   updated_at: Date;
   created_at: Date;
@@ -2265,8 +2291,34 @@ const REMOVED_PASS_SQL = `(
    AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
      )`;
 
+/**
+ * How many times this PERSON has actually been served, ever.
+ *
+ * Not `p.stamp_count`, which sits beside it as `stamps`. That is the card's
+ * BALANCE — what the customer's progress chip shows — and `redeemPass` rewrites
+ * it back to the welcome count every time a reward is handed over. Judging
+ * loyalty by the balance would demote a shop's best customers the moment they
+ * claimed something, which is the exact opposite of what it is for.
+ *
+ * Counted from the log instead, across every serial the person holds, which
+ * gets three things right for free:
+ *
+ *   welcome stamps        no event, so they are not visits
+ *   a redeem and restart  no stamp event, so the count does not move
+ *   an undo               its own event, so a mis-scan comes back off
+ *
+ * Same floor at zero as netStamps, and the same reason: a window can begin
+ * mid-correction, and a negative visit count is not a fact about anybody.
+ */
+const CUSTOMER_VISITS_SQL = `(
+       SELECT GREATEST(count(*) FILTER (WHERE e.type = 'stamp')
+                     - count(*) FILTER (WHERE e.type = 'undo'), 0)::int
+         FROM events e WHERE e.serial IN ${CUSTOMER_SERIALS_SQL}
+     )`;
+
 const CUSTOMER_COLUMNS_SQL = `p.serial, p.customer_id, p.short_code AS code, p.stamp_count AS stamps,
             p.stamps_target AS target, p.updated_at, p.created_at,
+            ${CUSTOMER_VISITS_SQL} AS visits,
             ${LAST_VISIT_SQL} AS last_visit,
             ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges,
             ${NUDGES_7D_SQL} AS nudges_7d,

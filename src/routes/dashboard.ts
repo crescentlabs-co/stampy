@@ -325,6 +325,9 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
     email: req.owner!.email,
     cards: out,
     hasStaffPin: (req.owner!.staff_pin_hash ?? "") !== "",
+    // Null until they choose. The dashboard reads it the same way it reads
+    // hasStaffPin — as "is this set-up step still outstanding".
+    returnCycleDays: merchant?.expected_return_days ?? null,
     // What goes in a /j/ link: the poster and the shareable sign-up link both
     // use it, because a merchant ref survives a rename, a second card and a
     // change of ownership in a way a card link does not.
@@ -567,7 +570,7 @@ async function targetedCards(ownerId: string, cardIds: unknown): Promise<CardRow
 
 /**
  * The three groups the Customers tab is built around. There is one rule —
- * a customer can be messaged once every 7 days — so the only division that
+ * a customer can be messaged twice every 7 days — so the only division that
  * matters is whether their cooldown has run out.
  *
  * This replaced five weekly lapse cohorts. Those grouped by *when someone last
@@ -583,13 +586,13 @@ const BUCKETS = [
   {
     key: "ready",
     label: "Can be messaged",
-    hint: "not messaged in the last 7 days",
+    hint: "had fewer than two messages in the last 7 days",
     nudgeable: true,
   },
   {
     key: "cooling",
-    label: "Messaged this week",
-    hint: "on a 7-day cooldown — they will move up on their own",
+    label: "Had their two this week",
+    hint: "at the two-a-week cap — they move back up on their own",
     nudgeable: false,
   },
   {
@@ -607,6 +610,88 @@ function bucketOf(nudges7d: number, removed: boolean): BucketKey {
   return nudges7d >= MAX_NUDGES_PER_WEEK ? "cooling" : "ready";
 }
 
+/**
+ * ============================ A DIFFERENT AXIS ============================
+ *
+ * BUCKETS above answer "can this customer be messaged" — a fact about our
+ * cooldown. HEALTH below answers "is this customer any good to the shop" — a
+ * fact about their visiting. They are not alternatives and neither replaces the
+ * other: the Slipping-shaped question ("who should I chase") is the two of them
+ * read together, which is why the nudge dropdown targets a HEALTH group and
+ * then lets canNudge filter it.
+ *
+ * Both are computed over the same onePerCustomer() array, so they can never
+ * disagree about who exists — the failure that has bitten this codebase twice.
+ */
+export const RETURN_CYCLES = [14, 21, 28] as const;
+export type ReturnCycle = (typeof RETURN_CYCLES)[number];
+
+/**
+ * What a shop gets before it has answered. Fourteen days, because the groups
+ * have to say something on day one and the commonest trade here is a cafe.
+ * The dashboard asks for the real answer in its setup banner.
+ */
+export const RETURN_CYCLE_FALLBACK: ReturnCycle = 14;
+
+export function returnCycleOf(days: number | null | undefined): ReturnCycle {
+  return (RETURN_CYCLES as readonly number[]).includes(days ?? -1)
+    ? (days as ReturnCycle)
+    : RETURN_CYCLE_FALLBACK;
+}
+
+/**
+ * How many visits make a regular, at each cycle.
+ *
+ * Fewer as the cycle lengthens, because fewer are POSSIBLE: five visits is a
+ * month at a cafe and most of a year at a barber. A single number would have
+ * made "regular" mean loyal in one trade and almost unreachable in another.
+ */
+const REGULAR_AT: Record<ReturnCycle, number> = { 14: 5, 21: 4, 28: 3 };
+
+/**
+ * Four groups, FIRST MATCH WINS, one per person.
+ *
+ * Lost is checked before everything else on purpose: someone overdue by two
+ * whole cycles is gone whatever their history, and a lapsed regular keeping
+ * their badge until that point is the deliberate choice — it leaves Lost as the
+ * single number that moves when a shop starts losing people, rather than
+ * spreading the bad news across two groups that each look half-fine.
+ *
+ * `visits` is lifetime and net (CUSTOMER_VISITS_SQL), never the card balance,
+ * so claiming a reward does not demote anybody.
+ */
+export const HEALTH = [
+  {
+    key: "regular",
+    label: "Regulars",
+    hint: "coming as often as you expect, or more",
+  },
+  {
+    key: "returning",
+    label: "Returning",
+    hint: "been back at least once — the habit is forming",
+  },
+  {
+    key: "new",
+    label: "New",
+    hint: "one visit so far, or none yet",
+  },
+  {
+    key: "lost",
+    label: "Lost",
+    hint: "no visit in two of your cycles",
+  },
+] as const;
+
+export type HealthKey = (typeof HEALTH)[number]["key"];
+
+export function healthOf(visits: number, lastDays: number, cycle: ReturnCycle): HealthKey {
+  if (lastDays > cycle * 2) return "lost";
+  if (visits >= REGULAR_AT[cycle]) return "regular";
+  if (visits >= 2) return "returning";
+  return "new";
+}
+
 interface CustomerView {
   serial: string;
   /** Null only for a pass on the unclaimed seeded card. */
@@ -614,7 +699,10 @@ interface CustomerView {
   code: string;
   cardId: string;
   cardName: string;
+  /** The card's balance — what their progress chip shows. Resets on redeem. */
   stamps: number;
+  /** Lifetime visits, net, per person. What health is judged on. */
+  visits: number;
   target: number;
   lastDays: number;
   joinedDays: number;
@@ -622,13 +710,19 @@ interface CustomerView {
   nudges7d: number;
   removed: boolean;
   bucket: BucketKey;
+  /** Which health group they are in — a different axis to `bucket`. */
+  health: HealthKey;
   /** False when a limit blocks a message — the reason is in `blocked`. */
   canNudge: boolean;
   blocked: string;
 }
 
-/** Every active card of the owner's targeted cafés, decorated for the Customers view. */
-async function customerViews(cards: CardRow[]): Promise<CustomerView[]> {
+/**
+ * Every active card of the owner's targeted cafés, decorated for the Customers
+ * view. `cycle` is the shop's expected days between visits — it decides the
+ * health group and nothing else.
+ */
+async function customerViews(cards: CardRow[], cycle: ReturnCycle = RETURN_CYCLE_FALLBACK): Promise<CustomerView[]> {
   const now = Date.now();
   const out: CustomerView[] = [];
   for (const card of cards) {
@@ -647,6 +741,7 @@ async function customerViews(cards: CardRow[]): Promise<CustomerView[]> {
         cardId: card.id,
         cardName: card.name,
         stamps: c.stamps,
+        visits: c.visits,
         target: c.target,
         lastDays,
         /** Days since the card was issued — independent of visits. */
@@ -656,6 +751,7 @@ async function customerViews(cards: CardRow[]): Promise<CustomerView[]> {
         nudges7d: c.nudges_7d,
         removed: c.removed,
         bucket: bucketOf(c.nudges_7d, c.removed),
+        health: healthOf(c.visits, lastDays, cycle),
         canNudge: allowed.ok,
         blocked: allowed.ok ? "" : allowed.reason,
       });
@@ -712,9 +808,11 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
   const owned = await cardsForOwner(req.owner!.id);
   const cardId = String(req.query.cardId ?? "all");
   const cards = cardId === "all" ? owned : owned.filter((c) => c.id === cardId);
+  const merchant = await merchantForOwner(req.owner!.id);
+  const cycle = returnCycleOf(merchant?.expected_return_days);
   // Cohorts count PEOPLE. Someone holding an Apple and a Google card at the same
   // shop must not appear — or be messaged — twice.
-  const customers = onePerCustomer(await customerViews(cards));
+  const customers = onePerCustomer(await customerViews(cards, cycle));
 
   // Live sums over whoever is in the bucket right now. Nothing is averaged and
   // nothing is stored per group: a card that ages out of one week and into the
@@ -748,9 +846,28 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
     removed += n.removed;
   }
 
+  // The health groups, over the SAME array the buckets came from — so the two
+  // can never disagree about who exists, and the four counts always add up to
+  // `customers.length`. `eligible` is how many of the group a message could
+  // actually reach right now, which is the pair of axes read together.
+  const health = HEALTH.map((h) => {
+    const members = customers.filter((c) => c.health === h.key);
+    return {
+      key: h.key,
+      label: h.label,
+      hint: h.hint,
+      customers: members.length,
+      eligible: members.filter((c) => c.canNudge).length,
+    };
+  });
+
   res.json({
     customers,
     buckets,
+    health,
+    // What the groups were computed with, and whether the owner ever said so.
+    // The dashboard asks for it in the setup banner while `chosen` is false.
+    cycle: { days: cycle, chosen: merchant?.expected_return_days != null },
     counts: { active, issuedNeverAdded, removed },
     limits: { perWeek: MAX_NUDGES_PER_WEEK },
     cards: owned.map((c) => ({ id: c.id, name: c.name })),
@@ -758,7 +875,23 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
 });
 
 /**
- * POST /api/nudge { message, cardIds?:[], target:"all"|<bucket key>|serial[] }.
+ * How often this shop expects a customer back. The one input the health groups
+ * need, and the only thing that makes "5 visits" mean loyal at a cafe and
+ * remarkable at a barber.
+ */
+dashboardRouter.post("/api/return-cycle", requireOwner, async (req: OwnerRequest, res) => {
+  const days = Number((req.body ?? {}).days);
+  if (!(RETURN_CYCLES as readonly number[]).includes(days)) {
+    return void res.status(400).json({ error: "bad-cycle" });
+  }
+  const merchant = await merchantForOwner(req.owner!.id);
+  if (!merchant) return void res.status(404).json({ error: "no-shop" });
+  await updateMerchant(merchant.id, { expected_return_days: days });
+  res.json({ ok: true, days });
+});
+
+/**
+ * POST /api/nudge { message, cardIds?:[], target:"all"|<health key>|<bucket key>|serial[] }.
  *
  * The limits are enforced HERE, not in the browser. They used to live in a
  * `confirm()` dialog, which meant a determined tap could message a customer any
@@ -776,7 +909,10 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
 
   const cards = await targetedCards(req.owner!.id, body.cardIds);
   const cardById = new Map(cards.map((c) => [c.id, c]));
-  const allPasses = await customerViews(cards); // active cards of owned cards only
+  // The same cycle the counts were computed with, so a group named here holds
+  // exactly the people the owner was looking at when they chose it.
+  const nudgeMerchant = await merchantForOwner(req.owner!.id);
+  const allPasses = await customerViews(cards, returnCycleOf(nudgeMerchant?.expected_return_days));
   // One entry per PERSON, represented by their most recently active pass — which
   // is also the only pass the message goes to. Someone holding an Apple and a
   // Google card at one shop must not get two notifications.
@@ -784,6 +920,7 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   const whoever = (c: CustomerView) => c.customerId ?? c.serial;
 
   const bucketKeys = new Set<string>(BUCKETS.map((b) => b.key));
+  const healthKeys = new Set<string>(HEALTH.map((h) => h.key));
   let targets = everyone;
   if (Array.isArray(body.target)) {
     const wanted = new Set(body.target.map(String));
@@ -792,6 +929,11 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
     // belonging to this owner survive the lookup.
     const people = new Set(allPasses.filter((c) => wanted.has(c.serial)).map(whoever));
     targets = everyone.filter((c) => people.has(whoever(c)));
+  } else if (typeof body.target === "string" && healthKeys.has(body.target)) {
+    // A health group: "chase the Lost", "thank the Regulars". Narrowing to a
+    // group never widens what may be sent — canNudge still filters every one of
+    // them below, and the reply says how many it actually reached.
+    targets = everyone.filter((c) => c.health === body.target);
   } else if (typeof body.target === "string" && bucketKeys.has(body.target)) {
     targets = everyone.filter((c) => c.bucket === body.target);
   }

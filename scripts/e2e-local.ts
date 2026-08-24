@@ -2211,8 +2211,8 @@ async function main() {
     "each customer row carries joined-days and unanswered-nudge counts (the grouping inputs)",
   );
   expect(
-    ownerCust.limits.perWeek === 1 && ownerCust.limits.maxUnanswered === undefined,
-    "the customers response states the one nudge limit, and no longer a second",
+    ownerCust.limits.perWeek === 2 && ownerCust.limits.maxUnanswered === undefined,
+    "the customers response states the one nudge limit — two a week — and no second rule",
   );
   // The groups and the gap counts are computed server-side, so the browser
   // can't invent a group the Nudge button wouldn't actually send to.
@@ -2254,9 +2254,15 @@ async function main() {
   const oNudgeOut = JSON.parse(await oNudge.text());
   expect(oNudge.status === 200 && oNudgeOut.total === 1, "owner-level nudge messages a single customer");
 
-  // "All" means everyone the cooldown allows, which now excludes the customer
-  // messaged a moment ago — one message per person per 7 days, no exceptions
-  // for pressing a different button.
+  // Their SECOND of the week, which the cap allows — and which puts them at it.
+  const oNudge2 = await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "Owner-level hello again", target: [p2.serial] }),
+  });
+  expect(JSON.parse(await oNudge2.text()).total === 1, "...and a second time, up to the two-a-week cap");
+
+  // "All" means everyone the cap allows, which now excludes the customer who
+  // has had both of theirs — no exceptions for pressing a different button.
   const beforeAll = JSON.parse(
     (await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body,
   );
@@ -2583,23 +2589,29 @@ async function main() {
     [[applePass.serial, googlePass.serial]],
   )).rows[0]!.n;
   expect(Number(nudgeRows) === 1, `…and only one nudge event is written (got ${nudgeRows})`);
-  // The cooldown counts the PERSON, so pointing at their other pass must not
-  // buy a second message. Someone holding an Apple and a Google card of the
-  // same shop is one human with one inbox.
-  const otherPassTry = JSON.parse(await (await fetch(base + "/dashboard/api/nudge", {
-    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
-    body: JSON.stringify({ message: "Again", target: [googlePass.serial] }),
-  })).text());
+  // The cap counts the PERSON, so pointing at their other pass must not buy an
+  // EXTRA message. Someone holding an Apple and a Google card of the same shop
+  // is one human with one inbox — two a week between them, not two each.
+  const viaOther = (msg: string) =>
+    fetch(base + "/dashboard/api/nudge", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+      body: JSON.stringify({ message: msg, target: [googlePass.serial] }),
+    }).then(async (r) => JSON.parse(await r.text()));
   expect(
-    otherPassTry.total === 0 && otherPassTry.skipped.rateLimited === 1,
-    "their OTHER pass does not get around the 7-day cooldown",
+    (await viaOther("Again")).total === 1,
+    "their other pass draws on the SAME weekly allowance (this is their second)",
+  );
+  const thirdTry = await viaOther("And again");
+  expect(
+    thirdTry.total === 0 && thirdTry.skipped.rateLimited === 1,
+    "...and once the person is at two, neither pass buys a third",
   );
   expect(
     Number((await getPool().query<{ n: string }>(
       `SELECT count(*) AS n FROM events WHERE type = 'nudge' AND serial = ANY($1)`,
       [[applePass.serial, googlePass.serial]],
-    )).rows[0]!.n) === 1,
-    "…and still only one nudge event exists across both their passes",
+    )).rows[0]!.n) === 2,
+    "…and exactly two nudge events exist across both their passes — their week's worth",
   );
 
   // --- Legal pages + consent ---
@@ -2785,12 +2797,12 @@ async function main() {
   expect(terms.body.includes("One stamp per visit"), "the terms carry the reward terms");
   expect(terms.body.includes("data processor"), "the terms carry the processor clauses");
 
-  // --- Nudging: one rule, a 7-day cooldown per customer ---
+  // --- Nudging: one rule, TWO messages per customer per rolling 7 days ---
   // Automated win-back was removed in v1.5. Nothing messages a customer on a
   // timer any more, so what has to hold is the cooldown — and it has to hold on
   // the SERVER, because the browser is not where a limit can live.
   const { MAX_NUDGES_PER_WEEK } = await import("../src/winback.js");
-  expect(MAX_NUDGES_PER_WEEK === 1, "the limit is one message per customer per 7 days");
+  expect(MAX_NUDGES_PER_WEEK === 2, "the limit is two messages per customer per 7 days");
 
   const { cardMetrics, pruneAbandonedPasses, upsertRegistration, setMessage, canNudgeSerial } =
     await import("../src/db.js").then(async (db) => ({
@@ -2802,8 +2814,10 @@ async function main() {
   await logEvent("default", cool.serial, "stamp"); // a real customer
   expect((await canNudgeSerial(cool.serial)).ok, "a customer who has never been messaged can be");
   await logEvent("default", cool.serial, "nudge");
+  expect((await canNudgeSerial(cool.serial)).ok, "a SECOND message inside 7 days is allowed");
+  await logEvent("default", cool.serial, "nudge");
   const blocked = await canNudgeSerial(cool.serial);
-  expect(!blocked.ok && blocked.reason === "rate-limited", "a second message inside 7 days is refused");
+  expect(!blocked.ok && blocked.reason === "rate-limited", "a third message inside 7 days is refused");
   // 6 days is still inside the cooldown; 8 days is out of it. The boundary is
   // the whole rule, so it is checked from both sides.
   const ageNudge = (days: number) =>
@@ -2812,9 +2826,115 @@ async function main() {
       [cool.serial, String(days)],
     );
   await ageNudge(6);
-  expect(!(await canNudgeSerial(cool.serial)).ok, "still on cooldown 6 days after a message");
+  expect(!(await canNudgeSerial(cool.serial)).ok, "still on cooldown 6 days after two messages");
   await ageNudge(8);
-  expect((await canNudgeSerial(cool.serial)).ok, "off cooldown 8 days after a message");
+  expect((await canNudgeSerial(cool.serial)).ok, "off cooldown 8 days after them");
+
+  // --- Customer health: the four groups, and what a "visit" is -------------
+  //
+  // The groups are judged on LIFETIME VISITS, read from the event log, never on
+  // passes.stamp_count. That distinction is the whole feature: the balance is
+  // rewritten every time a reward is handed over, so judging loyalty by it would
+  // demote a shop's best customers at the exact moment they claimed something.
+  //
+  // One assertion per way the count could quietly become the wrong number.
+  {
+    const health = async () =>
+      JSON.parse((await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body);
+    const mine = async (serial: string) =>
+      (await health()).customers.find((c: any) => c.serial === serial) || {};
+
+    // Minted holding welcome stamps, and ADDED to a wallet — a pass row alone is
+    // not a customer (ACTIVE_PASS_SQL), so without this it is in no group at all
+    // and the assertions below would pass against an absent row.
+    const hp = await mk();
+    await logEvent("default", hp.serial, "pass_added");
+    expect((await mine(hp.serial)).stamps >= 2, "a new card carries its welcome stamps as a balance");
+    expect((await mine(hp.serial)).visits === 0, "...but no visits — welcome stamps write no event");
+    expect((await mine(hp.serial)).health === "new", "...so they are New, not Returning");
+
+    // force:true throughout — the counter refuses a repeat inside 60s
+    // (STAMP_COOLDOWN_MS) and a test that stamps eight times in a second would
+    // otherwise be measuring the cooldown, not the visit count. A forced stamp
+    // is still exactly one stamp.
+    const stampIt = () =>
+      fetch(base + "/staff/api/stamp", {
+        method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: hp.serial, force: true }),
+      });
+    await stampIt();
+    expect((await mine(hp.serial)).visits === 1, "a counter stamp is one visit");
+    await fetch(base + "/staff/api/undo", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: hp.serial }),
+    });
+    expect((await mine(hp.serial)).visits === 0, "an undo takes the visit back off");
+
+    // Enough visits to earn the reward, then take it — the moment the balance
+    // resets and the visit count must not.
+    for (let i = 0; i < 8; i++) await stampIt();
+    const earned = await mine(hp.serial);
+    expect(earned.visits === 8, `eight stamps is eight visits (${earned.visits})`);
+    await fetch(base + "/staff/api/redeem", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: hp.serial }),
+    });
+    const after = await mine(hp.serial);
+    expect(
+      after.visits === 8,
+      `a redeem-and-restart leaves the visit count alone (${earned.visits} → ${after.visits})`,
+    );
+    expect(
+      after.stamps < earned.stamps,
+      `...while the BALANCE resets to the welcome count (${earned.stamps} → ${after.stamps})`,
+    );
+    expect(after.health === "regular", "...and eight visits is still a Regular afterwards");
+
+    // The four groups partition everybody — the same tallying rule the console
+    // now follows. A customer in two groups, or in none, shows up here.
+    const body = await health();
+    const summed = body.health.reduce((a: number, h: any) => a + h.customers, 0);
+    expect(
+      summed === body.customers.length,
+      `the four health groups add up to every customer (${summed} vs ${body.customers.length})`,
+    );
+    expect(
+      body.health.map((h: any) => h.key).join(",") === "regular,returning,new,lost",
+      "...and they are the four, in the order the dashboard shows them",
+    );
+
+    // The cycle is what makes them mean anything, and changing it re-cohorts
+    // the same people with no new events at all.
+    const cycleTo = async (days: number) =>
+      fetch(base + "/dashboard/api/return-cycle", {
+        method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+        body: JSON.stringify({ days }),
+      });
+    expect((await cycleTo(28)).status === 200, "the shop can say how often customers come back");
+    expect((await health()).cycle.days === 28, "...and the groups are computed with it");
+    expect((await health()).cycle.chosen === true, "...and it counts as chosen, so the banner clears");
+    expect((await cycleTo(9)).status === 400, "a cycle that is not one of the three is refused");
+    await cycleTo(14);
+
+    // Targeting a group sends to that group and to nobody else.
+    const toGroup = async (target: string) => {
+      const r = await fetch(base + "/dashboard/api/nudge", {
+        method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+        body: JSON.stringify({ message: "Hello you", target }),
+      });
+      return JSON.parse(await r.text());
+    };
+    const before = await health();
+    const regulars = before.health.find((h: any) => h.key === "regular");
+    const sentTo = await toGroup("regular");
+    expect(
+      sentTo.total <= regulars.eligible,
+      `a group send reaches no more than that group can take (${sentTo.total} of ${regulars.eligible})`,
+    );
+    expect(sentTo.total > 0, "...and it does reach them");
+    // Deliberately NOT asserting what an unknown target does: finding out costs
+    // a real broadcast to every customer in the run, and the nudge-cooldown
+    // assertions further down then measure the messages this test sent rather
+    // than the ones they sent. It cost two runs to notice. The route's fallback
+    // is one line and reading it is cheaper than proving it here.
+  }
 
   // The groups are the rule, not a second opinion about it.
   const custView = async () =>
@@ -2840,9 +2960,11 @@ async function main() {
   const first = await nudgeTwice();
   expect(first.total === 1, "an off-cooldown customer is nudged");
   const second = await nudgeTwice();
+  expect(second.total === 1, "...and a second time, because the cap is two a week");
+  const third = await nudgeTwice();
   expect(
-    second.total === 0 && second.skipped.rateLimited === 1,
-    "asking again immediately sends nothing and says why",
+    third.total === 0 && third.skipped.rateLimited === 1,
+    "a third immediately after sends nothing and says why",
   );
 
   // --- "Last seen" is measured from the last visit, not updated_at (regression) ---
@@ -3375,10 +3497,11 @@ async function main() {
       body: JSON.stringify({ message: "Again", target: [ch.serial] }),
     })).text());
   expect((await nudgeCh()).total === 1, "a tenth message still goes out — no give-up rule");
-  // But the week genuinely is a limit: that send is not back-dated, so the next
-  // one is refused, and for the only reason left.
+  // But the week genuinely is a limit: those sends are not back-dated, so the
+  // allowance runs out at two and the next is refused, for the only reason left.
+  expect((await nudgeCh()).total === 1, "...an eleventh too, which is their second this week");
   const capped = await nudgeCh();
-  expect(capped.total === 0 && capped.skipped.rateLimited === 1, "...and the 7-day cooldown refuses the one after it");
+  expect(capped.total === 0 && capped.skipped.rateLimited === 1, "...and the cap refuses the one after that");
   expect(capped.skipped.ignored === undefined, "there is no longer an 'ignored' refusal to report");
   const outBefore = await nudgeOutcomes("default");
   expect(outBefore.noReturn >= 1, "a nudged customer who hasn't been back counts as no-return");

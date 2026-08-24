@@ -15,10 +15,17 @@
 import { nudgeState, type NudgeState } from "./db.js";
 
 /**
- * One message per customer per 7 days, however it was triggered. This is THE
- * rule, and now the only one: a customer messaged on Monday cannot be messaged
- * again until the following Monday, whichever button was pressed and however
+ * TWO messages per customer per 7 days, however they were triggered. This is
+ * THE rule, and the only one: a customer who has had two messages inside a
+ * rolling week cannot have a third, whichever button was pressed and however
  * many of the shop's cards they hold.
+ *
+ * It was one a week. Two is still a long way under Google's own ceiling of
+ * three notifications per card per 24 hours, and the window is rolling rather
+ * than a calendar week — two on Monday means nothing more until the following
+ * Monday, two spread across the week means the next is due as the first ages
+ * out. Nothing else in the product knows this number: change it here and the
+ * cap, the groups on screen and the button that sends all move together.
  *
  * There used to be a second rule — give up after six messages with no visit in
  * between. It was removed because it read a run of silence as proof somebody
@@ -28,7 +35,7 @@ import { nudgeState, type NudgeState } from "./db.js";
  * one was stopping them. The unanswered count is still shown on the customer —
  * it is a useful thing to know, it just no longer decides anything.
  */
-export const MAX_NUDGES_PER_WEEK = 1;
+export const MAX_NUDGES_PER_WEEK = 2;
 
 export type NudgeRefusal = "rate-limited" | "removed";
 

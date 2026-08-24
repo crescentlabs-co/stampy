@@ -72,12 +72,19 @@ target nobody holds any more. Never key card art by a number a card can change.
    one NOTIFY_ON_UPDATE patch or one TEXT_AND_NOTIFY message per event;
    Google hard-caps 3 notifications/card/24h.
    **Nudge limits are enforced server-side, in one place:** `canNudge` in
-   src/winback.ts — **one message per customer per 7 days**, and stop entirely
-   after 6 with no visit in between. Per PERSON, not per pass: their other
-   wallet card must not buy a second message. The Customers tab's groups are
-   that same rule (`BUCKETS`, routes/dashboard.ts), so what an owner sees and
-   what the button sends to cannot disagree. Never police this in the browser;
-   it used to live in a `confirm()` dialog and was therefore not a limit at all.
+   src/winback.ts — **two messages per customer per rolling 7 days**
+   (`MAX_NUDGES_PER_WEEK`; it was one until v2.3). Per PERSON, not per pass:
+   their other wallet card must not buy a third message. The Customers tab's
+   `BUCKETS` are that same rule, so what an owner sees and what the button
+   sends to cannot disagree. Never police this in the browser; it used to live
+   in a `confirm()` dialog and was therefore not a limit at all.
+   **`HEALTH` (routes/dashboard.ts) is a different axis and not a second copy
+   of this one.** BUCKETS say whether a customer *may* be messaged; HEALTH says
+   whether they are a Regular, Returning, New or Lost — judged on lifetime net
+   visits and the shop's own `merchants.expected_return_days`. The nudge
+   dropdown targets a HEALTH group and `canNudge` still filters it, so a group
+   send can never outrun the cap. Both are computed over the same
+   `onePerCustomer` array so they cannot disagree about who exists.
    **Nothing messages a customer on a timer** — automated win-back was removed
    in v1.5; a nudge is always an owner pressing a button.
 4. **Both platforms share one scanner:** the pass barcode content is the serial

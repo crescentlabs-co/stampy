@@ -1574,12 +1574,18 @@ describe("dashboard information architecture", () => {
   it("sends notifications from one box with one button", () => {
     expect(html).toContain("Notifications");
     expect(html).toContain("Push notification");
-    expect(html).toContain("already messaged this week");
+    expect(html).toContain("already had their two this week");
     expect(html).not.toContain("data-buckets");
     expect(html).not.toContain("Bring people back");
     expect(html).toContain("Find a customer");
-    // The 7-day rule is the thing people ask about, so it is on the heading.
-    expect(html).toContain("once every 7 days");
+    // The rule is the thing people ask about, so it is on the heading — and it
+    // is TWO a week now, everywhere it is stated.
+    expect(html).toContain("twice every 7 days");
+    expect(html).not.toContain("once every 7 days");
+    // Who first, then what: the audience picker drives the count under the
+    // button, so the promise is always about the people actually being sent to.
+    expect(html).toContain("data-audience");
+    expect(html).toContain(">Send to<");
     // "Also issued: N deleted the card" is gone — an owner can do nothing about
     // it, and it read as a scoreline against them.
     expect(html).not.toContain("Also issued");
