@@ -1034,15 +1034,37 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
   const serials = eligible.slice(0, 1000);
   let sent = 0;
   let failed = 0;
-  for (const c of serials) {
-    const card = cardById.get(c.cardId)!;
-    const r = await applyAndPush(card, c.serial, "nudge", () => setMessage(c.serial, message), {
-      nudgeText: message,
-      actor: `owner:${req.owner!.id}`,
-    });
-    if (r && r.push.sent > 0) sent++;
-    else failed++;
-  }
+  /**
+   * Delivered in parallel, a few at a time.
+   *
+   * This was a plain `for … await`, which cost one FULL round trip to the
+   * wallet per recipient, one after another. Apple hides that — an empty APNs
+   * push is quick — but a Google message is a request to Google's API and
+   * routinely takes the best part of a second, so twenty Android customers was
+   * twenty seconds of an owner watching a spinner, and it looked like the
+   * button was broken.
+   *
+   * Still awaited as a whole, and deliberately: a nudge reports what actually
+   * went out, and `logMessage` records whether it arrived (CLAUDE.md invariant
+   * 9). Backgrounding it the way staff stamps are backgrounded would trade that
+   * away. Bounded rather than unbounded so a thousand recipients cannot open a
+   * thousand sockets at Google or drain the database pool underneath them.
+   */
+  const LANES = 8;
+  let next = 0;
+  const lane = async () => {
+    for (let i = next++; i < serials.length; i = next++) {
+      const c = serials[i]!;
+      const card = cardById.get(c.cardId)!;
+      const r = await applyAndPush(card, c.serial, "nudge", () => setMessage(c.serial, message), {
+        nudgeText: message,
+        actor: `owner:${req.owner!.id}`,
+      });
+      if (r && r.push.sent > 0) sent++;
+      else failed++;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(LANES, serials.length) }, lane));
   res.json({ ok: true, total: serials.length, sent, failed, skipped });
 });
 
