@@ -9,7 +9,8 @@ process.env.BASE_URL = "https://stampy.example.test";
 process.env.DEMO_CARD_ID = "demo-card";
 
 const {
-  buildPassJson, getHeaderFieldValue, isRewardReady, passBarcode, progressText, stampDots, stampGrid,
+  buildPassJson, getHeaderFieldValue, isRewardReady, messageFieldValue, passBarcode, progressText,
+  stampDots, stampGrid, visibleMessage,
 } = await import("../src/passModel.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
@@ -310,9 +311,18 @@ describe("buildPassJson", () => {
     const first = value(at("2026-08-25T02:00:00Z"));
     const second = value(at("2026-08-25T05:30:00Z"));
     expect(first).not.toBe(second);
-    // The shop's words are still the start of it, on both.
-    expect(first.startsWith("We miss you!")).toBe(true);
-    expect(second.startsWith("We miss you!")).toBe(true);
+    // ...and the difference is INVISIBLE. changeMessage is "%@", so the whole
+    // value is the banner text: whatever separates two sends is read out to the
+    // customer, which is why it cannot be a date line or a counter.
+    expect(visibleMessage(first)).toBe("We miss you!");
+    expect(visibleMessage(second)).toBe("We miss you!");
+  });
+
+  /** One second apart is still two sends, so the marker has to be that fine. */
+  it("distinguishes two sends a second apart", () => {
+    const value = (t: string) =>
+      messageFieldValue({ message: "Hi", message_sent_at: new Date(t) });
+    expect(value("2026-08-25T02:00:00Z")).not.toBe(value("2026-08-25T02:00:01Z"));
   });
 
   /** Rows from before the column existed still render — just without the line. */

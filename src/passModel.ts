@@ -107,21 +107,36 @@ export function rewardTerms(business: string): string {
 }
 
 /**
- * The message field's value: the shop's words, plus WHEN they were sent.
+ * Two zero-width characters, used as the digits of an invisible number.
  *
- * The sent line is not decoration — it is what makes the banner fire. iOS only
- * shows a changeMessage banner when the field's VALUE differs from the pass
- * already on the phone, so re-sending the same wording (and the send box is
- * pre-filled with the shop's stored message, so most sends ARE the same
- * wording) used to update the card silently: no banner, no error, and an owner
- * concluding notifications were broken. The timestamp makes every send a new
- * value, and on the back of the card it is honestly useful — it answers
- * "is this offer from today or from March?".
+ * U+200B (space) and U+200C (non-joiner) both render as nothing, in the
+ * notification banner and on the back of the card. They are ordinary text to a
+ * string comparison and invisible to a reader, which is exactly the pair of
+ * properties this needs.
+ */
+const MARK_DIGITS = ["​", "‌"];
+
+/** Strip the invisible send marker — for tests, and for anything that must read the words. */
+export function visibleMessage(value: string): string {
+  return value.replace(/[​‌]/g, "");
+}
+
+/**
+ * The message field's value: the shop's words, and an INVISIBLE marker saying
+ * which send this is.
  *
- * Timezone is the beta's market (Malaysia), not the server's clock: Railway
- * runs on UTC, and 8am UTC printed on a card read at 4pm in KL is worse than
- * no time at all. A per-merchant timezone replaces this constant when the
- * product leaves one country.
+ * iOS only shows a changeMessage banner when the field's VALUE differs from the
+ * pass already on the phone. The send box is pre-filled with the shop's stored
+ * message, so most sends are the same wording — and identical wording meant an
+ * identical value, so every send after the first updated the card silently: no
+ * banner, no error, and an owner concluding notifications were broken.
+ *
+ * So the value has to change on every send while the banner still reads exactly
+ * what the shop typed. `changeMessage: "%@"` puts the whole value in the
+ * banner, so the difference cannot be visible text — a "Sent 25 Aug, 4:12pm"
+ * line was tried and appeared in the notification, which is not what anybody
+ * wants to read. Zero-width characters carry it instead: the send time in
+ * binary, which is unique per second, and shows as nothing at all.
  */
 export function messageFieldValue(
   row: Pick<PassRow, "message" | "message_sent_at">,
@@ -129,14 +144,13 @@ export function messageFieldValue(
 ): string {
   if (!row.message) return `Welcome to ${business}!`;
   if (!row.message_sent_at) return row.message;
-  const sent = new Date(row.message_sent_at).toLocaleString("en-MY", {
-    timeZone: "Asia/Kuala_Lumpur",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${row.message}\n\nSent ${sent}`;
+  const secs = Math.floor(new Date(row.message_sent_at).getTime() / 1000);
+  const mark = secs
+    .toString(2)
+    .split("")
+    .map((bit) => MARK_DIGITS[Number(bit)])
+    .join("");
+  return row.message + mark;
 }
 
 /** Links to the policies, for the back of the card. PassKit linkifies bare URLs. */
