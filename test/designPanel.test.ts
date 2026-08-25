@@ -155,6 +155,10 @@ describe("the design panel, mounted", () => {
     await input.onchange?.();
     await h.settle();
 
+    // STAGED, not sent: nothing an owner uploads reaches the card until Save.
+    expect(h.requests.some((r) => r.url.includes("/stamp-icon") && r.method === "POST")).toBe(false);
+    await div.querySelector("[data-a=save]")!.onclick!();
+    await h.settle();
     expect(h.requests.some((r) => r.url.includes("/stamp-icon") && r.method === "POST")).toBe(true);
     // The two fields a re-mount reads. Either one left stale loses the upload.
     expect(c.stampIconVersion).toBeTruthy();
@@ -819,5 +823,112 @@ describe("the design panel, mounted", () => {
     const row = div.querySelector("[data-stampnow]");
     expect(row).not.toBeNull();
     expect(row!.style.display).toBe("");
+  });
+});
+
+/**
+ * Nothing an owner uploads reaches the card until they press Save.
+ *
+ * Uploads used to POST the instant a file was chosen, so a logo, a band or a
+ * stamp shape landed on the LIVE card — and, because the art URLs are what an
+ * Android wallet re-fetches, on customers' phones — while the colours beside
+ * them still waited for the button. Half the panel saved itself and half did
+ * not, which is how an operator designing in the admin console watched their
+ * half-finished work appear in a merchant's dashboard.
+ *
+ * These run the panel and watch the wire.
+ */
+describe("nothing syncs until Save", () => {
+  const posts = (h: ReturnType<typeof makeHarness>, path: string) =>
+    h.requests.filter((r) => r.method === "POST" && r.url.includes(path));
+
+  const upload = async (div: FakeEl, sel: string, h: ReturnType<typeof makeHarness>) => {
+    const input = div.querySelector(sel)!;
+    input.files = [{ name: "art.png" }];
+    await input.onchange?.();
+    await h.settle();
+  };
+
+  it("stages a logo instead of posting it", async () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    await h.settle();
+    await upload(div, "[data-logo]", h);
+    expect(posts(h, "/logo").length).toBe(0);
+
+    await div.querySelector("[data-a=save]")!.onclick!();
+    await h.settle();
+    expect(posts(h, "/logo").length).toBe(1);
+  });
+
+  it("stages the Android square logo too", async () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    await h.settle();
+    await upload(div, "[data-mark]", h);
+    expect(posts(h, "/mark").length).toBe(0);
+
+    await div.querySelector("[data-a=save]")!.onclick!();
+    await h.settle();
+    expect(posts(h, "/mark").length).toBe(1);
+  });
+
+  /**
+   * The band carries a second write with it — band_texture — or the next colour
+   * save regenerates a flat band straight over the upload. The two have to land
+   * together, so they are staged together.
+   */
+  it("stages band artwork and its texture flag together", async () => {
+    const h = makeHarness();
+    const c = card();
+    const div = build(c, h);
+    await h.settle();
+    const before = h.requests.length;
+    await upload(div, "[data-band]", h);
+    expect(h.requests.slice(before).filter((r) => r.method === "POST").length).toBe(0);
+
+    await div.querySelector("[data-a=save]")!.onclick!();
+    await h.settle();
+    expect(posts(h, "/banner").length).toBeGreaterThan(0);
+    expect(c.bandTexture).toBe("image");
+  });
+
+  /** The name tick changes what the card looks like, so it waits with the rest. */
+  it("stages the my-logo-already-says-my-name tick", async () => {
+    const h = makeHarness();
+    const c = card();
+    const div = build(c, h);
+    await h.settle();
+    const before = h.requests.length;
+    const box = div.querySelector("[data-lname]")! as FakeEl & { checked: boolean };
+    box.checked = true;
+    await box.onchange?.();
+    await h.settle();
+    expect(h.requests.slice(before).filter((r) => r.method === "POST").length).toBe(0);
+    expect(c.logoHasName).toBe(false);
+
+    await div.querySelector("[data-a=save]")!.onclick!();
+    await h.settle();
+    expect(c.logoHasName).toBe(true);
+  });
+
+  /**
+   * A card with no strips still repairs itself on mount. A repair is not an
+   * edit: it commits, or a card that renders no stamps at all would stay broken
+   * until its owner happened to press Save.
+   */
+  it("still self-heals a card that has no stamp strips, without a save", async () => {
+    const h = makeHarness();
+    build(card({ stampsVersion: 0 }), h);
+    await h.settle();
+    expect(posts(h, "/stamps").length).toBeGreaterThan(0);
+  });
+
+  /** And a card that already has them posts nothing just for being opened. */
+  it("posts nothing at all when the panel is merely opened", async () => {
+    const h = makeHarness();
+    build(card(), h);
+    await h.settle();
+    expect(h.requests.filter((r) => r.method === "POST").length).toBe(0);
   });
 });

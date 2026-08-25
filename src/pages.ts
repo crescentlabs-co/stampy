@@ -1782,12 +1782,52 @@ export const DESIGN_PANEL_JS = /* js */ `
       for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
       renderPreview();
 
+      /**
+       * NOTHING an owner uploads reaches the card until they press Save.
+       *
+       * Uploads used to POST the instant a file was chosen, so a logo, a band or
+       * a stamp shape landed on the live card — and, because the art URLs are
+       * what an Android wallet re-fetches, on customers' phones — while the
+       * colours beside them still waited for the button. Half the panel saved
+       * itself and half did not, which is why an operator designing in the admin
+       * console watched their half-finished work appear in the merchant's
+       * dashboard. One rule now: the preview updates immediately, the server
+       * hears about it on Save.
+       *
+       * Keyed by what is being written, so choosing three logos in a row leaves
+       * one upload staged rather than three. Deletions stay immediate — each is
+       * behind a confirmation that says so, and they are the one case where
+       * "did that work?" needs answering on the spot.
+       */
+      const pending = new Map();
+      const stage = (key, run) => { pending.set(key, run); markPending(); };
+      /** Runs the queue in the order it was built. A failure leaves the rest staged. */
+      async function flushPending() {
+        for (const key of [...pending.keys()]) {
+          const ok = await pending.get(key)();
+          if (!ok) { markPending(); return false; }
+          pending.delete(key);
+        }
+        markPending();
+        return true;
+      }
+      /** Say so on the button, so an unsaved upload is never a silent state. */
+      function markPending() {
+        const btn = div.querySelector("[data-a=save]");
+        if (btn && !btn.disabled) {
+          btn.textContent = pending.size
+            ? (env.saveLabel || "Save") + " •"
+            : (env.saveLabel || "Save");
+        }
+      }
+
       // Self-heal: the stamp grid now lives only in the strip image, so a card
       // with no rendered strips would show a customer no stamps at all. Cards
       // made before that was true have none, so render the default set once, the
-      // first time their owner opens this panel. Silent — nothing was asked for.
+      // first time their owner opens this panel. Silent — nothing was asked for,
+      // and a repair is not an edit, so it commits rather than staging.
       if (!c.stampsVersion) {
-        applyStamps(stampStyle || "dot", true).then(() => { c.stampsVersion = 1; })
+        applyStamps(stampStyle || "dot", true, true).then(() => { c.stampsVersion = 1; })
           .catch(() => {}); // a failure just means we try again next visit
       }
 
@@ -1938,7 +1978,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         f("bg").value = out;
         f("fg").value = pickTextColor(out);
         renderPreview(); drawPalette();
-        await save({ bg: out, fg: f("fg").value }, "Card colour", quiet);
+        // The pickers hold it and Save reads the pickers. This used to POST on
+        // its own, which put a colour on the live card while the owner was still
+        // choosing one.
         if (!quiet) {
           toast("That logo was almost invisible on your card colour, so the card was made "
             + (up ? "lighter" : "darker") + " to suit. Change it below if you'd rather.");
@@ -1989,12 +2031,18 @@ export const DESIGN_PANEL_JS = /* js */ `
               ctx("2d").drawImage(src, (w - src.width * s) / 2, (h - src.height * s) / 2, src.width * s, src.height * s);
             }
             const dataUrl = canvas.toDataURL("image/png");
-            if (!kind) { onDone(dataUrl); return; } // caller saves (e.g. banner via saveBanner)
-            const { body } = await api(P("/" + kind), {
-              method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+            if (!kind) { onDone(dataUrl); return; } // caller stages (e.g. the stamp shape)
+            // Staged, not posted. The preview below is already showing it — the
+            // card and its customers only find out on Save.
+            stage(kind, async () => {
+              const { body } = await api(P("/" + kind), {
+                method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+              });
+              if (!body.ok) { toast(body.error || "Upload failed"); return false; }
+              return true;
             });
-            if (body.ok) { onDone(dataUrl); toast(ART_LABEL[kind] + " saved ✓"); }
-            else toast(body.error || "Upload failed");
+            await onDone(dataUrl);
+            toast(ART_LABEL[kind] + " ready — press " + (env.saveLabel || "Save"));
           };
           img.onerror = () => toast("Couldn't read that image");
           img.src = URL.createObjectURL(file);
@@ -2079,23 +2127,26 @@ export const DESIGN_PANEL_JS = /* js */ `
         toast("Square logo removed — Android goes back to your main logo");
       };
 
-      // Saved the moment it is ticked, like the logo upload beside it rather
-      // than the colours below it. A tick-box that needed a second button would
-      // sit next to two controls that save themselves. On failure the box goes
-      // back to where it was: a control showing a state the server rejected is
-      // worse than one that visibly did not take.
-      q("[data-lname]").onchange = async () => {
+      // Staged like the upload above it, not saved on the tick. It changes what
+      // the card LOOKS like, and everything that does now waits for one button.
+      q("[data-lname]").onchange = () => {
         const on = q("[data-lname]").checked;
-        const { body } = await api(P(), {
-          method: "POST", body: JSON.stringify({ logoHasName: on }),
+        stage("logoHasName", async () => {
+          const { body } = await api(P(), {
+            method: "POST", body: JSON.stringify({ logoHasName: on }),
+          });
+          if (!body.ok) {
+            // Put the box back where the server left it: a control showing a
+            // state that was rejected is worse than one that visibly did not take.
+            q("[data-lname]").checked = !on;
+            renderPreview();
+            toast(body.error || "Couldn't save that");
+            return false;
+          }
+          c.logoHasName = on;
+          return true;
         });
-        if (!body.ok) {
-          q("[data-lname]").checked = !on;
-          return toast(body.error || "Couldn't save that");
-        }
-        c.logoHasName = on;
         renderPreview();
-        toast(on ? "Your name will not be printed next to the logo" : "Your name will show next to the logo");
       };
 
 
@@ -2116,9 +2167,17 @@ export const DESIGN_PANEL_JS = /* js */ `
         c.bannerVersion = Date.now();
         q("[data-a=rmband]").disabled = false;
         updateBandBtn();
-        // The texture flag has to reach the server, or the next colour save
-        // regenerates the flat band straight over the upload.
-        await save({ bandTexture: "image" }, "", true);
+        // The texture flag has to reach the server WITH the image, or the next
+        // colour save regenerates the flat band straight over the upload. Staged
+        // beside it so the two land together or not at all.
+        stage("bandTexture", async () => {
+          const { body } = await api(P(), {
+            method: "POST", body: JSON.stringify({ bandTexture: "image" }),
+          });
+          if (!body.ok) { toast(body.error || "Couldn't save that"); return false; }
+          c.bandTexture = "image";
+          return true;
+        });
         // Every stored strip still has the old band baked into it.
         await applyStamps(stampStyle || "dot", true);
         renderPreview();
@@ -2143,7 +2202,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // Google's hero image whenever a card has no strips, and deleting the
         // upload without regenerating would leave that pointing at nothing.
         await saveBanner(bandPng(1125, 369), true);
-        await applyStamps(stampStyle || "dot", true);
+        await applyStamps(stampStyle || "dot", true, true);
         renderPreview();
         toast("Back to your Band colour");
       };
@@ -2214,20 +2273,16 @@ export const DESIGN_PANEL_JS = /* js */ `
         f("label").value = found.label; f("accent").value = found.accent;
         f("bandColor").value = found.band;
         renderPreview(); drawPalette();
-        await save({
-          bg: found.bg, fg: found.fg, label: found.label,
-          accent: found.accent, bandColor: found.band,
-        }, "", true);
-        // Same guard as saveLook: taking colours from a logo must not repaint
-        // over uploaded band artwork. The Band colour still moves underneath —
-        // it is what shows if the image is ever removed.
-        if (!bandIsImage) await saveBanner(bandPng(1125, 369), true);
+        // Into the pickers only. Save reads the pickers and regenerates the band
+        // from them, so nothing here has to write — and an owner who uploads a
+        // logo, dislikes the colours it produced and closes the tab leaves the
+        // live card exactly as they found it.
+        //
         // The extracted card colour is sampled FROM the logo, so it can land on
-        // top of the logo's own ink. This is the same check the upload used to
-        // run on its own, and it must come last or it corrects a colour that is
-        // about to be overwritten.
+        // top of the logo's own ink. This corrects that, and must come last or
+        // it fixes a colour that is about to be overwritten.
         await ensureLogoReadable(dataUrl, true);
-        toast("Colours taken from your logo ✓");
+        toast("Colours taken from your logo — press " + (env.saveLabel || "Save") + " to keep them");
       }
 
       /**
@@ -2430,7 +2485,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // Re-bake the strips: the band is the backdrop INSIDE each strip PNG,
         // so a new band that isn't re-rendered would never reach the pass.
         await loadBanner(dataUrl);
-        await applyStamps(stampStyle || "dot", true);
+        await applyStamps(stampStyle || "dot", true, true);
         if (!quiet) toast("Band saved ✓");
       }
 
@@ -2484,9 +2539,13 @@ export const DESIGN_PANEL_JS = /* js */ `
       // strip backdrop, Google as the class hero image, and it is painted into
       // every stamp strip. Only a browser can draw it, so the PNG stays.
 
-      // Renders the full 0..target set and stores it (immediate, like banners).
-      // The quiet flag is for the piggy-back call from save(), which toasts its own.
-      async function applyStamps(style, quiet) {
+      // Renders the full 0..target set and STAGES it, unless the commit flag
+      // says otherwise. The strips are drawn from whatever the panel is showing —
+      // the band and the stamp shape as previewed — so a staged set is always
+      // the set the owner is looking at, whether or not those two have been
+      // saved yet. The quiet flag is for the piggy-back call from save(), which
+      // toasts its own.
+      async function applyStamps(style, quiet, commit) {
         stampStyle = style;
         // Onto the card object too, not just the local. The dashboard builds
         // this panel from a card it loaded ONCE at page load and keeps reusing
@@ -2538,8 +2597,13 @@ export const DESIGN_PANEL_JS = /* js */ `
         };
         let strips = render(1125, 369);
         if (strips.some((s) => decoded(s.png) > CAP * 0.9)) strips = render(750, 246);
-        const { body } = await api(P("/stamps"), { method: "POST", body: JSON.stringify({ style, strips }) });
-        if (!body.ok) return toast(body.error || "Couldn't save stamps");
+        const put = async () => {
+          const { body } = await api(P("/stamps"), { method: "POST", body: JSON.stringify({ style, strips }) });
+          if (!body.ok) { toast(body.error || "Couldn't save stamps"); return false; }
+          return true;
+        };
+        if (!commit) { stage("stamps", put); renderPreview(); return; }
+        if (!(await put())) return;
         renderPreview();
         if (!quiet) toast("Stamp style saved ✓");
       }
@@ -2696,24 +2760,32 @@ export const DESIGN_PANEL_JS = /* js */ `
             return;
           }
           err.style.display = "none";
-          const { body } = await api(P("/stamp-icon"), {
-            method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+          // Staged like every other upload. The shape is checked HERE, before it
+          // is accepted at all, so a file that cannot work as a stamp is refused
+          // on the spot rather than at Save — what waits for the button is the
+          // storing of a shape already known to be usable.
+          stage("stamp-icon", async () => {
+            const { body } = await api(P("/stamp-icon"), {
+              method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }),
+            });
+            if (!body.ok) {
+              show(body.error === "too-large"
+                ? "That file is too big. A stamp is drawn about the size of a fingernail, so a small, simple shape is all it needs."
+                : "Couldn't save that stamp. Check your connection and try again.");
+              return false;
+            }
+            return true;
           });
-          if (!body.ok) {
-            show(body.error === "too-large"
-              ? "That file is too big. A stamp is drawn about the size of a fingernail, so a small, simple shape is all it needs."
-              : "Couldn't save that stamp. Check your connection and try again.");
-            return;
-          }
           // Hold the new shape before re-rendering, for the same reason the
           // stored one is loaded at mount: applyStamps writes the whole grid.
           await loadStampIcon(dataUrl);
-          // A stamp is stored now, and this object is what a re-mount reads —
+          // A stamp is staged now, and this object is what a re-mount reads —
           // the logo and the square mark beside it already do this. Leaving it
           // at 0 is what let a tab switch decide the card had no shape.
           c.stampIconVersion = Date.now();
           showStamp();
           await applyStamps("custom");
+          toast("Stamp shape ready — press " + (env.saveLabel || "Save"));
         };
         probe.onerror = () => show("Couldn't read that image.");
         probe.src = dataUrl;
@@ -2757,9 +2829,13 @@ export const DESIGN_PANEL_JS = /* js */ `
         const { body } = await api(P(), { method: "POST", body: JSON.stringify(fields) });
         if (!body.ok) return toast(body.error || "Save failed");
         Object.assign(c, fields);
+        // Everything the owner staged goes out with the fields — this is the
+        // press they were waiting for. A failure leaves the rest staged and says
+        // so, rather than reporting a save that only half happened.
+        if (!(await flushPending())) return;
         // Always regenerate, even on plain dots: the strip image is now the only
         // place stamps are drawn, so a card with no strips would show nothing.
-        await applyStamps(stampStyle || "dot", true);
+        await applyStamps(stampStyle || "dot", true, true);
         if (!quiet) toast(label + " saved ✓");
       }
 
