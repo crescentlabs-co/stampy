@@ -106,6 +106,39 @@ export function rewardTerms(business: string): string {
   ].join(" ");
 }
 
+/**
+ * The message field's value: the shop's words, plus WHEN they were sent.
+ *
+ * The sent line is not decoration — it is what makes the banner fire. iOS only
+ * shows a changeMessage banner when the field's VALUE differs from the pass
+ * already on the phone, so re-sending the same wording (and the send box is
+ * pre-filled with the shop's stored message, so most sends ARE the same
+ * wording) used to update the card silently: no banner, no error, and an owner
+ * concluding notifications were broken. The timestamp makes every send a new
+ * value, and on the back of the card it is honestly useful — it answers
+ * "is this offer from today or from March?".
+ *
+ * Timezone is the beta's market (Malaysia), not the server's clock: Railway
+ * runs on UTC, and 8am UTC printed on a card read at 4pm in KL is worse than
+ * no time at all. A per-merchant timezone replaces this constant when the
+ * product leaves one country.
+ */
+export function messageFieldValue(
+  row: Pick<PassRow, "message" | "message_sent_at">,
+  business = "",
+): string {
+  if (!row.message) return `Welcome to ${business}!`;
+  if (!row.message_sent_at) return row.message;
+  const sent = new Date(row.message_sent_at).toLocaleString("en-MY", {
+    timeZone: "Asia/Kuala_Lumpur",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${row.message}\n\nSent ${sent}`;
+}
+
 /** Links to the policies, for the back of the card. PassKit linkifies bare URLs. */
 export function legalText(): string {
   const base = config.baseUrl || "";
@@ -253,7 +286,7 @@ export function buildPassJson(
         {
           key: "message",
           label: business,
-          value: row.message || `Welcome to ${business}!`,
+          value: messageFieldValue(row, business),
           changeMessage: "%@",
         },
         {

@@ -117,6 +117,8 @@ export interface PassRow {
   reward: string;
   /** Free-form message surfaced on the pass back + pushed to the lock screen. */
   message: string;
+  /** When `message` was last set — folded into the pass so repeat sends still banner. */
+  message_sent_at: Date | null;
   created_at: Date;
   updated_at: Date;
   /**
@@ -686,6 +688,13 @@ export async function migrate(): Promise<void> {
     -- not a test. Defaults false, so nothing already issued moves.
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
     CREATE INDEX IF NOT EXISTS idx_passes_test ON passes(card_id) WHERE is_test;
+    -- v2.6: when the pass's message was last SET. Apple only banners a field
+    -- whose VALUE changed, so re-sending the same wording used to update the
+    -- card silently — no notification, ever, for a repeated message. The sent
+    -- time is folded into the field's value (passModel) so every send differs.
+    -- Deliberately not updated_at, which moves on every stamp: that would fire
+    -- a second banner per stamp and break the one-notification-per-event rule.
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS message_sent_at timestamptz;
     -- Mirrored onto customers so a person created only to hold a test card is
     -- excluded by the same rule, and onto events so the funnel and the counter
     -- log can filter without joining back to the pass on every row.
@@ -3504,7 +3513,8 @@ export async function reissuePass(serial: string): Promise<PassRow | null> {
 /** Sets the free-form message (win-back nudge) and bumps updated_at. */
 export async function setMessage(serial: string, message: string): Promise<PassRow | null> {
   const res = await getPool().query<PassRow>(
-    `UPDATE passes SET message = $2, updated_at = now() WHERE serial = $1 RETURNING *`,
+    `UPDATE passes SET message = $2, message_sent_at = now(), updated_at = now()
+      WHERE serial = $1 RETURNING *`,
     [serial, message],
   );
   return res.rows[0] ?? null;

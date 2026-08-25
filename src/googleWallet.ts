@@ -32,6 +32,8 @@ import {
 const WALLET_API = "https://walletobjects.googleapis.com/walletobjects/v1";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE = "https://www.googleapis.com/auth/wallet_object.issuer";
+/** The longest one Google call may take before it counts as a failed send — see api(). */
+const DEADLINE_MS = 10_000;
 
 export interface GoogleResult {
   ok: boolean;
@@ -80,14 +82,21 @@ async function accessToken(): Promise<string | null> {
   // Logged on its own because it only happens on a cold process or once an
   // hour: if one stamp in twenty is slow, this is the first thing to rule out.
   const started = Date.now();
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion,
+      }),
+      signal: AbortSignal.timeout(DEADLINE_MS),
+    });
+  } catch (err) {
+    console.error("[google-wallet] token exchange unreachable:", String(err));
+    return null;
+  }
   console.log(`[google-wallet] token exchange ${res.status} in ${Date.now() - started}ms`);
   if (!res.ok) {
     console.error("[google-wallet] token exchange failed:", res.status, await res.text());
@@ -114,14 +123,26 @@ async function api(
   const started = Date.now();
   const token = await accessToken();
   if (!token) return { status: 0, text: "no-access-token", ms: Date.now() - started };
-  const res = await fetch(`${WALLET_API}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    // Bounded like the APNs push (src/apns.ts) and for the same reason: a
+    // nudge AWAITS its delivery, so a call that never answers used to hang the
+    // owner's request forever — no toast, no error, just a spinner. Past the
+    // deadline the truthful answer is a failed send, which logMessage records.
+    res = await fetch(`${WALLET_API}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(DEADLINE_MS),
+    });
+  } catch (err) {
+    const ms = Date.now() - started;
+    console.error(`[google-wallet] ${method} ${path} unreachable in ${ms}ms:`, String(err));
+    return { status: 0, text: "unreachable", ms };
+  }
   const text = await res.text();
   const ms = Date.now() - started;
   console.log(`[google-wallet] ${method} ${path} ${res.status} in ${ms}ms`);

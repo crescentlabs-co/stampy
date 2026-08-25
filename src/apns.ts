@@ -34,12 +34,43 @@ export interface PushResult {
   reason?: string;
 }
 
+/**
+ * The longest one push may take before it is called failed.
+ *
+ * There was no limit, and a nudge awaits its pushes — so an APNs connection
+ * that stalled (never erroring, never answering) hung the owner's request
+ * forever: a spinner, no toast, no error anywhere. Ten seconds is several
+ * times a normal push; past it, the truthful answer is "this send failed",
+ * which logMessage then records. The next stamp re-sends the pass state
+ * anyway, so nothing is lost but the one banner.
+ */
+const PUSH_DEADLINE_MS = 10_000;
+
 /** Sends an empty pass-update push to one device token. */
 export function pushToDevice(pushToken: string): Promise<PushResult> {
   return new Promise((resolve) => {
+    // Everything below funnels through this: the promise settles exactly once,
+    // and the connection is closed on every path, including the deadline.
+    let settled = false;
+    const finish = (result: PushResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      try {
+        client.close();
+      } catch {
+        /* already closed */
+      }
+      resolve(result);
+    };
+    const deadline = setTimeout(
+      () => finish({ token: pushToken, ok: false, status: 0, reason: "timeout" }),
+      PUSH_DEADLINE_MS,
+    );
+
     const client = http2.connect(APNS_HOST);
     client.on("error", () =>
-      resolve({ token: pushToken, ok: false, status: 0, reason: "connect-error" }),
+      finish({ token: pushToken, ok: false, status: 0, reason: "connect-error" }),
     );
 
     const req = client.request({
@@ -59,7 +90,6 @@ export function pushToDevice(pushToken: string): Promise<PushResult> {
     });
     req.on("data", (chunk: Buffer) => (body += chunk.toString()));
     req.on("end", () => {
-      client.close();
       let reason: string | undefined;
       if (body) {
         try {
@@ -68,12 +98,11 @@ export function pushToDevice(pushToken: string): Promise<PushResult> {
           reason = body.slice(0, 200);
         }
       }
-      resolve({ token: pushToken, ok: status === 200, status, reason });
+      finish({ token: pushToken, ok: status === 200, status, reason });
     });
-    req.on("error", () => {
-      client.close();
-      resolve({ token: pushToken, ok: false, status: 0, reason: "stream-error" });
-    });
+    req.on("error", () =>
+      finish({ token: pushToken, ok: false, status: 0, reason: "stream-error" }),
+    );
 
     req.end(JSON.stringify({ aps: {} }));
   });

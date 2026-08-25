@@ -56,6 +56,7 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
     stamps_target: 10,
     reward: "Free coffee",
     message: "",
+    message_sent_at: null,
     created_at: new Date(),
     updated_at: new Date(),
     is_test: false,
@@ -291,6 +292,36 @@ describe("buildPassJson", () => {
     expect(withChange.map((f: any) => f.key).sort()).toEqual(["message", "progress"]);
     // %@ is required for iOS to substitute the new value into the banner.
     for (const f of withChange) expect(f.changeMessage).toContain("%@");
+  });
+
+  /**
+   * iOS only banners a changeMessage field whose VALUE differs from the pass
+   * already on the phone. The send box is pre-filled with the shop's stored
+   * message, so most sends are the SAME wording — and identical wording used
+   * to mean an identical value, so the second send updated the card silently:
+   * no banner, no error, and an owner concluding notifications were broken.
+   * The sent time folded into the value is what makes every send a new one.
+   */
+  it("re-sending the same wording still produces a different message value", () => {
+    const at = (t: string) =>
+      buildPassJson(row({ message: "We miss you!", message_sent_at: new Date(t) }), card()) as any;
+    const value = (p: any) =>
+      p.storeCard.backFields.find((f: any) => f.key === "message").value;
+    const first = value(at("2026-08-25T02:00:00Z"));
+    const second = value(at("2026-08-25T05:30:00Z"));
+    expect(first).not.toBe(second);
+    // The shop's words are still the start of it, on both.
+    expect(first.startsWith("We miss you!")).toBe(true);
+    expect(second.startsWith("We miss you!")).toBe(true);
+  });
+
+  /** Rows from before the column existed still render — just without the line. */
+  it("a message with no sent time is shown bare, and no message means the welcome", () => {
+    const value = (r: any) =>
+      (buildPassJson(row(r), card()) as any).storeCard.backFields
+        .find((f: any) => f.key === "message").value;
+    expect(value({ message: "Hello", message_sent_at: null })).toBe("Hello");
+    expect(value({ message: "", message_sent_at: null })).toContain("Welcome to");
   });
 
   it("prints the reward terms and the policy links on the back", () => {

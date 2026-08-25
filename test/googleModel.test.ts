@@ -63,6 +63,7 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
     stamps_target: 10,
     reward: "Free coffee",
     message: "",
+    message_sent_at: null,
     created_at: new Date(),
     updated_at: new Date(),
     is_test: false,
