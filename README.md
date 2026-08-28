@@ -78,9 +78,23 @@ card in the recent list.
 | `GOOGLE_SERVICE_ACCOUNT_B64` | Produced by `pnpm prepare-google <key.json>` |
 | `STAFF_PIN` | Seeds the default café's PIN on first boot; the first owner to sign up inherits it, and changes it under Shop afterwards |
 | `SESSION_SECRET` | Any long random string — keeps dashboard logins valid across deploys |
+| `ENV_NAME` | Which copy this is: unset/`live` (production) or `staging`. Staging gets a banner on every page, `noindex`, no email, and a database stamp that refuses a cross-wired `DATABASE_URL` |
+| `GOOGLE_CLASS_PREFIX` | Leave unset on live (defaults to `stampy`, baked into every issued Android card). Staging sets `stampy-stg` so its Google card templates can never overwrite live's |
 | `CAFE_NAME` / `CAFE_REWARD` / `STAMPS_TARGET` / `STAMPS_START` | Seed the default café on first boot (Kopi Corner / Free coffee / 10 / 2); edit in the dashboard afterwards |
 
 The app **boots fine with none of these** — `/setup` shows what's missing.
+
+## Staging vs live
+
+Two Railway services run this same repo: **staging** deploys automatically from
+`main`, **live** deploys from the `live` branch and only moves when
+`pnpm promote` pushes `main` there — after the five verification suites pass.
+Each service has its own Postgres; on first boot a database stamps itself with
+its `ENV_NAME` (the `app_env` table) and the app refuses to start against a
+database stamped for the other copy, so a pasted-wrong `DATABASE_URL` fails
+loudly instead of writing test data into real shops. If a promoted change reads
+a NEW variable, set it on the live service **before** promoting — a missing
+variable never crashes this app, it just silently turns the feature off.
 
 ## Local dev
 

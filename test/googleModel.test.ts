@@ -12,7 +12,7 @@ process.env.DEMO_CARD_ID = "demo-card";
 
 const {
   buildHeroClearPatch, buildLoyaltyClass, buildLoyaltyObject, buildLoyaltyPatch,
-  buildSaveJwtClaims, logoUrl,
+  buildSaveJwtClaims, classId, logoUrl,
 } = await import("../src/googleModel.js");
 // Imported here on purpose: the point of the block below is to compare the two
 // platforms against each other, which no single-platform test file can do.
@@ -613,5 +613,36 @@ describe("membership cards on Google", () => {
     expect(p.loyaltyPoints.label).toBe("Stamps");
     expect(p.loyaltyPoints.balance.string).toBe("3/8");
     expect(buildLoyaltyClass(card(), 0, 0, "Kopi Corner").programName).toBe("Loyalty card");
+  });
+});
+
+describe("the class id prefix — invariant 13's guard", () => {
+  it("is exactly 'stampy' when GOOGLE_CLASS_PREFIX is unset", () => {
+    // Every Android card ever issued re-sends this string on every stamp.
+    // Production sets no variable, so this default IS the live behaviour —
+    // change it and every issued card stops updating, forever.
+    delete process.env.GOOGLE_CLASS_PREFIX;
+    expect(classId(card())).toBe("3388000000012345678.stampy-default");
+  });
+
+  it("lets a staging deployment move its classes out of live's namespace", () => {
+    // The card id "default" exists in BOTH databases (migrate() seeds it), so
+    // without a different prefix staging and live map onto the same Google
+    // class — and staging would overwrite the live card template.
+    process.env.GOOGLE_CLASS_PREFIX = "stampy-stg";
+    try {
+      expect(classId(card())).toBe("3388000000012345678.stampy-stg-default");
+    } finally {
+      delete process.env.GOOGLE_CLASS_PREFIX;
+    }
+  });
+
+  it("treats a blank variable as unset, not as an empty prefix", () => {
+    process.env.GOOGLE_CLASS_PREFIX = "   ";
+    try {
+      expect(classId(card())).toBe("3388000000012345678.stampy-default");
+    } finally {
+      delete process.env.GOOGLE_CLASS_PREFIX;
+    }
   });
 });

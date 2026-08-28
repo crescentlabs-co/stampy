@@ -18,7 +18,7 @@
 import pg from "pg";
 import { randomInt, randomUUID } from "node:crypto";
 import { hashPassword, verifyPassword } from "./auth.js";
-import { config, seedCard } from "./config.js";
+import { config, envName, seedCard } from "./config.js";
 
 const { Pool } = pg;
 
@@ -471,7 +471,9 @@ async function renameCafesToCards(): Promise<void> {
 }
 
 export async function migrate(): Promise<void> {
-  // Must run before anything else: everything below is written in the new names.
+  // Before anything else — even the rename: refuse a cross-wired database.
+  await ensureEnvStamp(envName());
+  // Must run before the tables below: everything below is written in the new names.
   await renameCafesToCards();
   await getPool().query(`
     CREATE TABLE IF NOT EXISTS cards (
@@ -1111,6 +1113,38 @@ export async function migrate(): Promise<void> {
   await backfillCustomers();
   await backfillEventAttribution();
   await backfillMerchantSignupDates();
+}
+
+/**
+ * The safety catch between live and staging: the database remembers which copy
+ * of the app it belongs to, and boot refuses a database stamped with a
+ * different name. Pasting the LIVE database URL into the STAGING service's
+ * Railway variables would otherwise let a test site quietly write to real
+ * merchants' data — this turns that mistake into a refusal that names itself.
+ *
+ * First boot writes ENV_NAME into the empty table ("live" when nothing is
+ * set, so production stamps itself correctly with no variable). The name is a
+ * parameter so the e2e suite can prove the refusal without a second process.
+ * Deliberately invisible to backups: app_env is excluded in src/backup.ts,
+ * because the stamp describes the DEPLOYMENT a database serves, not the data
+ * in it — a live dump restored into staging must not smuggle "live" along.
+ */
+export async function ensureEnvStamp(name: string): Promise<void> {
+  await getPool().query(`CREATE TABLE IF NOT EXISTS app_env (name text PRIMARY KEY)`);
+  const existing = await getPool().query<{ name: string }>(`SELECT name FROM app_env LIMIT 1`);
+  const stamped = existing.rows[0]?.name;
+  if (!stamped) {
+    await getPool().query(`INSERT INTO app_env (name) VALUES ($1)`, [name]);
+    console.log(`[migrate] stamped this database as "${name}"`);
+    return;
+  }
+  if (stamped !== name) {
+    throw new Error(
+      `REFUSING TO START: this database belongs to "${stamped}" but this service is running as "${name}" (ENV_NAME). ` +
+        `The wrong DATABASE_URL is almost certainly pasted into this service's Railway variables — ` +
+        `each copy of PunchMe must point at its own database. Fix the variable; never edit the app_env table.`,
+    );
+  }
 }
 
 /**

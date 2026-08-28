@@ -31,10 +31,18 @@ if (!process.env.DATABASE_URL) {
 const dir = path.join(homedir(), "Stampy-backups");
 mkdirSync(dir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-const file = path.join(dir, `stampy-${stamp}.json`);
 
 const pool = getPool();
 const client = await pool.connect();
+
+// The environment stamp (ensureEnvStamp, src/db.ts) goes into the filename, so
+// a staging dump and a live dump can never be mistaken for each other on disk.
+// Databases from before the stamp existed simply keep the old name.
+const env = await client
+  .query<{ name: string }>(`SELECT name FROM app_env LIMIT 1`)
+  .then((r) => r.rows[0]?.name ?? "")
+  .catch(() => "");
+const file = path.join(dir, `stampy-${env ? env + "-" : ""}${stamp}.json`);
 try {
   let total = 0;
   const dump = await dumpDatabase(client, (name, rows) => {

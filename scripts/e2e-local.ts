@@ -30,7 +30,7 @@ async function main() {
   // it again where the closed behaviour is what is being asserted.
   process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
-  const { migrate, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, ensureEnvStamp, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -55,6 +55,22 @@ async function main() {
   await migrate();
   await migrate(); // idempotency check
   console.log("MIGRATE OK (x2, idempotent)");
+
+  // The live/staging safety catch (ensureEnvStamp): with no ENV_NAME set this
+  // database stamped itself "live" on first migrate — exactly what production
+  // does on its first deploy of this code. A service claiming to be a
+  // different copy must be refused before it can touch anything.
+  const envStamp = await getPool().query<{ name: string }>(`SELECT name FROM app_env`);
+  if (envStamp.rows.length !== 1 || envStamp.rows[0]!.name !== "live") {
+    throw new Error("env stamp: expected exactly one row naming 'live'");
+  }
+  await ensureEnvStamp("live"); // a matching boot passes
+  let crossWired = "";
+  await ensureEnvStamp("staging").catch((err: Error) => { crossWired = err.message; });
+  if (!crossWired.includes('belongs to "live"')) {
+    throw new Error("env stamp: a cross-wired ENV_NAME must refuse to start");
+  }
+  console.log("ENV STAMP OK (stamped live, staging refused)");
 
   const card = await getCard("default");
   if (!card || card.name !== "Kopi Corner") throw new Error("default card seed failed");
@@ -109,6 +125,13 @@ async function main() {
   // The default café's Add-to-Wallet page moved to /c/default; its QR points there.
   const cafeLanding = await get("/c/default");
   expect(cafeLanding.status === 200 && cafeLanding.body.includes("Kopi Corner"), "default café Add-to-Wallet page renders at /c/default");
+
+  // With no ENV_NAME this process is "live": search engines are welcome, and
+  // no page wears the staging strip. The staging side of both is unit-tested
+  // in test/pages.test.ts, since ENV_NAME is read per render.
+  const robots = await get("/robots.txt");
+  expect(robots.status === 200 && !robots.body.includes("Disallow: /"), "live robots.txt turns no crawler away");
+  expect(!cafeLanding.body.includes("not the real site"), "live pages carry no staging strip");
   const qr = await get("/qr");
   expect(qr.status === 200 && (qr.headers.get("content-type") || "").includes("image/png"), "/qr still serves the counter QR PNG");
 

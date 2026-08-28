@@ -168,3 +168,30 @@ export function setupStatus(): SetupStatus {
 export function signupOpen(): boolean {
   return (process.env.ALLOW_PUBLIC_SIGNUP ?? "").trim() === "1";
 }
+
+/**
+ * Which copy of PunchMe this is: "live" — the default, so production behaves
+ * unchanged with nothing set — or "staging". Everything staging-specific keys
+ * off this one name: the page banner, the noindex tag, the email block, and
+ * the database stamp that refuses a cross-wired DATABASE_URL (ensureEnvStamp
+ * in src/db.ts). A function rather than a config field, for the same reason
+ * signupOpen() is: read per call, so the tests can exercise both sides in one
+ * process.
+ */
+export function envName(): string {
+  return (process.env.ENV_NAME ?? "").trim().toLowerCase() || "live";
+}
+
+/**
+ * The word in front of the card id inside every Google Wallet class id:
+ * `<issuer>.<prefix>-<cardId>` (classId, src/googleModel.ts). Defaults to
+ * "stampy" — the historical value re-sent on every stamp of every Android
+ * card ever issued (CLAUDE.md invariant 13) — so a deployment with nothing
+ * set does not change by a single character. Staging sets
+ * GOOGLE_CLASS_PREFIX=stampy-stg: the card id "default" exists in BOTH
+ * databases and would otherwise map both copies onto the same Google class,
+ * letting staging overwrite the live card template. A test pins the default.
+ */
+export function googleClassPrefix(): string {
+  return (process.env.GOOGLE_CLASS_PREFIX ?? "").trim() || "stampy";
+}

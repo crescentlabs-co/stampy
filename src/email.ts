@@ -6,7 +6,7 @@
  * throws — so a failed welcome/reset email can never crash a request or the
  * boots-with-zero-secrets invariant. Callers treat it as best-effort.
  */
-import { config } from "./config.js";
+import { config, envName } from "./config.js";
 
 export type EmailResult = { ok: true } | { ok: false; reason: string };
 
@@ -15,6 +15,13 @@ export async function sendEmail(opts: {
   subject: string;
   html: string;
 }): Promise<EmailResult> {
+  // Staging must never email a real person. Its Railway service also leaves
+  // RESEND_API_KEY unset, but a variable copied across by mistake would
+  // silently re-arm sending — this makes the block a property of the
+  // environment itself, in the same never-throws shape as the line below.
+  if (envName() !== "live") {
+    return { ok: false, reason: "email-off-in-staging" };
+  }
   if (!config.resendApiKey || !config.emailFrom) {
     return { ok: false, reason: "email-not-configured" };
   }

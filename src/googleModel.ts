@@ -10,16 +10,18 @@
  * registrations, no push tokens.
  */
 import { rgbToHex } from "./color.js";
-import { config } from "./config.js";
+import { config, googleClassPrefix } from "./config.js";
 import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
 import {
   benefitsText, cardTerms, catalogueSummary, isRewardReady, memberSince, milestoneSummary,
   passBarcode, rewardFor, targetFor,
 } from "./passModel.js";
 
-/** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
+/** One LoyaltyClass per café: `<issuerId>.<prefix>-<cardId>` — the prefix is
+ * "stampy" on live, forever (invariant 13); staging overrides it so its
+ * classes can never collide with live's (see googleClassPrefix). */
 export function classId(card: Pick<CardRow, "id">): string {
-  return `${config.googleIssuerId}.stampy-${card.id}`;
+  return `${config.googleIssuerId}.${googleClassPrefix()}-${card.id}`;
 }
 
 /** One LoyaltyObject per card: `<issuerId>.<serial>` (UUIDs are valid id chars). */

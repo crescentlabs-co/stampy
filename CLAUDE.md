@@ -196,6 +196,27 @@ target nobody holds any more. Never key card art by a number a card can change.
    the domain does not migrate them. Point a new domain at the service and
    **keep the old one resolving**, or every pass already in a wallet goes dark.
 
+14. **Two copies, one codebase — live and staging.** `ENV_NAME` (default
+   `live`, so production needs no variable) is what a deployment IS; everything
+   staging-specific keys off it via `envName()` in src/config.ts: the banner and
+   noindex in `page()`, the hard email block in src/email.ts, robots.txt, and
+   the `app_env` stamp. On first boot a database stamps itself with its
+   ENV_NAME (`ensureEnvStamp`, src/db.ts) and boot REFUSES a database stamped
+   for the other copy — that refusal is what stands between a pasted-wrong
+   `DATABASE_URL` and a test site writing into real shops, so never weaken it
+   and never hand-edit `app_env`. Backups exclude `app_env` on purpose (the
+   stamp describes the deployment, not the data — src/backup.ts says why).
+   `GOOGLE_CLASS_PREFIX` defaults to `stampy` and live must NEVER set it —
+   that default is the invariant-13 string inside every issued Android card,
+   and a test pins it. Staging sets `stampy-stg` because the card id `default`
+   exists in both databases and would otherwise map both copies onto ONE
+   Google class, letting staging overwrite the live card template. Staging
+   deploys from `main`; live deploys from the `live` branch and moves only via
+   `pnpm promote` (runs the five suites, then pushes main → live). A change
+   that reads a NEW env var must have it set on the LIVE service before
+   promoting: invariant 1 means live will not complain, it will silently skip
+   the feature.
+
 ## The event log is the source of truth
 
 `events` is append-only — nothing in this codebase may ever UPDATE or DELETE a

@@ -4,7 +4,7 @@
  */
 import { contrastRatio, contrastText, rgbToHex } from "./color.js";
 import { CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL } from "./health.js";
-import type { SetupStatus } from "./config.js";
+import { envName, type SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
 import { DEFAULT_CARD_ID, FUNNEL_SINCE, FUNNEL_SINCE_LABEL, TRIAL_DAYS } from "./db.js";
 import { benefitLines, catalogueSummary, milestoneSummary } from "./passModel.js";
@@ -3391,16 +3391,26 @@ function page(
   script = "",
   brand = true,
 ): string {
+  // On any copy that is not live, every page says so — a strip at the top of
+  // all of them at once, because this shell is the one place they share. Same
+  // condition adds noindex, so a search engine never lists the staging site.
+  // Live renders neither: envName() defaults to "live" with nothing set.
+  const env = envName();
+  const envStrip =
+    env === "live"
+      ? ""
+      : `<div style="position:sticky;top:0;z-index:9999;background:#101312;color:#c9f73d;text-align:center;padding:7px 10px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">${esc(env)} — not the real site</div>`;
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${env === "live" ? "" : '<meta name="robots" content="noindex">'}
 <link rel="icon" type="image/png" href="/assets/img/punchme-favicon-v1.png">
 <title>${esc(title)}</title>
 <style>${baseCss}${extraCss}</style>
 </head>
-<body>${body}${brand ? POWERED_BY : ""}${script ? `<script>${script}</script>` : ""}</body>
+<body>${envStrip}${body}${brand ? POWERED_BY : ""}${script ? `<script>${script}</script>` : ""}</body>
 </html>`;
 }
 

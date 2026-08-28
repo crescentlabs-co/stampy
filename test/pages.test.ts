@@ -2324,3 +2324,28 @@ describe("the poster's print button on a phone", () => {
     expect(html).toContain("Share this page to a computer that has a printer");
   });
 });
+
+describe("a staging copy announces itself on every page", () => {
+  // ENV_NAME is read per render (envName(), src/config.ts), so one process can
+  // exercise both sides — the same trick e2e uses for ALLOW_PUBLIC_SIGNUP.
+  it("live pages carry no strip and no noindex", () => {
+    delete process.env.ENV_NAME;
+    const html = staffPage(false);
+    expect(html).not.toContain("not the real site");
+    expect(html).not.toContain('name="robots"');
+  });
+
+  it("staging pages carry both, via the one shared shell", () => {
+    process.env.ENV_NAME = "staging";
+    try {
+      // Three pages from three different audiences — owner, staff, customer —
+      // because the strip lives in page() and must reach all of them at once.
+      for (const html of [staffPage(false), dashboardPage(false), notReadyPage()]) {
+        expect(html).toContain("not the real site");
+        expect(html).toContain('<meta name="robots" content="noindex">');
+      }
+    } finally {
+      delete process.env.ENV_NAME;
+    }
+  });
+});

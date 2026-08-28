@@ -29,7 +29,7 @@ import {
   setDeviceId,
   setEnrollCookie,
 } from "../auth.js";
-import { config, setupStatus } from "../config.js";
+import { config, envName, setupStatus } from "../config.js";
 import {
   createCustomer,
   testPassFor,
@@ -535,6 +535,15 @@ publicRouter.get("/analytics-optout", (_req, res) => {
 });
 // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia. One route, one
 // query param, a plain <a> to switch — no JS, so the page stays script-free.
+// Live invites search engines; any other copy turns them away entirely. The
+// page shell (src/pages.ts) adds a noindex tag on the same condition — this is
+// the belt to that braces, and it covers non-HTML routes like the art URLs.
+publicRouter.get("/robots.txt", (_req, res) => {
+  res
+    .type("text/plain")
+    .send(envName() === "live" ? "User-agent: *\nDisallow:\n" : "User-agent: *\nDisallow: /\n");
+});
+
 publicRouter.get("/privacy", (req, res) =>
   res
     .type("html")

@@ -71,11 +71,17 @@ export interface Dump {
   tables: TableDump[];
 }
 
-/** Every ordinary table in `public`, alphabetically so two dumps are comparable. */
+/** Every ordinary table in `public`, alphabetically so two dumps are comparable.
+ * `app_env` is excluded on purpose: it names which DEPLOYMENT a database
+ * serves (live/staging — see ensureEnvStamp, src/db.ts), not what is in it. A
+ * dump that carried it would refuse to restore into a freshly-migrated (and
+ * therefore already-stamped) database, and a live dump restored into staging
+ * would re-stamp it "live" and stop it booting. */
 async function tableNames(client: ClientBase): Promise<string[]> {
   const res = await client.query<{ table_name: string }>(
     `SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        AND table_name <> 'app_env'
       ORDER BY table_name`,
   );
   return res.rows.map((r) => r.table_name);
