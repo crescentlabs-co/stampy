@@ -27,6 +27,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     kind: "stamp",
     benefits: "",
     milestones: [],
+    point_presets: "",
     reward: "Free coffee",
     stamps_target: 10,
     stamps_start: 2,

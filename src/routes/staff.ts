@@ -51,8 +51,13 @@ import {
   type MerchantRow,
   type EventType,
   type PassRow,
+  lastStampAmount,
+  MAX_POINTS_COST,
+  asPointPresets,
 } from "../db.js";
-import { isFinalReward, isRewardReady, rewardFor, stampDots, targetFor } from "../passModel.js";
+import {
+  affordableRewards, isFinalReward, isRewardReady, rewardFor, stampDots, targetFor,
+} from "../passModel.js";
 import { staffPage } from "../pages.js";
 
 export const staffRouter = Router();
@@ -287,13 +292,21 @@ function passView(row: PassRow) {
     // or need a ceiling this card does not have.
     dots: member ? "" : stampDots(row.stamp_count, row.stamps_target),
     rewardReady: isRewardReady(row),
+    // What this balance can actually pay for right now, cheapest first. Off the
+    // PASS's own catalogue, not the card's — a customer spends the price list
+    // they were issued with, the same way they keep the target they were
+    // promised.
+    canBuy: affordableRewards(row),
     createdAt: row.created_at,
   };
 }
 
 staffRouter.get("/api/passes", requireStaff, async (req: StaffRequest, res) => {
   const rows = await listRecentPasses(req.card!.id, 20);
-  res.json({ passes: rows.map(passView) });
+  // Presets come from the CARD, not the pass: how staff key an amount in is an
+  // operational setting the shop can change today, not part of the promise a
+  // customer is holding.
+  res.json({ passes: rows.map(passView), presets: asPointPresets(req.card!.point_presets) });
 });
 
 /** Look a card up by its printed 6-char code, without stamping it. The staff
@@ -325,10 +338,13 @@ async function updateAndPush(
   eventType: EventType,
   update: () => Promise<PassRow | null>,
   forced = false,
+  /** How much this moved the counter. Left unset it is one, as it always was. */
+  amount: number | null = null,
 ): Promise<void> {
   const result = await applyAndPush(req.card!, serial, eventType, update, {
     actor: actorOf(req),
     forced,
+    amount,
     // A customer hands over whichever card they have; the phone shouldn't have
     // to be showing that one already.
     merchantId: req.merchant?.id,
@@ -342,9 +358,28 @@ async function updateAndPush(
     pass: passView(result.row),
     push: result.push,
     // Which card it landed on — the staff page names it when it isn't the one
-    // currently on screen.
-    card: { id: result.card.id, name: result.card.name },
+    // currently on screen, and reads its presets when it is a points card the
+    // phone was not already showing.
+    card: {
+      id: result.card.id,
+      name: result.card.name,
+      presets: asPointPresets(result.card.point_presets),
+    },
   });
+}
+
+/**
+ * How many points this stamp is worth, on a points card.
+ *
+ * One on every other kind, whatever the body said: a stamp card that honoured
+ * an `amount` would let a mistyped field hand somebody nine stamps, and there
+ * is no counter UI that would ever send one.
+ */
+async function stampAmount(serial: string, body: { amount?: unknown }): Promise<number> {
+  const row = await getPass(serial);
+  if (row?.kind !== "points") return 1;
+  const n = Math.trunc(Number(body.amount));
+  return Number.isFinite(n) && n >= 1 && n <= MAX_POINTS_COST ? n : 1;
 }
 
 staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
@@ -354,7 +389,8 @@ staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
     const secondsLeft = await stampCooldownLeft(serial, req.merchant?.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
-  await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, 1), force === true);
+  const n = await stampAmount(serial, (req.body ?? {}) as { amount?: unknown });
+  await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, n), force === true, n);
 });
 
 /** Typed-code fallback: staff keys in the short code printed on the card. */
@@ -367,7 +403,9 @@ staffRouter.post("/api/stamp-by-code", requireStaff, async (req: StaffRequest, r
     const secondsLeft = await stampCooldownLeft(row.serial, req.merchant?.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
-  await updateAndPush(req, res, row.serial, "stamp", () => addStamps(row.serial, 1), force === true);
+  const byCode = await stampAmount(row.serial, (req.body ?? {}) as { amount?: unknown });
+  await updateAndPush(req, res, row.serial, "stamp",
+    () => addStamps(row.serial, byCode), force === true, byCode);
 });
 
 /**
@@ -378,11 +416,30 @@ staffRouter.post("/api/stamp-by-code", requireStaff, async (req: StaffRequest, r
 staffRouter.post("/api/undo", requireStaff, async (req: StaffRequest, res) => {
   const { serial } = (req.body ?? {}) as { serial?: string };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
-  await updateAndPush(req, res, serial, "undo", () => addStamps(serial, -1));
+  // How much to take back is read from the LAST stamp on this card, not from
+  // the request. On a points card one tap can be fifty, so "minus one" would
+  // leave forty-nine behind — and trusting a number from the browser would let
+  // a stale screen reverse an amount that was never given.
+  const back = await lastStampAmount(serial);
+  await updateAndPush(req, res, serial, "undo", () => addStamps(serial, -back), false, back);
 });
 
 staffRouter.post("/api/redeem", requireStaff, async (req: StaffRequest, res) => {
-  const { serial } = (req.body ?? {}) as { serial?: string };
+  const { serial, at } = (req.body ?? {}) as { serial?: string; at?: number };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
-  await updateAndPush(req, res, serial, "redeem", () => redeemPass(serial));
+  // On a points card staff pick WHICH reward, and its price comes off the
+  // balance. The price is checked against the card's own catalogue rather than
+  // taken on trust, or a crafted request could buy a t-shirt for one point.
+  const row = await getPass(serial);
+  let cost = 0;
+  if (row?.kind === "points") {
+    const priced = (row.milestones ?? []).find((m) => m.at === Math.trunc(Number(at)));
+    if (!priced) return void res.status(400).json({ error: "no-such-reward" });
+    if (row.stamp_count < priced.at) {
+      return void res.status(409).json({ error: "not-enough-points", need: priced.at });
+    }
+    cost = priced.at;
+  }
+  await updateAndPush(req, res, serial, "redeem", () => redeemPass(serial, cost), false,
+    cost > 0 ? cost : null);
 });

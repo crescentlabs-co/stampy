@@ -35,6 +35,8 @@ import {
   updateCard,
   asCardKind,
   asMilestones,
+  asPointPresets,
+  MAX_POINTS_COST,
   type CardRow,
 } from "./db.js";
 
@@ -81,7 +83,19 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   // The reward ladder. asMilestones sorts it and drops anything malformed —
   // `rewards_claimed` is an index into this list, so an unsorted one would hand
   // out the wrong prize.
-  if (body.milestones !== undefined) fields.milestones = asMilestones(body.milestones);
+  // On a points card the numbers are PRICES, not stamp counts, so they are not
+  // held to the 20-circle cap a grid imposes.
+  if (body.milestones !== undefined) {
+    fields.milestones = asMilestones(
+      body.milestones,
+      fields.kind === "points" ? MAX_POINTS_COST : undefined,
+    );
+  }
+  // Stored the way it is typed; asPointPresets is the one place it becomes
+  // numbers, so a malformed list can never reach a counter as a broken button.
+  if (body.pointPresets !== undefined) {
+    fields.point_presets = asPointPresets(body.pointPresets).join(",");
+  }
   // Capped at 20: the strip image is always a two-row grid, so a higher target
   // would render stamps too small to read on a 375pt-wide strip.
   if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 20, 10);
@@ -141,6 +155,11 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   return fields;
 }
 
+/** The three kinds whose rules are a list of rewards rather than one reward. */
+export function usesRewardList(kind: string): boolean {
+  return kind === "milestones" || kind === "points";
+}
+
 /**
  * The four images a card can carry, and how to store each one.
  *
@@ -198,6 +217,8 @@ export interface DesignerCard {
   benefits: string;
   /** The reward ladder on a milestones card, ascending. Empty otherwise. */
   milestones: { at: number; reward: string }[];
+  /** One-tap amounts on a points counter, as typed ("10,20,50"). */
+  pointPresets: string;
   reward: string;
   stampsTarget: number;
   stampsStart: number;
@@ -257,6 +278,7 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     kind: card.kind,
     benefits: card.benefits,
     milestones: card.milestones ?? [],
+    pointPresets: card.point_presets ?? "",
     reward: card.reward,
     stampsTarget: card.stamps_target,
     stampsStart: card.stamps_start,

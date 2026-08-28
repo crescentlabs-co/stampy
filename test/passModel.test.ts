@@ -9,10 +9,11 @@ process.env.BASE_URL = "https://stampy.example.test";
 process.env.DEMO_CARD_ID = "demo-card";
 
 const {
-  benefitLines, benefitsText, buildPassJson, cardTerms, getHeaderFieldValue, isFinalReward,
-  isRewardReady, memberSince, membershipTerms, messageFieldValue, milestoneSummary,
-  nextMilestone, passBarcode, progressText, rewardFor, rewardTerms, stampDots, stampGrid,
-  stripKey, targetFor, visibleMessage,
+  affordableRewards, benefitLines, benefitsText, buildPassJson, cardTerms, catalogueSummary,
+  cheapestReward, getHeaderFieldValue, isFinalReward, isRewardReady, memberSince,
+  membershipTerms, messageFieldValue, milestoneSummary, nextMilestone, passBarcode,
+  pointsTerms, progressText, rewardFor, rewardTerms, stampDots, stampGrid, stripKey,
+  targetFor, visibleMessage,
 } = await import("../src/passModel.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
@@ -23,6 +24,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     kind: "stamp",
     benefits: "",
     milestones: [],
+    point_presets: "",
     reward: "Free coffee",
     stamps_target: 10,
     stamps_start: 2,
@@ -628,5 +630,122 @@ describe("milestoneSummary", () => {
   });
   it("is empty when there is no ladder", () => {
     expect(milestoneSummary([])).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Points cards. The balance is saved UP and spent DOWN, which is the one thing
+// no other kind does — so these lock what "ready" means, what the card counts
+// towards, and that spending never wipes what is left over.
+// ---------------------------------------------------------------------------
+describe("points cards", () => {
+  const SHOP = [
+    { at: 200, reward: "Free coffee" },
+    { at: 500, reward: "T-shirt" },
+  ];
+  const pCard = (o = {}) => card({ kind: "points", milestones: SHOP, ...o });
+  const pRow = (o = {}) => row({ kind: "points", milestones: SHOP, stamps_target: 500, ...o });
+
+  it("is ready as soon as the CHEAPEST thing is affordable", () => {
+    expect(isRewardReady(pRow({ stamp_count: 199 }))).toBe(false);
+    expect(isRewardReady(pRow({ stamp_count: 200 }))).toBe(true);
+    expect(isRewardReady(pRow({ stamp_count: 4000 }))).toBe(true);
+    // Nothing to buy: never ready, or the counter would offer a reward the shop
+    // has not defined.
+    expect(isRewardReady(pRow({ stamp_count: 900, milestones: [] }))).toBe(false);
+  });
+
+  it("counts towards the next thing out of reach", () => {
+    // A price list is not a sequence — the tally is what they are saving for.
+    expect(targetFor(pRow({ stamp_count: 50 }))).toBe(200);
+    expect(targetFor(pRow({ stamp_count: 250 }))).toBe(500);
+  });
+
+  it("names what they can actually buy, not what they are saving for", () => {
+    // Nothing affordable yet: name the thing being saved for.
+    expect(rewardFor(pRow({ stamp_count: 50 }))).toBe("Free coffee");
+    // 340 buys the coffee and not the shirt. Naming the shirt here — which is
+    // what "next" means for the tally — told customers to show staff something
+    // they could not have.
+    expect(rewardFor(pRow({ stamp_count: 340 }))).toBe("Free coffee");
+    // Everything affordable: the best of them.
+    expect(rewardFor(pRow({ stamp_count: 900 }))).toBe("T-shirt");
+  });
+
+  it("lists only what the balance can actually pay for", () => {
+    expect(affordableRewards(pRow({ stamp_count: 199 }))).toEqual([]);
+    expect(affordableRewards(pRow({ stamp_count: 200 })).map((m: any) => m.reward))
+      .toEqual(["Free coffee"]);
+    expect(affordableRewards(pRow({ stamp_count: 500 })).map((m: any) => m.reward))
+      .toEqual(["Free coffee", "T-shirt"]);
+    // Only ever a points question — a stamp card redeems, it does not shop.
+    expect(affordableRewards(row({ stamp_count: 10 }))).toEqual([]);
+  });
+
+  it("is never a card that restarts", () => {
+    // "Give reward & restart" on a points card would tell a customer their
+    // leftover points were about to be wiped. They are not.
+    expect(isFinalReward(pRow({ stamp_count: 900 }))).toBe(false);
+  });
+
+  it("shows the balance as the headline, and it changes on every visit", () => {
+    // Both platforms notify off a value CHANGE, so a distinct string per
+    // balance is what makes an Android and an iPhone card buzz at all.
+    expect(getHeaderFieldValue(0, 200, "points")).toBe("0 points");
+    expect(getHeaderFieldValue(1, 200, "points")).toBe("1 point");
+    expect(getHeaderFieldValue(340, 500, "points")).toBe("340 points");
+    const seen = new Set(
+      Array.from({ length: 60 }, (_, i) => getHeaderFieldValue(i, 500, "points")),
+    );
+    expect(seen.size).toBe(60);
+  });
+
+  it("puts the balance on the front and the next thing beside it", () => {
+    const p = buildPassJson(pRow({ stamp_count: 340 }), pCard()) as any;
+    expect(p.storeCard.headerFields[0].value).toBe("340 points");
+    expect(p.storeCard.secondaryFields[0]).toMatchObject({
+      label: "Next reward", value: "Free coffee — show this to staff!",
+    });
+    expect(p.storeCard.secondaryFields[1]).toMatchObject({ label: "Balance", value: "340/500" });
+  });
+
+  it("still carries exactly two changeMessage fields", () => {
+    const p = buildPassJson(pRow({ stamp_count: 340 }), pCard()) as any;
+    const all = [
+      ...p.storeCard.headerFields, ...p.storeCard.primaryFields,
+      ...p.storeCard.secondaryFields, ...p.storeCard.auxiliaryFields,
+      ...p.storeCard.backFields,
+    ];
+    expect(all.filter((f: any) => f.changeMessage).map((f: any) => f.key).sort())
+      .toEqual(["message", "progress"]);
+  });
+
+  it("carries points terms that mention spending, not stamps", () => {
+    const p = buildPassJson(pRow(), pCard()) as any;
+    const terms = p.storeCard.backFields.find((f: any) => f.key === "terms");
+    expect(terms.value).toBe(pointsTerms("Kopi Corner"));
+    expect(terms.value).toContain("come off when you spend them");
+    expect(cardTerms("Kopi Corner", "points")).toBe(pointsTerms("Kopi Corner"));
+  });
+
+  it("stores one band, not a picture per balance", () => {
+    // A balance climbs past any ceiling and is spent back down, so there is no
+    // finite set of counts to pre-render.
+    expect(stripKey("points", 500, 0)).toEqual({ target: 0, filled: 0 });
+    expect(stripKey("points", 500, 4820)).toEqual({ target: 0, filled: 0 });
+  });
+
+  it("cheapestReward finds the floor whatever order the list is in", () => {
+    expect(cheapestReward(pRow())?.at).toBe(200);
+    expect(cheapestReward(pRow({ milestones: [{ at: 900, reward: "A" }, { at: 5, reward: "B" }] }))?.at)
+      .toBe(5);
+    expect(cheapestReward(pRow({ milestones: [] }))).toBeNull();
+  });
+});
+
+describe("catalogueSummary", () => {
+  it("prices each thing in points", () => {
+    expect(catalogueSummary([{ at: 200, reward: "Free coffee" }, { at: 500, reward: "T-shirt" }]))
+      .toBe("Free coffee — 200 points · T-shirt — 500 points");
   });
 });

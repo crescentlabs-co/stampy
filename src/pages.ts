@@ -7,7 +7,7 @@ import { CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL } from "./health.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
 import { DEFAULT_CARD_ID, FUNNEL_SINCE, FUNNEL_SINCE_LABEL, TRIAL_DAYS } from "./db.js";
-import { benefitLines, milestoneSummary } from "./passModel.js";
+import { benefitLines, catalogueSummary, milestoneSummary } from "./passModel.js";
 
 /**
  * What the product is called. Renaming lives here, once.
@@ -1381,8 +1381,18 @@ export const DESIGN_PANEL_JS = /* js */ `
         <select data-f="kind">
           <option value="stamp"\${c.kind === "membership" ? "" : " selected"}>Stamp card — collect stamps, earn a reward</option>
           <option value="milestones"\${c.kind === "milestones" ? " selected" : ""}>Rewards along the way — several prizes on one card</option>
+          <option value="points"\${c.kind === "points" ? " selected" : ""}>Points — collect points, spend them on rewards</option>
           <option value="membership"\${c.kind === "membership" ? " selected" : ""}>Membership — no stamps, just perks</option>
         </select>
+
+        <div data-rules="points" hidden>
+          <label class="dlbl">Buttons on your counter\${info("The amounts your staff can add with one tap, separated by commas. Typing a number on a busy counter is how 500 lands where 50 was meant, so keep these to the amounts you use most. A staff member can still type any amount behind a second tap.")}</label>
+          <input data-f="pointPresets" maxlength="40" value="\${(c.pointPresets || "").replace(/"/g, "&quot;")}" placeholder="10, 20, 50">
+          <label class="dlbl">What points can be spent on\${info("Each reward and what it costs in points. A customer can spend as soon as they can afford the cheapest one, and whatever is left stays on their card.")}</label>
+          <div data-ladder-points></div>
+          <button type="button" class="btn btn-ghost" data-a="addprice" style="margin-top:8px">+ Add a reward</button>
+          <p class="dhint" data-ladder-note-points></p>
+        </div>
 
         <div data-rules="milestones" hidden>
           <label class="dlbl">Rewards on this card\${info("A prize at each number you list. Reaching one hands it over and the card CARRIES ON — only the last one starts the card again from zero. The biggest number is how many circles the card has.")}</label>
@@ -1675,28 +1685,47 @@ export const DESIGN_PANEL_JS = /* js */ `
       let ladder = (c.milestones || []).map((m) => ({ at: m.at, reward: m.reward }));
       if (!ladder.length) ladder = [{ at: 2, reward: "" }, { at: Number(c.stampsTarget) || 10, reward: c.reward || "" }];
 
+      // A points PRICE is not a stamp count: it is not held to the twenty a grid
+      // of circles imposes, because a points card draws no grid. Mirrors
+      // MAX_MILESTONE / MAX_POINTS_COST in src/db.ts, which is what the server
+      // clamps to.
+      function ladderMax() {
+        return kindNow() === "points" ? 100000 : 20;
+      }
+
       /** The ladder as the server wants it: sorted, complete rows only. */
       function ladderClean() {
+        const cap = ladderMax();
         const seen = {};
         return ladder
-          .map((m) => ({ at: Math.max(1, Math.min(20, Number(m.at) || 1)), reward: (m.reward || "").trim() }))
+          .map((m) => ({ at: Math.max(1, Math.min(cap, Number(m.at) || 1)), reward: (m.reward || "").trim() }))
           .filter((m) => m.reward)
           .sort((a, b) => a.at - b.at)
           .filter((m) => (seen[m.at] ? false : (seen[m.at] = 1)));
       }
 
+      /**
+       * One editor, mounted in whichever rules block is on screen.
+       *
+       * Both card kinds are editing the same list of rewards-and-numbers, so a
+       * second copy of this would be two places for the same bug. Only the
+       * wording and the cap differ, and both come from the kind.
+       */
       function renderLadder() {
-        const host = q("[data-ladder]");
+        const points = kindNow() === "points";
+        const host = q(points ? "[data-ladder-points]" : "[data-ladder]");
         if (!host) return;
         host.innerHTML = "";
         ladder.forEach((m, i) => {
           const rowEl = document.createElement("div");
           rowEl.className = "row2 ladder-row";
           rowEl.innerHTML =
-            '<div><label>At stamp</label>' +
-            '<input type="number" min="1" max="20" data-lad="at" value="' + (Number(m.at) || 1) + '"></div>' +
+            '<div><label>' + (points ? "Costs" : "At stamp") + '</label>' +
+            '<input type="number" min="1" max="' + ladderMax() + '" data-lad="at" value="' +
+            (Number(m.at) || 1) + '"></div>' +
             '<div><label>They get</label>' +
-            '<input maxlength="60" data-lad="reward" placeholder="Free cookie" value="' +
+            '<input maxlength="60" data-lad="reward" placeholder="' +
+            (points ? "Free coffee" : "Free cookie") + '" value="' +
             String(m.reward || "").replace(/"/g, "&quot;") + '"></div>' +
             '<button type="button" class="btn btn-ghost" data-lad="del" aria-label="Remove this reward">Remove</button>';
           rowEl.querySelector('[data-lad=at]').addEventListener("input", (e) => {
@@ -1706,48 +1735,68 @@ export const DESIGN_PANEL_JS = /* js */ `
             ladder[i].reward = e.target.value; renderPreview();
           });
           rowEl.querySelector('[data-lad=del]').onclick = () => {
-            // Never down to nothing: a milestones card with no rungs has no
-            // reward at all, and the save would silently turn it into a stamp
-            // card promising whatever was in the reward box.
+            // Never down to nothing: a card of either kind with no rewards on
+            // it has nothing to give, and the save would quietly turn it back
+            // into a stamp card promising whatever was in the reward box.
             if (ladder.length <= 1) { toast("A card needs at least one reward"); return; }
             ladder.splice(i, 1); renderLadder(); renderPreview();
           };
           host.appendChild(rowEl);
         });
-        const note = q("[data-ladder-note]");
+        const note = q(points ? "[data-ladder-note-points]" : "[data-ladder-note]");
         if (note) {
           const clean = ladderClean();
-          note.textContent = clean.length
-            ? "Your card will have " + clean[clean.length - 1].at + " circles. " +
+          if (!clean.length) note.textContent = "Add a reward to see how the card will work.";
+          else if (points) {
+            note.textContent = "Customers can spend as soon as they reach " + clean[0].at +
+              " points. Whatever is left over stays on their card.";
+          } else {
+            note.textContent = "Your card will have " + clean[clean.length - 1].at + " circles. " +
               (clean.length > 1
                 ? "The first " + (clean.length - 1) + (clean.length === 2 ? " reward keeps" : " rewards keep") +
                   " the card going; the last one starts it again from zero."
-                : "One reward, at the end.")
-            : "Add a reward to see how the card will work.";
+                : "One reward, at the end.");
+          }
         }
       }
 
-      const addBtn = q('[data-a=addrung]');
-      if (addBtn) addBtn.onclick = () => {
+      const addRung = () => {
         if (ladder.length >= 6) { toast("Six rewards is the most one card can hold"); return; }
         const top = ladderClean();
-        const next = top.length ? Math.min(20, top[top.length - 1].at + 3) : 5;
+        const step = kindNow() === "points" ? 100 : 3;
+        const next = top.length
+          ? Math.min(ladderMax(), top[top.length - 1].at + step)
+          : (kindNow() === "points" ? 100 : 5);
         ladder.push({ at: next, reward: "" });
         renderLadder(); renderPreview();
       };
+      for (const b of div.querySelectorAll('[data-a=addrung], [data-a=addprice]')) b.onclick = addRung;
 
+      let lastKind = null;
       function renderPreview() {
         syncKind();
+        // The editor lives in whichever rules block is on screen, so switching
+        // kind has to move it. Only on an actual change — re-rendering on every
+        // keystroke would take the focus out of the box being typed in.
+        if (kindNow() !== lastKind) { lastKind = kindNow(); renderLadder(); }
         const member = isMember();
-        const rungs = kindNow() === "milestones" ? ladderClean() : [];
+        const points = kindNow() === "points";
+        const rungs = kindNow() === "milestones" || points ? ladderClean() : [];
         // On a milestones card the whole card is the LAST rung and the number
         // the header counts to is the FIRST unclaimed one — the same split
         // targetFor() makes in src/passModel.ts. A preview that counted to the
         // top would show a card no customer ever sees.
-        const total = rungs.length
-          ? rungs[rungs.length - 1].at
-          : Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
-        const start = Math.max(0, Math.min(total, Number(f("stampsStart").value) || 0));
+        // A points card is previewed at a plausible balance rather than at the
+        // welcome stamps, which it does not have: the owner needs to see what a
+        // customer part-way to their cheapest reward is looking at.
+        const total = points
+          ? (rungs.length ? rungs[rungs.length - 1].at : 100)
+          : rungs.length
+            ? rungs[rungs.length - 1].at
+            : Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
+        const start = points
+          ? (rungs.length ? Math.floor(rungs[0].at / 2) : 50)
+          : Math.max(0, Math.min(total, Number(f("stampsStart").value) || 0));
         const nextRung = rungs.find((m) => m.at > start) || rungs[rungs.length - 1] || null;
         const target = nextRung ? nextRung.at : total;
         const pv = q("[data-pv]");
@@ -1762,8 +1811,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         // Every one of these mirrors buildPassJson in src/passModel.ts. A
         // membership card shows who the holder is instead of how far along they
         // are, because it has no target to be along the way to.
-        q("[data-pv-progress]").textContent = member ? "Member" : headerValue(start, target);
-        q("[data-pv-clbl]").textContent = member ? "MEMBER SINCE" : "PROGRESS";
+        q("[data-pv-progress]").textContent = member ? "Member"
+          : points ? (start === 1 ? "1 point" : start + " points")
+          : headerValue(start, target);
+        q("[data-pv-clbl]").textContent = member ? "MEMBER SINCE" : points ? "BALANCE" : "PROGRESS";
         q("[data-pv-tally]").textContent = member ? thisMonth() : start + "/" + target;
         q("[data-pv-rlbl]").textContent = member ? "MEMBER NO."
           : rungs.length ? "NEXT REWARD" : "REWARD";
@@ -1781,7 +1832,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // The real card ALWAYS gets a composited strip — applyStamps renders one
         // whatever the stamp style — so with artwork behind the stamps the text
         // dots and a decorative 64px band would show a card nobody receives.
-        if (member) {
+        if (member || points) {
           // No circles at all — there is nothing to fill in. The band is still
           // drawn, because it carries the shop's colours and any artwork they
           // uploaded, and it is the one strip image a membership card stores.
@@ -1798,7 +1849,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           banner.classList.toggle("on", Boolean(c.bannerVersion));
           dots.textContent = "●".repeat(start) + "○".repeat(total - start);
         }
-        renderGoogle(start, target, nextRung, total);
+        renderGoogle(start, target, nextRung, total, points);
         renderPoster();
       }
 
@@ -1812,7 +1863,7 @@ export const DESIGN_PANEL_JS = /* js */ `
        * reach it (src/googleModel.ts), and a mock that drew them would be a lie
        * the owner only finds out about on somebody else's phone.
        */
-      function renderGoogle(start, target, nextRung, total) {
+      function renderGoogle(start, target, nextRung, total, points) {
         const g = q("[data-pvg]");
         if (!g) return;
         const member = isMember();
@@ -1824,7 +1875,8 @@ export const DESIGN_PANEL_JS = /* js */ `
         // putting the shop in both said it twice. The name is on the line above;
         // this one says what the thing is — exactly as buildLoyaltyClass sends
         // it, which is a fixed string and not the shop's.
-        q("[data-pvg-prog]").textContent = member ? "Membership" : "Loyalty card";
+        q("[data-pvg-prog]").textContent = member ? "Membership"
+          : points ? "Points card" : "Loyalty card";
         // Every caption and every value below comes from buildLoyaltyPatch,
         // headers included — a card at its target tells the holder to show it,
         // and a mock that only ever drew the ordinary state would hide the one
@@ -1839,10 +1891,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         // they move with the payload rather than staying fixed labels.
         q("[data-pvg-rlbl]").textContent = member ? "MEMBER NO."
           : nextRung ? "NEXT REWARD" : "REWARD";
-        q("[data-pvg-clbl]").textContent = member ? "MEMBER SINCE" : "PROGRESS";
+        q("[data-pvg-clbl]").textContent = member ? "MEMBER SINCE" : points ? "BALANCE" : "PROGRESS";
         q("[data-pvg-bal]").textContent = member
           ? thisMonth()
-          : ready ? progress + " — reward ready 🎉" : progress + " earned";
+          : points
+            ? start + (start === 1 ? " point" : " points")
+            : ready ? progress + " — reward ready 🎉" : progress + " earned";
         const shown = nextRung ? nextRung.reward : reward;
         q("[data-pvg-reward]").textContent = member
           ? "ABC123"
@@ -1862,7 +1916,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // do (see buildLoyaltyClass).
         const foot = q(".pvg-foot");
         if (foot) {
-          if (member) {
+          if (member || points) {
             foot.style.backgroundImage = "url(" + drawStampStrip(0, 0, stampStyle, 0, 0, true) + ")";
             foot.classList.add("band");
           } else if (stampStyle) {
@@ -1938,7 +1992,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         // Mirrors signupLine() in src/pages.ts. A membership card has no target
         // to promise, so the generated line names the perks the shop typed.
         let suggested;
-        if (kindNow() === "milestones" && ladderClean().length) {
+        if (kindNow() === "points" && ladderClean().length) {
+          suggested = "Collect points every visit — " +
+            ladderClean().map((m) => m.reward + " for " + m.at).join(" · ").toLowerCase() + " points.";
+        } else if (kindNow() === "milestones" && ladderClean().length) {
           suggested = "Rewards along the way — " +
             ladderClean().map((m) => m.reward + " at " + m.at).join(" · ").toLowerCase() + ".";
         } else if (isMember()) {
@@ -2786,7 +2843,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         // same picture, and its visit tally has no ceiling to render up to
         // anyway.
         const render = (w, h) => {
-          if (isMember()) {
+          // Points for the same reason as membership: the balance has no
+          // ceiling, so there is no finite set of counts to draw pictures for.
+          if (isMember() || kindNow() === "points") {
             return [{ target: 0, filled: 0, png: drawStampStrip(0, 0, style, w, h, true).split(",")[1] }];
           }
           const out = [];
@@ -3147,6 +3206,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           kind: kindNow(),
           benefits: f("benefits") ? f("benefits").value : "",
           milestones: ladderClean(),
+          pointPresets: f("pointPresets") ? f("pointPresets").value : "",
           reward: f("reward").value,
           stampsTarget: Number(f("stampsTarget").value),
           stampsStart: Number(f("stampsStart").value),
@@ -3362,6 +3422,11 @@ export function signupLine(
   card: Pick<CardRow, "signup_message" | "stamps_target" | "reward" | "kind" | "benefits" | "milestones">,
 ): string {
   if (card.signup_message) return esc(card.signup_message);
+  if (card.kind === "points" && (card.milestones ?? []).length) {
+    // The price list, because "collect points" on its own tells nobody what
+    // the points are for.
+    return `Collect points every visit — ${esc(catalogueSummary(card.milestones ?? []).toLowerCase())}.`;
+  }
   if (card.kind === "milestones" && (card.milestones ?? []).length) {
     // The whole ladder, because the point of this card is that there is more
     // than one prize on it — a line promising only the top one sells it short
@@ -4858,7 +4923,14 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
           const count = !out.pass ? ""
             : out.pass.kind === "membership"
               ? (out.pass.stamps > 0 ? " — visit " + out.pass.stamps : "")
-              : " — " + out.pass.stamps + " of " + out.pass.target;
+              : out.pass.kind === "points"
+                ? " — " + out.pass.stamps + (out.pass.stamps === 1 ? " point" : " points")
+                : " — " + out.pass.stamps + " of " + out.pass.target;
+          // A points card the phone was not already showing carries its own
+          // preset amounts, so the buttons match the card in hand.
+          if (out.card && Array.isArray(out.card.presets) && out.card.presets.length) {
+            presets = out.card.presets;
+          }
           toast(doneMsg + other + count);
         }
         // Redraw from the response rather than waiting on a second round trip.
@@ -4935,10 +5007,43 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
 
     // --------------------------------------------------------------- views ----
     let allPasses = [];
+    // The shop's own one-tap amounts, refreshed with the pass list. Empty on
+    // every card that is not a points card.
+    let presets = [];
+
+    /**
+     * An amount typed at the counter, for the odd bill the presets do not cover.
+     *
+     * An inline row rather than a browser prompt. A phone can suppress those,
+     * after which they return nothing and the button silently does nothing at
+     * all — the same reason nothing destructive on this page uses one either
+     * (CLAUDE.md invariant 8). A test asserts this page ships no browser
+     * dialogs, and it reads the comments too, so do not name one here.
+     */
+    function askAmount(host, p) {
+      if (host.querySelector(".amtrow")) return;
+      const row = document.createElement("div");
+      row.className = "row amtrow";
+      row.innerHTML =
+        '<input class="amtin" type="number" min="1" step="1" inputmode="numeric" placeholder="Points">' +
+        '<button class="btn btn-stamp" data-a="amtok">Add</button>' +
+        '<button class="btn btn-ghost" data-a="amtno">Cancel</button>';
+      const input = row.querySelector(".amtin");
+      row.querySelector('[data-a=amtno]').onclick = () => row.remove();
+      row.querySelector('[data-a=amtok]').onclick = () => {
+        const n = Math.trunc(Number(input.value));
+        if (!(n >= 1)) { toast("Type how many points"); return; }
+        row.remove();
+        act("/stamp", { serial: p.serial, amount: n }, "Points added");
+      };
+      host.appendChild(row);
+      input.focus();
+    }
     let found = []; // server-side search hits (cards outside the recent 20)
     async function load() {
       const out = await api("/passes");
       allPasses = out.passes;
+      if (Array.isArray(out.presets)) presets = out.presets;
       renderReady();
       renderList();
     }
@@ -4951,20 +5056,47 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
       // stamp underneath, which is what keeps its visits in the customer groups
       // and the counter log alongside everybody else's.
       const member = p.kind === "membership";
+      const points = p.kind === "points";
+      // A points counter offers the shop's own amounts as one-tap buttons.
+      // Typing a number on a busy counter is how 500 lands where 50 was meant,
+      // so the free entry sits behind a second tap and these carry the traffic.
+      const amounts = points ? (presets.length ? presets : [1, 5, 10]) : [];
       div.innerHTML = \`
         <strong>\${p.code}</strong>
-        \${p.rewardReady ? '<span class="ready"> — REWARD READY 🎉</span>' : ""}
+        \${p.rewardReady ? '<span class="ready"> — ' + (points ? "ENOUGH TO SPEND 🎉" : "REWARD READY 🎉") + '</span>' : ""}
         \${member
           ? '<div class="dots"><span class="muted">Member' + (p.stamps > 0 ? " — " + p.stamps + (p.stamps === 1 ? " visit" : " visits") : "") + '</span></div>'
+          : points
+          ? '<div class="dots"><b>' + p.stamps + '</b> <span class="muted">' + (p.stamps === 1 ? "point" : "points") + '</span></div>'
           : '<div class="dots">' + p.dots + ' <span class="muted">' + p.stamps + '/' + p.target +
             (p.total && p.total !== p.target ? ' (of ' + p.total + ')' : '') + '</span></div>'}
         <div class="row">
-          <button class="btn btn-stamp" data-a="stamp">\${member ? "Check in ✓" : "+1 Stamp"}</button>
-          \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">' + (member ? "− Undo check-in" : "− Undo a stamp") + '</button>' : ""}
-          \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">' + redeemLabel(p) + '</button>' : ""}
+          \${points
+            ? amounts.map((n) => '<button class="btn btn-stamp" data-a="add" data-n="' + n + '">+' + n + '</button>').join("") +
+              '<button class="btn btn-ghost" data-a="custom">Other amount</button>'
+            : '<button class="btn btn-stamp" data-a="stamp">' + (member ? "Check in ✓" : "+1 Stamp") + '</button>'}
+          \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">' + (member ? "− Undo check-in" : points ? "− Undo last" : "− Undo a stamp") + '</button>' : ""}
+          \${points
+            ? (p.canBuy || []).map((m, i) =>
+                '<button class="btn btn-ghost" data-a="spend" data-i="' + i + '">Give ' + m.reward + ' (−' + m.at + ')</button>').join("")
+            : (p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">' + redeemLabel(p) + '</button>' : "")}
         </div>\`;
-      div.querySelector('[data-a=stamp]').onclick = () =>
+      const stampBtn = div.querySelector('[data-a=stamp]');
+      if (stampBtn) stampBtn.onclick = () =>
         act("/stamp", { serial: p.serial }, member ? "Checked in" : "Stamp added");
+      for (const b of div.querySelectorAll('[data-a=add]')) {
+        b.onclick = () => act("/stamp", { serial: p.serial, amount: Number(b.getAttribute("data-n")) }, "Points added");
+      }
+      // Behind a second tap, and behind an inline entry row rather than a
+      // browser dialog: a staff phone can suppress those, after which they
+      // return nothing and the button silently stops working (CLAUDE.md 8).
+      const customBtn = div.querySelector('[data-a=custom]');
+      if (customBtn) arm(customBtn, "Type an amount", () => askAmount(div, p));
+      for (const b of div.querySelectorAll('[data-a=spend]')) {
+        const m = (p.canBuy || [])[Number(b.getAttribute("data-i"))];
+        if (m) arm(b, "Confirm — give " + m.reward + "?", () =>
+          act("/redeem", { serial: p.serial, at: m.at }, m.reward + " given — " + m.at + " points off"));
+      }
       // The fix for a mis-scan. Before this the only way back was to redeem,
       // which handed out a free reward.
       const u = div.querySelector('[data-a=undo]');
@@ -4997,10 +5129,11 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
       const ready = allPasses.filter((p) => p.rewardReady);
       host.innerHTML = "";
       if (!ready.length) return;
+      const anyPoints = ready.some((p) => p.kind === "points");
       host.insertAdjacentHTML("beforeend",
         "<h2>Ready to redeem</h2><p class=\\"sub\\">" +
         (ready.length === 1 ? "One card has" : ready.length + " cards have") +
-        " hit the target.</p>");
+        (anyPoints ? " enough to spend." : " hit the target.") + "</p>");
       for (const p of ready) host.appendChild(passRow(p));
     }
 

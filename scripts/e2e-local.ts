@@ -30,7 +30,7 @@ async function main() {
   // it again where the closed behaviour is what is being asserted.
   process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
-  const { migrate, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -3012,6 +3012,68 @@ async function main() {
         stamps_target: asIssued!.stamps_target,
         reward: asIssued!.reward,
       });
+    }
+
+    // A points card: saved UP and spent DOWN. Nothing else in the app does
+    // that, and the two ways to get it wrong both destroy something a customer
+    // earned — a balance capped at a target, or a spend that zeroes the card
+    // instead of taking the price off.
+    {
+      const SHOP = [
+        { at: 200, reward: "Free coffee" },
+        { at: 500, reward: "T-shirt" },
+      ];
+      const asIssued = await getCard("default");
+      await updateCard("default", { kind: "points", milestones: SHOP });
+      const held = await mk();
+      await getPool().query(
+        `UPDATE passes SET kind = 'points', milestones = $2, stamp_count = 0,
+                           stamps_target = 500 WHERE serial = $1`,
+        [held.serial, JSON.stringify(SHOP)],
+      );
+
+      // One tap is fifty, not one — and the balance is NOT capped at the target.
+      await addStamps(held.serial, 50);
+      await addStamps(held.serial, 600);
+      const rich = await getPass(held.serial);
+      expect(rich!.stamp_count === 650, `a points balance climbs past the target (got ${rich!.stamp_count})`);
+
+      // Spending takes the PRICE off and leaves the rest.
+      const spent = (await redeemPass(held.serial, 200))!;
+      expect(spent.stamp_count === 450, `spending 200 of 650 leaves 450 (got ${spent.stamp_count})`);
+
+      // Cannot spend what is not there, and a refusal must not zero the card.
+      const tooDear = await redeemPass(held.serial, 500);
+      expect(tooDear === null, "a reward they cannot afford is refused");
+      const untouched = await getPass(held.serial);
+      expect(untouched!.stamp_count === 450,
+        `...and the refusal left the balance alone (got ${untouched!.stamp_count})`);
+
+      // Undo reverses the amount that was actually given, not one.
+      await logEvent("default", held.serial, "stamp", { amount: 40 });
+      await addStamps(held.serial, 40);
+      const back = await lastStampAmount(held.serial);
+      expect(back === 40, `undo knows the last stamp was worth 40 (got ${back})`);
+
+      await updateCard("default", {
+        kind: asIssued!.kind,
+        milestones: [],
+        stamps_target: asIssued!.stamps_target,
+        reward: asIssued!.reward,
+      });
+    }
+
+    // "Stamps given" counts HOW MUCH, not how many rows. A shop handing out
+    // fifty points in one scan used to read as having handed out one.
+    {
+      const counted = await mk();
+      const before = (await cardMetrics("default")).stamps;
+      await logEvent("default", counted.serial, "stamp", { amount: 30 });
+      await logEvent("default", counted.serial, "stamp");           // NULL means one
+      await logEvent("default", counted.serial, "undo", { amount: 10 });
+      const after = (await cardMetrics("default")).stamps;
+      expect(after - before === 21,
+        `thirty points, plus one stamp, minus ten undone is twenty-one (got ${after - before})`);
     }
 
     // The owner's OWN card, added from the same browser and therefore hanging

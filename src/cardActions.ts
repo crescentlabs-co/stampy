@@ -113,7 +113,13 @@ export async function applyAndPush(
   // The card filled up on this action. Replayable in principle — walk every
   // stamp in order against the target — but only until someone edits the
   // target, so it is written down at the moment it is true instead.
-  const justCompleted = eventType === "stamp" && row.stamp_count >= row.stamps_target;
+  // Neither of the two kinds without a card to fill can complete one. A
+  // membership tally has no target, and a points balance is spent down rather
+  // than finished — logging `completed` on either would put a milestone in the
+  // shop's history that never happened.
+  const fillable = row.kind !== "membership" && row.kind !== "points";
+  const justCompleted =
+    eventType === "stamp" && fillable && row.stamp_count >= row.stamps_target;
 
   const eventId = await logEvent(card.id, serial, eventType, {
     ...meta,

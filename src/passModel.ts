@@ -71,9 +71,36 @@ export interface ProgressRow {
  * the list has to stay in the order it was issued in.
  */
 export function nextMilestone(row: ProgressRow): Milestone | null {
+  if (row.kind === "points") {
+    // A points catalogue is a PRICE LIST, not a sequence: nothing is claimed in
+    // order, so "next" means the cheapest thing still out of reach — what the
+    // customer is saving towards. Once everything is affordable it is the
+    // dearest, so the card keeps naming a real prize instead of going blank.
+    const list = row.milestones ?? [];
+    if (!list.length) return null;
+    return list.find((m) => m.at > row.stamp_count) ?? list[list.length - 1] ?? null;
+  }
   if (row.kind !== "milestones") return null;
   const ladder = row.milestones ?? [];
   return ladder[row.rewards_claimed ?? 0] ?? null;
+}
+
+/** The cheapest thing on a points catalogue, or null when there is nothing on it. */
+export function cheapestReward(row: ProgressRow): Milestone | null {
+  const list = row.milestones ?? [];
+  return list.length ? list.reduce((a, b) => (b.at < a.at ? b : a)) : null;
+}
+
+/** Everything this balance can actually pay for right now, cheapest first. */
+export function affordableRewards(row: ProgressRow): Milestone[] {
+  if (row.kind !== "points") return [];
+  return (row.milestones ?? []).filter((m) => m.at <= row.stamp_count);
+}
+
+/** The best thing this balance can buy today, or null when it can buy nothing. */
+export function bestAffordable(row: ProgressRow): Milestone | null {
+  const can = affordableRewards(row);
+  return can.length ? can.reduce((a, b) => (b.at > a.at ? b : a)) : null;
 }
 
 /**
@@ -90,8 +117,24 @@ export function targetFor(row: ProgressRow): number {
   return nextMilestone(row)?.at ?? row.stamps_target;
 }
 
-/** The prize this card is working towards right now. */
+/**
+ * The prize to NAME on the card right now.
+ *
+ * On a points card that is two different questions depending on the balance,
+ * and answering the wrong one is actively misleading: at 340 points, with a
+ * 200-point coffee and a 500-point shirt, the card used to read "T-shirt — show
+ * this to staff!" for something the customer could not yet afford. So once
+ * anything is within reach it names the BEST thing they can actually walk out
+ * with; before that it names what they are saving for.
+ *
+ * targetFor deliberately keeps answering the other question — the tally beside
+ * this still counts towards the next thing out of reach.
+ */
 export function rewardFor(row: ProgressRow): string {
+  if (row.kind === "points") {
+    const best = bestAffordable(row);
+    if (best) return best.reward;
+  }
   return nextMilestone(row)?.reward ?? row.reward ?? "";
 }
 
@@ -100,6 +143,12 @@ export function isRewardReady(row: ProgressRow): boolean {
   // count is a lifetime visit tally, and without this every long-standing
   // member would light up the staff phone's redeem button forever.
   if (row.kind === "membership") return false;
+  if (row.kind === "points") {
+    // Ready as soon as the balance covers the CHEAPEST thing on the list. Which
+    // one they actually spend it on is the customer's choice at the counter.
+    const cheapest = cheapestReward(row);
+    return cheapest !== null && row.stamp_count >= cheapest.at;
+  }
   if (row.kind === "milestones") {
     // Ladder finished and nothing restarted it: not ready, or the redeem button
     // would keep paying out the top prize on every visit.
@@ -111,6 +160,10 @@ export function isRewardReady(row: ProgressRow): boolean {
 
 /** Was that the LAST rung? The one redeem that restarts the card at zero. */
 export function isFinalReward(row: ProgressRow): boolean {
+  // A points balance is never restarted — it is spent down and whatever is left
+  // stays. Saying "and restart" on that button would tell a customer their
+  // remaining points were about to be wiped.
+  if (row.kind === "points") return false;
   if (row.kind !== "milestones") return true;
   return (row.rewards_claimed ?? 0) + 1 >= (row.milestones ?? []).length;
 }
@@ -118,6 +171,11 @@ export function isFinalReward(row: ProgressRow): boolean {
 /** "Free cookie at 2 · Pastry at 5 · Coffee at 10" — the ladder, as one line. */
 export function milestoneSummary(ladder: Milestone[]): string {
   return ladder.map((m) => `${m.reward} at ${m.at}`).join(" · ");
+}
+
+/** "Free coffee — 200 points · T-shirt — 500 points" — the catalogue, as one line. */
+export function catalogueSummary(list: Milestone[]): string {
+  return list.map((m) => `${m.reward} — ${m.at} points`).join(" · ");
 }
 
 /** "7/10" — the plain tally. One wording, so nothing drifts between surfaces. */
@@ -138,6 +196,10 @@ export function progressText(earned: number, total: number): string {
  * keep it true or stamps go silent.
  */
 export function getHeaderFieldValue(earned: number, total: number, kind: CardKind = "stamp"): string {
+  // The BALANCE, not a countdown. It is the number the customer is tracking, it
+  // changes on every visit, and a distinct value per change is exactly what
+  // makes the lock-screen banner fire.
+  if (kind === "points") return earned === 1 ? "1 point" : `${earned} points`;
   // A membership card has nothing to count towards, so the header is a status,
   // not a number. It therefore never changes, and this card never fires a
   // lock-screen banner of its own — which is correct: there is no event to
@@ -177,7 +239,10 @@ export function stripKey(
   target: number,
   count: number,
 ): { target: number; filled: number } {
-  if (kind === "membership") return { target: 0, filled: 0 };
+  // Points for the same reason as membership: the balance climbs past any
+  // ceiling and is spent back down, so there is no finite set of counts to
+  // pre-render pictures for.
+  if (kind === "membership" || kind === "points") return { target: 0, filled: 0 };
   return { target, filled: Math.max(0, Math.min(count, target)) };
 }
 
@@ -214,9 +279,21 @@ export function membershipTerms(business: string): string {
   ].join(" ");
 }
 
-/** Whichever terms fit the card in hand. One call site, so neither can be missed. */
+export function pointsTerms(business: string): string {
+  return [
+    "Points are added when you buy something and come off when you spend them.",
+    `${business} decides what earns points and what they can be spent on — PunchMe only runs the card.`,
+    "Points may expire after 12 months without a visit.",
+    `${business} may change what points are worth, or end the programme, at any time.`,
+    "Points have no cash value and cannot be exchanged, sold or transferred.",
+  ].join(" ");
+}
+
+/** Whichever terms fit the card in hand. One call site, so none can be missed. */
 export function cardTerms(business: string, kind: CardKind): string {
-  return kind === "membership" ? membershipTerms(business) : rewardTerms(business);
+  if (kind === "membership") return membershipTerms(business);
+  if (kind === "points") return pointsTerms(business);
+  return rewardTerms(business);
 }
 
 export function rewardTerms(business: string): string {
@@ -373,6 +450,7 @@ export function buildPassJson(
   // nothing about a stamp card changes by routing through them.
   const target = targetFor(row);
   const reward = rewardFor(row);
+  const points = row.kind === "points";
 
   return {
     formatVersion: 1,
@@ -424,9 +502,13 @@ export function buildPassJson(
           // the documented pair (progress + message) whatever kind it is.
           changeMessage: member
             ? `%@ at ${business}`
-            : ready
-              ? `%@ — your ${reward.toLowerCase()} is waiting 🎉`
-              : `%@ — ${reward.toLowerCase()} at ${target}`,
+            : points
+              ? (ready
+                  ? `%@ — enough for your ${reward.toLowerCase()} 🎉`
+                  : `%@ — ${reward.toLowerCase()} at ${target}`)
+              : ready
+                ? `%@ — your ${reward.toLowerCase()} is waiting 🎉`
+                : `%@ — ${reward.toLowerCase()} at ${target}`,
         },
       ],
       // Empty, but the keys stay: the strip image carries the stamp grid and
@@ -445,12 +527,14 @@ export function buildPassJson(
         : [
             {
               key: "reward",
-              label: row.kind === "milestones" ? "Next reward" : "Reward",
+              label: row.kind === "milestones" || points ? "Next reward" : "Reward",
               value: ready ? `${reward} — show this to staff!` : reward,
             },
             {
               key: "tally",
-              label: "Progress",
+              // On a points card the header already holds the balance, so this
+              // says what it is WORTH: how far off the next thing on the list.
+              label: points ? "Balance" : "Progress",
               value: progressText(row.stamp_count, target),
             },
           ],
@@ -478,8 +562,10 @@ export function buildPassJson(
           label: "How it works",
           value: member
             ? `Show this card at ${business} and we will check you in. Your card updates by itself — no app needed.`
-            : row.kind === "milestones"
-              ? `Show this card when you order. There is a reward waiting at more than one point on this card — ${milestoneSummary(row.milestones ?? [])}. Your card updates by itself — no app needed.`
+            : points
+              ? `Show this card when you order and we will add your points. Spend them on ${milestoneSummary(row.milestones ?? [])}. Your points stay on the card until you use them — no app needed.`
+              : row.kind === "milestones"
+                ? `Show this card when you order. There is a reward waiting at more than one point on this card — ${milestoneSummary(row.milestones ?? [])}. Your card updates by itself — no app needed.`
               : `Show this card when you order. Collect ${row.stamps_target} stamps and your next ${row.reward.toLowerCase()} is on us. Your card updates by itself — no app needed.`,
         },
         // No changeMessage on either of these: they never change, and Apple

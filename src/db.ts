@@ -38,14 +38,27 @@ const { Pool } = pg;
  * 'milestones' the same counter, with several rewards up the ladder instead of
  *              one at the top. Reaching 2 pays out and the card CARRIES ON from
  *              2; only the last rung restarts it.
+ * 'points'     a balance that goes up by whatever staff enter and DOWN when it
+ *              is spent against a catalogue of rewards. No grid: it has no
+ *              ceiling, and strip images are one picture per count.
  *
  * The strings are stored and are effectively permanent: they sit in a column on
  * every card and every pass, and renaming one means rewriting both tables and
  * every branch together.
  */
-export type CardKind = "stamp" | "membership" | "milestones";
+export type CardKind = "stamp" | "membership" | "milestones" | "points";
 
-const CARD_KINDS: readonly CardKind[] = ["stamp", "membership", "milestones"];
+const CARD_KINDS: readonly CardKind[] = ["stamp", "membership", "milestones", "points"];
+
+/**
+ * The dearest a single reward may be.
+ *
+ * A milestone card is capped at 20 because that number is also its stamp
+ * count, and the grid is a pre-rendered picture per count. A points card draws
+ * no grid, so its only real limit is that the number has to fit on a card.
+ */
+export const MAX_MILESTONE = 20;
+export const MAX_POINTS_COST = 100_000;
 
 /** Guard for anything arriving from a request body or an older row. */
 export function asCardKind(v: unknown): CardKind {
@@ -72,7 +85,7 @@ export interface Milestone {
  * reader assumes ascending order — `rewards_claimed` is an INDEX into this
  * list, so a list that arrived out of order would hand out the wrong prize.
  */
-export function asMilestones(v: unknown): Milestone[] {
+export function asMilestones(v: unknown, max = MAX_MILESTONE): Milestone[] {
   if (!Array.isArray(v)) return [];
   const seen = new Set<number>();
   return v
@@ -81,10 +94,29 @@ export function asMilestones(v: unknown): Milestone[] {
       const reward = String((m as Milestone)?.reward ?? "").trim().slice(0, 60);
       return { at, reward };
     })
-    .filter((m) => Number.isFinite(m.at) && m.at >= 1 && m.at <= 20 && m.reward)
+    .filter((m) => Number.isFinite(m.at) && m.at >= 1 && m.at <= max && m.reward)
     .sort((a, b) => a.at - b.at)
     .filter((m) => (seen.has(m.at) ? false : (seen.add(m.at), true)))
     .slice(0, 6);
+}
+
+/**
+ * The amounts a points counter offers as one-tap buttons, e.g. "10,20,50".
+ *
+ * Presets rather than a free number pad because stamping is one tap today and
+ * deliberately hard to get wrong; typing any number on a busy counter is how
+ * 500 lands where 50 was meant. A custom amount is still reachable, behind a
+ * second tap.
+ */
+export function asPointPresets(v: unknown): number[] {
+  const raw = Array.isArray(v) ? v : String(v ?? "").split(",");
+  const seen = new Set<number>();
+  return raw
+    .map((n) => Math.trunc(Number(String(n).trim())))
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= MAX_POINTS_COST)
+    .filter((n) => (seen.has(n) ? false : (seen.add(n), true)))
+    .sort((a, b) => a - b)
+    .slice(0, 4);
 }
 
 export interface CardRow {
@@ -116,6 +148,13 @@ export interface CardRow {
    * strip images and every query that reads a target keep working unchanged.
    */
   milestones: Milestone[];
+  /**
+   * One-tap amounts on a points counter, stored the way the owner typed them
+   * ("10,20,50"). Text like `benefits`, for the same reason: it is a short list
+   * the owner edits as one string, and asPointPresets is the single place it
+   * becomes numbers.
+   */
+  point_presets: string;
   reward: string;
   stamps_target: number;
   stamps_start: number;
@@ -330,6 +369,12 @@ export interface EventMeta {
   /** Progress after this event, and the target that applied at the time. */
   stampsAfter?: number | null;
   stampsTarget?: number | null;
+  /**
+   * How much this event moved the counter. Left unset it is NULL, which every
+   * query reads as 1 — the meaning every row written before points existed
+   * already had. Only a points stamp, undo or redeem needs to say otherwise.
+   */
+  amount?: number | null;
   metadata?: EventMetadata;
 }
 
@@ -884,6 +929,16 @@ export async function migrate(): Promise<void> {
     ALTER TABLE cards  ADD COLUMN IF NOT EXISTS milestones jsonb NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS milestones jsonb NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS rewards_claimed integer NOT NULL DEFAULT 0;
+    -- The one-tap amounts a points counter offers, e.g. "10,20,50".
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS point_presets text NOT NULL DEFAULT '';
+    -- How much this event MOVED.
+    --
+    -- Every metric in this file counts events: one stamp row is one stamp. On a
+    -- points card one row can be fifty points, so a shop handing out fifty
+    -- would read as having handed out one. NULL means one, which is what every
+    -- row written before today meant and still means — so nothing historical
+    -- has to be rewritten, and COALESCE(amount, 1) is the rule everywhere.
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS amount integer;
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -2043,6 +2098,7 @@ export async function updateCard(
     kind: CardKind;
     benefits: string;
     milestones: Milestone[];
+    point_presets: string;
     reward: string;
     stamps_target: number;
     stamps_start: number;
@@ -2387,7 +2443,12 @@ const ACTIVE_PASS_SQL = `(
  */
 function netStamps(scope: string, since = ""): string {
   const window = since ? ` AND e.created_at > now() - interval '${since}'` : "";
-  const when = (type: string) => `count(*) FILTER (WHERE e.type = '${type}'${window})`;
+  // HOW MUCH, not how many rows. One stamp is one, and always was — which is
+  // why a NULL amount reads as 1 and no historical row needs rewriting. One
+  // points event can be fifty, and counting rows would report a shop that gave
+  // away fifty points as having given away one.
+  const when = (type: string) =>
+    `COALESCE(sum(COALESCE(e.amount, 1)) FILTER (WHERE e.type = '${type}'${window}), 0)`;
   return `(SELECT GREATEST(${when("stamp")} - ${when("undo")}, 0)::int
              FROM events e WHERE ${scope} AND NOT e.is_test)`;
 }
@@ -2940,6 +3001,12 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
                         p.rewards_claimed < COALESCE(jsonb_array_length(p.milestones), 0)
                         AND p.stamp_count >=
                             COALESCE((p.milestones -> p.rewards_claimed ->> 'at')::int, 2147483647)
+                      -- Points: affordable means the CHEAPEST thing on the list
+                      -- is within reach, not that a particular rung is.
+                      WHEN p.kind = 'points' THEN
+                        p.stamp_count >= COALESCE(
+                          (SELECT min((m ->> 'at')::int)
+                             FROM jsonb_array_elements(p.milestones) m), 2147483647)
                       ELSE p.stamp_count >= p.stamps_target
                     END) AS unclaimed_rewards,
 
@@ -3592,6 +3659,9 @@ export async function listRecentPasses(cardId: string, limit = 20): Promise<Pass
  * number and quietly flatten the visit history that the customer groups and
  * "last visit" are built from.
  *
+ * A POINTS balance does not either: it is saved up and spent down, so a ceiling
+ * would silently discard points a customer had earned.
+ *
  * The ceiling reads the PASS's own kind, not the card's, so changing a live
  * card's kind cannot retroactively clamp counts that are already banked.
  */
@@ -3599,7 +3669,7 @@ export async function addStamps(serial: string, delta: number): Promise<PassRow 
   const res = await getPool().query<PassRow>(
     `UPDATE passes
        SET stamp_count = CASE
-             WHEN kind = 'membership' THEN GREATEST(stamp_count + $2, 0)
+             WHEN kind IN ('membership', 'points') THEN GREATEST(stamp_count + $2, 0)
              ELSE LEAST(GREATEST(stamp_count + $2, 0), stamps_target)
            END,
            updated_at  = now()
@@ -3634,7 +3704,25 @@ export async function addStamps(serial: string, delta: number): Promise<PassRow 
  * Callers that log this must read the pass AFTER it, not before: `logEvent`
  * takes the target in force from the pass row.
  */
-export async function redeemPass(serial: string): Promise<PassRow | null> {
+export async function redeemPass(serial: string, cost = 0): Promise<PassRow | null> {
+  // A POINTS card is spent DOWN, not restarted: the customer keeps whatever is
+  // left over, which is the whole idea of saving points up. Nothing else about
+  // the pass moves — the catalogue is a price list, not a sequence, so there is
+  // no rung to advance and no ruleset to roll onto.
+  if (cost > 0) {
+    const spent = await getPool().query<PassRow>(
+      `UPDATE passes
+          SET stamp_count = GREATEST(stamp_count - $2, 0),
+              updated_at  = now()
+        WHERE serial = $1 AND kind = 'points' AND stamp_count >= $2
+        RETURNING *`,
+      [serial, cost],
+    );
+    // No row means they could not afford it — the caller must not report a
+    // reward given. Never falls through to the restart below, which would zero
+    // a balance somebody had been saving.
+    return spent.rows[0] ?? null;
+  }
   const res = await getPool().query<PassRow>(
     // `more` is "this card has another rung above the one being paid out now".
     //
@@ -3768,7 +3856,7 @@ export async function logEvent(
     `INSERT INTO events (
        card_id, serial, type, actor, forced, source,
        merchant_id, customer_id, platform, device_id, staff_id,
-       stamps_after, stamps_target, metadata, is_test
+       stamps_after, stamps_target, amount, metadata, is_test
      )
      SELECT $1, $2, $3, $4, $5, $6,
             COALESCE($7, c.merchant_id),
@@ -3777,7 +3865,8 @@ export async function logEvent(
             $10, $11,
             COALESCE($12, p.stamp_count),
             COALESCE($13, p.stamps_target),
-            $14::jsonb,
+            $14::int,
+            $15::jsonb,
             -- Off the pass, exactly like the columns above it. A caller cannot
             -- pass it and cannot forget it: every event a test card produces is
             -- a test event, and the ones with no pass (join_view, poster_view)
@@ -3801,10 +3890,37 @@ export async function logEvent(
       meta.staffId ?? null,
       meta.stampsAfter ?? null,
       meta.stampsTarget ?? null,
+      meta.amount ?? null,
       JSON.stringify(meta.metadata ?? {}),
     ],
   );
   return res.rows[0] ? Number(res.rows[0].id) : null;
+}
+
+/**
+ * How much the last stamp on this card was worth — what an undo has to reverse.
+ *
+ * Read from the log rather than taken from the request: on a points card one
+ * tap can be fifty points, so a fixed "minus one" would leave forty-nine
+ * behind, and a number sent by a stale browser could reverse an amount that was
+ * never given. NULL amounts (every row before points existed) mean one.
+ *
+ * An `undo` already reversed is skipped, so tapping undo twice takes back the
+ * two stamps before it rather than the same one twice.
+ */
+export async function lastStampAmount(serial: string): Promise<number> {
+  const res = await getPool().query<{ amount: string }>(
+    `WITH ev AS (
+       SELECT type, COALESCE(amount, 1) AS amount, id
+         FROM events WHERE serial = $1 AND type IN ('stamp', 'undo')
+        ORDER BY id DESC LIMIT 50
+     )
+     SELECT amount::text FROM ev WHERE type = 'stamp'
+      OFFSET (SELECT count(*) FROM ev WHERE type = 'undo') LIMIT 1`,
+    [serial],
+  );
+  const n = Number(res.rows[0]?.amount);
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 /**
