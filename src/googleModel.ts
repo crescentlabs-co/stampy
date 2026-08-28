@@ -12,7 +12,10 @@
 import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
 import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
-import { benefitsText, cardTerms, isRewardReady, memberSince, passBarcode } from "./passModel.js";
+import {
+  benefitsText, cardTerms, isRewardReady, memberSince, milestoneSummary,
+  passBarcode, rewardFor, targetFor,
+} from "./passModel.js";
 
 /** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
 export function classId(card: Pick<CardRow, "id">): string {
@@ -173,6 +176,17 @@ export function buildLoyaltyClass(
             body: benefitsText(card.benefits ?? ""),
           }]
         : []),
+      // The whole ladder, spelled out. On the CLASS because it is the same for
+      // every customer of this shop — and because the front of the card only
+      // has room for the next rung, which on its own never tells anybody that
+      // there is more than one prize on the card.
+      ...(card.kind === "milestones" && (card.milestones ?? []).length
+        ? [{
+            id: "milestones",
+            header: "Rewards on this card",
+            body: milestoneSummary(card.milestones ?? []),
+          }]
+        : []),
       {
         id: "terms",
         header: card.kind === "membership" ? "Membership terms" : "Reward terms",
@@ -268,7 +282,12 @@ export function buildLoyaltyPatch(
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
   const member = row.kind === "membership";
-  const progress = `${row.stamp_count}/${row.stamps_target}`;
+  // The NEXT rung on a milestones card, the pass's own snapshot on any other —
+  // the same two helpers the iPhone card reads, so the platforms cannot start
+  // describing different progress towards different prizes.
+  const target = targetFor(row);
+  const reward = rewardFor(row);
+  const progress = `${row.stamp_count}/${target}`;
   return {
     // Nothing on the card front points at this any more — the count is drawn
     // from the `count` text module below — and it must NOT be removed for that
@@ -307,10 +326,10 @@ export function buildLoyaltyPatch(
       // to be a stamp card was worth less than the space it took.
       {
         id: FRONT_REWARD_MODULE,
-        header: member ? "MEMBER NO." : "REWARD",
+        header: member ? "MEMBER NO." : row.kind === "milestones" ? "NEXT REWARD" : "REWARD",
         body: member
           ? row.short_code
-          : ready ? `${row.reward} — show this to staff!` : row.reward,
+          : ready ? `${reward} — show this to staff!` : reward,
       },
       ...(row.message ? [{ id: "message", header: business, body: row.message }] : []),
     ],

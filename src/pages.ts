@@ -7,7 +7,7 @@ import { CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL } from "./health.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
 import { DEFAULT_CARD_ID, FUNNEL_SINCE, FUNNEL_SINCE_LABEL, TRIAL_DAYS } from "./db.js";
-import { benefitLines } from "./passModel.js";
+import { benefitLines, milestoneSummary } from "./passModel.js";
 
 /**
  * What the product is called. Renaming lives here, once.
@@ -1380,8 +1380,16 @@ export const DESIGN_PANEL_JS = /* js */ `
         <label class="dlbl">Card type\${info("A stamp card counts visits towards a reward. A membership card has no counter — it proves who someone is and lists what they get. Staff still tap once either way, so your customer numbers work the same on both.")}</label>
         <select data-f="kind">
           <option value="stamp"\${c.kind === "membership" ? "" : " selected"}>Stamp card — collect stamps, earn a reward</option>
+          <option value="milestones"\${c.kind === "milestones" ? " selected" : ""}>Rewards along the way — several prizes on one card</option>
           <option value="membership"\${c.kind === "membership" ? " selected" : ""}>Membership — no stamps, just perks</option>
         </select>
+
+        <div data-rules="milestones" hidden>
+          <label class="dlbl">Rewards on this card\${info("A prize at each number you list. Reaching one hands it over and the card CARRIES ON — only the last one starts the card again from zero. The biggest number is how many circles the card has.")}</label>
+          <div data-ladder></div>
+          <button type="button" class="btn btn-ghost" data-a="addrung" style="margin-top:8px">+ Add a reward</button>
+          <p class="dhint" data-ladder-note></p>
+        </div>
 
         <div data-rules="membership" hidden>
           <label class="dlbl">What members get\${info("One perk per line. These print on the back of the card, and editing them updates every member's card — unlike a stamp target, which stays as promised until the customer claims their reward.")}</label>
@@ -1645,19 +1653,103 @@ export const DESIGN_PANEL_JS = /* js */ `
         return PV_MONTHS[d.getMonth()] + " " + d.getFullYear();
       }
 
+      function kindNow() {
+        const sel = f("kind");
+        return sel ? sel.value : "stamp";
+      }
+
       /** Show only the rules that belong to the type being edited. */
       function syncKind() {
-        const member = isMember();
+        const k = kindNow();
         for (const el of div.querySelectorAll("[data-rules]")) {
-          el.hidden = el.getAttribute("data-rules") !== (member ? "membership" : "stamp");
+          el.hidden = el.getAttribute("data-rules") !== k;
         }
       }
+
+      // ---- the reward ladder ----
+      //
+      // Held as an array rather than read back off the inputs on every keypress,
+      // because the rows are added and removed and an index into the DOM would
+      // go stale the moment somebody deleted the middle one. The inputs write
+      // into this; everything else reads it.
+      let ladder = (c.milestones || []).map((m) => ({ at: m.at, reward: m.reward }));
+      if (!ladder.length) ladder = [{ at: 2, reward: "" }, { at: Number(c.stampsTarget) || 10, reward: c.reward || "" }];
+
+      /** The ladder as the server wants it: sorted, complete rows only. */
+      function ladderClean() {
+        const seen = {};
+        return ladder
+          .map((m) => ({ at: Math.max(1, Math.min(20, Number(m.at) || 1)), reward: (m.reward || "").trim() }))
+          .filter((m) => m.reward)
+          .sort((a, b) => a.at - b.at)
+          .filter((m) => (seen[m.at] ? false : (seen[m.at] = 1)));
+      }
+
+      function renderLadder() {
+        const host = q("[data-ladder]");
+        if (!host) return;
+        host.innerHTML = "";
+        ladder.forEach((m, i) => {
+          const rowEl = document.createElement("div");
+          rowEl.className = "row2 ladder-row";
+          rowEl.innerHTML =
+            '<div><label>At stamp</label>' +
+            '<input type="number" min="1" max="20" data-lad="at" value="' + (Number(m.at) || 1) + '"></div>' +
+            '<div><label>They get</label>' +
+            '<input maxlength="60" data-lad="reward" placeholder="Free cookie" value="' +
+            String(m.reward || "").replace(/"/g, "&quot;") + '"></div>' +
+            '<button type="button" class="btn btn-ghost" data-lad="del" aria-label="Remove this reward">Remove</button>';
+          rowEl.querySelector('[data-lad=at]').addEventListener("input", (e) => {
+            ladder[i].at = e.target.value; renderPreview();
+          });
+          rowEl.querySelector('[data-lad=reward]').addEventListener("input", (e) => {
+            ladder[i].reward = e.target.value; renderPreview();
+          });
+          rowEl.querySelector('[data-lad=del]').onclick = () => {
+            // Never down to nothing: a milestones card with no rungs has no
+            // reward at all, and the save would silently turn it into a stamp
+            // card promising whatever was in the reward box.
+            if (ladder.length <= 1) { toast("A card needs at least one reward"); return; }
+            ladder.splice(i, 1); renderLadder(); renderPreview();
+          };
+          host.appendChild(rowEl);
+        });
+        const note = q("[data-ladder-note]");
+        if (note) {
+          const clean = ladderClean();
+          note.textContent = clean.length
+            ? "Your card will have " + clean[clean.length - 1].at + " circles. " +
+              (clean.length > 1
+                ? "The first " + (clean.length - 1) + (clean.length === 2 ? " reward keeps" : " rewards keep") +
+                  " the card going; the last one starts it again from zero."
+                : "One reward, at the end.")
+            : "Add a reward to see how the card will work.";
+        }
+      }
+
+      const addBtn = q('[data-a=addrung]');
+      if (addBtn) addBtn.onclick = () => {
+        if (ladder.length >= 6) { toast("Six rewards is the most one card can hold"); return; }
+        const top = ladderClean();
+        const next = top.length ? Math.min(20, top[top.length - 1].at + 3) : 5;
+        ladder.push({ at: next, reward: "" });
+        renderLadder(); renderPreview();
+      };
 
       function renderPreview() {
         syncKind();
         const member = isMember();
-        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
-        const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
+        const rungs = kindNow() === "milestones" ? ladderClean() : [];
+        // On a milestones card the whole card is the LAST rung and the number
+        // the header counts to is the FIRST unclaimed one — the same split
+        // targetFor() makes in src/passModel.ts. A preview that counted to the
+        // top would show a card no customer ever sees.
+        const total = rungs.length
+          ? rungs[rungs.length - 1].at
+          : Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
+        const start = Math.max(0, Math.min(total, Number(f("stampsStart").value) || 0));
+        const nextRung = rungs.find((m) => m.at > start) || rungs[rungs.length - 1] || null;
+        const target = nextRung ? nextRung.at : total;
         const pv = q("[data-pv]");
         pv.style.background = f("bg").value;
         pv.style.color = f("fg").value;
@@ -1671,12 +1763,13 @@ export const DESIGN_PANEL_JS = /* js */ `
         // membership card shows who the holder is instead of how far along they
         // are, because it has no target to be along the way to.
         q("[data-pv-progress]").textContent = member ? "Member" : headerValue(start, target);
-        q("[data-pv-rlbl]").textContent = member ? "MEMBER NO." : "REWARD";
         q("[data-pv-clbl]").textContent = member ? "MEMBER SINCE" : "PROGRESS";
         q("[data-pv-tally]").textContent = member ? thisMonth() : start + "/" + target;
+        q("[data-pv-rlbl]").textContent = member ? "MEMBER NO."
+          : rungs.length ? "NEXT REWARD" : "REWARD";
         q("[data-pv-reward]").textContent = member
           ? "ABC123"
-          : (f("reward").value || "Your reward");
+          : (nextRung ? nextRung.reward : (f("reward").value || "Your reward"));
         for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
         // When a rich stamp style is active, show the rendered grid in the strip
         // (it shares the slot with the banner — stamps win, matching the card).
@@ -1697,15 +1790,15 @@ export const DESIGN_PANEL_JS = /* js */ `
           banner.classList.add("on", "strip");
         } else if (stampStyle || bandIsImage) {
           dots.style.display = "none";
-          banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
+          banner.style.backgroundImage = "url(" + drawStampStrip(start, total, stampStyle) + ")";
           banner.classList.add("on", "strip");
         } else {
           dots.style.display = "";
           banner.classList.remove("strip");
           banner.classList.toggle("on", Boolean(c.bannerVersion));
-          dots.textContent = "●".repeat(start) + "○".repeat(target - start);
+          dots.textContent = "●".repeat(start) + "○".repeat(total - start);
         }
-        renderGoogle(start, target);
+        renderGoogle(start, target, nextRung, total);
         renderPoster();
       }
 
@@ -1719,7 +1812,7 @@ export const DESIGN_PANEL_JS = /* js */ `
        * reach it (src/googleModel.ts), and a mock that drew them would be a lie
        * the owner only finds out about on somebody else's phone.
        */
-      function renderGoogle(start, target) {
+      function renderGoogle(start, target, nextRung, total) {
         const g = q("[data-pvg]");
         if (!g) return;
         const member = isMember();
@@ -1744,14 +1837,16 @@ export const DESIGN_PANEL_JS = /* js */ `
         const progress = start + "/" + target;
         // The two captions are the class's cardTemplateOverride rendered, so
         // they move with the payload rather than staying fixed labels.
-        q("[data-pvg-rlbl]").textContent = member ? "MEMBER NO." : "REWARD";
+        q("[data-pvg-rlbl]").textContent = member ? "MEMBER NO."
+          : nextRung ? "NEXT REWARD" : "REWARD";
         q("[data-pvg-clbl]").textContent = member ? "MEMBER SINCE" : "PROGRESS";
         q("[data-pvg-bal]").textContent = member
           ? thisMonth()
           : ready ? progress + " — reward ready 🎉" : progress + " earned";
+        const shown = nextRung ? nextRung.reward : reward;
         q("[data-pvg-reward]").textContent = member
           ? "ABC123"
-          : (ready ? reward + " — show this to staff!" : reward);
+          : (ready ? shown + " — show this to staff!" : shown);
         // The square mark if there is one, else the wide logo — the same
         // fallback logoUrl() applies when the class is built.
         const im = q("[data-pvg-logo]");
@@ -1771,7 +1866,8 @@ export const DESIGN_PANEL_JS = /* js */ `
             foot.style.backgroundImage = "url(" + drawStampStrip(0, 0, stampStyle, 0, 0, true) + ")";
             foot.classList.add("band");
           } else if (stampStyle) {
-            foot.style.backgroundImage = "url(" + drawStampStrip(target, target, stampStyle) + ")";
+            const whole = total || target;
+            foot.style.backgroundImage = "url(" + drawStampStrip(whole, whole, stampStyle) + ")";
             foot.classList.add("band");
           } else {
             foot.style.backgroundImage = "";
@@ -1842,7 +1938,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         // Mirrors signupLine() in src/pages.ts. A membership card has no target
         // to promise, so the generated line names the perks the shop typed.
         let suggested;
-        if (isMember()) {
+        if (kindNow() === "milestones" && ladderClean().length) {
+          suggested = "Rewards along the way — " +
+            ladderClean().map((m) => m.reward + " at " + m.at).join(" · ").toLowerCase() + ".";
+        } else if (isMember()) {
           const perks = (f("benefits").value || "").split(String.fromCharCode(10))
             .map((l) => l.trim()).filter(Boolean);
           suggested = perks.length
@@ -1867,6 +1966,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       }
 
       for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
+      renderLadder();
       renderPreview();
 
       /**
@@ -2647,7 +2747,14 @@ export const DESIGN_PANEL_JS = /* js */ `
         // silently replaced by circles, in storage, for every count at once.
         await bannerReadyPromise;
         await stampIconReadyPromise;
-        const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
+        // The top rung IS the target on a milestones card — see
+        // cardFieldsFromBody, which writes the same number server-side. Reading
+        // the stamps-to-reward box instead would render a set of grids for a
+        // number this card does not use.
+        const ladderTop = kindNow() === "milestones" && ladderClean().length
+          ? ladderClean()[ladderClean().length - 1].at
+          : 0;
+        const target = ladderTop || Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
         // One set per target still in play, not just the current one. A pass keeps
         // the target it was issued with, so an owner going 8 → 6 still has
         // customers asking for an 8-slot grid — and before this they got a 404 and
@@ -3037,8 +3144,9 @@ export const DESIGN_PANEL_JS = /* js */ `
           // nobody could tell apart from the first, and the only place it shows
           // is the programme name on an Android card — which is the shop.
           name: f("shopName").value,
-          kind: f("kind") ? f("kind").value : "stamp",
+          kind: kindNow(),
           benefits: f("benefits") ? f("benefits").value : "",
+          milestones: ladderClean(),
           reward: f("reward").value,
           stampsTarget: Number(f("stampsTarget").value),
           stampsStart: Number(f("stampsStart").value),
@@ -3251,9 +3359,15 @@ const legalLine = `<p class="muted" style="margin-top:10px;font-size:.78rem">No 
  * one of their customers loads.
  */
 export function signupLine(
-  card: Pick<CardRow, "signup_message" | "stamps_target" | "reward" | "kind" | "benefits">,
+  card: Pick<CardRow, "signup_message" | "stamps_target" | "reward" | "kind" | "benefits" | "milestones">,
 ): string {
   if (card.signup_message) return esc(card.signup_message);
+  if (card.kind === "milestones" && (card.milestones ?? []).length) {
+    // The whole ladder, because the point of this card is that there is more
+    // than one prize on it — a line promising only the top one sells it short
+    // and reads like an ordinary stamp card.
+    return `Rewards along the way — ${esc(milestoneSummary(card.milestones ?? []).toLowerCase())}.`;
+  }
   if (card.kind === "membership") {
     // A membership card has no target to promise, so the generated line names
     // the perks the shop actually typed. With none typed yet it says what the
@@ -4842,11 +4956,12 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
         \${p.rewardReady ? '<span class="ready"> — REWARD READY 🎉</span>' : ""}
         \${member
           ? '<div class="dots"><span class="muted">Member' + (p.stamps > 0 ? " — " + p.stamps + (p.stamps === 1 ? " visit" : " visits") : "") + '</span></div>'
-          : '<div class="dots">' + p.dots + ' <span class="muted">' + p.stamps + '/' + p.target + '</span></div>'}
+          : '<div class="dots">' + p.dots + ' <span class="muted">' + p.stamps + '/' + p.target +
+            (p.total && p.total !== p.target ? ' (of ' + p.total + ')' : '') + '</span></div>'}
         <div class="row">
           <button class="btn btn-stamp" data-a="stamp">\${member ? "Check in ✓" : "+1 Stamp"}</button>
           \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">' + (member ? "− Undo check-in" : "− Undo a stamp") + '</button>' : ""}
-          \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">Give reward & restart</button>' : ""}
+          \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">' + redeemLabel(p) + '</button>' : ""}
         </div>\`;
       div.querySelector('[data-a=stamp]').onclick = () =>
         act("/stamp", { serial: p.serial }, member ? "Checked in" : "Stamp added");
@@ -4855,8 +4970,23 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
       const u = div.querySelector('[data-a=undo]');
       if (u) arm(u, "Confirm — undo?", () => act("/undo", { serial: p.serial }, member ? "Check-in removed" : "Stamp removed"));
       const r = div.querySelector('[data-a=redeem]');
-      if (r) arm(r, "Confirm — give reward?", () => act("/redeem", { serial: p.serial }, "Reward given — card restarted"));
+      if (r) arm(r, "Confirm — give reward?", () => act("/redeem", { serial: p.serial },
+        p.finalReward ? "Reward given — card restarted" : "Reward given — card carries on"));
       return div;
+    }
+
+    /**
+     * What the redeem button says.
+     *
+     * A card with rewards up the ladder pays out and CARRIES ON, so "give
+     * reward and restart" would be a lie on every rung but the last — and the
+     * customer would be told their stamps had gone when they had not. Naming
+     * the prize also stops staff handing over the wrong one on a card with
+     * three of them.
+     */
+    function redeemLabel(p) {
+      const what = p.reward ? "Give " + p.reward : "Give reward";
+      return what + (p.finalReward ? " & restart" : " & carry on");
     }
 
     // Cards at their target, always on screen. The customer's last stamp used to
@@ -6116,7 +6246,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
  * printed poster can never be killed by an edit in the dashboard.
  */
 export function posterPage(
-  card: Pick<CardRow, "id" | "reward" | "stamps_target" | "signup_message" | "kind" | "benefits"> & {
+  card: Pick<CardRow, "id" | "reward" | "stamps_target" | "signup_message" | "kind" | "benefits" | "milestones"> & {
     background_color: string;
     accent_color: string;
     label_color: string;

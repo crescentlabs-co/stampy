@@ -52,7 +52,7 @@ import {
   type EventType,
   type PassRow,
 } from "../db.js";
-import { isRewardReady, stampDots } from "../passModel.js";
+import { isFinalReward, isRewardReady, rewardFor, stampDots, targetFor } from "../passModel.js";
 import { staffPage } from "../pages.js";
 
 export const staffRouter = Router();
@@ -273,13 +273,20 @@ function passView(row: PassRow) {
     code: row.short_code,
     kind: row.kind,
     stamps: row.stamp_count,
-    target: row.stamps_target,
+    // What this card is counting TO right now. On a milestones card that is the
+    // next rung, not the top of the ladder — staff and customer must be looking
+    // at the same number, and the customer's card shows the next prize.
+    target: targetFor(row),
+    // The whole card, for the grid of circles: the ladder's last rung.
+    total: row.stamps_target,
+    reward: rewardFor(row),
+    /** True only on the rung that restarts the card, so the button can say so. */
+    finalReward: isFinalReward(row),
     // A membership card has no grid to draw — its count is a lifetime visit
     // tally with no target, so a row of circles would either be empty forever
     // or need a ceiling this card does not have.
     dots: member ? "" : stampDots(row.stamp_count, row.stamps_target),
     rewardReady: isRewardReady(row),
-    reward: row.reward,
     createdAt: row.created_at,
   };
 }

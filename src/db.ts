@@ -35,16 +35,56 @@ const { Pool } = pg;
  *              stamp, because every metric, customer group and nudge in the app
  *              is derived from stamps — a card that never stamped would read as
  *              a shop whose customers had all left.
+ * 'milestones' the same counter, with several rewards up the ladder instead of
+ *              one at the top. Reaching 2 pays out and the card CARRIES ON from
+ *              2; only the last rung restarts it.
  *
  * The strings are stored and are effectively permanent: they sit in a column on
  * every card and every pass, and renaming one means rewriting both tables and
  * every branch together.
  */
-export type CardKind = "stamp" | "membership";
+export type CardKind = "stamp" | "membership" | "milestones";
+
+const CARD_KINDS: readonly CardKind[] = ["stamp", "membership", "milestones"];
 
 /** Guard for anything arriving from a request body or an older row. */
 export function asCardKind(v: unknown): CardKind {
-  return v === "membership" ? "membership" : "stamp";
+  return CARD_KINDS.includes(v as CardKind) ? (v as CardKind) : "stamp";
+}
+
+/**
+ * One rung of a milestone card: a count, and what the customer gets for
+ * reaching it.
+ *
+ * Stored as jsonb rather than its own table because it is only ever read and
+ * written whole — and because the PASS needs a frozen copy of the same list,
+ * which a child table would have had to duplicate row for row anyway.
+ */
+export interface Milestone {
+  at: number;
+  reward: string;
+}
+
+/**
+ * Whatever came out of the database or off a request, as a usable ladder.
+ *
+ * Sorted, de-duplicated on `at`, and stripped of anything malformed. Every
+ * reader assumes ascending order — `rewards_claimed` is an INDEX into this
+ * list, so a list that arrived out of order would hand out the wrong prize.
+ */
+export function asMilestones(v: unknown): Milestone[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<number>();
+  return v
+    .map((m) => {
+      const at = Math.trunc(Number((m as Milestone)?.at));
+      const reward = String((m as Milestone)?.reward ?? "").trim().slice(0, 60);
+      return { at, reward };
+    })
+    .filter((m) => Number.isFinite(m.at) && m.at >= 1 && m.at <= 20 && m.reward)
+    .sort((a, b) => a.at - b.at)
+    .filter((m) => (seen.has(m.at) ? false : (seen.add(m.at), true)))
+    .slice(0, 6);
 }
 
 export interface CardRow {
@@ -70,6 +110,12 @@ export interface CardRow {
    * every member's card, which is what a shop expects when they add a perk.
    */
   benefits: string;
+  /**
+   * The reward ladder on a 'milestones' card, ascending. Empty on every other
+   * kind. `stamps_target` is kept equal to the LAST rung, so the grid, the
+   * strip images and every query that reads a target keep working unchanged.
+   */
+  milestones: Milestone[];
   reward: string;
   stamps_target: number;
   stamps_start: number;
@@ -160,6 +206,18 @@ export interface PassRow {
    * blanking targets people are part-way towards.
    */
   kind: CardKind;
+  /**
+   * The reward ladder this pass was ISSUED with, frozen like reward and
+   * stamps_target. A shop that drops the 5-stamp prize must not un-give it to
+   * somebody who has already collected it.
+   */
+  milestones: Milestone[];
+  /**
+   * How many rungs of that ladder have already been paid out — and therefore
+   * the INDEX of the next one. Reset to 0 only when the last rung pays out and
+   * the card restarts.
+   */
+  rewards_claimed: number;
   reward: string;
   /** Free-form message surfaced on the pass back + pushed to the lock screen. */
   message: string;
@@ -818,6 +876,14 @@ export async function migrate(): Promise<void> {
     -- the pass: a perks list describes what the shop offers today, so editing it
     -- reaches every member rather than only the next person to sign up.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS benefits text NOT NULL DEFAULT '';
+    -- The reward ladder on a milestones card: [{at, reward}, ...], ascending.
+    -- On the pass too, and for the same reason reward and stamps_target are —
+    -- a shop that drops its 5-stamp prize must not un-give it to somebody who
+    -- already collected it. rewards_claimed is the INDEX of the next rung, so
+    -- the list has to stay in the order it was issued in.
+    ALTER TABLE cards  ADD COLUMN IF NOT EXISTS milestones jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS milestones jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS rewards_claimed integer NOT NULL DEFAULT 0;
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -1732,15 +1798,18 @@ export async function createCard(row: {
   stampsStart: number;
   /** Defaults to a stamp card, which is what every card was before v2.7. */
   kind?: CardKind;
+  /** The reward ladder, on a milestones card. */
+  milestones?: Milestone[];
 }): Promise<CardRow> {
   // The id is generated here and then never changes: it is printed on posters,
   // baked into every issued Android card's Google class id, and used in the art
   // URLs inside live Google classes. See renameCafesToCards.
   const id = generateShortCode(8).toLowerCase();
   const res = await getPool().query<CardRow>(
-    `INSERT INTO cards (id, merchant_id, name, reward, stamps_target, stamps_start, kind, staff_pin, staff_pin_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, '', '') RETURNING *`,
-    [id, row.merchantId, row.name, row.reward, row.stampsTarget, row.stampsStart, row.kind ?? "stamp"],
+    `INSERT INTO cards (id, merchant_id, name, reward, stamps_target, stamps_start, kind, milestones, staff_pin, staff_pin_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '', '') RETURNING *`,
+    [id, row.merchantId, row.name, row.reward, row.stampsTarget, row.stampsStart, row.kind ?? "stamp",
+     JSON.stringify(row.milestones ?? [])],
   );
   return res.rows[0]!;
 }
@@ -1973,6 +2042,7 @@ export async function updateCard(
     name: string;
     kind: CardKind;
     benefits: string;
+    milestones: Milestone[];
     reward: string;
     stamps_target: number;
     stamps_start: number;
@@ -2006,7 +2076,10 @@ export async function updateCard(
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
   const res = await getPool().query<CardRow>(
     `UPDATE cards SET ${sets} WHERE id = $1 RETURNING *`,
-    [id, ...keys.map((k) => fields[k])],
+    // `milestones` is jsonb, and node-postgres turns a JS array into a POSTGRES
+    // array literal ({a,b}) rather than JSON — which the column rejects. Every
+    // jsonb value has to arrive as a string.
+    [id, ...keys.map((k) => (k === "milestones" ? JSON.stringify(fields[k]) : fields[k]))],
   );
   const after = res.rows[0] ?? null;
 
@@ -2015,7 +2088,13 @@ export async function updateCard(
     for (const k of keys) {
       const from = (before as unknown as Record<string, unknown>)[k];
       const to = (after as unknown as Record<string, unknown>)[k];
-      if (from !== to) changed[k] = { from, to };
+      // Compared by value, not by reference: `milestones` comes back as a fresh
+      // array on every read, so === would call every save an edit and write a
+      // card_edited row for a card nobody touched.
+      const same = k === "milestones"
+        ? JSON.stringify(from) === JSON.stringify(to)
+        : from === to;
+      if (!same) changed[k] = { from, to };
     }
     // A save that changed nothing is not an edit worth a row.
     if (Object.keys(changed).length) {
@@ -2856,7 +2935,13 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
               WHERE p.card_id IN (SELECT id FROM cards WHERE merchant_id = m.id)
                 AND ${REAL_PASS_SQL}
                 AND p.kind <> 'membership'
-                AND p.stamp_count >= p.stamps_target) AS unclaimed_rewards,
+                AND CASE
+                      WHEN p.kind = 'milestones' THEN
+                        p.rewards_claimed < COALESCE(jsonb_array_length(p.milestones), 0)
+                        AND p.stamp_count >=
+                            COALESCE((p.milestones -> p.rewards_claimed ->> 'at')::int, 2147483647)
+                      ELSE p.stamp_count >= p.stamps_target
+                    END) AS unclaimed_rewards,
 
             ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot', 'false') <> 'true'")} AS scanned,
             ${ev("e.type = 'join_view' AND COALESCE(e.metadata->>'bot','false') <> 'true' AND e.source = 'poster'")} AS opened_poster,
@@ -3420,14 +3505,17 @@ export async function createPass(row: {
   reward: string;
   /** Frozen at issue with the rest of the ruleset. Defaults to a stamp card. */
   kind?: CardKind;
+  /** The reward ladder, frozen at issue alongside reward and stamps_target. */
+  milestones?: Milestone[];
   /** The owner or the operator looking at their own card — never a customer. */
   isTest?: boolean;
 }): Promise<PassRow> {
   const res = await getPool().query<PassRow>(
-    `INSERT INTO passes (serial, card_id, customer_id, platform, short_code, auth_token, stamp_count, stamps_target, reward, kind, is_test)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    `INSERT INTO passes (serial, card_id, customer_id, platform, short_code, auth_token, stamp_count, stamps_target, reward, kind, milestones, is_test)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [row.serial, row.cardId, row.customerId ?? null, row.platform, row.shortCode, row.authToken,
-     row.stampCount, row.stampsTarget, row.reward, row.kind ?? "stamp", row.isTest === true],
+     row.stampCount, row.stampsTarget, row.reward, row.kind ?? "stamp",
+     JSON.stringify(row.milestones ?? []), row.isTest === true],
   );
   return res.rows[0]!;
 }
@@ -3548,14 +3636,32 @@ export async function addStamps(serial: string, delta: number): Promise<PassRow 
  */
 export async function redeemPass(serial: string): Promise<PassRow | null> {
   const res = await getPool().query<PassRow>(
-    `UPDATE passes p
-        SET stamp_count   = 0,
-            stamps_target = c.stamps_target,
-            reward        = c.reward,
-            kind          = c.kind,
-            updated_at    = now()
-       FROM cards c
-      WHERE p.serial = $1 AND c.id = p.card_id
+    // `more` is "this card has another rung above the one being paid out now".
+    //
+    // A milestones card that still has one CARRIES ON: the customer keeps the
+    // stamps they have and the ladder they were issued with, and only the index
+    // moves. Restarting them at zero after the 2-stamp cookie would take back
+    // the two stamps they are already holding towards the 5.
+    //
+    // Every other case is the original behaviour, unchanged: back to zero on
+    // today's rules, which is the one honest moment to move somebody onto a
+    // ruleset the shop has since changed.
+    `WITH cur AS (
+       SELECT p.serial,
+              (p.kind = 'milestones'
+               AND p.rewards_claimed + 1 < COALESCE(jsonb_array_length(p.milestones), 0)) AS more
+         FROM passes p WHERE p.serial = $1
+     )
+     UPDATE passes p
+        SET rewards_claimed = CASE WHEN cur.more THEN p.rewards_claimed + 1 ELSE 0 END,
+            stamp_count     = CASE WHEN cur.more THEN p.stamp_count    ELSE 0 END,
+            stamps_target   = CASE WHEN cur.more THEN p.stamps_target  ELSE c.stamps_target END,
+            reward          = CASE WHEN cur.more THEN p.reward         ELSE c.reward END,
+            kind            = CASE WHEN cur.more THEN p.kind           ELSE c.kind END,
+            milestones      = CASE WHEN cur.more THEN p.milestones     ELSE c.milestones END,
+            updated_at      = now()
+       FROM cards c, cur
+      WHERE p.serial = $1 AND c.id = p.card_id AND cur.serial = p.serial
       RETURNING p.*`,
     [serial],
   );
@@ -3582,6 +3688,11 @@ export async function reissuePass(serial: string): Promise<PassRow | null> {
         SET stamps_target = c.stamps_target,
             reward        = c.reward,
             kind          = c.kind,
+            milestones    = c.milestones,
+            -- Re-enrolling is the customer asking for today's card, so the
+            -- ladder starts again from the bottom rung along with everything
+            -- else. Their stamps are kept either way.
+            rewards_claimed = 0,
             stamp_count   = CASE
               WHEN c.kind = 'membership' THEN p.stamp_count
               ELSE LEAST(p.stamp_count, c.stamps_target)
@@ -3591,6 +3702,7 @@ export async function reissuePass(serial: string): Promise<PassRow | null> {
       WHERE p.serial = $1 AND c.id = p.card_id
         AND (p.stamps_target <> c.stamps_target OR p.reward <> c.reward
              OR p.kind <> c.kind
+             OR p.milestones IS DISTINCT FROM c.milestones
              OR (c.kind <> 'membership' AND p.stamp_count > c.stamps_target))
       RETURNING p.*`,
     [serial],

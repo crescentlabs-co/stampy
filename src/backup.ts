@@ -34,6 +34,31 @@ function isBytes(v: unknown): v is Bytes {
   return typeof v === "object" && v !== null && typeof (v as Bytes).b64 === "string" && Object.keys(v).length === 1;
 }
 
+/**
+ * A value that came out of a `json`/`jsonb` column.
+ *
+ * node-postgres hands these back as plain objects and arrays — and, handed one
+ * back, serialises it as a POSTGRES ARRAY LITERAL rather than as JSON. So an
+ * empty list restores as an empty object ({} instead of []), and a list with
+ * anything in it fails the insert outright. Every JSON value has to travel to
+ * the database as a string.
+ *
+ * This was latent for as long as `events.metadata` has existed: a dump
+ * containing any event metadata restored it wrong, silently, and the only
+ * reason nobody hit it is that the round-trip test never wrote one. The
+ * milestones columns are NOT NULL, so every card and pass now carries a JSON
+ * value and the bug became unmissable.
+ *
+ * Safe to detect by shape rather than by column type because a dump has been
+ * through JSON.parse before it is restored: dates are already strings, bytea is
+ * a self-describing {b64}, and nothing else arrives object-shaped. The Date and
+ * Buffer guards are belt-and-braces for a caller that skipped the file.
+ */
+function isJsonValue(v: unknown): boolean {
+  return typeof v === "object" && v !== null
+    && !isBytes(v) && !(v instanceof Date) && !Buffer.isBuffer(v);
+}
+
 export interface TableDump {
   name: string;
   columns: string[];
@@ -233,7 +258,11 @@ export async function restoreDatabase(client: ClientBase, dump: Dump, opts: Rest
           (row) =>
             `(${row
               .map((v) => {
-                values.push(isBytes(v) ? Buffer.from(v.b64, "base64") : v);
+                values.push(
+                  isBytes(v) ? Buffer.from(v.b64, "base64")
+                    : isJsonValue(v) ? JSON.stringify(v)
+                    : v,
+                );
                 return `$${values.length}`;
               })
               .join(", ")})`,

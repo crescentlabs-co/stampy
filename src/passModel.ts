@@ -3,7 +3,7 @@
  * notification wording are unit-testable before Apple approval even lands.
  */
 import { config } from "./config.js";
-import type { CardKind, CardRow, PassRow } from "./db.js";
+import type { CardKind, CardRow, Milestone, PassRow } from "./db.js";
 
 /**
  * The stamp grid as text: filled vs empty slots, spaced, over two rows.
@@ -48,14 +48,76 @@ export function stampDots(count: number, target: number): string {
 const DOT_FULL = "⬤";
 const DOT_EMPTY = "◯";
 
-export function isRewardReady(
-  row: Pick<PassRow, "stamp_count" | "stamps_target" | "kind">,
-): boolean {
+/**
+ * The progress facts every surface needs, and the only shape they are read in.
+ *
+ * `milestones` and `rewards_claimed` are optional so a caller holding a partial
+ * row (a test, a fixture) still type-checks; both default to "no ladder", which
+ * is what a stamp card and a membership card have.
+ */
+export interface ProgressRow {
+  stamp_count: number;
+  stamps_target: number;
+  kind: CardKind;
+  reward?: string;
+  milestones?: Milestone[];
+  rewards_claimed?: number;
+}
+
+/**
+ * The rung this card is working towards, or null when the ladder is finished.
+ *
+ * `rewards_claimed` is an INDEX into the pass's own frozen ladder, which is why
+ * the list has to stay in the order it was issued in.
+ */
+export function nextMilestone(row: ProgressRow): Milestone | null {
+  if (row.kind !== "milestones") return null;
+  const ladder = row.milestones ?? [];
+  return ladder[row.rewards_claimed ?? 0] ?? null;
+}
+
+/**
+ * The number this card is counting TO right now.
+ *
+ * On a milestones card that is the next rung, not the top of the ladder: a
+ * customer three stamps into a 2/5/10 card is two away from a pastry, and
+ * telling them they are seven away from a coffee buries the prize they can
+ * nearly reach. The GRID still draws the whole card — stamps_target is the last
+ * rung — so the two together read as "this much of the whole card, this close
+ * to the next prize".
+ */
+export function targetFor(row: ProgressRow): number {
+  return nextMilestone(row)?.at ?? row.stamps_target;
+}
+
+/** The prize this card is working towards right now. */
+export function rewardFor(row: ProgressRow): string {
+  return nextMilestone(row)?.reward ?? row.reward ?? "";
+}
+
+export function isRewardReady(row: ProgressRow): boolean {
   // A membership card has no target to reach, so it is never "ready" — its
   // count is a lifetime visit tally, and without this every long-standing
   // member would light up the staff phone's redeem button forever.
   if (row.kind === "membership") return false;
+  if (row.kind === "milestones") {
+    // Ladder finished and nothing restarted it: not ready, or the redeem button
+    // would keep paying out the top prize on every visit.
+    const next = nextMilestone(row);
+    return next !== null && row.stamp_count >= next.at;
+  }
   return row.stamp_count >= row.stamps_target;
+}
+
+/** Was that the LAST rung? The one redeem that restarts the card at zero. */
+export function isFinalReward(row: ProgressRow): boolean {
+  if (row.kind !== "milestones") return true;
+  return (row.rewards_claimed ?? 0) + 1 >= (row.milestones ?? []).length;
+}
+
+/** "Free cookie at 2 · Pastry at 5 · Coffee at 10" — the ladder, as one line. */
+export function milestoneSummary(ladder: Milestone[]): string {
+  return ladder.map((m) => `${m.reward} at ${m.at}`).join(" · ");
 }
 
 /** "7/10" — the plain tally. One wording, so nothing drifts between surfaces. */
@@ -306,6 +368,11 @@ export function buildPassJson(
   const member = row.kind === "membership";
   const barcode = passBarcode(row, card);
   const perks = benefitsText(card.benefits ?? "");
+  // On a milestones card these are the NEXT rung, not the top of the ladder —
+  // see targetFor. On every other kind they are the pass's own snapshot, so
+  // nothing about a stamp card changes by routing through them.
+  const target = targetFor(row);
+  const reward = rewardFor(row);
 
   return {
     formatVersion: 1,
@@ -351,15 +418,15 @@ export function buildPassJson(
           // as "progress" keeps Apple diffing it against the same field on cards
           // already issued, and keeps the documented changeMessage pair intact.
           key: "progress",
-          value: getHeaderFieldValue(row.stamp_count, row.stamps_target, row.kind),
+          value: getHeaderFieldValue(row.stamp_count, target, row.kind),
           // A membership card's value never changes, so this never fires — but
           // the field keeps its changeMessage so the pass still carries exactly
           // the documented pair (progress + message) whatever kind it is.
           changeMessage: member
             ? `%@ at ${business}`
             : ready
-              ? `%@ — your ${row.reward.toLowerCase()} is waiting 🎉`
-              : `%@ — ${row.reward.toLowerCase()} at ${row.stamps_target}`,
+              ? `%@ — your ${reward.toLowerCase()} is waiting 🎉`
+              : `%@ — ${reward.toLowerCase()} at ${target}`,
         },
       ],
       // Empty, but the keys stay: the strip image carries the stamp grid and
@@ -378,13 +445,13 @@ export function buildPassJson(
         : [
             {
               key: "reward",
-              label: "Reward",
-              value: ready ? `${row.reward} — show this to staff!` : row.reward,
+              label: row.kind === "milestones" ? "Next reward" : "Reward",
+              value: ready ? `${reward} — show this to staff!` : reward,
             },
             {
               key: "tally",
               label: "Progress",
-              value: progressText(row.stamp_count, row.stamps_target),
+              value: progressText(row.stamp_count, target),
             },
           ],
       auxiliaryFields: [],
@@ -411,7 +478,9 @@ export function buildPassJson(
           label: "How it works",
           value: member
             ? `Show this card at ${business} and we will check you in. Your card updates by itself — no app needed.`
-            : `Show this card when you order. Collect ${row.stamps_target} stamps and your next ${row.reward.toLowerCase()} is on us. Your card updates by itself — no app needed.`,
+            : row.kind === "milestones"
+              ? `Show this card when you order. There is a reward waiting at more than one point on this card — ${milestoneSummary(row.milestones ?? [])}. Your card updates by itself — no app needed.`
+              : `Show this card when you order. Collect ${row.stamps_target} stamps and your next ${row.reward.toLowerCase()} is on us. Your card updates by itself — no app needed.`,
         },
         // No changeMessage on either of these: they never change, and Apple
         // shows a lock-screen banner for every back field that carries one.

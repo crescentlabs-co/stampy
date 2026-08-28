@@ -34,6 +34,7 @@ import {
   targetsInUse,
   updateCard,
   asCardKind,
+  asMilestones,
   type CardRow,
 } from "./db.js";
 
@@ -77,6 +78,10 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
       .split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 10)
       .map((l) => l.slice(0, 80)).join("\n");
   }
+  // The reward ladder. asMilestones sorts it and drops anything malformed —
+  // `rewards_claimed` is an index into this list, so an unsorted one would hand
+  // out the wrong prize.
+  if (body.milestones !== undefined) fields.milestones = asMilestones(body.milestones);
   // Capped at 20: the strip image is always a two-row grid, so a higher target
   // would render stamps too small to read on a 375pt-wide strip.
   if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 20, 10);
@@ -126,6 +131,13 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   // "My logo already includes my business name" — drops the pass's logoText so
   // a brand lockup does not print the name a second time beside itself.
   if (typeof body.logoHasName === "boolean") fields.logo_has_name = body.logoHasName;
+  // A milestones card's target IS its top rung. Keeping the two in step is what
+  // lets the stamp grid, the pre-rendered strip images and every query that
+  // reads stamps_target keep working without knowing milestones exist — and it
+  // stops a shop saving a 10-circle card whose last prize sits at 6.
+  if (fields.kind === "milestones" && fields.milestones?.length) {
+    fields.stamps_target = fields.milestones[fields.milestones.length - 1]!.at;
+  }
   return fields;
 }
 
@@ -184,6 +196,8 @@ export interface DesignerCard {
   kind: string;
   /** Perks for a membership card, one per line. '' on a stamp card. */
   benefits: string;
+  /** The reward ladder on a milestones card, ascending. Empty otherwise. */
+  milestones: { at: number; reward: string }[];
   reward: string;
   stampsTarget: number;
   stampsStart: number;
@@ -242,6 +256,7 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     name: card.name,
     kind: card.kind,
     benefits: card.benefits,
+    milestones: card.milestones ?? [],
     reward: card.reward,
     stampsTarget: card.stamps_target,
     stampsStart: card.stamps_start,
@@ -296,6 +311,9 @@ export function touchesLook(
     // their Android preview, and find their iPhone members still on the old
     // list until each of them was next stamped.
     "kind", "benefits",
+    // Printed on the back of an Apple card, and the reason the header counts to
+    // one number rather than another.
+    "milestones",
     // Ticking this removes the name printed beside the logo on every issued
     // pass. Nothing about it is visible until the phone re-fetches, so a save
     // that skipped the push would leave the name doubled until the next stamp.

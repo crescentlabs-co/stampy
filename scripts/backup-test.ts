@@ -98,6 +98,20 @@ async function main() {
   );
   await client.query(`INSERT INTO registrations (device_library_id, push_token, serial) VALUES ('dev1', 'push1', 's-apple')`);
   await client.query(`INSERT INTO events (card_id, serial, type) VALUES ('default', 's-apple', 'stamp')`);
+  // An event WITH metadata, and a card with a reward ladder. Both are jsonb,
+  // and a restore used to hand node-postgres the parsed object straight back —
+  // which it serialises as a Postgres array literal, not as JSON. An empty list
+  // came back as an empty object and a real one failed the insert outright.
+  // Nothing caught it because nothing here ever dumped a non-null jsonb value.
+  await client.query(
+    `INSERT INTO events (card_id, serial, type, metadata)
+     VALUES ('default', 's-apple', 'nudge', $1)`,
+    [JSON.stringify({ wallet: "apple", body: "We miss you", nested: { n: 1 } })],
+  );
+  await client.query(
+    `UPDATE cards SET kind = 'milestones', milestones = $1 WHERE id = 'default'`,
+    [JSON.stringify([{ at: 2, reward: "Free cookie" }, { at: 5, reward: "Pastry" }])],
+  );
   await client.query(`INSERT INTO card_logos (card_id, png) VALUES ('default', $1)`, [PNG]);
   await client.query(`INSERT INTO card_stamp_strips (card_id, filled, png) VALUES ('default', 3, $1)`, [PNG]);
 
@@ -115,6 +129,27 @@ async function main() {
   await restoreDatabase(client, onDisk, { force: true });
   const after = await dumpDatabase(client);
   expect(normalise(after) === normalise(before), "the database came back exactly as it was");
+
+  // Named separately from the whole-database compare above, because that one
+  // says only that something differs. A jsonb column restoring as the wrong
+  // SHAPE is the failure worth being told about by name.
+  {
+    const ladder = await client.query<{ milestones: unknown }>(
+      `SELECT milestones FROM cards WHERE id = 'default'`,
+    );
+    const got = ladder.rows[0]?.milestones;
+    expect(
+      Array.isArray(got) && got.length === 2 && (got[0] as { at: number }).at === 2,
+      `a reward ladder survives the round trip as a LIST (got ${JSON.stringify(got)})`,
+    );
+    const meta = await client.query<{ metadata: { nested?: { n?: number } } | null }>(
+      `SELECT metadata FROM events WHERE type = 'nudge' LIMIT 1`,
+    );
+    expect(
+      meta.rows[0]?.metadata?.nested?.n === 1,
+      `event metadata survives the round trip (got ${JSON.stringify(meta.rows[0]?.metadata)})`,
+    );
+  }
 
   const png = await client.query<{ png: Buffer }>(`SELECT png FROM card_logos WHERE card_id = 'default'`);
   expect(png.rows[0]?.png.equals(PNG) === true, "logo PNG survived byte-for-byte");

@@ -2947,6 +2947,73 @@ async function main() {
       });
     }
 
+    // A card with rewards up the ladder: 2, 5 and 10. Every rung but the last
+    // pays out and CARRIES ON, which is the whole point of the card and the one
+    // thing that would be unrecoverable to get wrong — restarting somebody at
+    // zero after their 2-stamp cookie takes back two stamps they are holding.
+    {
+      const LADDER = [
+        { at: 2, reward: "Free cookie" },
+        { at: 5, reward: "Pastry" },
+        { at: 10, reward: "Free coffee" },
+      ];
+      const asIssued = await getCard("default");
+      await updateCard("default", {
+        kind: "milestones",
+        milestones: LADDER,
+        stamps_target: 10,
+      });
+      const held = await mk();
+      await getPool().query(
+        `UPDATE passes SET kind = 'milestones', milestones = $2, rewards_claimed = 0,
+                           stamps_target = 10, stamp_count = 3 WHERE serial = $1`,
+        [held.serial, JSON.stringify(LADDER)],
+      );
+
+      const first = (await redeemPass(held.serial))!;
+      expect(first.stamp_count === 3, `the cookie leaves the stamps alone (got ${first.stamp_count})`);
+      expect(first.rewards_claimed === 1, `...and moves onto the next rung (got ${first.rewards_claimed})`);
+      expect(first.stamps_target === 10, "...on the same ladder it was issued with");
+
+      // Second rung: same again, still not a restart.
+      await getPool().query(`UPDATE passes SET stamp_count = 6 WHERE serial = $1`, [held.serial]);
+      const second = (await redeemPass(held.serial))!;
+      expect(second.stamp_count === 6, `the pastry leaves the stamps alone too (got ${second.stamp_count})`);
+      expect(second.rewards_claimed === 2, `...and moves on again (got ${second.rewards_claimed})`);
+
+      // The LAST rung is the one that restarts the card, on today's rules —
+      // exactly what a plain stamp card has always done.
+      await getPool().query(`UPDATE passes SET stamp_count = 11 WHERE serial = $1`, [held.serial]);
+      const last = (await redeemPass(held.serial))!;
+      expect(last.stamp_count === 0, `the top of the ladder restarts at zero (got ${last.stamp_count})`);
+      expect(last.rewards_claimed === 0, `...and back to the bottom rung (got ${last.rewards_claimed})`);
+      expect(last.milestones.length === 3, "...carrying today's ladder");
+
+      // A shop dropping a rung must not un-give a prize somebody already has:
+      // the pass keeps the ladder it was ISSUED with until it restarts.
+      {
+        const mid = await mk();
+        await getPool().query(
+          `UPDATE passes SET kind = 'milestones', milestones = $2, rewards_claimed = 1,
+                             stamps_target = 10, stamp_count = 4 WHERE serial = $1`,
+          [mid.serial, JSON.stringify(LADDER)],
+        );
+        await updateCard("default", { milestones: [{ at: 10, reward: "Free coffee" }], stamps_target: 10 });
+        const still = await getPool().query(`SELECT * FROM passes WHERE serial = $1`, [mid.serial]);
+        expect(
+          still.rows[0].rewards_claimed === 1 && still.rows[0].milestones.length === 3,
+          "a shop shortening its ladder does not rewrite a card already in a wallet",
+        );
+      }
+
+      await updateCard("default", {
+        kind: asIssued!.kind,
+        milestones: [],
+        stamps_target: asIssued!.stamps_target,
+        reward: asIssued!.reward,
+      });
+    }
+
     // The owner's OWN card, added from the same browser and therefore hanging
     // off the same customer row. Their testing must not count as somebody
     // visiting: every other counting query in the app says NOT e.is_test, and
@@ -3244,6 +3311,17 @@ async function main() {
     const changedSince = async (since: string) =>
       fetch(base + `/wallet/v1/devices/dev-http-1/registrations/pass.com.e2e?passesUpdatedSince=${since}`);
 
+    // Age the pass by a second first. The tag is epoch MILLISECONDS and
+    // serialsUpdatedSince compares strictly greater, so a pass touched in the
+    // same millisecond as the design save below reads as unchanged — which is
+    // fine for a real device polling minutes apart, and a coin toss for a test
+    // doing both in one breath. Anything that touches this card shortly before
+    // this block makes that toss more likely; ageing the row removes it without
+    // weakening either assertion.
+    await getPool().query(
+      `UPDATE passes SET updated_at = updated_at - interval '1 second' WHERE serial = $1`,
+      [wp.serial],
+    );
     const before = await tag();
     // Nothing has happened, so the device is told nothing has happened.
     expect((await changedSince(before)).status === 204,

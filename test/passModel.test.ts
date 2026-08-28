@@ -9,9 +9,10 @@ process.env.BASE_URL = "https://stampy.example.test";
 process.env.DEMO_CARD_ID = "demo-card";
 
 const {
-  benefitLines, benefitsText, buildPassJson, cardTerms, getHeaderFieldValue, isRewardReady,
-  memberSince, membershipTerms, messageFieldValue, passBarcode, progressText,
-  rewardTerms, stampDots, stampGrid, stripKey, visibleMessage,
+  benefitLines, benefitsText, buildPassJson, cardTerms, getHeaderFieldValue, isFinalReward,
+  isRewardReady, memberSince, membershipTerms, messageFieldValue, milestoneSummary,
+  nextMilestone, passBarcode, progressText, rewardFor, rewardTerms, stampDots, stampGrid,
+  stripKey, targetFor, visibleMessage,
 } = await import("../src/passModel.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
@@ -21,6 +22,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     name: "Kopi Corner",
     kind: "stamp",
     benefits: "",
+    milestones: [],
     reward: "Free coffee",
     stamps_target: 10,
     stamps_start: 2,
@@ -59,6 +61,8 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
     stamp_count: 3,
     stamps_target: 10,
     kind: "stamp",
+    milestones: [],
+    rewards_claimed: 0,
     reward: "Free coffee",
     message: "",
     message_sent_at: null,
@@ -522,5 +526,107 @@ describe("stripKey", () => {
   it("always asks for the one band on a membership card", () => {
     expect(stripKey("membership", 10, 0)).toEqual({ target: 0, filled: 0 });
     expect(stripKey("membership", 10, 873)).toEqual({ target: 0, filled: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cards with several rewards up the ladder. The counter is the same as a stamp
+// card's; what changes is WHEN a reward is ready and what happens after it is
+// given. These lock both, plus the rule that matters most — a card that pays
+// out part-way must not take back the stamps the customer is still holding.
+// ---------------------------------------------------------------------------
+describe("milestone cards", () => {
+  const LADDER = [
+    { at: 2, reward: "Free cookie" },
+    { at: 5, reward: "Pastry" },
+    { at: 10, reward: "Free coffee" },
+  ];
+  const mCard = (o = {}) => card({ kind: "milestones", milestones: LADDER, stamps_target: 10, ...o });
+  const mRow = (o = {}) =>
+    row({ kind: "milestones", milestones: LADDER, stamps_target: 10, rewards_claimed: 0, ...o });
+
+  it("counts to the NEXT rung, not the top of the ladder", () => {
+    // A customer three stamps into a 2/5/10 card is two away from a pastry.
+    // Telling them they are seven away from a coffee buries the prize they can
+    // nearly reach.
+    expect(targetFor(mRow({ stamp_count: 3, rewards_claimed: 1 }))).toBe(5);
+    expect(rewardFor(mRow({ stamp_count: 3, rewards_claimed: 1 }))).toBe("Pastry");
+    // A plain stamp card is untouched by any of this.
+    expect(targetFor(row({ stamp_count: 3 }))).toBe(10);
+    expect(rewardFor(row())).toBe("Free coffee");
+  });
+
+  it("is ready at each rung in turn", () => {
+    expect(isRewardReady(mRow({ stamp_count: 1, rewards_claimed: 0 }))).toBe(false);
+    expect(isRewardReady(mRow({ stamp_count: 2, rewards_claimed: 0 }))).toBe(true);
+    // Claimed the cookie, now three short of the pastry.
+    expect(isRewardReady(mRow({ stamp_count: 2, rewards_claimed: 1 }))).toBe(false);
+    expect(isRewardReady(mRow({ stamp_count: 5, rewards_claimed: 1 }))).toBe(true);
+    expect(isRewardReady(mRow({ stamp_count: 10, rewards_claimed: 2 }))).toBe(true);
+  });
+
+  it("stops being ready once the ladder is finished", () => {
+    // Nothing left to claim and the card has not restarted yet. Without this
+    // the redeem button would keep handing out the top prize on every visit.
+    expect(isRewardReady(mRow({ stamp_count: 10, rewards_claimed: 3 }))).toBe(false);
+  });
+
+  it("knows which rung restarts the card", () => {
+    expect(isFinalReward(mRow({ rewards_claimed: 0 }))).toBe(false);
+    expect(isFinalReward(mRow({ rewards_claimed: 1 }))).toBe(false);
+    expect(isFinalReward(mRow({ rewards_claimed: 2 }))).toBe(true);
+    // Every other kind has exactly one reward, and it always restarts.
+    expect(isFinalReward(row())).toBe(true);
+  });
+
+  it("names the next prize on the front of the card", () => {
+    const p = buildPassJson(mRow({ stamp_count: 3, rewards_claimed: 1 }), mCard()) as any;
+    expect(p.storeCard.headerFields[0].value).toBe("2 left");
+    const secondary = p.storeCard.secondaryFields;
+    expect(secondary[0]).toMatchObject({ label: "Next reward", value: "Pastry" });
+    expect(secondary[1].value).toBe("3/5");
+  });
+
+  it("promises the next prize in the notification, not the top one", () => {
+    const p = buildPassJson(mRow({ stamp_count: 1, rewards_claimed: 0 }), mCard()) as any;
+    const h = p.storeCard.headerFields[0];
+    expect(h.changeMessage.replace("%@", h.value)).toBe("1 left — free cookie at 2");
+  });
+
+  it("spells the whole ladder out on the back", () => {
+    const p = buildPassJson(mRow(), mCard()) as any;
+    const how = p.storeCard.backFields.find((f: any) => f.key === "howto");
+    // The front only has room for the next rung, which on its own never tells
+    // anybody the card has three prizes on it.
+    expect(how.value).toContain("Free cookie at 2 · Pastry at 5 · Free coffee at 10");
+  });
+
+  it("still carries exactly two changeMessage fields", () => {
+    const p = buildPassJson(mRow(), mCard()) as any;
+    const all = [
+      ...p.storeCard.headerFields, ...p.storeCard.primaryFields,
+      ...p.storeCard.secondaryFields, ...p.storeCard.auxiliaryFields,
+      ...p.storeCard.backFields,
+    ];
+    expect(all.filter((f: any) => f.changeMessage).map((f: any) => f.key).sort())
+      .toEqual(["message", "progress"]);
+  });
+
+  it("falls back to the pass's own reward if the ladder is empty", () => {
+    // A card saved as milestones with nothing in the list must still render.
+    const r = mRow({ milestones: [], rewards_claimed: 0 });
+    expect(nextMilestone(r)).toBeNull();
+    expect(targetFor(r)).toBe(10);
+    expect(rewardFor(r)).toBe("Free coffee");
+  });
+});
+
+describe("milestoneSummary", () => {
+  it("reads as a list a customer could act on", () => {
+    expect(milestoneSummary([{ at: 2, reward: "Cookie" }, { at: 5, reward: "Pastry" }]))
+      .toBe("Cookie at 2 · Pastry at 5");
+  });
+  it("is empty when there is no ladder", () => {
+    expect(milestoneSummary([])).toBe("");
   });
 });
