@@ -101,9 +101,10 @@ What may be stated truthfully: that it is free during the beta, that it needs no
 app, that it works with Apple Wallet and Google Wallet, and that setup takes
 minutes.
 
-Real assets that exist: the live product at
-`stampy-production-cd7d.up.railway.app`, the marketing landing page at `/`, and
-a working demo path via `pnpm dev:local` with seeded customers.
+Real assets that exist: the live product at `punchme.up.railway.app`, the
+marketing landing page at `/`, and a working demo path via `pnpm dev:local`
+with seeded customers. (The generated domain was renamed on 12 Aug 2026 and the
+old `stampy-production-cd7d…` address 404s — this line still named it.)
 
 ## Product Principles
 
