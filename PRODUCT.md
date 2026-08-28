@@ -55,8 +55,10 @@ the customer installs nothing and hands over nothing.
   service, and push an empty APNs notification so the phone re-fetches. Google:
   Google hosts the card and we PATCH it. Google caps notifications at 3 per card
   per 24h.
-- **Hosting.** Node + Postgres on Railway; deploys automatically on push to
-  `main`. Secrets live only in Railway's Variables UI.
+- **Hosting.** Node + Postgres on Railway, in two copies with separate
+  databases: **staging** deploys automatically on push to `main`, **live**
+  deploys from the `live` branch and only moves via `pnpm promote`. Secrets
+  live only in Railway's Variables UI.
 
 ## Capabilities and Constraints
 
