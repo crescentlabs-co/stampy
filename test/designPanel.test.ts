@@ -40,6 +40,10 @@ function card(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     targetsInUse: [10],
     winbackMessage: "",
     signupMessage: "",
+    kind: "stamp",
+    benefits: "",
+    milestones: [],
+    pointPresets: "",
     ...overrides,
   };
 }
@@ -930,5 +934,131 @@ describe("nothing syncs until Save", () => {
     build(card(), h);
     await h.settle();
     expect(h.requests.filter((r) => r.method === "POST").length).toBe(0);
+  });
+});
+
+/**
+ * The card TYPE, actually switched.
+ *
+ * These matter more than the rest of this file: none of the panel's branching
+ * on kind is type-checked, the three previews are redrawn from it, and getting
+ * it wrong shows an owner a card no customer will ever receive. The failure
+ * mode is silent — a preview that draws the wrong thing looks exactly like a
+ * preview that draws the right thing.
+ */
+describe("switching the card type", () => {
+  const kindSel = (div: FakeEl) => div.querySelector('[data-f="kind"]')!;
+  const setKind = async (div: FakeEl, h: ReturnType<typeof makeHarness>, k: string) => {
+    const sel = kindSel(div);
+    sel.value = k;
+    // The panel binds every [data-f] control with addEventListener("input"),
+    // which the harness stores as oninput — the same handler a real change runs.
+    sel.oninput!();
+    await h.settle();
+  };
+
+  it("offers all four kinds", () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    const values = kindSel(div).children.map((o) => o.getAttribute("value"));
+    expect(values).toEqual(["stamp", "milestones", "points", "membership"]);
+  });
+
+  it("shows one set of rules at a time", async () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    await h.settle();
+    const block = (k: string) => div.querySelector('[data-rules="' + k + '"]')!;
+    expect(block("stamp").hidden).toBe(false);
+    expect(block("membership").hidden).toBe(true);
+
+    await setKind(div, h, "membership");
+    expect(block("stamp").hidden).toBe(true);
+    expect(block("membership").hidden).toBe(false);
+    expect(block("points").hidden).toBe(true);
+
+    await setKind(div, h, "points");
+    expect(block("points").hidden).toBe(false);
+    expect(block("milestones").hidden).toBe(true);
+  });
+
+  // The inputs are HIDDEN, never removed: renderPreview and drawStampStrip read
+  // stampsTarget to draw anything at all, so removing them leaves the designer
+  // unable to render the card it is designing. Same rule the console follows.
+  it("keeps the stamp inputs in the document on every kind", async () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    for (const k of ["membership", "milestones", "points", "stamp"]) {
+      await setKind(div, h, k);
+      expect(div.querySelector('[data-f="stampsTarget"]'), k).not.toBeUndefined();
+      expect(div.querySelector('[data-f="reward"]'), k).not.toBeUndefined();
+    }
+  });
+
+  it("redraws the iPhone preview as a membership card", async () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    await setKind(div, h, "membership");
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("Member");
+    expect(div.querySelector("[data-pv-rlbl]")!.textContent).toBe("MEMBER NO.");
+    expect(div.querySelector("[data-pv-clbl]")!.textContent).toBe("MEMBER SINCE");
+    // And Android says the same thing, from the same switch.
+    expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Membership");
+  });
+
+  it("redraws both previews as a points card, showing a balance", async () => {
+    const h = makeHarness();
+    const div = build(card({ kind: "points", milestones: [{ at: 200, reward: "Free coffee" }] }), h);
+    await h.settle();
+    // Previewed at half the cheapest reward: what somebody part-way there sees.
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("100 points");
+    expect(div.querySelector("[data-pv-clbl]")!.textContent).toBe("BALANCE");
+    expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Points card");
+    expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("100 points");
+  });
+
+  it("counts to the next rung on a milestones card, not the top", async () => {
+    const h = makeHarness();
+    const div = build(card({
+      kind: "milestones",
+      stampsStart: 3,
+      milestones: [{ at: 2, reward: "Cookie" }, { at: 5, reward: "Pastry" }, { at: 10, reward: "Coffee" }],
+    }), h);
+    await h.settle();
+    // Three stamps in: two away from the pastry, not seven from the coffee.
+    expect(div.querySelector("[data-pv-tally]")!.textContent).toBe("3/5");
+    expect(div.querySelector("[data-pv-reward]")!.textContent).toBe("Pastry");
+    expect(div.querySelector("[data-pv-rlbl]")!.textContent).toBe("NEXT REWARD");
+  });
+
+  it("moves the reward editor into whichever block is on screen", async () => {
+    const h = makeHarness();
+    const div = build(card({ kind: "milestones", milestones: [{ at: 4, reward: "Cookie" }] }), h);
+    await h.settle();
+    expect(div.querySelector("[data-ladder]")!.children.length).toBeGreaterThan(0);
+
+    // A points card edits the same list from the same code, in the other block.
+    await setKind(div, h, "points");
+    expect(div.querySelector("[data-ladder-points]")!.children.length).toBeGreaterThan(0);
+  });
+
+  it("sends the type and the reward list when it saves", async () => {
+    const h = makeHarness();
+    const div = build(card({ kind: "milestones", milestones: [{ at: 4, reward: "Cookie" }] }), h);
+    await h.settle();
+    div.querySelector('[data-a=save]')!.onclick!();
+    await h.settle();
+    // One press sends TWO posts to this URL — the look first, because it
+    // re-renders the band the rest of the card is composited over, then the
+    // rules. The rules one is the last, and the only one carrying a kind.
+    const saves = h.requests.filter(
+      (r) => r.method === "POST" && String(r.url).endsWith("/card/default"),
+    );
+    const save = saves[saves.length - 1];
+    expect(save, "the rules save request").not.toBeUndefined();
+    // The harness records the parsed body, not the string it was sent as.
+    const body = save!.body as { kind: string; milestones: unknown };
+    expect(body.kind).toBe("milestones");
+    expect(body.milestones).toEqual([{ at: 4, reward: "Cookie" }]);
   });
 });

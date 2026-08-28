@@ -1379,7 +1379,14 @@ export const DESIGN_PANEL_JS = /* js */ `
              asking for numbers that would never be used. -->
         <label class="dlbl">Card type\${info("A stamp card counts visits towards a reward. A membership card has no counter — it proves who someone is and lists what they get. Staff still tap once either way, so your customer numbers work the same on both.")}</label>
         <select data-f="kind">
-          <option value="stamp"\${c.kind === "membership" ? "" : " selected"}>Stamp card — collect stamps, earn a reward</option>
+          <!-- Exactly ONE option carries the selected attribute. This used
+               to read "not
+               membership", from when those were the only two kinds, so adding
+               milestones and points quietly marked TWO options on every card
+               that was neither — survivable only because a browser takes the
+               last one it sees. Anything unrecognised falls back to a stamp
+               card, matching asCardKind on the server. -->
+          <option value="stamp"\${["milestones", "points", "membership"].includes(c.kind) ? "" : " selected"}>Stamp card — collect stamps, earn a reward</option>
           <option value="milestones"\${c.kind === "milestones" ? " selected" : ""}>Rewards along the way — several prizes on one card</option>
           <option value="points"\${c.kind === "points" ? " selected" : ""}>Points — collect points, spend them on rewards</option>
           <option value="membership"\${c.kind === "membership" ? " selected" : ""}>Membership — no stamps, just perks</option>
@@ -1650,8 +1657,7 @@ export const DESIGN_PANEL_JS = /* js */ `
        * the previews change the moment the type is switched — before any save.
        */
       function isMember() {
-        const sel = f("kind");
-        return Boolean(sel) && sel.value === "membership";
+        return kindNow() === "membership";
       }
 
       // "Aug 2026" — mirrors memberSince() in src/passModel.ts. A card being
@@ -1665,7 +1671,10 @@ export const DESIGN_PANEL_JS = /* js */ `
 
       function kindNow() {
         const sel = f("kind");
-        return sel ? sel.value : "stamp";
+        // Falls back to a stamp card rather than to nothing: an empty kind
+        // matches no rules block, so every one of them would be hidden and the
+        // panel would look like it had lost its own settings.
+        return (sel && sel.value) || "stamp";
       }
 
       /** Show only the rules that belong to the type being edited. */

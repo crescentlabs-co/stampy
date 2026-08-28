@@ -221,6 +221,16 @@ function parseHtml(html: string, parent: FakeEl): FakeEl[] {
       if (top) top.text += textRun;
     }
   }
+  // A <select> reports the value of whichever <option> is selected, and falls
+  // back to the first one — which is what a browser does, and what the designer
+  // reads to decide which card kind it is editing. Without this a freshly
+  // mounted panel sees an empty kind and hides every rule it has.
+  for (const el of roots.flatMap((r) => r.all())) {
+    if (el.tag !== "select") continue;
+    const options = el.children.filter((c) => c.tag === "option");
+    const chosen = options.find((o) => "selected" in o.attrs) ?? options[0];
+    if (chosen) el.value = chosen.attrs.value ?? chosen.text.trim();
+  }
   return roots;
 }
 
