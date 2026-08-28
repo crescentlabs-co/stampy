@@ -9,8 +9,9 @@ process.env.BASE_URL = "https://stampy.example.test";
 process.env.DEMO_CARD_ID = "demo-card";
 
 const {
-  buildPassJson, getHeaderFieldValue, isRewardReady, messageFieldValue, passBarcode, progressText,
-  stampDots, stampGrid, visibleMessage,
+  benefitLines, benefitsText, buildPassJson, cardTerms, getHeaderFieldValue, isRewardReady,
+  memberSince, membershipTerms, messageFieldValue, passBarcode, progressText,
+  rewardTerms, stampDots, stampGrid, stripKey, visibleMessage,
 } = await import("../src/passModel.js");
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
@@ -18,6 +19,8 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     id: "default",
     merchant_id: null,
     name: "Kopi Corner",
+    kind: "stamp",
+    benefits: "",
     reward: "Free coffee",
     stamps_target: 10,
     stamps_start: 2,
@@ -55,6 +58,7 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
     auth_token: "a".repeat(32),
     stamp_count: 3,
     stamps_target: 10,
+    kind: "stamp",
     reward: "Free coffee",
     message: "",
     message_sent_at: null,
@@ -107,8 +111,8 @@ describe("stampDots", () => {
 
 describe("isRewardReady", () => {
   it("is ready only at/after target", () => {
-    expect(isRewardReady({ stamp_count: 9, stamps_target: 10 })).toBe(false);
-    expect(isRewardReady({ stamp_count: 10, stamps_target: 10 })).toBe(true);
+    expect(isRewardReady({ stamp_count: 9, stamps_target: 10, kind: "stamp" })).toBe(false);
+    expect(isRewardReady({ stamp_count: 10, stamps_target: 10, kind: "stamp" })).toBe(true);
   });
 });
 
@@ -396,5 +400,127 @@ describe("buildPassJson", () => {
   it("falls back to the card's name when there is no business yet", () => {
     const p = buildPassJson(row(), card({ name: "Kopi Corner" })) as any;
     expect(p.organizationName).toBe("Kopi Corner");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Membership cards. The counter is hidden, but every rule about NOT breaking a
+// promise already in somebody's wallet still applies, so these lock the shape
+// of the card rather than only its wording.
+// ---------------------------------------------------------------------------
+describe("membership cards", () => {
+  const memberCard = (o = {}) => card({ kind: "membership", benefits: "10% off\nFree birthday drink", ...o });
+  const memberRow = (o = {}) => row({ kind: "membership", ...o });
+
+  it("is never reward-ready, however many visits are banked", () => {
+    // A membership counter has no ceiling — it is a lifetime visit tally. Left
+    // to the stamp rule, every long-standing member would light up the staff
+    // phone's redeem button forever.
+    expect(isRewardReady({ stamp_count: 0, stamps_target: 10, kind: "membership" })).toBe(false);
+    expect(isRewardReady({ stamp_count: 10, stamps_target: 10, kind: "membership" })).toBe(false);
+    expect(isRewardReady({ stamp_count: 999, stamps_target: 10, kind: "membership" })).toBe(false);
+  });
+
+  it("says Member instead of counting towards a target", () => {
+    expect(getHeaderFieldValue(0, 10, "membership")).toBe("Member");
+    expect(getHeaderFieldValue(7, 10, "membership")).toBe("Member");
+    // The stamp card is untouched by the new argument.
+    expect(getHeaderFieldValue(7, 10)).toBe("3 left");
+  });
+
+  // The value never changes, which is why this card never fires a lock-screen
+  // banner of its own. That is correct — there is no event to announce — but
+  // the pass must still carry exactly the documented changeMessage pair, or the
+  // invariant that governs notifications stops being checkable.
+  it("still carries exactly two changeMessage fields", () => {
+    const p = buildPassJson(memberRow(), memberCard()) as any;
+    const all = [
+      ...p.storeCard.headerFields, ...p.storeCard.primaryFields,
+      ...p.storeCard.secondaryFields, ...p.storeCard.auxiliaryFields,
+      ...p.storeCard.backFields,
+    ];
+    const withMsg = all.filter((f: any) => f.changeMessage);
+    expect(withMsg.map((f: any) => f.key).sort()).toEqual(["message", "progress"]);
+  });
+
+  it("shows who the holder is, not how far along they are", () => {
+    const p = buildPassJson(memberRow({ short_code: "ZZ9K2Q" }), memberCard()) as any;
+    expect(p.storeCard.headerFields[0].value).toBe("Member");
+    const secondary = p.storeCard.secondaryFields;
+    // The same two KEYS as a stamp card on purpose: Apple diffs field by field,
+    // so a card that changes kind updates in place rather than leaving two
+    // dead slots behind on every phone that already has it.
+    expect(secondary.map((f: any) => f.key)).toEqual(["reward", "tally"]);
+    expect(secondary[0]).toMatchObject({ label: "Member no.", value: "ZZ9K2Q" });
+    expect(secondary[1].label).toBe("Member since");
+  });
+
+  it("prints the perks on the back, and no empty field when there are none", () => {
+    const withPerks = buildPassJson(memberRow(), memberCard()) as any;
+    const perks = withPerks.storeCard.backFields.find((f: any) => f.key === "benefits");
+    expect(perks.value).toBe("• 10% off\n• Free birthday drink");
+
+    // A labelled blank on the back of a card reads as something we failed to
+    // fill in, so the field is absent rather than empty.
+    const none = buildPassJson(memberRow(), memberCard({ benefits: "" })) as any;
+    expect(none.storeCard.backFields.find((f: any) => f.key === "benefits")).toBeUndefined();
+  });
+
+  it("carries membership terms, never the stamp ones", () => {
+    const p = buildPassJson(memberRow(), memberCard()) as any;
+    const terms = p.storeCard.backFields.find((f: any) => f.key === "terms");
+    expect(terms.label).toBe("Membership terms");
+    expect(terms.value).toBe(membershipTerms("Kopi Corner"));
+    // "One stamp per visit" on a card with no stamps is a term about nothing.
+    expect(terms.value).not.toContain("stamp");
+    expect(cardTerms("Kopi Corner", "stamp")).toBe(rewardTerms("Kopi Corner"));
+  });
+
+  it("keeps the barcode and the typed code working", () => {
+    // Invariant 4: one scanner, both platforms, whatever the card kind.
+    const r = memberRow();
+    expect(passBarcode(r, memberCard()).message).toBe(r.serial);
+    expect(passBarcode(r, memberCard()).altText).toBe("Code " + r.short_code);
+  });
+});
+
+describe("benefitLines / benefitsText", () => {
+  it("drops blank lines and surrounding space", () => {
+    expect(benefitLines("  10% off \n\n  Free drink\n")).toEqual(["10% off", "Free drink"]);
+  });
+  it("is empty when nothing was typed", () => {
+    expect(benefitsText("")).toBe("");
+    expect(benefitsText("\n  \n")).toBe("");
+  });
+});
+
+describe("memberSince", () => {
+  it("reads as a month and a year", () => {
+    expect(memberSince(new Date("2026-08-14T09:00:00Z"))).toBe("Aug 2026");
+  });
+  // The wallet renders whatever string it is handed, so a server with different
+  // locale data must not print a different card for the same customer.
+  it("does not depend on the machine's locale data", () => {
+    expect(memberSince("2026-01-02T00:00:00Z")).toBe("Jan 2026");
+  });
+  it("survives a date it cannot read", () => {
+    expect(memberSince("not a date")).toBe("");
+  });
+});
+
+describe("stripKey", () => {
+  // Strips are keyed (card_id, target, filled) because a stamp card needs one
+  // picture per count. A membership tally has no ceiling, so there is no count
+  // to key on and it stores exactly one band.
+  it("asks for the picture matching the count on a stamp card", () => {
+    expect(stripKey("stamp", 10, 3)).toEqual({ target: 10, filled: 3 });
+  });
+  it("clamps a count that somehow sits above the target", () => {
+    expect(stripKey("stamp", 10, 40)).toEqual({ target: 10, filled: 10 });
+    expect(stripKey("stamp", 10, -4)).toEqual({ target: 10, filled: 0 });
+  });
+  it("always asks for the one band on a membership card", () => {
+    expect(stripKey("membership", 10, 0)).toEqual({ target: 0, filled: 0 });
+    expect(stripKey("membership", 10, 873)).toEqual({ target: 0, filled: 0 });
   });
 });

@@ -7,6 +7,7 @@ import { CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL } from "./health.js";
 import type { SetupStatus } from "./config.js";
 import type { CardRow } from "./db.js";
 import { DEFAULT_CARD_ID, FUNNEL_SINCE, FUNNEL_SINCE_LABEL, TRIAL_DAYS } from "./db.js";
+import { benefitLines } from "./passModel.js";
 
 /**
  * What the product is called. Renaming lives here, once.
@@ -1109,8 +1110,8 @@ export const DESIGN_PANEL_JS = /* js */ `
             <div class="pv-banner" data-pv-banner></div>
             <div class="pv-dots" data-pv-dots></div>
             <div class="pv-row2">
-              <div><div class="pv-lbl">REWARD</div><div class="pv-reward" data-pv-reward></div></div>
-              <div><div class="pv-lbl">PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
+              <div><div class="pv-lbl" data-pv-rlbl>REWARD</div><div class="pv-reward" data-pv-reward></div></div>
+              <div><div class="pv-lbl" data-pv-clbl>PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
             </div>
             <div class="pv-qr">QR</div>
             <div class="pv-note">Code ABC123 · updates by itself</div>
@@ -1372,11 +1373,28 @@ export const DESIGN_PANEL_JS = /* js */ `
              seeded from the card and never editable, so a save can only write
              them back unchanged. -->
         <div \${env.showDetails ? "" : "hidden"}>
+        <!-- The card TYPE. Everything below it changes shape with this, and so
+             do all three previews — a membership card has no target to reach,
+             so the stamp rules underneath are hidden rather than left on screen
+             asking for numbers that would never be used. -->
+        <label class="dlbl">Card type\${info("A stamp card counts visits towards a reward. A membership card has no counter — it proves who someone is and lists what they get. Staff still tap once either way, so your customer numbers work the same on both.")}</label>
+        <select data-f="kind">
+          <option value="stamp"\${c.kind === "membership" ? "" : " selected"}>Stamp card — collect stamps, earn a reward</option>
+          <option value="membership"\${c.kind === "membership" ? " selected" : ""}>Membership — no stamps, just perks</option>
+        </select>
+
+        <div data-rules="membership" hidden>
+          <label class="dlbl">What members get\${info("One perk per line. These print on the back of the card, and editing them updates every member's card — unlike a stamp target, which stays as promised until the customer claims their reward.")}</label>
+          <textarea data-f="benefits" rows="4" maxlength="800" placeholder="10% off every order&#10;Free birthday drink&#10;Early access to new beans">\${(c.benefits || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")}</textarea>
+        </div>
+
+        <div data-rules="stamp">
         <label class="dlbl">Reward</label><input data-f="reward" value="\${c.reward}">
         <div class="row2 row3">
           <div><label>Stamps to reward</label><input data-f="stampsTarget" type="number" min="1" max="20" value="\${c.stampsTarget}"></div>
           <div><label>Free stamps\${info("Stamps a NEW card starts with, as a welcome. A card that has just paid out a reward restarts at zero — the visit that earned the reward is that stamp.")}</label><input data-f="stampsStart" type="number" min="0" max="19" value="\${c.stampsStart}"></div>
           <div><label>Avg spend (RM)\${info("What a customer usually spends per visit. Turns stamps into a money figure on Customers.")}</label><input data-f="averageSpend" type="number" min="0" step="0.10" value="\${c.averageSpend}"></div>
+        </div>
         </div>
 
         <label class="dlbl">Sign-up page message\${info("The line customers read after scanning, before they add the card. It also headlines your poster. Leave blank and we write one.")}</label>
@@ -1516,7 +1534,7 @@ export const DESIGN_PANEL_JS = /* js */ `
        * per-strip cap on its own, and the route fails the whole set — see the
        * clamp in applyStamps.
        */
-      function drawStampStrip(filled, target, icon, wOut, hOut) {
+      function drawStampStrip(filled, target, icon, wOut, hOut, plain) {
         // 1125×369 — Apple's storeCard strip at @3x (375×123pt), and the SAME
         // file is Google's heroImage. It was 750×246 (@2x), which was correct
         // for Apple and undersized for Google: their loyalty guidelines ask for
@@ -1544,6 +1562,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         // the picker is the source and the stored PNG is only the copy the
         // wallets fetch.
         paintBand(x, f("bandColor").value, W, H);
+        // A membership card stops here: the band is the whole image. It has no
+        // counter, so there is nothing to draw a grid of — and the grid maths
+        // below divides by the target, which is zero on this path.
+        if (plain) return cv.toDataURL("image/png");
         const accent = f("accent").value;
         const cols = stampGridCols(target), rows = target > 1 ? 2 : 1;
         const cw = (W - M * 2) / cols, ch = (H - M * 2) / rows;
@@ -1603,7 +1625,37 @@ export const DESIGN_PANEL_JS = /* js */ `
         return left <= e ? left + " left" : e + " earned";
       }
 
+      /**
+       * Is the designer editing a membership card right now?
+       *
+       * Read from the control rather than from the card it was loaded with, so
+       * the previews change the moment the type is switched — before any save.
+       */
+      function isMember() {
+        const sel = f("kind");
+        return Boolean(sel) && sel.value === "membership";
+      }
+
+      // "Aug 2026" — mirrors memberSince() in src/passModel.ts. A card being
+      // designed has no holder yet, so the preview shows this month, which is
+      // what the first member to scan the poster will actually see.
+      const PV_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      function thisMonth() {
+        const d = new Date();
+        return PV_MONTHS[d.getMonth()] + " " + d.getFullYear();
+      }
+
+      /** Show only the rules that belong to the type being edited. */
+      function syncKind() {
+        const member = isMember();
+        for (const el of div.querySelectorAll("[data-rules]")) {
+          el.hidden = el.getAttribute("data-rules") !== (member ? "membership" : "stamp");
+        }
+      }
+
       function renderPreview() {
+        syncKind();
+        const member = isMember();
         const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
         const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
         const pv = q("[data-pv]");
@@ -1615,9 +1667,16 @@ export const DESIGN_PANEL_JS = /* js */ `
         const pvName = q("[data-pv-name]");
         pvName.textContent = f("shopName").value || "Your card";
         pvName.style.display = c.logoHasName && c.logoVersion ? "none" : "";
-        q("[data-pv-progress]").textContent = headerValue(start, target);
-        q("[data-pv-tally]").textContent = start + "/" + target;
-        q("[data-pv-reward]").textContent = f("reward").value || "Your reward";
+        // Every one of these mirrors buildPassJson in src/passModel.ts. A
+        // membership card shows who the holder is instead of how far along they
+        // are, because it has no target to be along the way to.
+        q("[data-pv-progress]").textContent = member ? "Member" : headerValue(start, target);
+        q("[data-pv-rlbl]").textContent = member ? "MEMBER NO." : "REWARD";
+        q("[data-pv-clbl]").textContent = member ? "MEMBER SINCE" : "PROGRESS";
+        q("[data-pv-tally]").textContent = member ? thisMonth() : start + "/" + target;
+        q("[data-pv-reward]").textContent = member
+          ? "ABC123"
+          : (f("reward").value || "Your reward");
         for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
         // When a rich stamp style is active, show the rendered grid in the strip
         // (it shares the slot with the banner — stamps win, matching the card).
@@ -1629,7 +1688,14 @@ export const DESIGN_PANEL_JS = /* js */ `
         // The real card ALWAYS gets a composited strip — applyStamps renders one
         // whatever the stamp style — so with artwork behind the stamps the text
         // dots and a decorative 64px band would show a card nobody receives.
-        if (stampStyle || bandIsImage) {
+        if (member) {
+          // No circles at all — there is nothing to fill in. The band is still
+          // drawn, because it carries the shop's colours and any artwork they
+          // uploaded, and it is the one strip image a membership card stores.
+          dots.style.display = "none";
+          banner.style.backgroundImage = "url(" + drawStampStrip(0, 0, stampStyle, 0, 0, true) + ")";
+          banner.classList.add("on", "strip");
+        } else if (stampStyle || bandIsImage) {
           dots.style.display = "none";
           banner.style.backgroundImage = "url(" + drawStampStrip(start, target, stampStyle) + ")";
           banner.classList.add("on", "strip");
@@ -1656,6 +1722,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       function renderGoogle(start, target) {
         const g = q("[data-pvg]");
         if (!g) return;
+        const member = isMember();
         g.style.background = f("bg").value;
         g.style.color = pickTextColor(f("bg").value);
         const name = f("shopName").value || "Your shop";
@@ -1664,7 +1731,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // putting the shop in both said it twice. The name is on the line above;
         // this one says what the thing is — exactly as buildLoyaltyClass sends
         // it, which is a fixed string and not the shop's.
-        q("[data-pvg-prog]").textContent = "Loyalty card";
+        q("[data-pvg-prog]").textContent = member ? "Membership" : "Loyalty card";
         // Every caption and every value below comes from buildLoyaltyPatch,
         // headers included — a card at its target tells the holder to show it,
         // and a mock that only ever drew the ordinary state would hide the one
@@ -1675,10 +1742,16 @@ export const DESIGN_PANEL_JS = /* js */ `
         const ready = start >= target;
         const reward = f("reward").value || "Your reward";
         const progress = start + "/" + target;
-        q("[data-pvg-bal]").textContent = ready
-          ? progress + " — reward ready 🎉"
-          : progress + " earned";
-        q("[data-pvg-reward]").textContent = ready ? reward + " — show this to staff!" : reward;
+        // The two captions are the class's cardTemplateOverride rendered, so
+        // they move with the payload rather than staying fixed labels.
+        q("[data-pvg-rlbl]").textContent = member ? "MEMBER NO." : "REWARD";
+        q("[data-pvg-clbl]").textContent = member ? "MEMBER SINCE" : "PROGRESS";
+        q("[data-pvg-bal]").textContent = member
+          ? thisMonth()
+          : ready ? progress + " — reward ready 🎉" : progress + " earned";
+        q("[data-pvg-reward]").textContent = member
+          ? "ABC123"
+          : (ready ? reward + " — show this to staff!" : reward);
         // The square mark if there is one, else the wide logo — the same
         // fallback logoUrl() applies when the class is built.
         const im = q("[data-pvg-logo]");
@@ -1694,7 +1767,10 @@ export const DESIGN_PANEL_JS = /* js */ `
         // do (see buildLoyaltyClass).
         const foot = q(".pvg-foot");
         if (foot) {
-          if (stampStyle) {
+          if (member) {
+            foot.style.backgroundImage = "url(" + drawStampStrip(0, 0, stampStyle, 0, 0, true) + ")";
+            foot.classList.add("band");
+          } else if (stampStyle) {
             foot.style.backgroundImage = "url(" + drawStampStrip(target, target, stampStyle) + ")";
             foot.classList.add("band");
           } else {
@@ -1763,7 +1839,18 @@ export const DESIGN_PANEL_JS = /* js */ `
         else im.style.display = "none";
         const reward = f("reward").value || "your reward";
         const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
-        const suggested = "Collect " + target + " stamps, get a " + reward.toLowerCase() + ".";
+        // Mirrors signupLine() in src/pages.ts. A membership card has no target
+        // to promise, so the generated line names the perks the shop typed.
+        let suggested;
+        if (isMember()) {
+          const perks = (f("benefits").value || "").split(String.fromCharCode(10))
+            .map((l) => l.trim()).filter(Boolean);
+          suggested = perks.length
+            ? "Your membership card — " + perks.slice(0, 2).join(", ").toLowerCase() + "."
+            : "Your membership card, free to join.";
+        } else {
+          suggested = "Collect " + target + " stamps, get a " + reward.toLowerCase() + ".";
+        }
         q("[data-pvp-offer]").textContent = f("signupMessage").value || suggested;
         // The FIELD's placeholder is the same sentence, and it used to be baked
         // in once at mount — so raising the target to 10 and saving left the
@@ -2586,7 +2673,15 @@ export const DESIGN_PANEL_JS = /* js */ `
         const CAP = 512 * 1024;
         // base64 is 4 bytes per 3, and the cap is applied to the DECODED bytes.
         const decoded = (b64) => Math.floor(b64.length * 3 / 4);
+        // A membership card stores exactly ONE band, keyed (0, 0) — see
+        // stripKey() in src/passModel.ts, which is what every reader asks with.
+        // Rendering a set per count would mean up to twenty-one copies of the
+        // same picture, and its visit tally has no ceiling to render up to
+        // anyway.
         const render = (w, h) => {
+          if (isMember()) {
+            return [{ target: 0, filled: 0, png: drawStampStrip(0, 0, style, w, h, true).split(",")[1] }];
+          }
           const out = [];
           for (const t of targets) {
             for (let n = 0; n <= t; n++) {
@@ -2942,6 +3037,8 @@ export const DESIGN_PANEL_JS = /* js */ `
           // nobody could tell apart from the first, and the only place it shows
           // is the programme name on an Android card — which is the shop.
           name: f("shopName").value,
+          kind: f("kind") ? f("kind").value : "stamp",
+          benefits: f("benefits") ? f("benefits").value : "",
           reward: f("reward").value,
           stampsTarget: Number(f("stampsTarget").value),
           stampsStart: Number(f("stampsStart").value),
@@ -3153,10 +3250,20 @@ const legalLine = `<p class="muted" style="margin-top:10px;font-size:.78rem">No 
  * Returns ESCAPED markup: this is owner-supplied text going into a page every
  * one of their customers loads.
  */
-export function signupLine(card: Pick<CardRow, "signup_message" | "stamps_target" | "reward">): string {
-  return card.signup_message
-    ? esc(card.signup_message)
-    : `Collect ${card.stamps_target} stamps, get a ${esc(card.reward.toLowerCase())}.`;
+export function signupLine(
+  card: Pick<CardRow, "signup_message" | "stamps_target" | "reward" | "kind" | "benefits">,
+): string {
+  if (card.signup_message) return esc(card.signup_message);
+  if (card.kind === "membership") {
+    // A membership card has no target to promise, so the generated line names
+    // the perks the shop actually typed. With none typed yet it says what the
+    // card IS rather than inventing an offer the shop never made.
+    const perks = benefitLines(card.benefits ?? "");
+    return perks.length
+      ? `Your membership card — ${esc(perks.slice(0, 2).join(", ").toLowerCase())}.`
+      : "Your membership card, free to join.";
+  }
+  return `Collect ${card.stamps_target} stamps, get a ${esc(card.reward.toLowerCase())}.`;
 }
 
 /**
@@ -3252,7 +3359,9 @@ export function landingPage(
       ${
         buttons
           ? `<div id="wallets">${buttons}</div>
-             <p class="muted" style="margin-top:14px">You start with a few free stamps as a welcome gift 🎁</p>
+             ${card.kind === "membership"
+               ? ""
+               : `<p class="muted" style="margin-top:14px">You start with a few free stamps as a welcome gift 🎁</p>`}
              ${legalLine}`
           : `<p class="sub"><strong>Almost ready!</strong> Cards can’t be issued yet — the café is still being set up.</p>
              ${legalLine}`
@@ -4629,7 +4738,13 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
           // The count, not the push. The wallet update is sent in the background
           // now, so claiming "pushed to phone ✓" here would be a guess — and the
           // stamp is already saved either way, which is what staff need to know.
-          const count = out.pass ? " — " + out.pass.stamps + " of " + out.pass.target : "";
+          // A membership card has no target, so "3 of 10" would be a number
+          // out of a number that means nothing. Its visit count says the same
+          // reassuring thing — the tap registered — without inventing a goal.
+          const count = !out.pass ? ""
+            : out.pass.kind === "membership"
+              ? (out.pass.stamps > 0 ? " — visit " + out.pass.stamps : "")
+              : " — " + out.pass.stamps + " of " + out.pass.target;
           toast(doneMsg + other + count);
         }
         // Redraw from the response rather than waiting on a second round trip.
@@ -4717,20 +4832,28 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
     function passRow(p) {
       const div = document.createElement("div");
       div.className = "pass";
+      // A membership card is checked IN, not stamped: it has no target, so there
+      // is no progress to show and never a reward to give. It still records a
+      // stamp underneath, which is what keeps its visits in the customer groups
+      // and the counter log alongside everybody else's.
+      const member = p.kind === "membership";
       div.innerHTML = \`
         <strong>\${p.code}</strong>
         \${p.rewardReady ? '<span class="ready"> — REWARD READY 🎉</span>' : ""}
-        <div class="dots">\${p.dots} <span class="muted">\${p.stamps}/\${p.target}</span></div>
+        \${member
+          ? '<div class="dots"><span class="muted">Member' + (p.stamps > 0 ? " — " + p.stamps + (p.stamps === 1 ? " visit" : " visits") : "") + '</span></div>'
+          : '<div class="dots">' + p.dots + ' <span class="muted">' + p.stamps + '/' + p.target + '</span></div>'}
         <div class="row">
-          <button class="btn btn-stamp" data-a="stamp">+1 Stamp</button>
-          \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">− Undo a stamp</button>' : ""}
+          <button class="btn btn-stamp" data-a="stamp">\${member ? "Check in ✓" : "+1 Stamp"}</button>
+          \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">' + (member ? "− Undo check-in" : "− Undo a stamp") + '</button>' : ""}
           \${p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">Give reward & restart</button>' : ""}
         </div>\`;
-      div.querySelector('[data-a=stamp]').onclick = () => act("/stamp", { serial: p.serial }, "Stamp added");
+      div.querySelector('[data-a=stamp]').onclick = () =>
+        act("/stamp", { serial: p.serial }, member ? "Checked in" : "Stamp added");
       // The fix for a mis-scan. Before this the only way back was to redeem,
       // which handed out a free reward.
       const u = div.querySelector('[data-a=undo]');
-      if (u) arm(u, "Confirm — undo?", () => act("/undo", { serial: p.serial }, "Stamp removed"));
+      if (u) arm(u, "Confirm — undo?", () => act("/undo", { serial: p.serial }, member ? "Check-in removed" : "Stamp removed"));
       const r = div.querySelector('[data-a=redeem]');
       if (r) arm(r, "Confirm — give reward?", () => act("/redeem", { serial: p.serial }, "Reward given — card restarted"));
       return div;
@@ -5993,7 +6116,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
  * printed poster can never be killed by an edit in the dashboard.
  */
 export function posterPage(
-  card: Pick<CardRow, "id" | "reward" | "stamps_target" | "signup_message"> & {
+  card: Pick<CardRow, "id" | "reward" | "stamps_target" | "signup_message" | "kind" | "benefits"> & {
     background_color: string;
     accent_color: string;
     label_color: string;

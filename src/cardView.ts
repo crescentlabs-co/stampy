@@ -33,6 +33,7 @@ import {
   stampStripsVersion,
   targetsInUse,
   updateCard,
+  asCardKind,
   type CardRow,
 } from "./db.js";
 
@@ -62,6 +63,20 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   const fields: Parameters<typeof updateCard>[1] = {};
   if (typeof body.name === "string" && body.name.trim()) fields.name = body.name.trim().slice(0, 60);
   if (typeof body.reward === "string" && body.reward.trim()) fields.reward = body.reward.trim().slice(0, 60);
+  // The card's kind. Anything unrecognised falls back to a stamp card rather
+  // than being rejected — the same shape as band_texture above, and the safe
+  // direction: an unknown kind reaching the pass builders would render a card
+  // with no progress and no reward on it.
+  if (body.kind !== undefined) fields.kind = asCardKind(body.kind);
+  // Perks, one per line. Blank is a real choice (a membership card with no list
+  // yet), so this is deliberately not guarded on being non-empty. Capped at ten
+  // lines because both wallets render them as one block of text on the back of
+  // the card, and a longer list is scrolled past rather than read.
+  if (typeof body.benefits === "string") {
+    fields.benefits = body.benefits
+      .split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 10)
+      .map((l) => l.slice(0, 80)).join("\n");
+  }
   // Capped at 20: the strip image is always a two-row grid, so a higher target
   // would render stamps too small to read on a 375pt-wide strip.
   if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 20, 10);
@@ -165,6 +180,10 @@ export function artBytes(kind: ArtKind, png: unknown): Buffer | string {
 export interface DesignerCard {
   id: string;
   name: string;
+  /** Which kind of card the designer is editing — see CardKind. */
+  kind: string;
+  /** Perks for a membership card, one per line. '' on a stamp card. */
+  benefits: string;
   reward: string;
   stampsTarget: number;
   stampsStart: number;
@@ -221,6 +240,8 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
   return {
     id: card.id,
     name: card.name,
+    kind: card.kind,
+    benefits: card.benefits,
     reward: card.reward,
     stampsTarget: card.stamps_target,
     stampsStart: card.stamps_start,
@@ -268,6 +289,13 @@ export function touchesLook(
   const drawn = [
     "background_color", "foreground_color", "label_color",
     "accent_color", "band_color", "stamp_style", "name",
+    // Both of these are printed on the pass itself. The kind decides every
+    // field on the front, and the perks are a back field on Apple — where,
+    // unlike Google's class-level copy, nothing reaches an issued card until
+    // the phone re-fetches. Without these a shop would add a perk, see it on
+    // their Android preview, and find their iPhone members still on the old
+    // list until each of them was next stamped.
+    "kind", "benefits",
     // Ticking this removes the name printed beside the logo on every issued
     // pass. Nothing about it is visible until the phone re-fetches, so a save
     // that skipped the push would leave the name doubled until the next stamp.

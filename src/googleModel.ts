@@ -12,7 +12,7 @@
 import { rgbToHex } from "./color.js";
 import { config } from "./config.js";
 import { DEFAULT_CARD_ID, type CardRow, type PassRow } from "./db.js";
-import { isRewardReady, passBarcode, rewardTerms } from "./passModel.js";
+import { benefitsText, cardTerms, isRewardReady, memberSince, passBarcode } from "./passModel.js";
 
 /** One LoyaltyClass per café: `<issuerId>.stampy-<cardId>`. */
 export function classId(card: Pick<CardRow, "id">): string {
@@ -144,7 +144,7 @@ export function buildLoyaltyClass(
     // one line and read as a placeholder nobody had filled in.
     //
     // The name lives on the issuer line above. This one says what the thing is.
-    programName: "Loyalty card",
+    programName: card.kind === "membership" ? "Membership" : "Loyalty card",
     programLogo: {
       sourceUri: { uri: logoUrl(card, logoVersion, markVersion) },
       contentDescription: {
@@ -161,10 +161,22 @@ export function buildLoyaltyClass(
     // touching a single object. Deliberately NOT in buildLoyaltyPatch: that is
     // re-sent on every stamp, and static text has no business in it.
     textModulesData: [
+      // The perks a membership buys. On the CLASS, alongside the terms, for the
+      // same two reasons: they are identical for every member of this shop, and
+      // class data renders on every object already issued — so adding a perk
+      // reaches every Android member without touching a single object, and
+      // without the notification an object patch would carry.
+      ...(card.kind === "membership" && benefitsText(card.benefits ?? "")
+        ? [{
+            id: "benefits",
+            header: "What you get",
+            body: benefitsText(card.benefits ?? ""),
+          }]
+        : []),
       {
         id: "terms",
-        header: "Reward terms",
-        body: rewardTerms(business),
+        header: card.kind === "membership" ? "Membership terms" : "Reward terms",
+        body: cardTerms(business, card.kind),
       },
       {
         id: "privacy",
@@ -255,6 +267,7 @@ export function buildLoyaltyPatch(
   business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
+  const member = row.kind === "membership";
   const progress = `${row.stamp_count}/${row.stamps_target}`;
   return {
     // Nothing on the card front points at this any more — the count is drawn
@@ -263,8 +276,13 @@ export function buildLoyaltyPatch(
     // Google's update notification; drop it and Android stops telling anyone a
     // stamp landed, with every card still looking correct when opened by hand.
     loyaltyPoints: {
-      label: "Stamps",
-      balance: { string: progress },
+      label: member ? "Member no." : "Stamps",
+      // A membership card has no progress to report, so this holds the member's
+      // own code instead. It is a constant, which means an Android membership
+      // card never fires a Google notification of its own — correct, since
+      // there is no event to announce. A nudge still arrives, through the
+      // `message` module and addMessage.
+      balance: { string: member ? row.short_code : progress },
     },
     textModulesData: [
       // These three ids are pointed at by the class's cardTemplateOverride,
@@ -272,13 +290,15 @@ export function buildLoyaltyPatch(
       // constants.
       {
         id: FRONT_EARNED_MODULE,
-        header: "PROGRESS",
+        header: member ? "MEMBER SINCE" : "PROGRESS",
         // "3/10 earned" — the count itself, not a derived phrase. It used to
         // borrow the iPhone's wording ("1 earned" / "3 left"), which reads well
         // beside a grid of dots that shows the whole card at a glance. With the
         // dots gone this line is the only place the number appears on the front,
         // so it says the number.
-        body: ready ? `${progress} — reward ready 🎉` : `${progress} earned`,
+        body: member
+          ? memberSince(row.created_at)
+          : ready ? `${progress} — reward ready 🎉` : `${progress} earned`,
       },
       // The dots row is gone. Google renders text modules left-aligned in its
       // own typography, so the grid could never be centred or sized like the
@@ -287,8 +307,10 @@ export function buildLoyaltyPatch(
       // to be a stamp card was worth less than the space it took.
       {
         id: FRONT_REWARD_MODULE,
-        header: "REWARD",
-        body: ready ? `${row.reward} — show this to staff!` : row.reward,
+        header: member ? "MEMBER NO." : "REWARD",
+        body: member
+          ? row.short_code
+          : ready ? `${row.reward} — show this to staff!` : row.reward,
       },
       ...(row.message ? [{ id: "message", header: business, body: row.message }] : []),
     ],

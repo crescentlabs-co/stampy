@@ -266,13 +266,18 @@ function loadJsQr(): string {
 }
 
 function passView(row: PassRow) {
+  const member = row.kind === "membership";
   return {
     serial: row.serial,
     shortId: row.serial.slice(0, 8),
     code: row.short_code,
+    kind: row.kind,
     stamps: row.stamp_count,
     target: row.stamps_target,
-    dots: stampDots(row.stamp_count, row.stamps_target),
+    // A membership card has no grid to draw — its count is a lifetime visit
+    // tally with no target, so a row of circles would either be empty forever
+    // or need a ceiling this card does not have.
+    dots: member ? "" : stampDots(row.stamp_count, row.stamps_target),
     rewardReady: isRewardReady(row),
     reward: row.reward,
     createdAt: row.created_at,

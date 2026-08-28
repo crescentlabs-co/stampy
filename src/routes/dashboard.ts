@@ -39,6 +39,7 @@ import {
   merchantForOwner,
   clearResetToken,
   countOwners,
+  asCardKind,
   createCard,
   createOwner,
   DEFAULT_CARD_ID,
@@ -346,11 +347,12 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
  * picker, which is how this cap came to be needed.
  */
 dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) => {
-  const { name, reward, stampsTarget, stampsStart } = (req.body ?? {}) as {
+  const { name, reward, stampsTarget, stampsStart, kind } = (req.body ?? {}) as {
     name?: string;
     reward?: string;
     stampsTarget?: number;
     stampsStart?: number;
+    kind?: string;
   };
   if (!name?.trim()) return void res.status(400).json({ error: "missing-name" });
   const merchant = await ensureMerchantForOwner(req.owner!.id, name.trim());
@@ -363,6 +365,10 @@ dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) 
     reward: (reward ?? "Free coffee").trim().slice(0, 60),
     stampsTarget: clampInt(stampsTarget, 1, 20, 10),
     stampsStart: clampInt(stampsStart, 0, 19, 2),
+    // Anything unrecognised becomes a stamp card, which is what every card was
+    // before card kinds existed. The type is editable in the designer either
+    // way, so a wrong guess here is one dropdown to fix, not a stuck card.
+    kind: asCardKind(kind),
   });
   await linkOwnerCard(req.owner!.id, card.id);
   res.json({ ok: true, id: card.id });

@@ -17,6 +17,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
+import { stripKey } from "../passModel.js";
 import {
   hasAnalyticsOptOut,
   readCustomerCookie,
@@ -347,11 +348,11 @@ async function enroll(
 
   const row = await reuseOrCreatePass(req, res, card, "apple", sourceOf(req));
   try {
-    const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
+    const key = stripKey(row.kind, row.stamps_target, row.stamp_count);
     const [logo, banner, strip] = await Promise.all([
       getCardLogo(card.id).catch(() => null),
       getCardBanner(card.id).catch(() => null),
-      getStampStrip(card.id, row.stamps_target, filled).catch(() => null),
+      getStampStrip(card.id, key.target, key.filled).catch(() => null),
     ]);
     const business = await businessNameForCard(card);
     const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, business);
@@ -713,7 +714,10 @@ publicRouter.get("/c/:cardId/art/stamp-icon.png", (req, res) =>
 async function serveStampStrip(cardId: string, filled: number, res: import("express").Response): Promise<void> {
   const card = await getCard(cardId).catch(() => null);
   if (!card) return void res.status(404).end();
-  const strip = await getStampStrip(cardId, card.stamps_target, filled).catch(() => null);
+  // The URL's number is ignored on a membership card: it has one band, not a
+  // set, and honouring the path would 404 every request for it.
+  const key = stripKey(card.kind, card.stamps_target, filled);
+  const strip = await getStampStrip(cardId, key.target, key.filled).catch(() => null);
   if (!strip) return void res.status(404).end();
   res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(strip.png);
 }
@@ -736,7 +740,8 @@ async function serveStampStrip(cardId: string, filled: number, res: import("expr
 async function serveFullStampStrip(cardId: string, res: import("express").Response): Promise<void> {
   const card = await getCard(cardId).catch(() => null);
   if (!card) return void res.status(404).end();
-  const strip = await getStampStrip(cardId, card.stamps_target, card.stamps_target).catch(() => null);
+  const key = stripKey(card.kind, card.stamps_target, card.stamps_target);
+  const strip = await getStampStrip(cardId, key.target, key.filled).catch(() => null);
   if (!strip) return void res.status(404).end();
   res.set("Content-Type", "image/png").set("Cache-Control", "public, max-age=86400").send(strip.png);
 }

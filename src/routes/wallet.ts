@@ -12,6 +12,7 @@
  */
 import { Router, type Request, type Response } from "express";
 import { timingSafeEqual } from "node:crypto";
+import { stripKey } from "../passModel.js";
 import {
   businessNameForCard,
   deleteRegistration,
@@ -86,11 +87,11 @@ walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
   const card = await getCard(row.card_id);
   if (!card) return void res.status(500).end();
   try {
-    const filled = Math.max(0, Math.min(row.stamp_count, row.stamps_target));
+    const key = stripKey(row.kind, row.stamps_target, row.stamp_count);
     const [logo, banner, strip] = await Promise.all([
       getCardLogo(card.id).catch(() => null),
       getCardBanner(card.id).catch(() => null),
-      getStampStrip(card.id, row.stamps_target, filled).catch(() => null),
+      getStampStrip(card.id, key.target, key.filled).catch(() => null),
     ]);
     const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, await businessNameForCard(card));
     res

@@ -3,7 +3,7 @@
  * notification wording are unit-testable before Apple approval even lands.
  */
 import { config } from "./config.js";
-import type { CardRow, PassRow } from "./db.js";
+import type { CardKind, CardRow, PassRow } from "./db.js";
 
 /**
  * The stamp grid as text: filled vs empty slots, spaced, over two rows.
@@ -48,7 +48,13 @@ export function stampDots(count: number, target: number): string {
 const DOT_FULL = "⬤";
 const DOT_EMPTY = "◯";
 
-export function isRewardReady(row: Pick<PassRow, "stamp_count" | "stamps_target">): boolean {
+export function isRewardReady(
+  row: Pick<PassRow, "stamp_count" | "stamps_target" | "kind">,
+): boolean {
+  // A membership card has no target to reach, so it is never "ready" — its
+  // count is a lifetime visit tally, and without this every long-standing
+  // member would light up the staff phone's redeem button forever.
+  if (row.kind === "membership") return false;
   return row.stamp_count >= row.stamps_target;
 }
 
@@ -69,11 +75,53 @@ export function progressText(earned: number, total: number): string {
  * value actually changed. A test enforces that distinctness — if you edit this,
  * keep it true or stamps go silent.
  */
-export function getHeaderFieldValue(earned: number, total: number): string {
+export function getHeaderFieldValue(earned: number, total: number, kind: CardKind = "stamp"): string {
+  // A membership card has nothing to count towards, so the header is a status,
+  // not a number. It therefore never changes, and this card never fires a
+  // lock-screen banner of its own — which is correct: there is no event to
+  // announce. A nudge still banners through the `message` field below.
+  if (kind === "membership") return "Member";
   const filled = Math.max(0, Math.min(earned, total));
   if (filled >= total) return "Reward ready";
   const remaining = total - filled;
   return remaining <= filled ? `${remaining} left` : `${filled} earned`;
+}
+
+/**
+ * The perks list as the wallets want it: one per line, blank lines dropped.
+ *
+ * Stored as free text the owner types into a textarea, so it arrives with
+ * whatever spacing they left behind. Both platforms render it as a single
+ * block of text, so the tidying has to happen before it gets there.
+ */
+export function benefitLines(benefits: string): string[] {
+  return benefits.split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/**
+ * Which stored strip image a card of this kind should ask for.
+ *
+ * Strips are keyed (card_id, target, filled) because a stamp card needs one
+ * pre-rendered picture per count. A membership card has no counter and no
+ * ceiling — its tally climbs for as long as somebody keeps visiting — so there
+ * is no count to key on. It stores exactly ONE band, at (0, 0), and every
+ * member's card asks for that.
+ *
+ * One function so the writer (the designer's applyStamps) and the four readers
+ * cannot disagree about where the picture lives.
+ */
+export function stripKey(
+  kind: CardKind,
+  target: number,
+  count: number,
+): { target: number; filled: number } {
+  if (kind === "membership") return { target: 0, filled: 0 };
+  return { target, filled: Math.max(0, Math.min(count, target)) };
+}
+
+/** The perks, ready to print on the back of a card. '' when there are none. */
+export function benefitsText(benefits: string): string {
+  return benefitLines(benefits).map((l) => `• ${l}`).join("\n");
 }
 
 /**
@@ -96,6 +144,19 @@ export function stampGrid(total: number): { rows: number; cols: number } {
  * worse than one that stays quiet. If a real expiry mechanism ever lands, this
  * string is where the number comes from.
  */
+export function membershipTerms(business: string): string {
+  return [
+    `${business} decides what the membership includes and provides it — PunchMe only runs the card.`,
+    `${business} may change or withdraw a benefit, or end the membership programme, at any time.`,
+    "This card proves membership only. It holds no money and cannot be exchanged, sold or transferred.",
+  ].join(" ");
+}
+
+/** Whichever terms fit the card in hand. One call site, so neither can be missed. */
+export function cardTerms(business: string, kind: CardKind): string {
+  return kind === "membership" ? membershipTerms(business) : rewardTerms(business);
+}
+
 export function rewardTerms(business: string): string {
   return [
     "One stamp per visit.",
@@ -220,6 +281,21 @@ export function passBarcode(
   return { message: row.serial, altText: `Code ${row.short_code}` };
 }
 
+/**
+ * "Aug 2026" — the month a member joined, for the front of a membership card.
+ *
+ * Built from a literal month list rather than toLocaleDateString: the wallet
+ * renders whatever string we hand it, and a server whose ICU data differs would
+ * otherwise print a different card for the same customer.
+ */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function memberSince(at: Date | string): string {
+  const d = at instanceof Date ? at : new Date(at);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 export function buildPassJson(
   row: PassRow,
   card: CardRow,
@@ -227,7 +303,9 @@ export function buildPassJson(
   business = card.name,
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
+  const member = row.kind === "membership";
   const barcode = passBarcode(row, card);
+  const perks = benefitsText(card.benefits ?? "");
 
   return {
     formatVersion: 1,
@@ -273,28 +351,42 @@ export function buildPassJson(
           // as "progress" keeps Apple diffing it against the same field on cards
           // already issued, and keeps the documented changeMessage pair intact.
           key: "progress",
-          value: getHeaderFieldValue(row.stamp_count, row.stamps_target),
-          changeMessage: ready
-            ? `%@ — your ${row.reward.toLowerCase()} is waiting 🎉`
-            : `%@ — ${row.reward.toLowerCase()} at ${row.stamps_target}`,
+          value: getHeaderFieldValue(row.stamp_count, row.stamps_target, row.kind),
+          // A membership card's value never changes, so this never fires — but
+          // the field keeps its changeMessage so the pass still carries exactly
+          // the documented pair (progress + message) whatever kind it is.
+          changeMessage: member
+            ? `%@ at ${business}`
+            : ready
+              ? `%@ — your ${row.reward.toLowerCase()} is waiting 🎉`
+              : `%@ — ${row.reward.toLowerCase()} at ${row.stamps_target}`,
         },
       ],
       // Empty, but the keys stay: the strip image carries the stamp grid and
       // nothing may sit on top of it. passkit-generator emits these as [] either
       // way, and test/passModel.test.ts spreads all five arrays.
       primaryFields: [],
-      secondaryFields: [
-        {
-          key: "reward",
-          label: "Reward",
-          value: ready ? `${row.reward} — show this to staff!` : row.reward,
-        },
-        {
-          key: "tally",
-          label: "Progress",
-          value: progressText(row.stamp_count, row.stamps_target),
-        },
-      ],
+      // Same two keys on both kinds, deliberately. Apple diffs a pass against
+      // the one already on the phone field by field, so reusing `reward` and
+      // `tally` means a card that changes kind updates in place instead of
+      // leaving two dead slots behind.
+      secondaryFields: member
+        ? [
+            { key: "reward", label: "Member no.", value: row.short_code },
+            { key: "tally", label: "Member since", value: memberSince(row.created_at) },
+          ]
+        : [
+            {
+              key: "reward",
+              label: "Reward",
+              value: ready ? `${row.reward} — show this to staff!` : row.reward,
+            },
+            {
+              key: "tally",
+              label: "Progress",
+              value: progressText(row.stamp_count, row.stamps_target),
+            },
+          ],
       auxiliaryFields: [],
       backFields: [
         {
@@ -303,23 +395,31 @@ export function buildPassJson(
           value: messageFieldValue(row, business),
           changeMessage: "%@",
         },
+        // Only on a membership card, and only when the shop has typed some.
+        // An empty field renders as a labelled blank on the back of the card,
+        // which reads as something we failed to fill in.
+        ...(member && perks
+          ? [{ key: "benefits", label: "What you get", value: perks }]
+          : []),
         {
           key: "code",
-          label: "CARD CODE",
+          label: member ? "MEMBER NO." : "CARD CODE",
           value: row.short_code,
         },
         {
           key: "howto",
           label: "How it works",
-          value: `Show this card when you order. Collect ${row.stamps_target} stamps and your next ${row.reward.toLowerCase()} is on us. Your card updates by itself — no app needed.`,
+          value: member
+            ? `Show this card at ${business} and we will check you in. Your card updates by itself — no app needed.`
+            : `Show this card when you order. Collect ${row.stamps_target} stamps and your next ${row.reward.toLowerCase()} is on us. Your card updates by itself — no app needed.`,
         },
         // No changeMessage on either of these: they never change, and Apple
         // shows a lock-screen banner for every back field that carries one.
         // test/passModel.test.ts holds the line at exactly two.
         {
           key: "terms",
-          label: "Reward terms",
-          value: rewardTerms(business),
+          label: member ? "Membership terms" : "Reward terms",
+          value: cardTerms(business, row.kind),
         },
         {
           key: "legal",

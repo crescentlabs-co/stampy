@@ -24,6 +24,8 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     id: "default",
     merchant_id: null,
     name: "Kopi Corner",
+    kind: "stamp",
+    benefits: "",
     reward: "Free coffee",
     stamps_target: 10,
     stamps_start: 2,
@@ -61,6 +63,7 @@ function row(overrides: Partial<PassRow> = {}): PassRow {
     auth_token: "a".repeat(32),
     stamp_count: 3,
     stamps_target: 10,
+    kind: "stamp",
     reward: "Free coffee",
     message: "",
     message_sent_at: null,
@@ -536,5 +539,75 @@ describe("buildHeroClearPatch", () => {
   // would overwrite a real customer's progress with whatever this file guessed.
   it("carries nothing but the image", () => {
     expect(Object.keys(buildHeroClearPatch())).toEqual(["heroImage"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Membership on Android. The two platforms have to agree — a customer holding
+// an iPhone card and a friend holding an Android one are looking at the same
+// promise, so these check the payload against buildPassJson where they overlap.
+// ---------------------------------------------------------------------------
+describe("membership cards on Google", () => {
+  const memberCard = (o: Partial<CardRow> = {}) =>
+    card({ kind: "membership", benefits: "10% off\nFree birthday drink", ...o });
+  const memberRow = (o: Partial<PassRow> = {}) => row({ kind: "membership", ...o });
+
+  it("keeps loyaltyPoints present, holding the member's code", () => {
+    // The field must never be dropped: it is the one whose change triggers
+    // Google's notification. On a membership card it is a constant, so no
+    // notification ever fires — correct, because nothing happened worth one.
+    const p = buildLoyaltyPatch(memberRow({ short_code: "ZZ9K2Q" }), memberCard()) as any;
+    expect(p.loyaltyPoints).toBeDefined();
+    expect(p.loyaltyPoints.label).toBe("Member no.");
+    expect(p.loyaltyPoints.balance.string).toBe("ZZ9K2Q");
+  });
+
+  it("shows the same two facts the iPhone card shows", () => {
+    const r = memberRow({ short_code: "ZZ9K2Q" });
+    const g = buildLoyaltyPatch(r, memberCard()) as any;
+    const a = buildPassJson(r, memberCard(), "Kopi Corner") as any;
+
+    const front = (id: string) =>
+      g.textModulesData.find((m: any) => m.id === id);
+    // Left item on Google is the reward slot on Apple; right is the progress
+    // slot. Both carry the member's number and join month respectively.
+    expect(front("reward").body).toBe("ZZ9K2Q");
+    expect(front("reward").body).toBe(a.storeCard.secondaryFields[0].value);
+    expect(front("earned").body).toBe(a.storeCard.secondaryFields[1].value);
+  });
+
+  it("puts the perks on the CLASS, so adding one reaches every member", () => {
+    // On the class rather than the object for the same reason the terms are:
+    // class data renders on every object already issued, so a shop adding a
+    // perk updates every Android member without touching a single object —
+    // and without the notification an object patch would carry.
+    const cls = buildLoyaltyClass(memberCard(), 0, 0, "Kopi Corner") as any;
+    const perks = cls.textModulesData.find((m: any) => m.id === "benefits");
+    expect(perks.header).toBe("What you get");
+    expect(perks.body).toBe("• 10% off\n• Free birthday drink");
+
+    // And never on the stamp path, which sends one on every stamp.
+    const patch = buildLoyaltyPatch(memberRow(), memberCard()) as any;
+    expect(patch.textModulesData.find((m: any) => m.id === "benefits")).toBeUndefined();
+  });
+
+  it("omits the perks block when the shop has typed none", () => {
+    const cls = buildLoyaltyClass(memberCard({ benefits: "" }), 0, 0, "Kopi Corner") as any;
+    expect(cls.textModulesData.find((m: any) => m.id === "benefits")).toBeUndefined();
+  });
+
+  it("names the programme Membership and carries membership terms", () => {
+    const cls = buildLoyaltyClass(memberCard(), 0, 0, "Kopi Corner") as any;
+    expect(cls.programName).toBe("Membership");
+    const terms = cls.textModulesData.find((m: any) => m.id === "terms");
+    expect(terms.header).toBe("Membership terms");
+    expect(terms.body).not.toContain("stamp");
+  });
+
+  it("leaves a stamp card exactly as it was", () => {
+    const p = buildLoyaltyPatch(row({ stamp_count: 3, stamps_target: 8 }), card()) as any;
+    expect(p.loyaltyPoints.label).toBe("Stamps");
+    expect(p.loyaltyPoints.balance.string).toBe("3/8");
+    expect(buildLoyaltyClass(card(), 0, 0, "Kopi Corner").programName).toBe("Loyalty card");
   });
 });
