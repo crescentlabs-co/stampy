@@ -1,21 +1,31 @@
 /**
  * `pnpm promote` — the one way code moves from staging to the live site.
  *
- * Staging deploys automatically from `main`; the live Railway service deploys
- * from the `live` branch. Promoting means pushing what is on GitHub's `main`
- * (the exact code staging has been running) to `live` — no merge commit, no
- * rebuild, nothing retyped, so the two cannot drift.
+ * TWO STEPS, ON PURPOSE. The founder asked for a second confirmation even
+ * after saying "push live", because saying it is exactly the moment a mistake
+ * gets made:
  *
- * It refuses unless:
- *   1. the local checkout IS GitHub's main (so the checks test what ships), and
- *   2. all five verification suites pass (CLAUDE.md's gate).
+ *   pnpm promote             shows what WOULD go live. Pushes nothing. Fast.
+ *   pnpm promote --confirm   runs the five suites, then pushes main → live.
+ *
+ * The first step is the one to run when they say "push live". Show them the
+ * commit list it prints and wait for them to say yes to THAT. Never reach for
+ * --confirm on your own, and never skip step one because the change looks
+ * small — the whole point is that they see the list before it ships.
+ *
+ * Staging deploys automatically from `main`; the live Railway service deploys
+ * from the `live` branch. Promoting pushes what is on GitHub's `main` (the
+ * exact code staging has been running) to `live` — no merge commit, no
+ * rebuild, nothing retyped, so the two cannot drift.
  *
  * Reminder it always prints, because live cannot print it: if the change being
  * promoted reads a NEW Railway variable, set it on the LIVE service BEFORE
- * running this — a missing variable never crashes this app, it just silently
+ * confirming — a missing variable never crashes this app, it just silently
  * turns the feature off (invariant 1's flip side).
  */
 import { execSync } from "node:child_process";
+
+const confirmed = process.argv.includes("--confirm");
 
 function run(cmd: string): void {
   execSync(cmd, { stdio: "inherit" });
@@ -23,29 +33,59 @@ function run(cmd: string): void {
 function read(cmd: string): string {
   return execSync(cmd, { encoding: "utf-8" }).trim();
 }
-
-console.log("Promote: staging (main) → live\n");
-console.log("If this change added a new Railway variable, set it on the LIVE");
-console.log("service first — live will not complain if it is missing.\n");
-
-run("git fetch origin");
-
-if (read("git status --porcelain") !== "") {
-  console.error("\nREFUSED: there are uncommitted local changes. Commit or stash them first —");
-  console.error("the checks below must test exactly the code being promoted.");
+function refuse(...lines: string[]): never {
+  console.error("\nREFUSED: " + lines.join("\n  "));
+  console.error("\nNothing was promoted; live is unchanged.");
   process.exit(1);
+}
+
+run("git fetch origin --quiet");
+
+// Both gates run in BOTH steps: the dry run must describe the same push the
+// confirm would make, or the list the founder approves is not the list.
+if (read("git status --porcelain") !== "") {
+  refuse(
+    "there are uncommitted local changes.",
+    "Commit or stash them first — the checks must test exactly the code being promoted.",
+  );
 }
 const head = read("git rev-parse HEAD");
 const remoteMain = read("git rev-parse origin/main");
 if (head !== remoteMain) {
-  console.error("\nREFUSED: the local checkout is not the same as GitHub's main branch.");
-  console.error(`  local:        ${head}`);
-  console.error(`  GitHub main:  ${remoteMain}`);
-  console.error("Push or pull first, so the checks test exactly what will go live.");
-  process.exit(1);
+  refuse(
+    "the local checkout is not the same as GitHub's main branch.",
+    `local:       ${head}`,
+    `GitHub main: ${remoteMain}`,
+    "Push or pull first, so the checks test exactly what will go live.",
+  );
 }
 
-console.log("\nRunning the five verification suites (this takes a few minutes)…\n");
+const pending = read("git log origin/live..origin/main --oneline");
+if (!pending) {
+  console.log("\nLive is already running everything on main. Nothing to promote.");
+  process.exit(0);
+}
+const count = pending.split("\n").length;
+
+console.log(`\n${"=".repeat(64)}`);
+console.log(`  ${count} change${count === 1 ? "" : "s"} would go LIVE (merchants would see this):`);
+console.log(`${"=".repeat(64)}\n`);
+console.log(pending.split("\n").map((l) => "  " + l).join("\n"));
+console.log(`\n  live is currently on: ${read("git rev-parse --short origin/live")}`);
+console.log(`  it would move to:     ${read("git rev-parse --short origin/main")}`);
+console.log("\n  If any of these read a NEW Railway variable, set it on the LIVE");
+console.log("  service FIRST — live will not complain if it is missing.\n");
+
+if (!confirmed) {
+  console.log("=".repeat(64));
+  console.log("  NOTHING PUSHED. This was the preview.");
+  console.log("  Live only moves once the founder confirms THIS list, then:");
+  console.log("      pnpm promote --confirm");
+  console.log("=".repeat(64));
+  process.exit(0);
+}
+
+console.log("Confirmed. Running the five verification suites (a few minutes)…\n");
 for (const cmd of [
   "pnpm typecheck",
   "pnpm test",
@@ -57,8 +97,7 @@ for (const cmd of [
   try {
     run(cmd);
   } catch {
-    console.error(`\nREFUSED: ${cmd} failed. Nothing was promoted; live is unchanged.`);
-    process.exit(1);
+    refuse(`${cmd} failed.`);
   }
 }
 

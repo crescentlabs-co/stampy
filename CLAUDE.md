@@ -7,6 +7,29 @@ each. Do not invent a second palette. The founder is **non-technical**: give
 click-by-click browser instructions for anything manual, run all commands for
 them, and prefer browser UIs over files for anything they configure.
 
+## Staging only. Never live, unless the founder says so in words.
+
+**Push to `main` and nothing else.** `main` deploys to staging
+(staging.punchme.my) and merchants never see it. That is where every change
+goes, always, by default — including a change the founder is waiting on, a
+one-line fix, and a fix for something broken on live.
+
+**Live moves only when the founder says so, in words, in that message.** Not
+implied by "ship it", not inherited from approving a plan, not carried over
+from the last time they said it. "Push live", "promote", "put it on live" —
+something that names live. If they have not said it in the message in front of
+you, you are working on staging and you say so.
+
+When they do say it, the ONLY way is `pnpm promote` — it re-runs the five
+suites and refuses if any fail. Never `git push origin …:live`, never repoint
+Railway, never hand-deploy. If a change needs a NEW Railway variable, set it on
+the LIVE service BEFORE promoting: invariant 1 means live will not error, it
+will silently skip the feature.
+
+Also, and separately: `main` is not a safe place for a half-finished thing
+either. Staging is a real site issuing real wallet cards to real phones — the
+founder's, and anyone holding a link. Commit working changes, not broken ones.
+
 ## Verify before claiming done
 ```sh
 pnpm typecheck && pnpm test && pnpm e2e && pnpm test:migration && pnpm test:backup

@@ -7,9 +7,13 @@ renamed and to obey seven invariants when there were twelve.
 
 Read [README.md](./README.md) for the system overview.
 
-The four things most expensive to get wrong, so that a model which reads only
+The five things most expensive to get wrong, so that a model which reads only
 this file still doesn't do the unrecoverable thing:
 
+0. **Push to `main` (staging) and nothing else.** Live moves only when the
+   founder says so in words, in the message in front of you — and then only via
+   `pnpm promote`. Never `git push origin …:live`, never repoint Railway.
+   Approving a plan is not permission; "ship it" is not permission.
 1. **A card's id can never change.** It is printed on QR posters, forms the
    Google class id re-sent on every stamp, and appears in the art URLs inside
    every issued Android card. Re-key one and that customer's card silently stops
