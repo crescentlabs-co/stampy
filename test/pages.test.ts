@@ -2598,6 +2598,88 @@ describe("the customers screen", () => {
   });
 });
 
+describe("the manage screens", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+  const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"), html.indexOf("function dealLine(card)"));
+
+  it("has two lists behind one switch", () => {
+    expect(html).toContain('data-mt="rewards"');
+    expect(html).toContain('data-mt="campaigns"');
+    expect(html).toContain("function campaignRows()");
+    // Both tabs are addresses, so a refresh lands back on the one you were on.
+    expect(html).toContain('navigate("/manage/" + b.dataset.mt)');
+  });
+
+  it("shows type, performance, status and a way in, on every row", () => {
+    const row = html.slice(html.indexOf("function progRow(p, money)"), html.indexOf("function campaignBlock"));
+    expect(row).toContain("KIND_LABEL[p.kind]");
+    expect(row).toContain("p.customers");
+    expect(row).toContain("Ended");
+    expect(row).toContain("data-nav=");
+    // The four types are the four the database already holds, so wiring them
+    // up later is a rename and not a migration.
+    for (const k of ["stamp", "milestones", "membership", "points"]) {
+      expect(html).toContain(k + ":");
+    }
+  });
+
+  /**
+   * "Multiple programmes means multiple QRs" is a claim best made by showing
+   * one QR per programme rather than by writing the sentence down.
+   */
+  it("gives a programme its own QR, poster and customer page", () => {
+    expect(detail).toContain("/qr");
+    expect(detail).toContain("S.joinRef");
+    expect(detail).toContain("/poster");
+    expect(detail).toContain("/me");
+    expect(detail).toContain("Every programme has its own QR");
+  });
+
+  /**
+   * Shown, not enforced. A card already in a wallet carries its own copy of
+   * the rules, so changing a live programme is deliberate working behaviour —
+   * actually disabling these fields would delete a feature the product
+   * documents. The note explains what really happens instead.
+   */
+  it("explains the lock on an enrolled programme rather than applying one", () => {
+    expect(detail).toContain("enrolled ? lockNote(m.active)");
+    const note = html.slice(html.indexOf("function lockNote(n)"), html.indexOf("function campaignDetailScreen"));
+    expect(note).toContain("You can still change it");
+    expect(note).not.toContain("disabled");
+    expect(note).not.toContain("readOnly");
+  });
+
+  /**
+   * Ending a programme cannot do anything yet — there is no column for it —
+   * so the button says so instead of pretending. It is two taps, never a
+   * browser dialog: a browser lets somebody silence those, after which
+   * confirm() answers "no" in silence and the button looks broken.
+   */
+  it("asks twice to end sign-ups, and admits it has not ended anything", () => {
+    expect(detail).toContain("End sign-ups");
+    expect(detail).toContain('arm(d.querySelector("[data-end]")');
+    expect(detail).toContain("nothing has changed");
+    expect(detail).toContain("keeps collecting");
+    expect(html).toContain("function arm(btn, prompt, go)");
+    // A real call always passes a message; the four remaining mentions are
+    // comments explaining why this app never makes one.
+    expect(html).not.toMatch(/[^A-Za-z.]confirm\(\s*["'`]/);
+  });
+
+  /**
+   * One mount, used by the programme page and later by Create, so the settings
+   * object the admin console also passes cannot quietly grow a second shape.
+   */
+  it("mounts the one designer through one function", () => {
+    expect(html).toContain("function designerFor(card, extra)");
+    expect(detail).toContain("designerFor(card)");
+    const mount = html.slice(html.indexOf("function designerFor(card, extra)"), html.indexOf("let armedBtn"));
+    for (const key of ["path:", "apiBase:", "artUrl:", "customersPath:", "saveLabel:", "onRulesSaved:"]) {
+      expect(mount).toContain(key);
+    }
+  });
+});
+
 describe("example data announces itself", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
 

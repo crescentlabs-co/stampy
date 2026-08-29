@@ -226,6 +226,24 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .act .aw strong { letter-spacing: .04em; }
     textarea { width: 100%; padding: 13px 14px; border: 1px solid var(--field-border);
                border-radius: 12px; font: inherit; resize: vertical; }
+    /* --- Manage: the two lists, and one programme's page --- */
+    #mtabs { margin: 12px 0 0; }
+    /* Shown once anyone is enrolled. A note, not a lock: changing a live
+       programme is working behaviour — a card already in a wallet carries its
+       own copy of the rules — so this explains what actually happens rather
+       than disabling a field that is meant to work. */
+    .locknote { background: var(--ghost-bg); border-radius: 12px; padding: 12px 14px;
+                margin-top: 12px; font-size: .86rem; line-height: 1.5; color: var(--ink2); }
+    /* Every programme has its own QR, which is the whole of "multiple
+       programmes means multiple QRs" said in one picture. */
+    .qrbox { text-align: center; margin: 6px 0 2px; }
+    .qrbox img { width: 168px; height: 168px; image-rendering: pixelated;
+                 border: 1px solid var(--line); border-radius: 12px; padding: 8px;
+                 background: #fff; }
+    .qrbox p { margin-top: 8px; }
+    /* The armed state of a two-tap button. Deep red, the same one the counter
+       uses — this is the app's one "you are about to do something" colour. */
+    .btn.armed { background: #9a3412; color: #fff; border-color: #9a3412; }
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     /* --- share tab --- */
@@ -786,57 +804,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const searchBox = q("[data-search]");
       if (searchBox) searchBox.oninput = renderResults;
       load();
-      return div;
-    }
-
-    // ---- Cards: pick a card (chips) + the designer for the selected one ----
-    function cardsPanel() {
-      const div = document.createElement("div");
-      div.innerHTML = \`<div class="cardpick" data-pick></div><div data-design></div>\`;
-      const pick = div.querySelector("[data-pick]");
-      const host = div.querySelector("[data-design]");
-      function draw() {
-        pick.innerHTML = "";
-        if (S.cards.length > 1) {
-          S.cards.forEach((c, i) => {
-            const b = document.createElement("button");
-            b.textContent = c.name; b.dataset.ci = String(i);
-            b.className = i === S.selCard ? "on" : "";
-            b.onclick = () => { S.selCard = i; draw(); };
-            pick.appendChild(b);
-          });
-        }
-        // No "+ Add card" button: V1 is one card per merchant, and the server
-        // refuses a second one. The chips above still render for the few
-        // merchants that added a card before that cap existed, so they can edit
-        // both until an operator removes the spare.
-        host.innerHTML = "";
-        // The owner edits their real card, so every path points at it and the
-        // customer count is a live number. The console passes a different env
-        // and gets the same panel — see DESIGN_PANEL_JS.
-        const card = S.cards[S.selCard];
-        const artBase = card.id === "default" ? "" : "/c/" + card.id;
-        host.appendChild(designPanel(card, {
-          api, toast, modal, info,
-          path: (suffix) => "/card/" + card.id + suffix,
-        apiBase: "/dashboard/api",
-          artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
-          customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
-          rulesNote: "",
-          showDetails: true,
-          // Nothing above the Card tab names this panel, so it names itself.
-          titled: true,
-          saveLabel: "Save changes",
-          // Keep the card-picker chip labels in sync without resetting the form.
-          onRulesSaved: () => {
-            const pk = document.querySelector("[data-pick]");
-            if (pk) pk.querySelectorAll("button[data-ci]").forEach((b) => {
-              b.textContent = S.cards[Number(b.dataset.ci)].name;
-            });
-          },
-        }));
-      }
-      draw();
       return div;
     }
 
@@ -1724,21 +1691,235 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "Setting up “" + type + "” arrives with the Create screens.");
     }
 
+    /** Manage — what is running, in two lists. */
     function manageScreen(tab) {
       if (tab !== "rewards" && tab !== "campaigns") return notFoundScreen();
       const d = document.createElement("div");
-      // Rewards is the card editor as it stands today, so the programme you
-      // actually run is editable from the moment this shell lands. The list, the
-      // detail page and the Campaigns tab arrive with the Manage commit.
-      if (tab === "rewards") d.appendChild(cardsPanel());
-      else d.appendChild(placeholder("Campaigns", "Your campaigns will be listed here."));
+      d.innerHTML =
+        '<h2 class="sec first">Manage</h2>' +
+        '<div class="seg" id="mtabs" role="tablist">' +
+          '<button data-mt="rewards"' + (tab === "rewards" ? ' class="on"' : "") + ">Rewards</button>" +
+          '<button data-mt="campaigns"' + (tab === "campaigns" ? ' class="on"' : "") + ">Campaigns</button>" +
+          '<span class="thumb"></span>' +
+        "</div>" +
+        '<div data-mlist style="margin-top:16px"></div>';
+      const seg = d.querySelector("#mtabs");
+      seg.querySelectorAll("[data-mt]").forEach((b) => {
+        b.onclick = () => navigate("/manage/" + b.dataset.mt);
+      });
+      // The thumb measures the button it sits under, so it can only be placed
+      // once the strip is in the document.
+      setTimeout(() => moveThumb(seg), 0);
+
+      d.querySelector("[data-mlist]").innerHTML =
+        tab === "rewards" ? programRows() : campaignRows();
       return d;
     }
 
+    /** Campaigns, all example — there is no campaign table to read. */
+    function campaignRows() {
+      return MOCK_CAMPAIGNS.map((c) => {
+        return '<a class="prow egrow" href="' + ROOT + "/manage/campaigns/" + c.id +
+        '" data-nav="/manage/campaigns/' + c.id + '">' +
+        '<div class="ptop"><strong>' + esc(c.name) + "</strong>" + EG +
+          '<span class="pstat' + (c.status === "ended" ? " off" : "") + '">' +
+            (c.status === "ended" ? "Ended" : "Active") + "</span></div>" +
+        '<div class="pmeta">' + esc(c.type) + " · sent " + esc(c.sent) + "</div>" +
+        '<div class="pnums"><span><b>' + c.targeted + "</b>targeted</span>" +
+          "<span><b>" + c.returned + "</b>came back</span>" +
+          "<span><b>" + Math.round((c.returned / c.targeted) * 100) + "%</b>activation</span></div>" +
+        "</a>";
+      }).join("") +
+      '<p class="muted" style="margin-top:10px">Not your data yet — campaigns are set up ' +
+      "under Create, and this is what the list will look like once they run.</p>";
+    }
+
     function manageDetailScreen(tab, id) {
-      if (tab !== "rewards" && tab !== "campaigns") return notFoundScreen();
-      return placeholder(tab === "rewards" ? "Programme" : "Campaign",
-        "The detail page for “" + id + "” arrives with the Manage screens.");
+      if (tab === "rewards") return rewardDetailScreen(id);
+      if (tab === "campaigns") return campaignDetailScreen(id);
+      return notFoundScreen();
+    }
+
+    /**
+     * One programme: how it is doing, how it is set up, how to share it, and
+     * the designer that changes what it looks like.
+     */
+    function rewardDetailScreen(id) {
+      const card = S.cards.find((c) => c.id === id);
+      const eg = MOCK_PROGRAMS.find((m) => m.id === id);
+      if (!card && !eg) return notFoundScreen();
+
+      const d = document.createElement("div");
+      const back = '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Rewards</p>';
+
+      // An example programme. Everything about it is made up, so it says so
+      // once at the top and does not pretend to have a designer behind it.
+      if (!card) {
+        d.innerHTML = back +
+          '<h2 class="sec first">' + esc(eg.name) + EG +
+            '<span class="pstat' + (eg.status === "ended" ? " off" : "") + '">' +
+              (eg.status === "ended" ? "Ended" : "Active") + "</span></h2>" +
+          '<p class="muted">This is an example programme, so you can see what running more ' +
+          "than one looks like. Your shop can hold one programme today.</p>" +
+          '<h2 class="sec">Performance' + EG + "</h2>" +
+          '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
+            '<div class="metric"><b>' + eg.customers + "</b><span>customers</span></div>" +
+            '<div class="metric"><b>' + eg.visits + "</b><span>stamps</span></div>" +
+            '<div class="metric"><b>' + eg.rewards + "</b><span>rewards</span></div>" +
+          "</div>" +
+          '<h2 class="sec">Setup</h2>' +
+          '<div class="drow"><span>Type</span><b>' + (KIND_LABEL[eg.kind] || "Stamps") + "</b></div>" +
+          '<div class="drow"><span>The deal</span><b>' + esc(eg.setup) + "</b></div>" +
+          (eg.status === "ended" ? endedNote() : "");
+        d.querySelector("[data-back]").onclick = () => navigate("/manage/rewards");
+        return d;
+      }
+
+      const m = card.metrics || {};
+      const enrolled = m.active > 0;
+      d.innerHTML = back +
+        '<h2 class="sec first">' + esc(card.shopName || card.name) +
+          '<span class="pstat">Active</span></h2>' +
+        '<h2 class="sec">Performance</h2>' +
+        '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
+          '<div class="metric"><b>' + (m.active || 0) + "</b><span>customers</span></div>" +
+          '<div class="metric"><b>' + (m.stamps || 0) + "</b><span>stamps</span></div>" +
+          '<div class="metric"><b>' + (m.redemptions || 0) + "</b><span>rewards</span></div>" +
+        "</div>" +
+        '<h2 class="sec">Setup</h2>' +
+        '<div class="drow"><span>Type</span><b>' + (KIND_LABEL[card.kind] || "Stamps") + "</b></div>" +
+        '<div class="drow"><span>The deal</span><b>' + esc(dealLine(card)) + "</b></div>" +
+        (card.stampsStart ? '<div class="drow"><span>Welcome stamps</span><b>' +
+          card.stampsStart + "</b></div>" : "") +
+        (enrolled ? lockNote(m.active) : "") +
+        '<h2 class="sec">Share it</h2>' +
+        '<div class="sharelist">' +
+          '<a href="/j/' + esc(S.joinRef) + '?s=link" target="_blank">' +
+            '<span>Sign-up page<span class="sub2">The link and the QR customers scan</span></span>' +
+            '<span class="arr">open →</span></a>' +
+          '<a href="/c/' + esc(card.id) + '/poster" target="_blank">' +
+            '<span>Printable poster<span class="sub2">The QR, ready for the counter</span></span>' +
+            '<span class="arr">open →</span></a>' +
+          '<a href="/c/' + esc(card.id) + '/me" target="_blank">' +
+            '<span>Customer page<span class="sub2">What a customer sees when they open their card</span></span>' +
+            '<span class="arr">open →</span></a>' +
+        "</div>" +
+        '<div class="qrbox"><img alt="Sign-up QR code" src="/j/' + esc(S.joinRef) + '/qr">' +
+        '<p class="muted">Every programme has its own QR. This one is yours.</p></div>' +
+        '<h2 class="sec">Status</h2>' +
+        '<p class="muted">Ending a programme stops new sign-ups. Everyone already holding ' +
+        "a card keeps collecting on it, and keeps getting their reward.</p>" +
+        '<button class="btn btn-ghost" style="width:auto;padding:11px 18px;margin-top:10px" data-end>' +
+        "End sign-ups</button>" +
+        '<h2 class="sec">What it looks like</h2>' +
+        '<div data-design></div>';
+
+      d.querySelector("[data-back]").onclick = () => navigate("/manage/rewards");
+      // Two taps, never a browser dialog: a browser lets somebody silence
+      // those, after which confirm() answers "no" in silence.
+      arm(d.querySelector("[data-end]"), "Tap again to end sign-ups", () => {
+        toast("Ending a programme arrives with V2 — nothing has changed.");
+      });
+      d.querySelector("[data-design]").appendChild(designerFor(card));
+      return d;
+    }
+
+    /** The offer, in the owner's own words where they wrote any. */
+    function dealLine(card) {
+      if (card.kind === "membership") return card.reward || "Membership card";
+      if (card.kind === "points") return card.reward || "Points on every visit";
+      return "Collect " + card.stampsTarget + " stamps, get " + (card.reward || "a reward");
+    }
+
+    function endedNote() {
+      return '<h2 class="sec">Status</h2><p class="muted">This programme has ended, so nobody ' +
+        "new can sign up. Everyone who already holds a card keeps collecting on it.</p>";
+    }
+
+    /**
+     * Shown once anyone is enrolled — and shown, not enforced.
+     *
+     * Changing a live programme is deliberate, working behaviour: a card
+     * already in a wallet carries its own copy of the rules, so raising a
+     * target from 10 to 12 this morning only affects people from their next
+     * reward onwards. Actually disabling these fields would delete a feature.
+     */
+    function lockNote(n) {
+      return '<div class="locknote"><strong>' + n +
+        (n === 1 ? " customer is" : " customers are") + " already on this programme.</strong> " +
+        "You can still change it — but the deal each of them was promised stays as it was " +
+        "until they claim their next reward.</div>";
+    }
+
+    function campaignDetailScreen(id) {
+      const c = MOCK_CAMPAIGNS.find((x) => x.id === id);
+      if (!c) return notFoundScreen();
+      const d = document.createElement("div");
+      d.innerHTML = '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Campaigns</p>' +
+        '<h2 class="sec first">' + esc(c.name) + EG +
+          '<span class="pstat' + (c.status === "ended" ? " off" : "") + '">' +
+            (c.status === "ended" ? "Ended" : "Active") + "</span></h2>" +
+        '<p class="muted">An example campaign, so you can see the shape of one. ' +
+        "Campaigns are set up under Create.</p>" +
+        '<h2 class="sec">Performance' + EG + "</h2>" +
+        '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
+          '<div class="metric"><b>' + c.targeted + "</b><span>targeted</span></div>" +
+          '<div class="metric"><b>' + c.returned + "</b><span>came back</span></div>" +
+          '<div class="metric"><b>' + Math.round((c.returned / c.targeted) * 100) +
+            "%</b><span>activation</span></div>" +
+        "</div>" +
+        '<h2 class="sec">Setup' + EG + "</h2>" +
+        '<div class="drow"><span>Type</span><b>' + esc(c.type) + "</b></div>" +
+        '<div class="drow"><span>Sent</span><b>' + esc(c.sent) + "</b></div>";
+      d.querySelector("[data-back]").onclick = () => navigate("/manage/campaigns");
+      return d;
+    }
+
+    /**
+     * The card designer, mounted. One function, so the programme page and the
+     * Create flow cannot drift apart — and so the settings object the admin
+     * console also passes stays in one recognisable shape.
+     */
+    function designerFor(card, extra) {
+      const artBase = card.id === "default" ? "" : "/c/" + card.id;
+      return designPanel(card, Object.assign({
+        api, toast, modal, info,
+        path: (suffix) => "/card/" + card.id + suffix,
+        apiBase: "/dashboard/api",
+        artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
+        customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
+        rulesNote: "",
+        showDetails: true,
+        // The programme's own page names it above, so the panel does not.
+        titled: false,
+        saveLabel: "Save changes",
+        onRulesSaved: () => {},
+      }, extra || {}));
+    }
+
+    /**
+     * The two-tap confirm, from the counter page.
+     *
+     * Browsers let somebody tick "prevent additional dialogs", after which
+     * confirm() returns false silently — on a staff phone that meant "give
+     * reward" quietly stopped working. Relabel the button and wait for a second
+     * tap instead; it disarms itself after four seconds.
+     */
+    let armedBtn = null, armedTimer = null;
+    function disarm() {
+      if (armedTimer) clearTimeout(armedTimer);
+      if (armedBtn) { armedBtn.textContent = armedBtn.dataset.label; armedBtn.classList.remove("armed"); }
+      armedBtn = null; armedTimer = null;
+    }
+    function arm(btn, prompt, go) {
+      if (!btn) return;
+      btn.dataset.label = btn.textContent;
+      btn.onclick = () => {
+        if (armedBtn === btn) { disarm(); go(); return; }
+        disarm();
+        armedBtn = btn; btn.textContent = prompt; btn.classList.add("armed");
+        armedTimer = setTimeout(disarm, 4000);
+      };
     }
 
     function shopScreen() {
