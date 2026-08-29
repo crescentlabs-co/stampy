@@ -3403,7 +3403,11 @@ export function page(
   const envStrip =
     env === "live"
       ? ""
-      : `<div style="position:sticky;top:0;z-index:9999;background:#101312;color:#c9f73d;text-align:center;padding:7px 10px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">${esc(env)} — not the real site</div>`;
+      // The class is load-bearing on one page: the dashboard's top bar is also
+      // sticky, and without a way to select this strip the two would stick to
+      // the same 0 and the strip — which sits far above everything on purpose —
+      // would cover half the bar. The dashboard offsets itself below it.
+      : `<div class="envstrip" style="position:sticky;top:0;z-index:9999;background:#101312;color:#c9f73d;text-align:center;padding:7px 10px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">${esc(env)} — not the real site</div>`;
   return `<!doctype html>
 <html lang="en">
 <head>

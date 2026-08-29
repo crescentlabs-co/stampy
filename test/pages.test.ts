@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { CHURN_DAYS, FLAG_GUIDE } from "../src/health.js";
+import { V2_SCREENS } from "../src/routes/dashboard.js";
 import {
   adminPage,
   cardPickerPage,
@@ -1373,21 +1374,29 @@ describe("dashboard information architecture", () => {
   const html = dashboardPage(true, "");
 
   /**
-   * The dashboard used to open on "Dashboard" over the login email — a title
-   * naming the software, addressed to nobody — with nothing between it and the
-   * tab strip. The welcome block replaced it and doubles as that rule.
+   * A bar at the top saying whose shop this is, and a bar at the bottom that is
+   * the whole of the navigation.
+   *
+   * They replaced a neon block that carried the shop name, the login email and
+   * a three-tab strip at once. That block was DESIGN.md rule 1's third fenced
+   * exception; both went together.
    */
-  describe("the welcome block", () => {
-    /** The builder as it reaches the browser, so these read the real source. */
-    const greet = html.slice(html.indexOf("function greetHtml()"),
-                             html.indexOf("// Three tabs, each one job"));
+  describe("the app chrome", () => {
+    /** The builders as they reach the browser, so these read the real source. */
+    const bars = html.slice(html.indexOf("function shopName()"),
+                            html.indexOf("function wireChrome()"));
 
-    it("greets the SHOP and says which login you are on", () => {
-      expect(greet).toContain('(S.cards[0] || {}).shopName');
-      expect(greet).toContain('"<h1>Hello, " + esc(shop)');
-      // The email is the only thing on screen answering "which account is
-      // this?", which starts mattering the moment somebody runs two shops.
-      expect(greet).toContain('esc(S.email)');
+    it("names the shop at the top, and the account behind the menu", () => {
+      expect(bars).toContain('(S.cards[0] || {}).shopName');
+      expect(bars).toContain('<div class="shop">\' + esc(shopName())');
+      expect(bars).toContain("data-menu");
+      // The email moved into the menu, but it did not disappear: it is still the
+      // only thing answering "which account am I in?", which starts mattering
+      // the moment somebody runs two shops.
+      const menu = html.slice(html.indexOf("function toggleMenu()"),
+                              html.indexOf("// ---- the five screens"));
+      expect(menu).toContain('class="mwho">\' + esc(S.email)');
+      expect(menu).toContain("data-signout");
       // The SHELL no longer carries the old title. Scoped to the shell on
       // purpose: deadEnd() still uses a plain "Dashboard" heading, and rightly
       // — it is the screen shown when there is no shop to greet.
@@ -1395,55 +1404,153 @@ describe("dashboard information architecture", () => {
       // indexOf would have found the login form's.
       const at = html.indexOf('id="pinwarn"');
       const shell = html.slice(html.lastIndexOf('$("#app").innerHTML', at), at);
-      expect(shell).toContain("greetHtml()");
+      expect(shell).toContain("topBarHtml()");
       expect(shell).not.toContain("Dashboard</h1>");
     });
 
     /**
-     * The counts and the share link are NOT here any more.
+     * The chrome is built by the script, never sent in the body.
      *
-     * Both were third copies: the numbers belong to the Customers tab this
-     * block opens on, and the link to the Shop tab, which is where a person
-     * goes looking for it. A header that restates the page under it is a
-     * header nobody reads.
+     * authForm() and deadEnd() each take the whole of #app over. A nav bar in
+     * the served body would be visible to a logged-out visitor who cannot use
+     * any of it, and would still be sitting there on the one screen whose only
+     * job is to offer a way out.
      */
-    it("greets, names the account, and counts nothing", () => {
-      expect(greet).toContain("Hello, ");
-      expect(greet).toContain("S.email");
-      expect(greet).not.toContain("Nobody has taken a card yet");
-      expect(greet).not.toContain("Share your sign-up link");
-      expect(greet).not.toContain('class="stat"');
+    it("is drawn by the script, not served in the body", () => {
+      const body = html.slice(html.indexOf("<body>"), html.indexOf("<script>"));
+      expect(body).toContain('id="app"');
+      expect(body).not.toContain("botnav");
+      expect(body).not.toContain("topbar");
+    });
+
+    /** Five destinations, in order, and the shell renders the bar after the screen. */
+    it("has one nav item per job", () => {
+      for (const path of ["/", "/customers", "/create", "/manage", "/shop"]) {
+        expect(bars).toContain(`p: "${path}"`);
+      }
+      for (const label of ["Home", "Customers", "Create", "Manage", "Shop"]) {
+        expect(bars).toContain(`label: "${label}"`);
+      }
+      // Order is the reading order of the bar, and Create sits in the middle.
+      const order = ["Home", "Customers", "Create", "Manage", "Shop"]
+        .map((l) => bars.indexOf(`label: "${l}"`));
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      expect(order.every((i) => i > -1)).toBe(true);
     });
 
     /**
-     * The navigation lives INSIDE the header, so the shop, the account and the
-     * tabs are one fixed object that the panel changes underneath — rather
-     * than two stacked blocks that looked like they might both scroll away.
+     * ONE neon object on the dashboard, and it is the Create button.
+     *
+     * The old neon header was rule 1's third fenced exception. Create needs no
+     * exception at all — rule 1 has always allowed the accent on a primary
+     * action — so the rule is down to two exceptions and the header is gone.
+     *
+     * Its glyph is --on-accent and never white: #c9f73d is a pale green, so
+     * white on it lands near 1.3:1.
      */
-    it("carries the tab strip inside itself, not as a sibling", () => {
-      expect(greet).toContain('id="tabs"');
-      // The shell renders the greeting and then the panel: no loose tab strip
-      // in between any more.
-      const at = html.indexOf('id="pinwarn"');
-      const shell = html.slice(html.lastIndexOf('$("#app").innerHTML', at), at);
-      expect(shell).not.toContain('id="tabs"');
+    it("puts the only neon on Create, and nothing else", () => {
+      expect(html).toContain(".botnav .navadd .plus");
+      const plus = html.slice(html.indexOf(".botnav .navadd .plus {"),
+                              html.indexOf(".botnav .navadd.on"));
+      expect(plus).toContain("background: var(--accent)");
+      expect(plus).toContain("color: var(--on-accent)");
+      expect(plus).not.toContain("#fff");
+      // The neon header is gone and may not come back by accident.
+      expect(html).not.toContain(".greet {");
+      expect(html).not.toContain('class="greet"');
+      // Active nav items are marked by weight, never by a second fill — the
+      // bottom bar, Manage's pill and the designer's underline are three nav
+      // controls on one screen, and DESIGN.md says they differ by shape.
+      expect(html).toContain(".botnav a.on { color: var(--ink); font-weight: 800; }");
+      expect(html).not.toContain(".botnav a.on { background: var(--accent)");
     });
 
     /**
-     * The ONE neon surface on the dashboard, and DESIGN.md rule 1's single
-     * named exception — see the carve-out written into the rule.
-     *
-     * Text is --on-accent and never white: #c9f73d is a pale green, so white
-     * on it lands near 1.3:1. The tab thumb inside goes WHITE for the mirror
-     * reason — neon on neon is invisible.
+     * A fixed bar that the page does not make room for is a bar that covers the
+     * last thing on every screen. The toast is the one that bites: baseCss pins
+     * it 24px from the bottom, which is underneath this bar exactly.
      */
-    it("is the one neon surface, dark-texted, with a white thumb", () => {
-      expect(html).toContain(".greet { background: var(--accent)");
-      expect(html).toContain("color: var(--on-accent)");
-      expect(html).toContain(".greet #tabs .thumb { background: #fff");
-      // Never white text on the neon.
-      expect(html).not.toContain(".greet h1 { font-size: 1.45rem; margin: 0; color: var(--on-slab)");
+    it("reserves its own height, and lifts the toast above itself", () => {
+      expect(html).toContain("body.shelled { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 20px); }");
+      expect(html).toContain("body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }");
+      expect(html).toContain("padding-bottom: env(safe-area-inset-bottom, 0px); }");
+      // The login form and the broken-page screen share #app and have no bars.
+      // They keep the ordinary padded card, so the layout is scoped to a class
+      // the script adds when the chrome mounts and removes when they take over.
+      expect(html).toContain("function unshell()");
+      const auth = html.slice(html.indexOf("function authForm(mode)"), html.indexOf("// Curated palettes"));
+      expect(auth).toContain("unshell();");
+      const dead = html.slice(html.indexOf("function deadEnd(email"), html.indexOf("async function app()"));
+      expect(dead).toContain("unshell();");
     });
+
+    /**
+     * On staging the "not the real site" strip is also stuck to the top and
+     * sits above everything on purpose. Without this the two share a top of 0
+     * and the strip covers half the bar — on the one copy the founder looks at.
+     */
+    it("starts below the staging strip rather than under it", () => {
+      expect(html).toContain(".envstrip ~ #app.shell .topbar { top: 31px; }");
+      expect(dashboardPage(false, "")).toContain(".envstrip ~ #app.shell .topbar");
+    });
+  });
+
+  /**
+   * Every screen has a real address, so the back button works and a screen can
+   * be linked to. The three tabs all shared one address: back did nothing, and
+   * a refresh dropped you at the first tab whatever you had been looking at.
+   */
+  describe("the address router", () => {
+    const routes = html.slice(html.indexOf("const ROUTES = ["), html.indexOf("function matchRoute"));
+
+    it("has a screen for every nav destination", () => {
+      for (const path of ['"/"', '"/customers"', '"/create"', '"/manage"', '"/shop"']) {
+        expect(routes).toContain(`[${path},`);
+      }
+    });
+
+    it("matches the more specific address first", () => {
+      // "/customers/:code" must be tried before "/customers", or a customer's
+      // page never renders — the shorter pattern would claim it first.
+      expect(routes.indexOf('"/customers/:code"')).toBeLessThan(routes.indexOf('["/customers",'));
+      expect(routes.indexOf('"/manage/:tab/:id"')).toBeLessThan(routes.indexOf('["/manage",'));
+      expect(routes.indexOf('"/create/:kind/:type"')).toBeLessThan(routes.indexOf('["/create",'));
+    });
+
+    it("pushes a real address and answers the back button", () => {
+      expect(html).toContain("history.pushState");
+      expect(html).toContain("history.replaceState");
+      expect(html).toContain('window.addEventListener("popstate"');
+    });
+
+    /** An address nobody claims says so, rather than painting an empty page. */
+    it("says so when an address matches nothing", () => {
+      expect(html).toContain("function notFoundScreen()");
+      expect(html).toContain("That address isn’t part of your dashboard.");
+    });
+  });
+
+  /**
+   * Every in-app link has to exist on the server too, or it 404s the moment
+   * somebody refreshes on it — which is the whole reason for pushing real
+   * addresses instead of hash fragments. One list, two consumers.
+   */
+  it("has a server route for every address it links to", () => {
+    const links = new Set(
+      [...html.matchAll(/data-nav="(\/[a-z/-]+)"/g)].map((m) => m[1]!),
+    );
+    // Built by hand in NAV and in the Create screen's markup, so read both.
+    for (const m of html.matchAll(/p: "([^"]+)", label:/g)) links.add(m[1]!);
+    expect(links.size).toBeGreaterThan(4);
+    for (const link of links) {
+      if (link === "/") continue; // dashboardRouter.get("/") — always there.
+      const matched = V2_SCREENS.some((pattern) => {
+        const pp = pattern.split("/"), lp = link.split("/");
+        return pp.length === lp.length &&
+          pp.every((seg, i) => seg.startsWith(":") || seg === lp[i]);
+      });
+      expect(matched, `${link} has no entry in V2_SCREENS`).toBe(true);
+    }
   });
 
   /**
@@ -1459,30 +1566,25 @@ describe("dashboard information architecture", () => {
     expect(html).toContain(".dseg button.on { color: var(--ink); font-weight: 700;");
   });
 
-  it("has one tab per job", () => {
-    for (const tab of ["customers", "card", "shop"]) {
-      expect(html).toContain(`data-tab="${tab}"`);
+  // The tab strip is gone entirely: five destinations, each with its own
+  // address, replaced three that all shared one.
+  it("has no tab strip left behind it", () => {
+    for (const tab of ["customers", "card", "shop", "share", "account", "access", "home"]) {
+      expect(html).not.toContain(`data-tab="${tab}"`);
     }
-    expect(html).not.toContain('data-tab="share"');
-    // Renamed from "account": the tab holds the shop's links and its counter,
-    // not just a login, and the key follows the label so the code reads the way
-    // the screen does.
-    expect(html).not.toContain('data-tab="account"');
   });
 
-  // Home was folded into Customers: with one card per merchant its headline row
-  // was too thin to be a page, and it left the numbers on one tab and the people
-  // they described on another.
-  it("has no separate Home tab", () => {
-    expect(html).not.toContain('data-tab="home"');
-    expect(html).toContain(">Customers<");
+  // Home is its own screen again, and it is the root address — the one thing
+  // a bookmark of "/dashboard" should land on.
+  it("makes Home the root address, not a tab", () => {
+    expect(html).toContain('label: "Home"');
+    expect(html).toContain('p: "/", label: "Home"');
   });
 
   // The Access tab existed only because the PIN hung off each café row, giving
   // an owner with two cards two PINs and two stamper links for one counter.
-  it("has no Access tab — one PIN in Shop, with every link you hand out", () => {
-    expect(html).not.toContain('data-tab="access"');
-    expect(html).toContain(">Shop<");
+  it("keeps one PIN, under Shop", () => {
+    expect(html).toContain('label: "Shop"');
     expect(html).toContain("/staff-pin");
   });
 
@@ -1517,7 +1619,9 @@ describe("dashboard information architecture", () => {
   it("moves what matters into the action and the rest behind an info button", () => {
     expect(html).toContain("Save these changes?");
     expect(html).toContain("function info(text)");
-    expect(html).toContain("wireInfo(panel)");
+    // Re-run on every screen the router paints, exactly as it was re-run on
+    // every tab switch — the hints are wired by delegation from their host.
+    expect(html).toContain("wireInfo(host)");
   });
 
   // Two fields, one checkbox: they were two adjacent boxes doing the same job.
@@ -2076,6 +2180,91 @@ describe("the rebrand renamed the label, not the identifiers", () => {
  * and total 100, four of one-third read 33 and total 99 — so the arithmetic is
  * worth running rather than eyeballing.
  */
+/**
+ * The address router, running the shipped source.
+ *
+ * Compiling it proves it has no typos; it does not prove "/customers/K4M7XQ"
+ * reaches the customer screen rather than being swallowed by "/customers". The
+ * patterns are matched in order and the ordering is the whole correctness
+ * argument, so it is worth running rather than eyeballing.
+ *
+ * matchRoute and here() are pulled out of the real page text — not retyped —
+ * so this cannot drift from what ships.
+ */
+describe("the router, actually run", () => {
+  const html = dashboardPage(true, "");
+  const src = (from: string, to: string) => html.slice(html.indexOf(from), html.indexOf(to));
+
+  const R = new Function(
+    "location",
+    src("const ROOT =", "/**\n     * Go somewhere.") +
+      src("function matchRoute(", "function render()") +
+      // The pattern list, with each screen replaced by its own name: this suite
+      // is about which route wins, not what it paints.
+      html.slice(html.indexOf("const ROUTES = ["), html.indexOf("/** Match one pattern"))
+        .replace(/\(p?\) => [a-zA-Z]+\([^)]*\)/g, "0") +
+      "return { here, matchRoute, ROUTES };",
+  );
+
+  const at = (path: string) => R({ pathname: "/dashboard" + path });
+
+  it("reads the address inside the app, whatever the trailing slash", () => {
+    expect(at("").here()).toBe("/");
+    expect(at("/").here()).toBe("/");
+    expect(at("/customers/").here()).toBe("/customers");
+    expect(at("/manage/rewards").here()).toBe("/manage/rewards");
+  });
+
+  /** The pattern each address actually lands on, by the real first-match rule. */
+  const resolve = (path: string) => {
+    const { here, matchRoute, ROUTES } = at(path);
+    for (const [pattern] of ROUTES) if (matchRoute(pattern, here())) return pattern;
+    return null;
+  };
+
+  it("sends every nav destination to its own screen", () => {
+    expect(resolve("")).toBe("/");
+    expect(resolve("/customers")).toBe("/customers");
+    expect(resolve("/create")).toBe("/create");
+    expect(resolve("/manage")).toBe("/manage");
+    expect(resolve("/shop")).toBe("/shop");
+  });
+
+  /**
+   * The bug this ordering exists to prevent: a two-segment pattern claiming a
+   * one-segment address, so a customer's page silently renders the list again.
+   */
+  it("prefers the deeper pattern over the shallower one", () => {
+    expect(resolve("/customers/K4M7XQ")).toBe("/customers/:code");
+    expect(resolve("/manage/rewards/default")).toBe("/manage/:tab/:id");
+    expect(resolve("/manage/rewards")).toBe("/manage/:tab");
+    expect(resolve("/create/reward/stamps")).toBe("/create/:kind/:type");
+    expect(resolve("/create/reward")).toBe("/create/:kind");
+    expect(resolve("/shop/staff")).toBe("/shop/:section");
+  });
+
+  it("pulls the placeholder out of the address", () => {
+    const { matchRoute } = at("");
+    expect(matchRoute("/customers/:code", "/customers/K4M7XQ")).toEqual({ code: "K4M7XQ" });
+    expect(matchRoute("/manage/:tab/:id", "/manage/rewards/default"))
+      .toEqual({ tab: "rewards", id: "default" });
+    // A shop id can carry a space once it reaches an address.
+    expect(matchRoute("/manage/:tab/:id", "/manage/rewards/a%20b").id).toBe("a b");
+  });
+
+  it("claims nothing it has no screen for", () => {
+    expect(resolve("/nope")).toBe(null);
+    expect(resolve("/customers/a/b")).toBe(null);
+    // Every address the server serves must land somewhere, or a refresh shows
+    // the not-found screen on a link the app itself printed.
+    for (const path of ["/customers", "/customers/X", "/create", "/create/reward",
+                        "/create/reward/stamps", "/manage", "/manage/rewards",
+                        "/manage/rewards/default", "/shop", "/shop/staff"]) {
+      expect(resolve(path), path + " resolves to no screen").not.toBe(null);
+    }
+  });
+});
+
 describe("customer health tiles", () => {
   const H = new Function(
     'function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){' +

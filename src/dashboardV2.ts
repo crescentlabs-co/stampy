@@ -57,53 +57,107 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                          font: inherit; font-weight: 600; background: var(--surface); color: var(--ink); }
     .cardselect .btn { width: auto; padding: 11px 14px; font-size: .9rem; white-space: nowrap; }
     ${SEG_CSS}
-    /* Five tabs don't fit a 375px phone at the default size. Tighten them enough
-       that all five stay visible (a hidden tab is worse than small type), and
-       keep a scroll as the fallback for anything narrower still. */
-    /* --- the welcome block ---------------------------------------------------
-       The dashboard used to open on the word "Dashboard" and the login email:
-       a fact about the software, addressed to nobody. This greets the shop and
-       says how the card is doing, and it doubles as the rule between the page
-       and the tab strip — there was nothing separating navigation from content.
+    /* --- the app chrome ------------------------------------------------------
+       A bar at the top that says whose shop this is, and a bar at the bottom
+       that is the whole of the navigation. They replaced a neon block that held
+       the shop name, the login email and a three-tab strip all at once.
 
-       NEON, and deliberately the one exception to DESIGN.md rule 1 — see the
-       rule's own carve-out, which was written for this block. It was --slab.
-       The header is not decoration: it is the shop's identity and the whole of
-       the app's navigation in one object, and it is the only thing on the page
-       that never changes, so it is the one surface that can carry the colour
-       without competing with anything. Nothing else on the dashboard is neon
-       now — the tab thumb inside it goes WHITE precisely because a neon thumb
-       on a neon ground is invisible.
+       That block was DESIGN.md rule 1's third fenced exception, and it is gone,
+       so the exception went with it — the rule is down to two. The one neon
+       object on this screen is now the Create button in the bottom bar, which
+       needs no exception at all: rule 1 has always allowed the accent on a
+       primary action. Nothing else here takes it as a fill.
 
-       Text is --on-accent (near-black) and never white: #c9f73d is a pale
-       green, so white on it is about 1.3:1 and unreadable, which is the reason
-       --on-accent exists and is always dark. */
-    .greet { background: var(--accent); color: var(--on-accent); border-radius: var(--r-lg);
-            padding: 20px 22px 16px; margin-top: 4px; }
-    .greet h1 { font-size: 1.45rem; margin: 0; color: var(--on-accent); }
-    /* The login email. Quiet, but it must stay legible — it is the only thing
-       on screen answering "which account am I in?", which matters the moment
-       somebody runs two shops. Tinted from the ink rather than greyed: a grey
-       on this green reads as dirt. */
-    .greet .who { font-size: .8rem; margin: 3px 0 0; color: rgba(12,14,13,.66);
-                  word-break: break-all; }
-    /* The tab strip, now inside the header. Its trough is a darker wash of the
-       same ground rather than --ghost-bg, which is a neutral grey and turns
-       muddy on green. */
-    .greet #tabs { background: rgba(12,14,13,.11); }
-    .greet #tabs button { color: rgba(12,14,13,.62); }
-    .greet #tabs button.on { color: var(--ink); }
-    /* White, not neon: the thumb has to be the thing that stands OUT of the
-       ground it sits on, and on neon that is white. */
-    .greet #tabs .thumb { background: #fff; box-shadow: 0 2px 6px rgba(12,14,13,.18); }
-    #tabs { margin: 16px 0 0; overflow-x: auto; scrollbar-width: none; }
-    #tabs::-webkit-scrollbar { display: none; }
-    #tabs button { padding: 10px 9px; font-size: .84rem; }
-    @media (max-width: 430px) {
-      #tabs { padding: 3px; gap: 0; }
-      #tabs button { padding: 10px 6px; font-size: .78rem; }
-      #tabs .thumb { top: 3px; bottom: 3px; }
-    }
+       The top bar is --slab. That is rule 2 applied as written — weight comes
+       from the black panel, not from colour — and it is what the Components
+       section always said a dashboard header should be. */
+    /* The page is a 480px column, so both bars are that column's full width and
+       break out of its 16px side padding. On a phone — which is what this is
+       read on — that is edge to edge.
+
+       Scoped to .shelled / .shell, which the script adds only once the chrome
+       is mounted. The login form and the broken-page screen render into the
+       same #app and have no bars — they keep the ordinary padded card, which is
+       what they have always looked like. */
+    body.shelled { padding: 0; }
+    /* width:100% because body is a centred flex column — without it the column
+       shrinks to whatever its widest child happens to be. */
+    #app.shell { width: 100%; max-width: 480px; margin: 0 auto; padding: 0 16px;
+                 border: 0; box-shadow: none; border-radius: 0; background: var(--bg); }
+    .topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center;
+              gap: 10px; background: var(--slab); color: var(--on-slab);
+              height: 56px; margin: 0 -16px; padding: 0 14px; }
+    /* On a staging copy the "not the real site" strip is also stuck to the top,
+       and it sits above everything by design. Start below it rather than under
+       it. Live renders no strip, so this rule never matches there. */
+    .envstrip ~ #app.shell .topbar { top: 31px; }
+    .topbar img { width: 24px; height: 24px; border-radius: 6px; flex: none; }
+    /* The shop name, centred. min-width:0 is what lets the ellipsis actually
+       happen inside a flex row — without it a long name pushes the menu button
+       off the end instead of truncating. */
+    .topbar .shop { flex: 1; min-width: 0; text-align: center; font-family: var(--display);
+                    font-weight: 800; font-size: .95rem; letter-spacing: -.01em;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topbar .dots { flex: none; width: 34px; height: 34px; border: 0; border-radius: 999px;
+                    background: transparent; color: var(--on-slab); font-size: 1.25rem;
+                    line-height: 1; cursor: pointer; padding: 0; }
+    .topbar .dots:hover { background: rgba(244,246,242,.12); }
+    /* Neon on dark, per rule 3 — an ink ring vanishes on --slab. */
+    .topbar .dots:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    /* The menu. It carries the login email, which is the only thing left on
+       screen answering "which account am I in?" once the header stopped saying
+       so, and it matters the moment somebody runs two shops. */
+    .tmenu { position: absolute; top: 50px; right: 8px; z-index: 41; min-width: 210px;
+             background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+             border-radius: var(--r); box-shadow: var(--shadow); padding: 6px; }
+    .tmenu .mwho { font-size: .76rem; color: var(--muted); padding: 8px 10px 6px;
+                   word-break: break-all; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+    .tmenu button { width: 100%; text-align: left; background: transparent; border: 0;
+                    font: inherit; font-weight: 600; color: var(--ink); padding: 11px 10px;
+                    border-radius: 10px; cursor: pointer; }
+    .tmenu button:hover { background: var(--surface); }
+
+    /* The bottom bar. Fixed, because navigation that scrolls away is not
+       navigation. --bg with a hairline rather than a fill: the screen above it
+       is the content, and a solid bar would compete with it. */
+    .botnav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+              width: 100%; max-width: 480px; z-index: 40;
+              display: flex; align-items: flex-end; justify-content: center;
+              background: var(--bg); border-top: 1px solid var(--line);
+              padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .botnav a { flex: 1; max-width: 96px; display: flex; flex-direction: column;
+                align-items: center; justify-content: center; gap: 3px;
+                min-height: 56px; text-decoration: none; color: var(--muted);
+                font-size: .62rem; font-weight: 600; letter-spacing: .05em; padding: 6px 0 8px; }
+    .botnav a svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
+                    stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    /* Active is marked by WEIGHT and ink, never by a fill. Three nav controls
+       share this screen — this bar, Manage's tab pill and the designer's
+       preview switch — and DESIGN.md's rule is that they differ by shape, so
+       only one of them may be a filled pill. */
+    .botnav a.on { color: var(--ink); font-weight: 800; }
+    .botnav a.on svg { stroke-width: 2.4; }
+    .botnav a:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; border-radius: 10px; }
+    /* The one neon object on the dashboard: the primary action, raised out of
+       the bar so it reads as a button rather than a fifth tab. Its glyph is
+       --on-accent (near-black) and never white — #c9f73d is a pale green, and
+       white on it is about 1.3:1. */
+    .botnav .navadd { max-width: 72px; }
+    .botnav .navadd .plus { width: 44px; height: 44px; border-radius: 999px;
+                            background: var(--accent); color: var(--on-accent);
+                            display: flex; align-items: center; justify-content: center;
+                            margin-top: -14px; box-shadow: 0 6px 16px -6px rgba(12,14,13,.4); }
+    .botnav .navadd .plus svg { width: 22px; height: 22px; stroke: var(--on-accent); stroke-width: 2.6; }
+    .botnav .navadd.on .plus { background: var(--accent-2); }
+
+    /* The nav floats over the page, so the page has to end above it. */
+    body.shelled { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 20px); }
+    /* And so does the toast. baseCss pins it 24px from the bottom, which put
+       every confirmation on this screen UNDERNEATH the new bar. Lifted here
+       rather than in baseCss: the stamper and the console read that too, and
+       neither of them has a bottom bar. */
+    body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     /* --- share tab --- */
@@ -192,11 +246,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        a box round every one of them. Amber rather than red — nothing is broken,
        a step is outstanding — and the button is ghost, because the neon one on
        the page belongs to whatever the owner came here to do (DESIGN.md 1). */
-    /* The tab strip used to carry 24px under itself; it is inside the header
-       now, so the gap between that block and the panel it switches belongs
-       here instead. */
-    #pinwarn:not(:empty), #panel { margin-top: 22px; }
-    #pinwarn:not(:empty) + #panel { margin-top: 0; }
+    /* The gap between the top bar and whatever screen is under it. The banner
+       takes it when there is one, so the two never stack their margins. */
+    #pinwarn:not(:empty), #screen { margin-top: 22px; }
+    #pinwarn:not(:empty) + #screen { margin-top: 0; }
     .pinwarn { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
                background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
                border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;
@@ -303,7 +356,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // thing on this page that used it, so the helper went with it. The stamper
     // and the admin console each keep their own copy; both are still used.
 
+    /**
+     * Drop the app chrome's layout. authForm() and deadEnd() each replace the
+     * whole of #app with a screen that has no bars, and the shell's layout —
+     * no padding, no card, room reserved at the bottom for a nav — leaves those
+     * two screens flush against the edge of the phone with a gap under them.
+     */
+    function unshell() {
+      document.body.classList.remove("shelled");
+      $("#app").classList.remove("shell");
+    }
+
     function authForm(mode) {
+      unshell();
       $("#app").innerHTML = \`
         <h1>\${mode === "signup" ? "Create your account" : "Owner login"}</h1>
         <p class="sub">\${mode === "signup"
@@ -936,9 +1001,39 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     }
 
     ${SEG_JS}
-    // ---- app shell: owner-scoped tabs ----
-    const S = { cards: [], email: "", tab: "customers", selCard: 0, hasStaffPin: false,
+    // ---- app shell: five destinations, each with a real address ----
+    //
+    // \`path\` is the address the browser is on, minus the /dashboard prefix, and
+    // it is the only thing that decides what is on screen. It replaced a \`tab\`
+    // string that lived in memory: three tabs all shared one address, so the
+    // back button did nothing, a refresh dropped you back at the first one, and
+    // nothing deeper than a tab had anywhere to live.
+    const S = { cards: [], email: "", path: "/", selCard: 0, hasStaffPin: false,
                 joinRef: "", cycleDays: 0 };
+
+    const ROOT = "/dashboard";
+    /** The address inside the app, always starting with "/" and never trailing one. */
+    function here() {
+      const p = location.pathname.startsWith(ROOT) ? location.pathname.slice(ROOT.length) : "";
+      return (p.replace(/\\/+$/, "") || "/");
+    }
+
+    /**
+     * Go somewhere. \`replace\` swaps the current entry instead of adding one —
+     * used when a screen redirects on arrival, so the back button does not land
+     * you on the address that immediately bounced you again.
+     *
+     * Every path handed to this must also exist in V2_SCREENS on the server, or
+     * it 404s the moment somebody refreshes. A test checks that.
+     */
+    function navigate(path, opts) {
+      const to = ROOT + (path === "/" ? "" : path);
+      if (opts && opts.replace) history.replaceState({}, "", to);
+      else history.pushState({}, "", to);
+      render();
+      window.scrollTo(0, 0);
+    }
+    window.addEventListener("popstate", () => { render(); });
 
     /**
      * A screen with no tabs behind it: a message and a way out. EVERY dead end
@@ -949,6 +1044,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * argument is optional; the log out button never is.
      */
     function deadEnd(email, message, retry) {
+      unshell();
       $("#app").innerHTML =
         '<div><h1 style="margin:0">Dashboard</h1>' +
         (email ? '<p class="sub" style="margin:2px 0 14px">' + esc(email) + "</p>" : "") + "</div>" +
@@ -980,7 +1076,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       if (!Array.isArray(body.cards)) {
         return void deadEnd("", "Couldn't load your dashboard. Check your connection and try again.", app);
       }
-      S.cards = body.cards; S.email = body.email; S.selCard = 0; S.tab = "customers";
+      S.cards = body.cards; S.email = body.email; S.selCard = 0;
       S.hasStaffPin = !!body.hasStaffPin;
       // 0 means never chosen — the setup banner asks for it, and the Shop tab
       // shows nothing selected rather than a default they never picked.
@@ -996,56 +1092,95 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           "This account does not have a shop. If that is a surprise, message whoever set your PunchMe up — they can hand it back.",
         );
       }
-      /**
-       * The block the dashboard opens on.
-       *
-       * It replaced "Dashboard" over the login email — a title that named the
-       * software and said nothing to the person reading it — and it is also the
-       * rule between the tab strip and the page, which had none.
-       *
-       * Everything here is already in S. No request, no query: a greeting that
-       * costs a round trip is a greeting that arrives after you have started
-       * reading.
-       *
-       * The numbers are SUMMED across cards. A merchant running two programmes
-       * has one shop, and this block greets the shop — reading them off
-       * cards[0] would show one programme's figures as though they were the
-       * whole business, which is the shape of bug this codebase has had twice.
-       */
-      function greetHtml() {
-        const shop = (S.cards[0] || {}).shopName || "your shop";
-        // Who you are, and where you are going. The counts and the share link
-        // that used to sit here are both said better further down — the numbers
-        // by the Customers tab this block opens on, and the link by the Shop
-        // tab, which is where somebody goes looking for it. Repeating them here
-        // made the header the third place each appeared.
-        return '<div class="greet">' +
-          "<h1>Hello, " + esc(shop) + "</h1>" +
-          '<p class="who">' + esc(S.email) + "</p>" +
-          // The tabs live INSIDE this block, so the shop, the account and the
-          // navigation read as one fixed thing that the panel changes under.
-          '<div class="seg" id="tabs" role="tablist">' +
-            '<button data-tab="customers" class="on">Customers</button>' +
-            '<button data-tab="card">Card</button>' +
-            '<button data-tab="shop">Shop</button>' +
-            '<span class="thumb"></span>' +
-          "</div>" +
-          "</div>";
-      }
+      // The chrome is built HERE, inside app(), and never in the page the
+      // server sends. authForm() and deadEnd() both take the whole of #app
+      // over — so a navigation bar in the server's body would be visible to a
+      // logged-out visitor who cannot use any of it, and would still be there
+      // on the screen whose entire job is to offer a way out.
+      document.body.classList.add("shelled");
+      $("#app").classList.add("shell");
+      $("#app").innerHTML =
+        topBarHtml() +
+        '<div id="pinwarn"></div>' +
+        '<div id="screen"></div>' +
+        botNavHtml();
+      wireChrome();
+      renderPinWarning();
+      render();
+    }
 
-      // Three tabs, each one job: who your customers are and how it's going ·
-      // what the card is · everything you set once. Home and Customers used to
-      // be separate, which left a headline row on one page and the people it
-      // described on another; with one card per merchant the first was too thin
-      // to be a page of its own.
-      $("#app").innerHTML = \`
-        \${greetHtml()}
-        <div id="pinwarn"></div>
-        <div id="panel"></div>\`;
-      $("#tabs").querySelectorAll("button").forEach((b) => {
-        b.onclick = () => go(b.dataset.tab);
+    /** The shop's own name, which is what the top bar says instead of "Dashboard". */
+    function shopName() { return (S.cards[0] || {}).shopName || "your shop"; }
+
+    function topBarHtml() {
+      return '<header class="topbar">' +
+        '<img src="/assets/img/punchme-favicon-v1.png" alt="PunchMe">' +
+        '<div class="shop">' + esc(shopName()) + "</div>" +
+        '<button class="dots" data-menu aria-label="Account menu" aria-haspopup="true">⋯</button>' +
+        "</header>";
+    }
+
+    /**
+     * The five destinations. \`d\` is the icon path; \`p\` is the address, and every
+     * one of them is in V2_SCREENS on the server, so a refresh on any of them
+     * serves this same page instead of a 404.
+     */
+    const NAV = [
+      { p: "/", label: "Home", d: "M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5" },
+      { p: "/customers", label: "Customers", d: "M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM2.5 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16.5 5.2a3.5 3.5 0 0 1 0 6.6M18 14.8c2.1.6 3.5 2.4 3.5 5.2" },
+      { p: "/create", label: "Create", d: "M12 6v12M6 12h12", add: true },
+      { p: "/manage", label: "Manage", d: "M4 6h16M4 12h16M4 18h10" },
+      { p: "/shop", label: "Shop", d: "M4 9h16l-1 11H5L4 9ZM8.5 9V6.5a3.5 3.5 0 0 1 7 0V9" },
+    ];
+
+    function botNavHtml() {
+      return '<nav class="botnav" aria-label="Main">' + NAV.map((n) => {
+        const icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + n.d + '"></path></svg>';
+        return '<a href="' + ROOT + (n.p === "/" ? "" : n.p) + '" data-nav="' + n.p + '"' +
+          (n.add ? ' class="navadd"' : "") + ">" +
+          (n.add ? '<span class="plus">' + icon + "</span>" : icon) +
+          "<span>" + n.label + "</span></a>";
+      }).join("") + "</nav>";
+    }
+
+    function wireChrome() {
+      // Real hrefs, intercepted. Middle-click and open-in-new-tab still do the
+      // ordinary thing, because the server answers every one of these addresses.
+      $(".botnav").querySelectorAll("[data-nav]").forEach((a) => {
+        a.onclick = (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+          e.preventDefault();
+          navigate(a.dataset.nav);
+        };
       });
-      renderTabs(); renderPinWarning(); renderPanel();
+      $("[data-menu]").onclick = (e) => { e.stopPropagation(); toggleMenu(); };
+    }
+
+    /**
+     * The three-dot menu. A plain element rather than a browser dialog: this
+     * app does not use confirm()/alert() anywhere an owner has to press
+     * something, because a browser lets people silence those and they then
+     * answer "no" in silence.
+     */
+    function toggleMenu() {
+      const open = $(".tmenu");
+      if (open) return void open.remove();
+      const box = document.createElement("div");
+      box.className = "tmenu";
+      box.innerHTML = '<p class="mwho">' + esc(S.email) + "</p>" +
+                      "<button data-signout>Sign out</button>";
+      $(".topbar").appendChild(box);
+      box.querySelector("[data-signout]").onclick = async () => {
+        try { await api("/logout", { method: "POST" }); } finally { location.reload(); }
+      };
+      // One document-level listener, added with the menu and removed with it.
+      setTimeout(() => {
+        document.addEventListener("click", function close(ev) {
+          if (box.contains(ev.target)) return;
+          box.remove();
+          document.removeEventListener("click", close);
+        });
+      }, 0);
     }
 
     /**
@@ -1081,27 +1216,181 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<button class="btn btn-ghost" id="gopin">' +
           (todo.length > 1 ? "Finish setting up" : !S.hasStaffPin ? "Set a staff PIN" : "Set it") +
         "</button></div>";
-      $("#gopin").onclick = () => go("shop");
+      // Straight to the section that is missing, not just to Shop: the PIN and
+      // the visit cycle live under different headings now.
+      $("#gopin").onclick = () => navigate(!S.hasStaffPin ? "/shop/staff" : "/shop");
     }
 
-    /** Switch tabs from anywhere (the tab bar, or a link inside a panel). */
-    function go(tab) { S.tab = tab; renderTabs(); renderPanel(); window.scrollTo(0, 0); }
+    /**
+     * The screens, matched in order against the address.
+     *
+     * Each pattern is a plain string with :placeholders. The first one that
+     * matches wins, so the more specific address goes above the less specific
+     * one — "/manage/reward/:id" before "/manage".
+     *
+     * Every screen is a function returning an element, exactly as the panels
+     * always were. The router wipes and rebuilds, which is what the tab
+     * switcher already did.
+     */
+    const ROUTES = [
+      ["/", () => homeScreen()],
+      ["/customers/:code", (p) => customerScreen(p.code)],
+      ["/customers", () => customersScreen()],
+      ["/create/:kind/:type", (p) => createStepScreen(p.kind, p.type)],
+      ["/create/:kind", (p) => createPickScreen(p.kind)],
+      ["/create", () => createScreen()],
+      ["/manage/:tab/:id", (p) => manageDetailScreen(p.tab, p.id)],
+      ["/manage/:tab", (p) => manageScreen(p.tab)],
+      ["/manage", () => manageScreen("rewards")],
+      ["/shop/:section", (p) => shopScreen(p.section)],
+      ["/shop", () => shopScreen("")],
+    ];
 
-    function renderTabs() {
-      const seg = $("#tabs");
-      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === S.tab));
-      moveThumb(seg);
-    }
-    function renderPanel() {
-      const panel = $("#panel"); panel.innerHTML = "";
-      if (S.tab === "card") panel.appendChild(cardsPanel());
-      else if (S.tab === "shop") panel.appendChild(accountPanel());
-      else {
-        // The numbers, then the people they are about — one page, in that order.
-        panel.appendChild(homePanel());
-        panel.appendChild(customersPanel());
+    /** Match one pattern against one path; returns the :params, or null. */
+    function matchRoute(pattern, path) {
+      const pp = pattern.split("/"), ap = path.split("/");
+      if (pp.length !== ap.length) return null;
+      const out = {};
+      for (let i = 0; i < pp.length; i++) {
+        if (pp[i].charAt(0) === ":") out[pp[i].slice(1)] = decodeURIComponent(ap[i]);
+        else if (pp[i] !== ap[i]) return null;
       }
-      wireInfo(panel);
+      return out;
+    }
+
+    function render() {
+      S.path = here();
+      const host = $("#screen");
+      if (!host) return;
+      host.innerHTML = "";
+      let el = null;
+      for (const [pattern, build] of ROUTES) {
+        const params = matchRoute(pattern, S.path);
+        if (params) { el = build(params); break; }
+      }
+      // An address inside /dashboard that no screen claims. The server only
+      // serves the ones in V2_SCREENS, so this is reachable by typing — say so
+      // and offer the way back rather than painting an empty page.
+      if (!el) el = notFoundScreen();
+      host.appendChild(el);
+      // Which nav item is lit. The deep screens light their section: a customer
+      // is still Customers, a programme is still Manage.
+      $(".botnav").querySelectorAll("[data-nav]").forEach((a) => {
+        const p = a.dataset.nav;
+        a.classList.toggle("on", p === "/" ? S.path === "/" : S.path.indexOf(p) === 0);
+      });
+      wireInfo(host);
+    }
+
+    function notFoundScreen() {
+      const d = document.createElement("div");
+      d.innerHTML = '<h2 class="sec first">Nothing here</h2>' +
+        '<p class="muted">That address isn’t part of your dashboard.</p>' +
+        '<button class="btn btn-ghost" style="width:auto;padding:10px 16px;margin-top:12px" data-home>Go to Home</button>';
+      d.querySelector("[data-home]").onclick = () => navigate("/");
+      return d;
+    }
+
+    // ---- the five screens ---------------------------------------------------
+    // Home, Customers, Manage and Shop each wrap a panel that already existed
+    // and already works. They get rebuilt in the commits after this one; this
+    // commit is the address bar and the two bars, and moving working screens
+    // and rewriting them in the same change is how you lose track of which of
+    // the two broke something.
+
+    function homeScreen() {
+      const d = document.createElement("div");
+      d.appendChild(homePanel());
+      return d;
+    }
+
+    function customersScreen() {
+      const d = document.createElement("div");
+      d.appendChild(customersPanel());
+      return d;
+    }
+
+    /** One customer. Built in the Customers commit. */
+    function customerScreen(code) {
+      return placeholder("Customer " + code,
+        "This customer’s own page — their segment, how often they come in, and what they’ve done — arrives with the Customers screen.");
+    }
+
+    function createScreen() {
+      const d = document.createElement("div");
+      d.innerHTML = '<h2 class="sec first">Create</h2>' +
+        '<p class="muted">Start a new reward programme, or a campaign to bring customers back.</p>' +
+        '<div class="sharelist" style="margin-top:14px">' +
+          '<a href="' + ROOT + '/create/reward" data-nav="/create/reward">' +
+            '<span>Reward programme<span class="sub2">Stamps, milestones, membership or points</span></span>' +
+            '<span class="arr">→</span></a>' +
+          '<a href="' + ROOT + '/create/campaign" data-nav="/create/campaign">' +
+            '<span>Campaign<span class="sub2">Bring customers back with a message</span></span>' +
+            '<span class="arr">→</span></a>' +
+        "</div>";
+      wireLinks(d);
+      return d;
+    }
+
+    /** The reward-type and campaign-type pickers. Built in the Create commit. */
+    function createPickScreen(kind) {
+      if (kind !== "reward" && kind !== "campaign") return notFoundScreen();
+      return placeholder(kind === "reward" ? "New reward programme" : "New campaign",
+        kind === "reward"
+          ? "Choosing between stamps, milestones, membership and points arrives with the Create screens."
+          : "Win-back, quiet period, progress reminder and custom campaigns arrive with the Create screens.");
+    }
+
+    function createStepScreen(kind, type) {
+      if (kind !== "reward" && kind !== "campaign") return notFoundScreen();
+      return placeholder("Set up your " + (kind === "reward" ? "programme" : "campaign"),
+        "Setting up “" + type + "” arrives with the Create screens.");
+    }
+
+    function manageScreen(tab) {
+      if (tab !== "rewards" && tab !== "campaigns") return notFoundScreen();
+      const d = document.createElement("div");
+      // Rewards is the card editor as it stands today, so the programme you
+      // actually run is editable from the moment this shell lands. The list, the
+      // detail page and the Campaigns tab arrive with the Manage commit.
+      if (tab === "rewards") d.appendChild(cardsPanel());
+      else d.appendChild(placeholder("Campaigns", "Your campaigns will be listed here."));
+      return d;
+    }
+
+    function manageDetailScreen(tab, id) {
+      if (tab !== "rewards" && tab !== "campaigns") return notFoundScreen();
+      return placeholder(tab === "rewards" ? "Programme" : "Campaign",
+        "The detail page for “" + id + "” arrives with the Manage screens.");
+    }
+
+    function shopScreen() {
+      const d = document.createElement("div");
+      d.appendChild(accountPanel());
+      return d;
+    }
+
+    /**
+     * A screen that is not built yet. It says so in plain words and offers the
+     * way on, rather than rendering nothing — an empty page reads as broken,
+     * and there is no way to tell the two apart from the outside.
+     */
+    function placeholder(title, body) {
+      const d = document.createElement("div");
+      d.innerHTML = '<h2 class="sec first">' + esc(title) + "</h2>" +
+        '<p class="muted">' + esc(body) + "</p>";
+      return d;
+    }
+
+    /** Turn every [data-nav] inside a freshly built screen into an in-app move. */
+    function wireLinks(root) {
+      root.querySelectorAll("[data-nav]").forEach((a) => {
+        a.onclick = (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+          e.preventDefault();
+          navigate(a.dataset.nav);
+        };
+      });
     }
 
     // The last line of defence. The body this script boots into is the word

@@ -59,22 +59,19 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
    why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
-   **three** fenced exceptions, each described below: the marketing page's three
-   tile colours, the neon reassurance band pinned to the bottom of that page,
-   and the dashboard's `.greet` header.
+   **two** fenced exceptions, both described below: the marketing page's three
+   tile colours, and the neon reassurance band pinned to the bottom of that page.
 
-   `.greet` is neon on purpose, decided by the founder. It is not decoration:
-   it is the shop's identity plus the whole of the app's navigation in one
-   object, and it is the only thing on the dashboard that never changes as you
-   move around — so it is the one surface that can hold the colour without
-   competing with anything. Its text is `--on-accent`, never white, and the tab
-   thumb inside it is **white**, because a neon thumb on a neon ground is
-   invisible. Nothing else on that screen may take the accent as a fill while
-   this stands: with the header carrying it, a second neon area would leave the
-   page with no single place the eye goes.
+   There used to be a third. The dashboard's `.greet` header was a neon block
+   carrying the shop name, the login email and a three-tab strip at once, and it
+   was fenced off here by name. The V2 restructure replaced it with a `--slab`
+   top bar and a bottom nav, so the exception went with it — the dashboard's one
+   neon object is now the **Create (+) button** in that nav, which needs no
+   exception at all: a primary action is what this rule has always allowed.
+   Nothing else on the dashboard may take the accent as a fill.
 2. **Weight comes from the black panel, not from colour.** If something needs to
-   dominate, put it on `--slab`. The dashboard header is the exception named in
-   rule 1; it used to be `--slab` for exactly this reason.
+   dominate, put it on `--slab`. The dashboard's top bar is `--slab` for exactly
+   this reason.
 3. **Focus rings are ink on light and neon on dark.** A neon ring on a white
    page is too low-contrast to be an accessibility feature, and an ink ring
    vanishes on a black panel. Both directions are declared; keep them.
@@ -115,17 +112,21 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   the weight renders at 400 and reads as body text.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
-- **A welcome block** (the dashboard's `.greet`) is `--slab`, never a colour.
-  It is rule 2 applied: the reference for it was another product's blue header,
-  and taking the blue would have been a second palette. Nothing inside it is
-  neon — the tab strip's active thumb is that screen's one neon fill — so its
-  action is an outlined pill in `--on-slab`, and its focus ring is neon
-  because ink vanishes on a black panel.
-- **Two nav controls on one screen differ by SHAPE, not by hue.** The dashboard's
-  tabs are a neon pill; the card previews' switch under them is a neon
-  underline. Reaching for a second accent to tell two controls apart is how a
-  palette grows a colour it cannot explain — and the underline still never
-  touches the label, because `--accent` on white is unreadable (rule 1).
+- **App chrome** is a `--slab` top bar and a `--bg` bottom nav with a `--line`
+  hairline. The top bar is rule 2 applied: it carries the shop's identity, and
+  weight for that comes from the black panel — the reference was another
+  product's blue header, and taking the blue would have been a second palette.
+  Its focus rings are neon, because ink vanishes on a black panel. The bottom
+  nav holds **exactly one** neon object, the Create (+) button, and the nav
+  **reserves its own height** in the page's bottom padding — including anything
+  else pinned to the bottom of the viewport, which is how the toast came to sit
+  underneath it. This bar replaced the neon `.greet` header; see rule 1.
+- **Three nav controls on one screen differ by SHAPE, not by hue.** The bottom
+  nav marks its active item by **weight**; Manage's section switch is a neon
+  pill; the card previews' switch is a neon underline. Reaching for a second
+  accent to tell controls apart is how a palette grows a colour it cannot
+  explain — and the underline still never touches the label, because
+  `--accent` on white is unreadable (rule 1).
 - **Charts** are hand-rolled inline SVG — there is no chart library and no build
   step to add one. Emphasis is **weight, not colour**: the period being read is
   `--ink`, the context behind it is `--field-border`, and the baseline is a

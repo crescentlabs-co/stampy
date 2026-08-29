@@ -135,9 +135,29 @@ async function main() {
   const qr = await get("/qr");
   expect(qr.status === 200 && (qr.headers.get("content-type") || "").includes("image/png"), "/qr still serves the counter QR PNG");
 
-  // Dashboard uses the sliding segmented control (not the old underline tabs)
+  // The dashboard is one document with a bar top and bottom, built by its own
+  // script. Nothing is in the served body but the shell it paints over.
   const dashShell = await get("/dashboard");
-  expect(dashShell.body.includes('class="seg" id="tabs"'), "dashboard renders the segmented tab control");
+  expect(dashShell.body.includes("function botNavHtml()"), "dashboard ships the bottom nav builder");
+  expect(dashShell.body.includes("function topBarHtml()"), "dashboard ships the top bar builder");
+  const servedBody = dashShell.body.slice(dashShell.body.indexOf("<body>"), dashShell.body.indexOf("<script>"));
+  expect(!servedBody.includes("botnav") && servedBody.includes('id="app"'),
+    "a logged-out visitor is served no navigation bar");
+
+  // Every deep screen has to survive a refresh, which is the whole point of
+  // pushing real addresses. The server answers each one with the same document.
+  for (const path of ["/dashboard/customers", "/dashboard/customers/K4M7XQ", "/dashboard/create",
+                      "/dashboard/create/reward", "/dashboard/create/reward/stamps",
+                      "/dashboard/manage", "/dashboard/manage/rewards",
+                      "/dashboard/manage/rewards/default", "/dashboard/shop", "/dashboard/shop/staff"]) {
+    const screen = await get(path);
+    expect(screen.status === 200 && screen.body.includes('id="app"'), `${path} serves the dashboard on refresh`);
+  }
+  // ...and the API namespace was NOT swallowed by those routes. A mistyped
+  // endpoint answering 200 with an HTML page is read by the page's own fetch
+  // helper as an empty answer, so the screen shows nothing instead of an error.
+  const apiTypo = await get("/dashboard/api/nope");
+  expect(apiTypo.status === 404, "an unknown /dashboard/api path is still a 404, not the page");
 
   // Dashboard: state → first signup claims the seeded default café
   const state1 = JSON.parse((await get("/dashboard/api/state")).body);
@@ -3836,17 +3856,18 @@ async function main() {
   const defCard = ovSpend.cards.find((c: any) => c.id === "default");
   expect(defCard.averageSpend === 4.5 && defCard.currency === "RM", "average spend round-trips through cents without float drift");
 
-  // --- Dashboard IA: three tabs, each one job ---
+  // --- Dashboard IA: five destinations, each with its own address ---
   const dashIa = (await get("/dashboard")).body;
-  for (const tab of ["customers", "card", "shop"]) {
-    expect(dashIa.includes('data-tab="' + tab + '"'), `dashboard has the ${tab} tab`);
+  for (const label of ["Home", "Customers", "Create", "Manage", "Shop"]) {
+    expect(dashIa.includes('label: "' + label + '"'), `dashboard has the ${label} destination`);
   }
-  expect(!dashIa.includes('data-tab="home"'), "Home is folded into Customers, not its own tab");
-  expect(!dashIa.includes('data-tab="account"'), "Settings is now Shop — it holds the links and the counter, not just a login");
+  // The navigation tab strip is gone entirely — three tabs sharing one address
+  // became five screens that each have their own. (data-tab itself survives on
+  // the designer's iPhone/Android/Poster switch, which is a different control.)
+  for (const tab of ["customers", "card", "shop", "home", "account", "share", "access"]) {
+    expect(!dashIa.includes('data-tab="' + tab + '"'), `no ${tab} tab survives behind the nav bar`);
+  }
   expect(!dashIa.includes('data-wb="msg"'), "the win-back message left Card — it lives where you send it");
-  expect(!dashIa.includes('data-tab="share"'), "the old Share tab is gone");
-  // Access only existed because each café row carried its own PIN.
-  expect(!dashIa.includes('data-tab="access"'), "the Access tab is gone (one PIN in Settings, links under the card)");
   expect(!dashIa.includes('data-f="staffPin"'), "the PIN is no longer a field in the card designer");
 
   // --- One PIN covers every card the owner runs ---

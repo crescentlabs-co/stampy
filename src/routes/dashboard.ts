@@ -106,7 +106,37 @@ async function requireOwner(req: OwnerRequest, res: Response, next: NextFunction
   next();
 }
 
-dashboardRouter.get("/", (_req, res) => {
+/**
+ * Every address the dashboard draws a screen at, beyond its own root.
+ *
+ * The dashboard is one document that swaps its contents as you move around, and
+ * it pushes a real address each time so the back button works and a screen can
+ * be linked to. Those addresses have to survive a page refresh, which means the
+ * server has to answer them — with the same document, every time.
+ *
+ * Deliberately a LIST and not a catch-all. This router also carries every
+ * `/dashboard/api/…` endpoint, and a catch-all would answer a mistyped one with
+ * an HTML page and a 200. The page's own fetch helper reads that as an empty
+ * answer rather than an error, so the screen would quietly show nothing instead
+ * of saying something went wrong. An unknown /api path must stay a 404.
+ *
+ * Exported because the test suite reads it: every link in the page has to have
+ * an entry here, or it 404s on refresh, and a list nobody checks drifts.
+ */
+export const V2_SCREENS = [
+  "/customers",
+  "/customers/:code",
+  "/create",
+  "/create/:kind",
+  "/create/:kind/:type",
+  "/manage",
+  "/manage/:tab",
+  "/manage/:tab/:id",
+  "/shop",
+  "/shop/:section",
+];
+
+dashboardRouter.get(["/", ...V2_SCREENS], (_req, res) => {
   // The page needs to know whether email works, so it can offer a reset link or
   // point the owner at a human instead of promising mail that won't arrive.
   res.type("html").send(dashboardPage(setupStatus().canEmail, config.contactEmail, signupOpen()));
