@@ -2892,6 +2892,142 @@ describe("the customer's own page", () => {
   });
 });
 
+/**
+ * The screen builders, actually run.
+ *
+ * Compiling the dashboard's JavaScript proves it has no typos, and grepping it
+ * proves the right words are in it. Neither notices a row that renders "NaN%",
+ * a label that comes out "undefined", or a percentage that divides by zero —
+ * and those are the failures a placeholder screen is most likely to have,
+ * because the data behind it is invented.
+ *
+ * These are the builders that take data and return HTML, pulled out of the
+ * real page text so they cannot drift from what ships.
+ */
+describe("the screen builders, actually run", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+  const cut = (from: string, to: string) => html.slice(html.indexOf(from), html.indexOf(to));
+
+  const B = new Function(
+    'function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){' +
+      'return {"&":"&amp;","<":"&lt;",">":"&gt;",\'"\':"&quot;"}[c];});}' +
+      'const ROOT = "/dashboard";' +
+      cut("const EG =", "/**\n   * Other loyalty programmes") +
+      cut("const MOCK_PROGRAMS", "/** Campaigns. None of this exists yet") +
+      cut("const MOCK_CAMPAIGNS", "/**\n   * The billing side") +
+      cut("function mockCampaignTotals()", "/**\n   * The billing side") +
+      cut("const KIND_LABEL =", "function progRow(p, money)") +
+      cut("function progRow(p, money)", "/** Campaigns performance.") +
+      cut("function campaignBlock()", "/**\n     * Customers — who is in the shop") +
+      cut("function campaignRows()", "function manageDetailScreen") +
+      cut("function custCard(x)", "/**\n     * What happened at the counter today.") +
+      cut("function drawInsight(host, body)", "/**\n     * Programmes, with the real one first.") +
+      cut("function dealLine(card)", "function endedNote()") +
+      "return { progRow, campaignBlock, campaignRows, custCard, drawInsight, dealLine, segLabel," +
+      " mockCampaignTotals, MOCK_CAMPAIGNS, KIND_LABEL };",
+  )();
+
+  it("renders a programme row for every type the card supports", () => {
+    for (const kind of ["stamp", "milestones", "membership", "points"]) {
+      const row = B.progRow({ href: "/manage/rewards/x", name: "Kopi Corner", kind,
+                              status: "active", customers: 3, visits: 9, rewards: 1 }, "");
+      expect(row).toContain(B.KIND_LABEL[kind]);
+      expect(row).not.toContain("undefined");
+      expect(row).not.toContain("NaN");
+    }
+  });
+
+  /** A brand-new shop: every number is zero and nothing may read as broken. */
+  it("renders a programme with no customers at all", () => {
+    const row = B.progRow({ href: "/manage/rewards/x", name: "New Shop", kind: "stamp",
+                            status: "active", customers: 0, visits: 0, rewards: 0 }, "");
+    expect(row).toContain(">0<");
+    expect(row).not.toContain("NaN");
+    expect(row).not.toContain("Infinity");
+  });
+
+  it("escapes a shop name rather than letting it into the markup", () => {
+    const row = B.progRow({ href: "/manage/rewards/x", name: '<script>x</script>', kind: "stamp",
+                            status: "active", customers: 1, visits: 1, rewards: 0 }, "");
+    expect(row).not.toContain("<script>x");
+    expect(row).toContain("&lt;script&gt;");
+  });
+
+  it("marks an ended programme without calling it a failure", () => {
+    const row = B.progRow({ href: "/x", name: "Winter", kind: "stamp", status: "ended",
+                            customers: 5, visits: 5, rewards: 5 }, "");
+    expect(row).toContain("Ended");
+    expect(row).toContain("pstat off");
+  });
+
+  /** Every campaign percentage is a division, and every division can be by zero. */
+  it("computes campaign activation without dividing by zero", () => {
+    const totals = B.mockCampaignTotals();
+    expect(totals.activation).toBeGreaterThanOrEqual(0);
+    expect(totals.activation).toBeLessThanOrEqual(100);
+    expect(String(totals.activation)).not.toContain("NaN");
+    const rows = B.campaignRows();
+    expect(rows).not.toContain("NaN");
+    expect(rows).not.toContain("Infinity");
+    expect(B.campaignBlock()).not.toContain("NaN");
+  });
+
+  it("renders a customer row for each segment, and for someone in today", () => {
+    for (const health of ["regular", "returning", "new", "lost"]) {
+      const c = B.custCard({ code: "K4M7XQ", health, stamps: 3, target: 10, lastDays: 4 });
+      expect(c).toContain("h-" + health);
+      expect(c).toContain("K4M7XQ");
+      expect(c).not.toContain("undefined");
+    }
+    expect(B.custCard({ code: "A1", health: "new", stamps: 0, target: 8, lastDays: 0 }))
+      .toContain("in today");
+    expect(B.custCard({ code: "A1", health: "new", stamps: 0, target: 8, lastDays: 1 }))
+      .toContain("yesterday");
+  });
+
+  /**
+   * The insight says one thing or nothing. A shop with no customers must get
+   * nothing — an empty shop being told about its segments is the sort of
+   * confident nonsense that makes a whole screen untrustworthy.
+   */
+  it("says nothing to a shop with no customers", () => {
+    const host = { innerHTML: "" };
+    B.drawInsight(host, { health: [
+      { key: "regular", customers: 0 }, { key: "returning", customers: 0 },
+      { key: "new", customers: 0 }, { key: "lost", customers: 0 },
+    ] });
+    expect(host.innerHTML).toBe("");
+  });
+
+  it("says exactly one thing when there is something to say", () => {
+    const say = (counts: Record<string, number>) => {
+      const host = { innerHTML: "" };
+      B.drawInsight(host, { health: Object.entries(counts).map(([key, customers]) => ({ key, customers })) });
+      return host.innerHTML;
+    };
+    const lost = say({ regular: 1, returning: 1, new: 1, lost: 7 });
+    expect(lost).toContain("gone quiet");
+    expect((lost.match(/<p>/g) || []).length).toBe(1);
+    expect(say({ regular: 0, returning: 0, new: 9, lost: 1 })).toContain("Most of your customers are new");
+    expect(say({ regular: 5, returning: 3, new: 1, lost: 1 })).toContain("regulars");
+    // Every branch that fires names a real number, never "undefined of".
+    for (const out of [lost, say({ regular: 0, returning: 4, new: 1, lost: 1 })]) {
+      expect(out).not.toContain("undefined");
+      expect(out).not.toContain("NaN");
+    }
+  });
+
+  it("describes the deal for each kind of card", () => {
+    expect(B.dealLine({ kind: "stamp", stampsTarget: 10, reward: "a free coffee" }))
+      .toBe("Collect 10 stamps, get a free coffee");
+    expect(B.dealLine({ kind: "membership", reward: "Members' pricing" })).toBe("Members' pricing");
+    expect(B.dealLine({ kind: "points", reward: "" })).toBe("Points on every visit");
+    // A card with no reward written yet still reads as a sentence.
+    expect(B.dealLine({ kind: "stamp", stampsTarget: 6, reward: "" }))
+      .toBe("Collect 6 stamps, get a reward");
+  });
+});
+
 describe("example data announces itself", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
 
