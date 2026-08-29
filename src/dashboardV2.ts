@@ -274,6 +274,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pnote { background: var(--bg); border-radius: 12px; padding: 12px 14px; }
     .pnote strong { font-size: .82rem; }
     .pnote p { margin: 4px 0 0; font-size: .9rem; line-height: 1.45; }
+    /* The logo, at the size a row can hold. Boxed on white because a logo made
+       for a dark card is invisible on a light page otherwise. */
+    .logothumb { height: 30px; max-width: 130px; object-fit: contain; background: #fff;
+                 border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px;
+                 vertical-align: middle; }
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     /* --- share tab --- */
@@ -841,15 +846,30 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // The links used to sit under the card designer, which put "print this for
     // the counter" on the page you visit to change a colour. They are all
     // set-up-once things, so they live together, split by who they are for.
+    /**
+     * Shop — everything you set once and then forget.
+     *
+     * Three sections: what the shop is, who stamps for it, and the login that
+     * owns it. The sharing links that used to sit here moved to the programme
+     * they share: a poster is a fact about one programme, and once a shop can
+     * have more than one, "the" sign-up link stops meaning anything.
+     */
     function accountPanel() {
       const div = document.createElement("div");
       const c = S.cards[0] || {};
+      const artBase = c.id === "default" ? "" : "/c/" + (c.id || "");
       div.innerHTML = \`
-        <!-- Above the PIN on purpose. Both are set-once answers a shop owes
-             before anything works properly, and the setup banner asks for both
-             — so they are the first two things on this tab, in that order. -->
-        <h2 class="sec first">Your customers</h2>
-        <p class="muted">How often should a customer come back?\${info("How often you'd expect a regular to come in. It only sorts your customers into New, Returning, Regular and Lost on the Customers tab. It changes nothing about your card, your stamps or your reward.")}</p>
+        <h2 class="sec first">Shop information</h2>
+        <!-- Shown, and edited one tap away rather than here. The name and the
+             logo are already fields in the card designer, and two boxes setting
+             one value is how they come to disagree. -->
+        <div class="drow"><span>Shop name</span><b>\${esc(c.shopName || c.name || "—")}</b></div>
+        <div class="drow"><span>Logo</span><b><img class="logothumb" alt="" src="\${artBase}/art/logo.png?v=\${c.logoVersion || 0}"></b></div>
+        <p class="muted">The name and the logo are part of your card, so they are set where the
+          card is — <a href="#" data-golook>on your programme’s page</a>.</p>
+
+        <label style="margin-top:18px">Visit frequency</label>
+        <p class="muted">How often should a customer come back?\${info("How often you'd expect a regular to come in. It only sorts your customers into New, Returning, Regular and Lost on the Customers screen. It changes nothing about your card, your stamps or your reward.")}</p>
         <select data-cycle style="margin-top:8px">
           <option value="">Choose one…</option>
           <option value="14">Once every 1–2 weeks</option>
@@ -858,8 +878,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         </select>
         <p class="muted" data-cycleout style="margin:6px 0 0;font-size:.84rem"></p>
 
-        <h2 class="sec">Staff stamper</h2>
-        <p class="muted">Staff use this tool to punch cards.\${info("One PIN for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
+        <h2 class="sec">Staff</h2>
+        <p class="muted">Staff use the stamper to punch cards.\${info("One PIN for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
         <label style="margin-top:14px" data-pinlabel>Staff PIN</label>
         <div class="copyrow" style="margin-top:6px">
           <input data-pin placeholder="4–12 digits" inputmode="numeric" autocomplete="off">
@@ -874,20 +894,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Open the stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
         </div>
 
-        <h2 class="sec">Share</h2>
-        <!-- Both are /j/ links: the merchant ref survives a rename, a second
-             card and a change of ownership, and every ref a shop has ever held
-             keeps resolving — which is what makes a printed poster safe. Card
-             links stay live forever too, so nothing already shared breaks. -->
-        <div class="sharelist">
-          <!-- ?s=link so a shared link is told apart from a poster scan. Both
-               are plain page views otherwise, and knowing which channel works
-               is the difference between printing more posters and posting more. -->
-          <a href="/j/\${S.joinRef || c.id || ""}?s=link" target="_blank"><span>Sign-up link <span class="sub2">send it, or put it in a bio</span></span><span class="arr">open →</span></a>
-          <a href="/c/\${c.id || ""}/poster" target="_blank"><span>Sign-up poster <span class="sub2">print this for the counter</span></span><span class="arr">open →</span></a>
-        </div>
-
-        <h2 class="sec">Your account</h2>
+        <h2 class="sec">Account</h2>
         <label>Signed in as</label>
         <p style="font-weight:600;margin-bottom:6px">\${S.email}</p>
         <label style="margin-top:10px">Change password</label>
@@ -895,9 +902,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <input data-new type="password" placeholder="New password (min 8)" autocomplete="new-password" style="margin-top:8px">
         <label class="eye"><input type="checkbox" data-eye="[data-cur],[data-new]"> Show passwords</label>
         <button class="btn btn-dark" style="margin-top:20px" data-pwsave>Update password</button>
-        <button class="btn btn-ghost" style="margin-top:20px" data-out>Log out</button>\`;
+
+        <!-- Billing is not built. The price is real — it is what the marketing
+             page says — and the status and the date are not: there are no
+             columns behind either of them. -->
+        <h2 class="sec">Plan\${EG}</h2>
+        <div class="drow"><span>Plan</span><b>\${MOCK_ACCOUNT.plan}</b></div>
+        <div class="drow"><span>Status</span><b>\${MOCK_ACCOUNT.status}</b></div>
+        <div class="drow"><span>Trial ends</span><b>\${MOCK_ACCOUNT.trialEnds}</b></div>
+        <p class="muted">\${MOCK_ACCOUNT.trial}. Billing isn’t switched on yet — nothing is
+          charged and nothing stops working when this date passes.</p>
+
+        <p class="muted" style="margin-top:22px">Signing out is in the ⋯ menu, top right.</p>\`;
+      const look = div.querySelector("[data-golook]");
+      if (look) look.onclick = (e) => { e.preventDefault(); navigate("/manage/rewards/" + c.id); };
       wireEyes(div);
-      // No wireInfo here: renderPanel delegates from the panel this sits inside,
+      // No wireInfo here: render() delegates from the screen this sits inside,
       // and a second listener on an ancestor would fire on the same click and
       // close what the first just opened.
 

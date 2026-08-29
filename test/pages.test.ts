@@ -1589,19 +1589,62 @@ describe("dashboard information architecture", () => {
     expect(html).toContain("/staff-pin");
   });
 
-  // The links were under the card designer, which put "print this for the
-  // counter" on the page you open to change a colour. They live in Shop now:
-  // the stamper link sits with the PIN that unlocks it, the customer-facing
-  // ones under Share.
-  it("keeps every shareable link in Shop, beside what it needs", () => {
-    expect(html).toContain(">Share<");
-    expect(html).toContain(">Staff stamper<");
-    expect(html).not.toContain("Share this card");
+  /**
+   * Each link sits with the thing it belongs to.
+   *
+   * The stamper link stays with the PIN that unlocks it, under Shop → Staff.
+   * The customer-facing ones — sign-up page, poster, QR, customer page — moved
+   * to the programme they share. A poster is a fact about one programme, and
+   * once a shop can have more than one, "the" sign-up link stops meaning
+   * anything. That is the V2 rule "multiple programmes means multiple QRs",
+   * shown rather than written down.
+   */
+  it("keeps each link with the thing it belongs to", () => {
     // The card id must stay on the staff link: a bare /staff once resolved to
     // whoever owned the café literally named "default" — a stranger's counter.
     expect(html).toContain('href="/staff?c=');
-    // The PIN comes before the links it gates, not in a section below them.
-    expect(html.indexOf("data-pinlabel")).toBeLessThan(html.indexOf(">Share<"));
+    // The PIN comes first, then the link it gates.
+    expect(html.indexOf("data-pinlabel")).toBeLessThan(html.indexOf('href="/staff?c='));
+    // Sharing left Shop for the programme page.
+    const shop = html.slice(html.indexOf("function accountPanel()"), html.indexOf("wireEyes(div)"));
+    expect(shop).not.toContain("/poster");
+    expect(shop).not.toContain("?s=link");
+    const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"),
+                              html.indexOf("function dealLine(card)"));
+    expect(detail).toContain("/poster");
+    expect(detail).toContain("?s=link");
+  });
+
+  /**
+   * Shop is configuration and nothing else: what the shop is, who stamps for
+   * it, and the login that owns it.
+   */
+  it("splits Shop into shop, staff and account", () => {
+    const shop = html.slice(html.indexOf("function accountPanel()"), html.indexOf("wireEyes(div)"));
+    expect(shop).toContain('<h2 class="sec first">Shop information</h2>');
+    expect(shop).toContain('<h2 class="sec">Staff</h2>');
+    expect(shop).toContain('<h2 class="sec">Account</h2>');
+    // The visit cycle and the PIN — the two set-once answers the setup banner
+    // asks for — are both still here and still real.
+    expect(shop).toContain("data-cycle");
+    expect(shop).toContain("data-setpin");
+    // Name and logo are SHOWN here and edited where the card is: two boxes
+    // setting one value is how they come to disagree.
+    expect(shop).toContain("Shop name");
+    expect(shop).toContain("logothumb");
+    expect(shop).toContain("data-golook");
+    // Billing is not built, so the plan block is chipped as an example.
+    expect(shop).toContain('<h2 class="sec">Plan\${EG}</h2>');
+    expect(shop).toContain("MOCK_ACCOUNT.trialEnds");
+    expect(shop).toContain("Billing isn’t switched on yet");
+  });
+
+  /** Signing out has one home now, and Shop points at it rather than repeating it. */
+  it("signs out from the menu, and says where that is", () => {
+    const shop = html.slice(html.indexOf("function accountPanel()"), html.indexOf("wireEyes(div)"));
+    expect(shop).not.toContain("data-out");
+    expect(shop).toContain("Signing out is in the ⋯ menu");
+    expect(html).toContain("data-signout");
   });
 
   // One way to set a PIN, not two. The generator went, and with it the page's
