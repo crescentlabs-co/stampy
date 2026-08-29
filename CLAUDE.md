@@ -43,8 +43,10 @@ every working change with a meaningful message.
 
 `pnpm dev:local` runs the whole app on localhost:3010 with an embedded Postgres
 and seeded demo customers (no Railway, no secrets) — use it to actually look at
-a UI change in a browser, since the dashboard's ~1500 lines of in-page
-JavaScript are not covered by the test suites.
+a UI change in a browser, since the dashboard's ~3,500 lines of in-page
+JavaScript are not covered by the test suites. Walk all five destinations, open
+a customer and a programme, and check the back button — the dashboard pushes a
+real address now, so back is part of the product.
 
 ## The data model (v1.3)
 
@@ -102,7 +104,7 @@ target nobody holds any more. Never key card art by a number a card can change.
    src/winback.ts — **five messages per customer per rolling 7 days**
    (`MAX_NUDGES_PER_WEEK`; one, then two, then three, five since v2.6). Per
    PERSON, not per pass: their other wallet card must not buy an extra message.
-   The Customers tab's `BUCKETS` are that same rule and are WORDED from the
+   The Customers screen's `BUCKETS` are that same rule and are WORDED from the
    constant; nothing on screen states the number any more, because a hard-coded
    "two" outlived the rule it described twice. Never police this in the browser;
    it used to live in a `confirm()` dialog and was therefore not a limit at all.
@@ -193,14 +195,42 @@ target nobody holds any more. Never key card art by a number a card can change.
    staff cookie carries the owner's `staff_session_epoch`; `setStaffPin` bumps
    it, signing every staff phone out across every card. Never reintroduce a
    PIN in an API response, a page, or `localStorage`.
-12. **No build step.** tsx runs TypeScript directly; pages are template strings
-   in src/pages.ts; the only browser lib is jsqr served from node_modules.
-   Don't introduce bundlers or frontend frameworks. Because the browser JS is
-   nested inside template literals, nothing type-checks it — `test/pages.test.ts`
-   compiles every inline `<script>` instead, so keep new pages listed there.
+12. **No build step.** tsx runs TypeScript directly; pages are template strings;
+   the only browser lib is jsqr served from node_modules. Don't introduce
+   bundlers or frontend frameworks. Four files hold the front end, and they
+   depend on each other in ONE direction — never make an arrow point back:
+   - **`src/ui/kit.ts`** — the shell every page is served in (`page()`), the
+     design tokens (`baseCss`), and every block of browser code more than one
+     page renders: `MODAL_JS`, `SEG_CSS`/`SEG_JS`, `HEALTH_JS`, `PALETTE_JS`
+     and the 2,200-line card designer (`DESIGN_PANEL_JS`).
+   - **`src/dashboardV2.ts`** — the whole owner dashboard.
+   - **`src/ui/dashboardV2Mock.ts`** — every placeholder number in the
+     dashboard, each named `MOCK_`, so deleting the file removes all of it.
+   - **`src/pages.ts`** — every other page, and it RE-EXPORTS the kit and the
+     dashboard. Six route files and both test suites import those names from
+     here, so keep the re-exports.
+
+   Because the browser JS is nested inside template literals, nothing
+   type-checks it — `test/pages.test.ts` compiles every inline `<script>`
+   instead, so **keep new pages listed in its `pages` array**; a page that is
+   not there is tested by nothing. A page with no inline script at all must be
+   named in that file's `SCRIPTLESS` set, or the guard that stops the
+   extraction silently matching nothing will fail it.
    **Never put a backtick in a comment inside those template strings** — it ends
-   the literal. Run `pnpm typecheck` after editing src/pages.ts.
-13. **The product's NAME is `PRODUCT_NAME` in src/pages.ts and nowhere else.**
+   the literal, and neither does a bare `${`. Run `pnpm typecheck` after editing
+   any of the four.
+
+   **The dashboard is one document with a real address per screen.** Five
+   destinations — Home, Customers, Create, Manage, Shop — pushed with
+   `history.pushState`, plus the deeper ones (`/dashboard/customers/:code`,
+   `/dashboard/manage/rewards/:id`). Every one of those addresses must have an
+   entry in **`V2_SCREENS`** (src/routes/dashboard.ts) or it 404s the moment
+   somebody refreshes on it; a test walks every link in the page and checks.
+   It is a LIST and not a catch-all on purpose: `/dashboard` also carries every
+   `/api/…` endpoint, and a catch-all would answer a mistyped one with an HTML
+   page and a 200, which `api()` reads as an empty answer rather than an error.
+   An unknown `/dashboard/api/…` path must stay a 404.
+13. **The product's NAME is `PRODUCT_NAME` in src/ui/kit.ts and nowhere else.**
    The product was called Stampy and is now **PunchMe**. Three lowercase
    `stampy` strings survived that rename on purpose, and renaming any of them
    breaks something no deploy can repair:
