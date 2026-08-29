@@ -1270,10 +1270,11 @@ describe("the console says things once", () => {
  */
 describe("the counter view judges nothing", () => {
   const html = dashboardPage(true, "");
-  // The block lives below the message box on the Customers tab, folded away.
+  // The block lives below the message box, folded away. The end anchor is the
+  // send path's own comment, which is what starts the next thing on the panel.
   const block = html.slice(
     html.indexOf("// ---- At the counter"),
-    html.indexOf("/** Send. The server decides"),
+    html.indexOf("/** Send. The confirm and the POST"),
   );
 
   it("is actually on the page", () => {
@@ -2510,6 +2511,93 @@ describe("the Home headline", () => {
  * Anything drawn from the mock module says so on screen. A number an owner
  * cannot tell apart from their own is worse than no number at all.
  */
+/**
+ * Customers, and the one place the spec asked for something this product
+ * refuses to hold.
+ */
+describe("the customers screen", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+  const list = html.slice(html.indexOf("function customersScreen()"), html.indexOf("function custCard(x)"));
+  const one = html.slice(html.indexOf("function customerScreen(code)"), html.indexOf("async function confirmAndSend"));
+
+  it("can be searched, sorted and filtered by segment", () => {
+    expect(list).toContain("data-q");
+    expect(list).toContain("data-sort");
+    for (const sort of ["recent", "visits", "lapsed"]) expect(list).toContain(`value="${sort}"`);
+    // The filter chips are built from the SERVER's own groups, so the filter
+    // can never offer a segment the tiles above it do not show.
+    expect(list).toContain("(body.health || []).map");
+  });
+
+  /**
+   * lastDays counts UP as somebody stays away. "Most recent" is therefore
+   * ascending and "longest away" is the same list backwards — get that the
+   * wrong way round and the two options silently swap.
+   */
+  it("sorts recency the right way round", () => {
+    expect(list).toContain('sort === "lapsed"');
+    expect(list).toContain("b.lastDays - a.lastDays");
+    expect(list).toContain("a.lastDays - b.lastDays");
+  });
+
+  it("does not draw a list nobody scrolls to the end of", () => {
+    expect(list).toContain("shown.slice(0, 200)");
+    expect(list).toContain("Showing the first 200");
+  });
+
+  /**
+   * THE PRIVACY LINE. This product asks customers for no name, no email and no
+   * phone, and its privacy page promises exactly that in writing. The spec for
+   * this screen asked for a name; there is none to show, and inventing one —
+   * "Customer #4" included — would imply an identity the product refuses to
+   * hold. The card code is what a customer is called here.
+   */
+  it("identifies a customer by their card code and never by a name", () => {
+    expect(html).toContain("x.code");
+    expect(html).not.toContain("Customer name");
+    expect(html).not.toContain("customerName");
+    expect(one).toContain("asks customers for no name");
+  });
+
+  /**
+   * Consent is REPRESENTED, not faked. There is no consent column, so a live
+   * toggle would be the UI lying about the one subject the privacy page makes
+   * a promise about. What is real — their card is gone, or they are at the
+   * weekly limit — is shown as Reachability above it.
+   */
+  it("shows real reachability, and marks the marketing toggle as an example", () => {
+    expect(one).toContain("Reachability");
+    expect(one).toContain("x.removed");
+    expect(one).toContain("x.canNudge");
+    expect(one).toContain("Card removed");
+    expect(one).toContain("At the weekly limit");
+    expect(one).toContain("'<div class=\"drow\"><span>Marketing messages' + EG");
+  });
+
+  /**
+   * Today, and it says today. /api/counter is the only thing that reads the
+   * event log back for an owner and it covers one day; a feed labelled
+   * "recent" that silently stops at midnight is a lie.
+   */
+  it("labels the activity feed as today, and says what is missing", () => {
+    expect(html).toContain('<h2 class="sec">Today at the counter</h2>');
+    expect(html).toContain("Anything before today is in the log but not yet on this page.");
+    expect(html).toContain("function drawActivity(host, code)");
+    // Time, who, what — in that order.
+    expect(html).toContain('class="at"');
+    expect(html).toContain("got a stamp");
+  });
+
+  /** The screen this one was built out of stayed reachable. */
+  it("keeps the message sender working, through one shared confirm", () => {
+    expect(html).toContain("async function confirmAndSend(count, payload, message)");
+    expect(html).toContain("cannot be taken back");
+    // The weekly cap is the server's job and stays there.
+    expect(html).toContain("Anyone messaged in the last 7 days is skipped automatically.");
+    expect(html).toContain("confirmAndSend(1, { target: [x.serial] }");
+  });
+});
+
 describe("example data announces itself", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
 

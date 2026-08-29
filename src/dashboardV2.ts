@@ -185,6 +185,47 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .insight { border-left: 3px solid var(--ink); background: var(--surface);
                border-radius: 0 12px 12px 0; padding: 12px 14px; margin: 14px 0 4px; }
     .insight p { margin: 0; font-size: .88rem; line-height: 1.5; }
+    /* --- Customers: search, segment chips, and one row per person --- */
+    .cfilter { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 8px; }
+    .cfilter input[type="search"] { flex: 1; min-width: 160px; margin: 0; }
+    .cfilter select { padding: 13px 12px; border: 1px solid var(--field-border); border-radius: 12px;
+                      font: inherit; background: var(--bg); color: var(--ink); }
+    /* Segment filters. Ink when chosen, never neon — the neon on this screen
+       belongs to the next action, and a filter is not one. */
+    .segchip { width: auto; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--field-border);
+               background: var(--bg); color: var(--muted); font: inherit; font-size: .8rem;
+               font-weight: 600; cursor: pointer; }
+    .segchip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    /* A person, as a row you can open. Four columns that line up down the list
+       so the eye reads a column rather than re-reading each row. */
+    .ccard { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink);
+             border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+             margin-bottom: 6px; background: var(--surface); }
+    .ccard:hover { border-color: var(--accent); }
+    .ccard .cid { font-weight: 800; letter-spacing: .04em; font-family: var(--display); }
+    .ccard .cprog { margin-left: auto; color: var(--muted); font-size: .85rem;
+                    font-variant-numeric: tabular-nums; }
+    .ccard .cwhen { color: var(--muted); font-size: .78rem; white-space: nowrap; }
+    /* The segment, in the same four hues the tiles above use — read those, do
+       not pick a fifth (DESIGN.md rule 6). */
+    .cseg { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+            color: var(--hue); background: var(--hue-bg); border-radius: 999px; padding: 3px 8px;
+            white-space: nowrap; }
+    h2 .cseg { margin-left: 8px; position: relative; top: -3px; }
+    /* --- one customer: a label and its answer, per line --- */
+    .drow { display: flex; align-items: baseline; gap: 12px; padding: 11px 0;
+            border-bottom: 1px solid var(--line); font-size: .9rem; }
+    .drow span { color: var(--muted); }
+    .drow b { margin-left: auto; text-align: right; }
+    /* --- today at the counter --- */
+    .acts { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .act { display: flex; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line);
+           font-size: .88rem; }
+    .act:last-child { border-bottom: 0; }
+    .act .at { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 62px; }
+    .act .aw strong { letter-spacing: .04em; }
+    textarea { width: 100%; padding: 13px 14px; border: 1px solid var(--field-border);
+               border-radius: 12px; font: inherit; resize: vertical; }
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     /* --- share tab --- */
@@ -661,33 +702,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         });
       });
 
-      /** Send. The server decides who is actually eligible and reports back. */
-      async function nudge(payload, expected) {
-        const message = q("[data-msg]").value.trim();
-        if (!message) return toast("Type a message first");
-        if (!expected) return toast("Nobody to message right now");
-        const { body } = await api("/nudge", { method: "POST", body: JSON.stringify(Object.assign({ message }, payload)) });
-        if (!body.ok) return toast(body.error || "Failed");
-        const s = body.skipped || {};
-        const held = (s.rateLimited || 0) + (s.removed || 0);
-        toast("Sent to " + body.sent + " of " + body.total + (held ? " · " + held + " held back by the limit" : ""));
-        load();
-      }
-
-      // The one thing an owner has to read before sending sits here, not as grey
-      // subtext under the box: it goes out exactly as typed, to real phones, and
-      // it cannot be taken back.
+      /** Send. The confirm and the POST live in confirmAndSend, which a
+       *  customer's own page uses too — one place deciding what an owner reads
+       *  before a message reaches a real phone. Reloads afterwards, because who
+       *  is still inside the weekly limit has just changed. */
       async function confirmSend(count, payload) {
-        const msg = q("[data-msg]").value.trim();
-        if (!msg) return toast("Type a message first");
-        const ok = await modal(
-          "Send to " + count + (count === 1 ? " customer?" : " customers?"),
-          "<p>It goes out exactly as written, to their phone, and cannot be taken back.</p>" +
-            '<p style="margin-top:8px"><strong>' + mdlEsc(msg) + "</strong></p>" +
-            '<p style="margin-top:8px">Anyone messaged in the last 7 days is skipped automatically.</p>',
-          "Send it",
-        );
-        if (ok) nudge(payload, count);
+        if (await confirmAndSend(count, payload, q("[data-msg]").value.trim())) load();
       }
 
       // Code and progress on one line, the story underneath.
@@ -1425,27 +1445,252 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "once campaigns are running.</p>";
     }
 
+    /**
+     * Customers — who is in the shop, and what they have been doing.
+     *
+     * The four segments were on Home; the search was built and switched off
+     * behind SHOW_FIND_FOLD, on the theory that a list of codes is a lookup
+     * tool rather than a view. With a screen of its own it is both: an owner
+     * comes here to find one person OR to read the shape of the base.
+     */
     function customersScreen() {
       const d = document.createElement("div");
-      // The four segments — New, Regular, Returning, Lost. Left Home with the
-      // rebuild: Home says how big the shop is, this screen says who is in it.
-      // The list and the search arrive with the Customers commit; drawHealth
-      // and the message sender below it are what already worked.
-      const seg = document.createElement("div");
-      seg.innerHTML = '<h2 class="sec first">Your customers</h2><div data-health></div>';
-      d.appendChild(seg);
+      d.innerHTML =
+        '<h2 class="sec first">Your customers</h2>' +
+        '<div data-health></div>' +
+        '<div class="cfilter">' +
+          '<input data-q type="search" placeholder="Search by card code" autocomplete="off">' +
+          '<select data-sort>' +
+            '<option value="recent">Most recent visit</option>' +
+            '<option value="visits">Most visits</option>' +
+            '<option value="lapsed">Longest away</option>' +
+          "</select>" +
+        "</div>" +
+        '<div class="cfilter" data-seg></div>' +
+        '<p class="muted" data-count style="margin:2px 0 6px"></p>' +
+        '<div data-list></div>' +
+        '<h2 class="sec">Today at the counter</h2>' +
+        '<div data-activity><p class="muted">Loading…</p></div>';
+
+      // Which segment is being looked at. "" is everyone.
+      let all = [], filter = "";
+      const segHost = d.querySelector("[data-seg]");
+      const listHost = d.querySelector("[data-list]");
+
+      function paint() {
+        const q = (d.querySelector("[data-q]").value || "").trim().toUpperCase();
+        const sort = d.querySelector("[data-sort]").value;
+        let shown = all.filter((x) => (!filter || x.health === filter) &&
+                                      (!q || x.code.toUpperCase().includes(q)));
+        // lastDays counts UP as somebody stays away, so "most recent" is
+        // ascending and "longest away" is the same list backwards.
+        if (sort === "visits") shown = shown.slice().sort((a, b) => b.visits - a.visits);
+        else if (sort === "lapsed") shown = shown.slice().sort((a, b) => b.lastDays - a.lastDays);
+        else shown = shown.slice().sort((a, b) => a.lastDays - b.lastDays);
+
+        d.querySelector("[data-count]").textContent =
+          shown.length === all.length
+            ? all.length + (all.length === 1 ? " customer" : " customers")
+            : shown.length + " of " + all.length;
+        listHost.innerHTML = shown.length
+          ? shown.slice(0, 200).map(custCard).join("")
+          : '<p class="muted">Nobody matches that.</p>';
+        // Only the first 200 are drawn: a shop with thousands of customers
+        // should not pay for a list nobody scrolls to the end of.
+        if (shown.length > 200) {
+          listHost.insertAdjacentHTML("beforeend",
+            '<p class="muted">Showing the first 200. Search to narrow it down.</p>');
+        }
+        wireLinks(listHost);
+      }
+
+      d.querySelector("[data-q]").oninput = paint;
+      d.querySelector("[data-sort]").onchange = paint;
+
       (async () => {
-        const { body } = await api("/customers");
-        drawHealth(seg.querySelector("[data-health]"), body);
+        const { body } = await api("/customers?cardId=all");
+        all = body.customers || [];
+        drawHealth(d.querySelector("[data-health]"), body);
+        // One chip per segment, from the server's own groups — so the filter
+        // can never offer a group the tiles above do not show.
+        segHost.innerHTML = '<button class="segchip on" data-f="">Everyone</button>' +
+          (body.health || []).map((h) =>
+            '<button class="segchip" data-f="' + h.key + '">' + esc(h.label) + " (" + h.customers + ")</button>",
+          ).join("");
+        segHost.querySelectorAll("[data-f]").forEach((b) => {
+          b.onclick = () => {
+            filter = b.dataset.f;
+            segHost.querySelectorAll("[data-f]").forEach((o) => o.classList.toggle("on", o === b));
+            paint();
+          };
+        });
+        paint();
       })();
-      d.appendChild(customersPanel());
+
+      drawActivity(d.querySelector("[data-activity]"));
       return d;
     }
 
-    /** One customer. Built in the Customers commit. */
+    /**
+     * One customer as a row you can open.
+     *
+     * The code, not a name. This product asks customers for no name, no email
+     * and no phone — the privacy page promises exactly that in writing — so the
+     * 6-character code on their card is the only thing there is to call them,
+     * and inventing "Customer #4" would imply an identity it refuses to hold.
+     */
+    function custCard(x) {
+      const seen = x.lastDays === 0 ? "in today"
+        : x.lastDays === 1 ? "yesterday" : x.lastDays + " days ago";
+      return '<a class="ccard" href="' + ROOT + "/customers/" + encodeURIComponent(x.code) +
+        '" data-nav="/customers/' + encodeURIComponent(x.code) + '">' +
+        '<span class="cid">' + esc(x.code) + "</span>" +
+        '<span class="cseg h-' + x.health + '">' + segLabel(x.health) + "</span>" +
+        '<span class="cprog">' + x.stamps + "/" + x.target + "</span>" +
+        '<span class="cwhen">' + seen + "</span>" +
+        "</a>";
+    }
+
+    const SEG_LABEL = { regular: "Regular", returning: "Returning", new: "New", lost: "Lost" };
+    function segLabel(k) { return SEG_LABEL[k] || k; }
+
+    /**
+     * What happened at the counter today.
+     *
+     * Today only, and it says so in the heading. /api/counter is the one thing
+     * that reads the event log back for an owner and it covers one day — the
+     * log holds everything, but nothing reads further back yet, and a feed
+     * labelled "recent" that silently stops at midnight is a lie.
+     */
+    async function drawActivity(host, code) {
+      const { body } = await api("/counter");
+      const events = ((body.counter || {}).events || [])
+        .filter((e) => !code || e.code === code);
+      if (!events.length) {
+        host.innerHTML = '<p class="muted">Nothing at the counter yet today.</p>';
+        return;
+      }
+      const WORD = { stamp: "got a stamp", undo: "had a stamp taken back", redeem: "claimed a reward" };
+      host.innerHTML = '<div class="acts">' + events.slice(0, 40).map((e) => {
+        const t = new Date(e.at);
+        const when = isNaN(t) ? "" : t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        return '<div class="act"><span class="at">' + esc(when) + "</span>" +
+          '<span class="aw">' + (code ? "" : "<strong>" + esc(e.code || "—") + "</strong> ") +
+          (WORD[e.type] || esc(e.type)) + "</span></div>";
+      }).join("") + "</div>";
+    }
+
+    /**
+     * One customer's own page.
+     *
+     * Everything here is real except the marketing toggle, which is marked as
+     * an example: there is no consent column in the database, and a switch that
+     * looked live but did not actually stop messages would be this product
+     * lying about consent on the one subject its privacy page makes a promise
+     * about. What IS real sits above it, under Reachability.
+     */
     function customerScreen(code) {
-      return placeholder("Customer " + code,
-        "This customer’s own page — their segment, how often they come in, and what they’ve done — arrives with the Customers screen.");
+      const d = document.createElement("div");
+      d.innerHTML = '<p class="muted" data-back style="margin:0 0 6px">← Customers</p>' +
+        '<div data-who><h2 class="sec first">' + esc(code) + "</h2>" +
+        '<p class="muted">Loading…</p></div>';
+      d.querySelector("[data-back]").onclick = () => navigate("/customers");
+      d.querySelector("[data-back]").style.cursor = "pointer";
+
+      (async () => {
+        const { body } = await api("/customers?cardId=all");
+        const x = (body.customers || []).find((c) => c.code === code);
+        const host = d.querySelector("[data-who]");
+        if (!x) {
+          host.innerHTML = '<h2 class="sec first">' + esc(code) + "</h2>" +
+            '<p class="muted">No card with that code. It may have been deleted, ' +
+            "or the code may have been mistyped.</p>";
+          return;
+        }
+        const freq = isFinite(x.avgGapDays) && x.avgGapDays > 0
+          ? "Every " + Math.round(x.avgGapDays) + " days"
+          : "Not enough visits yet";
+        // Real, and the honest version of "can I contact this person".
+        const reach = x.removed
+          ? ["Card removed", "They deleted the card from their wallet. Nothing can reach them."]
+          : x.canNudge
+            ? ["Can be messaged", "They are inside the weekly limit."]
+            : ["At the weekly limit", "They have had the most messages allowed in the last 7 days."];
+
+        host.innerHTML =
+          '<h2 class="sec first">' + esc(x.code) +
+            '<span class="cseg h-' + x.health + '">' + segLabel(x.health) + "</span></h2>" +
+          '<p class="muted">Their card code. This shop asks customers for no name, ' +
+          "email or phone — the code is the only thing that identifies them.</p>" +
+          '<div class="totals" style="grid-template-columns:repeat(2,1fr)">' +
+            '<div class="metric"><b>' + x.visits + "</b><span>visits</span></div>" +
+            '<div class="metric"><b>' + x.stamps + "/" + x.target + "</b><span>towards their reward</span></div>" +
+          "</div>" +
+          '<div class="drow"><span>Programme</span><b>' + esc(x.cardName) + "</b></div>" +
+          '<div class="drow"><span>Visit frequency</span><b>' + freq + "</b></div>" +
+          '<div class="drow"><span>Joined</span><b>' + x.joinedDays + " days ago</b></div>" +
+          '<div class="drow"><span>Last visit</span><b>' +
+            (x.lastDays === 0 ? "Today" : x.lastDays + " days ago") + "</b></div>" +
+          '<h2 class="sec">Reachability</h2>' +
+          '<div class="drow"><span>' + reach[0] + "</span></div>" +
+          '<p class="muted">' + reach[1] + "</p>" +
+          '<div class="drow"><span>Marketing messages' + EG + "</span><b>On</b></div>" +
+          '<p class="muted">Letting a customer opt out of marketing is coming. ' +
+          "Today the only limit is the weekly one above.</p>" +
+          (x.canNudge
+            ? '<h2 class="sec">Message them</h2>' +
+              '<textarea data-msg1 rows="3" placeholder="Type your message"></textarea>' +
+              '<button class="btn btn-dark" style="margin-top:10px" data-send1>Send message</button>'
+            : "") +
+          '<h2 class="sec">Today at the counter</h2>' +
+          '<div data-act><p class="muted">Loading…</p></div>' +
+          '<p class="muted">Anything before today is in the log but not yet on this page.</p>';
+
+        const send = host.querySelector("[data-send1]");
+        if (send) {
+          send.onclick = async () => {
+            const message = host.querySelector("[data-msg1]").value.trim();
+            if (!message) return toast("Type a message first");
+            if (await confirmAndSend(1, { target: [x.serial] }, message)) {
+              host.querySelector("[data-msg1]").value = "";
+            }
+          };
+        }
+        drawActivity(host.querySelector("[data-act]"), x.code);
+      })();
+      return d;
+    }
+
+    /**
+     * Confirm, then send. The one thing an owner has to read before sending is
+     * here rather than as grey subtext: it goes out exactly as typed, to real
+     * phones, and it cannot be taken back.
+     *
+     * Shared by the one-off message on a customer's page and by the sender
+     * below, so there is one place that decides what the warning says. The
+     * server still decides who is actually eligible and reports back — the
+     * weekly cap is enforced there, never here.
+     */
+    async function confirmAndSend(count, payload, message) {
+      if (!message) { toast("Type a message first"); return false; }
+      if (!count) { toast("Nobody to message right now"); return false; }
+      const ok = await modal(
+        "Send to " + count + (count === 1 ? " customer?" : " customers?"),
+        "<p>It goes out exactly as written, to their phone, and cannot be taken back.</p>" +
+          '<p style="margin-top:8px"><strong>' + mdlEsc(message) + "</strong></p>" +
+          '<p style="margin-top:8px">Anyone messaged in the last 7 days is skipped automatically.</p>',
+        "Send it",
+      );
+      if (!ok) return false;
+      const { body } = await api("/nudge", {
+        method: "POST", body: JSON.stringify(Object.assign({ message }, payload)),
+      });
+      if (!body.ok) { toast(body.error || "Failed"); return false; }
+      const s = body.skipped || {};
+      const held = (s.rateLimited || 0) + (s.removed || 0);
+      toast("Sent to " + body.sent + " of " + body.total +
+        (held ? " · " + held + " held back by the limit" : ""));
+      return true;
     }
 
     function createScreen() {
