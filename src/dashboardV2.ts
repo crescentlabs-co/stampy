@@ -244,6 +244,36 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* The armed state of a two-tap button. Deep red, the same one the counter
        uses — this is the app's one "you are about to do something" colour. */
     .btn.armed { background: #9a3412; color: #fff; border-color: #9a3412; }
+    /* --- Create: pick a type, then set it up --- */
+    .picks { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+    .pick { display: grid; grid-template-columns: 1fr auto; align-items: center;
+            gap: 4px 10px; text-decoration: none; color: var(--ink);
+            border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px;
+            background: var(--surface); }
+    .pick:hover { border-color: var(--accent); }
+    .pick strong { font-size: 1rem; }
+    .pick .sub2 { grid-column: 1; color: var(--muted); font-size: .84rem; line-height: 1.45; }
+    .pick .arr { grid-row: 1 / span 2; color: var(--muted); }
+    /* Says the quiet part out loud: nothing on this screen is saved. Amber like
+       the setup banner — nothing is broken, something is outstanding. */
+    .draftnote { background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
+                 border-radius: 14px; padding: 12px 14px; margin: 14px 0;
+                 font-size: .88rem; line-height: 1.45; }
+    /* Three steps, so it is obvious there are three and which one you are on. */
+    .steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 14px 0 4px;
+             counter-reset: s; }
+    .steps li { counter-increment: s; flex: 1; font-size: .72rem; font-weight: 700;
+                letter-spacing: .03em; color: var(--muted); padding-top: 8px;
+                border-top: 3px solid var(--line); }
+    .steps li::before { content: counter(s) ". "; }
+    .steps li.on { color: var(--ink); border-top-color: var(--ink); }
+    /* The message, roughly as a phone shows it. A frame, not a picture of an
+       iPhone: the point is the wording, and a photorealistic handset would
+       promise a fidelity this preview does not have. */
+    .phone { background: var(--slab); border-radius: var(--r-lg); padding: 18px 16px; margin-top: 8px; }
+    .pnote { background: var(--bg); border-radius: 12px; padding: 12px 14px; }
+    .pnote strong { font-size: .82rem; }
+    .pnote p { margin: 4px 0 0; font-size: .9rem; line-height: 1.45; }
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     /* --- share tab --- */
@@ -1676,19 +1706,191 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       return d;
     }
 
-    /** The reward-type and campaign-type pickers. Built in the Create commit. */
+    /**
+     * The four reward types, and they are the four the database already holds
+     * (CardKind: stamp / milestones / membership / points). Labelling them from
+     * the same four means wiring this up later is a rename, not a migration.
+     */
+    const REWARD_TYPES = [
+      { k: "stamp", name: "Stamps", blurb: "Collect a stamp a visit. Fill the card, get the reward. The one most shops want." },
+      { k: "milestones", name: "Stamps + milestones", blurb: "The same card, with a smaller reward on the way — something at 4, the big one at 10." },
+      { k: "membership", name: "Membership", blurb: "A card that is the perk itself: a members' price, a members' menu, a members' door." },
+      { k: "points", name: "Points", blurb: "Points for what they spend, traded in for rewards. Best where baskets differ a lot." },
+    ];
+
+    /**
+     * The four campaign types. All four run the same three steps and the same
+     * sender; the first three arrive with the audience and the wording already
+     * suggested, which is the whole of what makes them different today.
+     */
+    const CAMPAIGN_TYPES = [
+      { k: "winback", name: "Win-back", blurb: "For customers who have stopped coming. One message asking them back.",
+        seg: "lost", msg: "We haven’t seen you in a while — your card is still here, and so is your next reward." },
+      { k: "quiet", name: "Quiet period", blurb: "For filling a slow afternoon. Aimed at the people who already come in.",
+        seg: "regular", msg: "It’s quiet this afternoon — come in and we’ll look after you." },
+      { k: "progress", name: "Progress reminder", blurb: "For customers part-way to a reward, to nudge them over the line.",
+        seg: "returning", msg: "You’re close — a couple more visits and your reward is yours." },
+      { k: "custom", name: "Custom", blurb: "Your own message, to whichever group you choose.",
+        seg: "", msg: "" },
+    ];
+
+    /** Pick a type. Cards, because the choice deserves a sentence each. */
     function createPickScreen(kind) {
       if (kind !== "reward" && kind !== "campaign") return notFoundScreen();
-      return placeholder(kind === "reward" ? "New reward programme" : "New campaign",
-        kind === "reward"
-          ? "Choosing between stamps, milestones, membership and points arrives with the Create screens."
-          : "Win-back, quiet period, progress reminder and custom campaigns arrive with the Create screens.");
+      const reward = kind === "reward";
+      const types = reward ? REWARD_TYPES : CAMPAIGN_TYPES;
+      const d = document.createElement("div");
+      d.innerHTML =
+        '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Create</p>' +
+        '<h2 class="sec first">' + (reward ? "What kind of programme?" : "What kind of campaign?") + "</h2>" +
+        '<p class="muted">' + (reward
+          ? "Pick the shape of the card. You can see exactly what it will look like before anything is made."
+          : "Pick what you are trying to do. You choose who it goes to and what it says next.") + "</p>" +
+        '<div class="picks">' + types.map((t) =>
+          '<a class="pick" href="' + ROOT + "/create/" + kind + "/" + t.k +
+          '" data-nav="/create/' + kind + "/" + t.k + '">' +
+          "<strong>" + esc(t.name) + "</strong>" +
+          '<span class="sub2">' + esc(t.blurb) + "</span>" +
+          '<span class="arr">→</span></a>',
+        ).join("") + "</div>" +
+        (reward
+          ? '<p class="muted" style="margin-top:14px">Your shop can hold one programme today. ' +
+            "Running more than one is coming — you can look at any of these in the meantime.</p>"
+          : "");
+      d.querySelector("[data-back]").onclick = () => navigate("/create");
+      return d;
     }
 
     function createStepScreen(kind, type) {
-      if (kind !== "reward" && kind !== "campaign") return notFoundScreen();
-      return placeholder("Set up your " + (kind === "reward" ? "programme" : "campaign"),
-        "Setting up “" + type + "” arrives with the Create screens.");
+      if (kind === "reward") return createRewardScreen(type);
+      if (kind === "campaign") return createCampaignScreen(type);
+      return notFoundScreen();
+    }
+
+    /**
+     * Design a new programme — for real, on screen, saving nothing.
+     *
+     * This is the actual card designer, in draft mode. A shop can only hold one
+     * programme today (the server refuses a second), so its Save says what it
+     * cannot do rather than sending a request that 409s and looks broken. What
+     * an owner gets out of it is the honest thing: they can see precisely what
+     * each type produces before deciding they want it.
+     */
+    function createRewardScreen(type) {
+      const t = REWARD_TYPES.find((x) => x.k === type);
+      if (!t) return notFoundScreen();
+      const base = S.cards[0];
+      const d = document.createElement("div");
+      d.innerHTML =
+        '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Reward types</p>' +
+        '<h2 class="sec first">' + esc(t.name) + "</h2>" +
+        '<p class="muted">' + esc(t.blurb) + "</p>" +
+        '<div class="draftnote"><strong>This is a preview.</strong> Change anything and watch the ' +
+        "card change with it. Nothing here is saved, and your live programme is not touched.</div>" +
+        '<div data-design></div>';
+      d.querySelector("[data-back]").onclick = () => navigate("/create/reward");
+      if (!base) {
+        d.querySelector("[data-design]").innerHTML =
+          '<p class="muted">There is no card to preview from yet.</p>';
+        return d;
+      }
+      // A COPY of the real card, with the chosen type applied, so nothing the
+      // designer does in draft can reach into S and change the live programme's
+      // fields under the programme page.
+      const draft = Object.assign({}, base, { kind: t.k });
+      d.querySelector("[data-design]").appendChild(designerFor(draft, {
+        draft: true,
+        saveLabel: "Save programme",
+        // No live count to offer: this programme has no customers because it
+        // does not exist. The panel drops to its "no customers" wording.
+        customersPath: null,
+      }));
+      return d;
+    }
+
+    /**
+     * A campaign: choose, preview, send.
+     *
+     * All four types run this one flow and the one sender that already works.
+     * The three named types differ only in the audience and the wording they
+     * arrive with — no new machinery, and nothing new on the server.
+     *
+     * What this deliberately does NOT do is schedule anything. Nothing in
+     * PunchMe messages a customer on a timer; every message is an owner
+     * pressing a button, and that stays true.
+     */
+    function createCampaignScreen(type) {
+      const t = CAMPAIGN_TYPES.find((x) => x.k === type);
+      if (!t) return notFoundScreen();
+      const d = document.createElement("div");
+      d.innerHTML =
+        '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Campaign types</p>' +
+        '<h2 class="sec first">' + esc(t.name) + "</h2>" +
+        '<p class="muted">' + esc(t.blurb) + "</p>" +
+        '<ol class="steps"><li class="on">Who and what</li><li>Preview</li><li>Send</li></ol>' +
+        "<label>Who it goes to</label>" +
+        '<select data-aud><option value="ready">Everyone</option></select>' +
+        "<label>What it says</label>" +
+        '<textarea data-cmsg rows="3" maxlength="200" placeholder="Type your message"></textarea>' +
+        '<p class="muted" data-reach style="margin-top:8px"></p>' +
+        '<button class="btn btn-neon" style="margin-top:14px" data-preview>Preview it</button>' +
+        '<div data-prev></div>' +
+        '<p class="muted" style="margin-top:16px">Scheduling and repeats are coming. ' +
+        "Today a campaign is you pressing send, which is why nothing goes out without you.</p>";
+      d.querySelector("[data-back]").onclick = () => navigate("/create/campaign");
+      d.querySelector("[data-cmsg]").value = t.msg;
+
+      let health = [], everyone = 0;
+      const sel = d.querySelector("[data-aud]");
+
+      /** How many this actually reaches, and where the rest went. */
+      function paintReach() {
+        const key = sel.value;
+        const g = key === "ready" ? null : health.find((h) => h.key === key);
+        const total = g ? g.customers : everyone;
+        const ready = g ? g.eligible : health.reduce((a, h) => a + h.eligible, 0);
+        const held = Math.max(0, total - ready);
+        d.querySelector("[data-reach]").innerHTML =
+          "Goes to " + ready + " of " + total + (total === 1 ? " customer" : " customers") +
+          (held ? "<br>" + held + " are at the weekly limit and will be skipped" : "");
+        return ready;
+      }
+
+      (async () => {
+        const { body } = await api("/customers?cardId=all");
+        health = body.health || [];
+        everyone = health.reduce((a, h) => a + h.customers, 0);
+        sel.innerHTML = '<option value="ready">Everyone (' + everyone + ")</option>" +
+          health.map((h) =>
+            '<option value="' + h.key + '">' + esc(h.label) + " (" + h.customers + ")</option>",
+          ).join("");
+        if (t.seg && health.some((h) => h.key === t.seg)) sel.value = t.seg;
+        paintReach();
+      })();
+      sel.onchange = paintReach;
+
+      d.querySelector("[data-preview]").onclick = () => {
+        const message = d.querySelector("[data-cmsg]").value.trim();
+        if (!message) return toast("Type a message first");
+        const ready = paintReach();
+        d.querySelectorAll(".steps li").forEach((li, i) => li.classList.toggle("on", i < 2));
+        const box = d.querySelector("[data-prev]");
+        box.innerHTML =
+          '<h2 class="sec">Preview</h2>' +
+          '<div class="phone"><div class="pnote"><strong>' + esc(shopName()) + "</strong>" +
+          "<p>" + esc(message) + "</p></div></div>" +
+          '<p class="muted">This is roughly how it lands on their phone.</p>' +
+          '<button class="btn btn-neon" style="margin-top:14px" data-launch>Send to ' + ready +
+          (ready === 1 ? " customer" : " customers") + "</button>";
+        box.querySelector("[data-launch]").onclick = async () => {
+          if (await confirmAndSend(ready, { target: sel.value || "ready" }, message)) {
+            d.querySelectorAll(".steps li").forEach((li) => li.classList.add("on"));
+            paintReach();
+          }
+        };
+        box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+      return d;
     }
 
     /** Manage — what is running, in two lists. */

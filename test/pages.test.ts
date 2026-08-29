@@ -2680,6 +2680,102 @@ describe("the manage screens", () => {
   });
 });
 
+describe("the create screens", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+  const reward = html.slice(html.indexOf("function createRewardScreen(type)"),
+                            html.indexOf("function createCampaignScreen(type)"));
+  const campaign = html.slice(html.indexOf("function createCampaignScreen(type)"),
+                              html.indexOf("function manageScreen(tab)"));
+
+  /**
+   * The four reward types are the four the database already holds, so wiring
+   * this up later is a rename rather than a migration.
+   */
+  it("offers the four reward types the card already supports", () => {
+    for (const k of ["stamp", "milestones", "membership", "points"]) {
+      expect(html).toContain(`k: "${k}"`);
+    }
+    for (const n of ["Stamps", "Stamps + milestones", "Membership", "Points"]) {
+      expect(html).toContain(`name: "${n}"`);
+    }
+    // A sentence each — the whole reason these are cards and not a dropdown.
+    expect(html).toContain("blurb:");
+  });
+
+  it("offers the four campaign types, each saying what it is for", () => {
+    for (const n of ["Win-back", "Quiet period", "Progress reminder", "Custom"]) {
+      expect(html).toContain(`name: "${n}"`);
+    }
+    expect(html).toContain("CAMPAIGN_TYPES");
+  });
+
+  /**
+   * THE ONE THAT MATTERS. A shop can hold one programme, and POST /api/cards
+   * refuses a second with 409 one-card-per-merchant. A Create flow that tried
+   * to save would look broken to the one person it is meant to impress.
+   */
+  it("never tries to create a card", () => {
+    const create = html.slice(html.indexOf("function createScreen()"),
+                              html.indexOf("function manageScreen(tab)"));
+    expect(create).not.toContain('"/cards"');
+    expect(create).not.toContain("one-card-per-merchant");
+    // It is the REAL designer, in draft mode — the preview is honest even
+    // though the save is not possible.
+    expect(reward).toContain("draft: true");
+    expect(reward).toContain("designerFor(draft");
+    expect(reward).toContain("This is a preview.");
+  });
+
+  /**
+   * The draft must not reach into the live programme. designPanel writes the
+   * saved fields back onto the card object it was handed, and handing it
+   * S.cards[0] would edit the running programme from a screen that promises
+   * it changes nothing.
+   */
+  it("previews from a copy, never from the live card", () => {
+    expect(reward).toContain("Object.assign({}, base, { kind: t.k })");
+    expect(reward).not.toContain("designerFor(base");
+  });
+
+  it("says nothing was written when a draft is saved", () => {
+    // In the designer itself, so both the message and the guard live with the
+    // code that would otherwise have made the request.
+    expect(html).toContain("if (env.draft)");
+    expect(html).toContain("Saving a new programme arrives with V2 — nothing was written.");
+  });
+
+  /** Configure, preview, send — and the send is real. */
+  it("runs a campaign through three steps and one real send", () => {
+    expect(campaign).toContain('<li class="on">Who and what</li>');
+    expect(campaign).toContain("<li>Preview</li>");
+    expect(campaign).toContain("<li>Send</li>");
+    expect(campaign).toContain("data-preview");
+    expect(campaign).toContain("confirmAndSend(ready, { target: sel.value");
+    // The three named types are pre-filled wording over the same sender —
+    // no new machinery, nothing new on the server.
+    expect(html).toContain('seg: "lost"');
+    expect(html).toContain('seg: "regular"');
+  });
+
+  /**
+   * Nothing in PunchMe messages a customer on a timer — automated win-back was
+   * removed for that reason — and a campaign screen is exactly where that would
+   * creep back in. It says so instead of implying otherwise.
+   */
+  it("schedules nothing, and says so", () => {
+    expect(campaign).toContain("Scheduling and repeats are coming.");
+    expect(campaign).toContain("nothing goes out without you");
+    expect(campaign).not.toContain("setInterval");
+    expect(campaign).not.toContain("schedule:");
+  });
+
+  /** The reach line names the whole group and what the limit will hold back. */
+  it("says who it reaches and who the limit will skip", () => {
+    expect(campaign).toContain("const held = Math.max(0, total - ready);");
+    expect(campaign).toContain("at the weekly limit and will be skipped");
+  });
+});
+
 describe("example data announces itself", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
 

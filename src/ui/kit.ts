@@ -1078,6 +1078,15 @@ export const DESIGN_PANEL_JS = /* js */ `
      *                      look one lived inside a collapsed section. What the
      *                      two buttons used to say separately is now the
      *                      confirmation in front of the one.
+     *   draft              true when this panel is a PREVIEW of a programme
+     *                      that does not exist yet — the Create flow. Everything
+     *                      renders and previews exactly as normal; the one
+     *                      difference is that saving writes nothing and says so.
+     *                      A shop can hold only one programme today (the server
+     *                      refuses a second), so a Create flow that tried to
+     *                      save would get a 409 and look broken. Default false:
+     *                      the dashboard's programme page and the console both
+     *                      omit it and are unaffected.
      *   toast/modal/info   shared with MODAL_JS
      */
     function designPanel(c, env) {
@@ -3100,6 +3109,14 @@ export const DESIGN_PANEL_JS = /* js */ `
       // The quiet flag is for a caller stringing several of these together — the
       // logo colour path does four writes and one thing to say at the end of them.
       async function save(fields, label, quiet) {
+        // A draft has nothing to save to. Everything above this point still
+        // ran — the preview is live and the fields are staged — so the panel
+        // behaves identically right up to the write it cannot make.
+        if (env.draft) {
+          Object.assign(c, fields);
+          toast("Saving a new programme arrives with V2 — nothing was written.");
+          return;
+        }
         const { body } = await api(P(), { method: "POST", body: JSON.stringify(fields) });
         if (!body.ok) return toast(body.error || "Save failed");
         Object.assign(c, fields);
