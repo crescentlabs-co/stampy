@@ -2427,21 +2427,109 @@ describe("the visit-cycle setting", () => {
   });
 });
 
-describe("the four all-time tiles", () => {
+describe("the Home headline", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
+  const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function drawInsight"));
 
-  it("are titled, and titled Overview", () => {
-    expect(html).toContain('<h2 class="sec first">Overview</h2>');
-    expect(html).not.toContain("Everything so far</h2>\n        <div class=\"totals\"");
+  it("asks the question in the heading, and answers it in four tiles", () => {
+    expect(home).toContain('<h2 class="sec first">How your shop is doing</h2>');
+    for (const label of ["customers", "visits", "rewards given", "visit frequency"]) {
+      expect(home).toContain("<span>" + label + "</span>");
+    }
   });
 
   /**
-   * The health tiles sit directly under these four and must read as the same
-   * family. They carried their own smaller type, which made the page look like
-   * two grids that had not been designed together.
+   * Visits are NOT stamps, and this is the whole point of the tile.
+   *
+   * A stamp is something that happened at the counter. A visit is a lifetime
+   * visit by a person, and signing up counts as visit 1 — the shop's own
+   * health groups are judged on visits, so a headline reading stamps would
+   * disagree with every segment under it. That disagreement has shipped twice.
+   */
+  it("counts visits per person, never the stamp total", () => {
+    expect(home).toContain('a + (c.visits || 0)');
+    expect(home).not.toContain('sum("stamps")');
+    // Rewards and customers come from the two sources already on the page —
+    // no third query answering a question the other two already answer.
+    expect(home).toContain('sum("redemptions")');
+    expect(home).toContain("counts.active");
+  });
+
+  /** An unanswerable number is an em dash, never a confident zero. */
+  it("shows a dash rather than a zero it cannot stand behind", () => {
+    expect(home).toContain('if (!people) return "—";');
+    expect(home).toContain('if (!gaps.length) return "—";');
+  });
+
+  /**
+   * The health tiles must read as the same family as these four. They carried
+   * their own smaller type, which made the page look like two grids that had
+   * not been designed together.
    */
   it("share their number size with the health tiles", () => {
     expect(html).not.toMatch(/\.totals\.health \.metric b \{[^}]*font-size/);
+  });
+
+  /** Programmes: the real one, then the examples, each row marked. */
+  it("lists the real programme before the examples, and marks the examples", () => {
+    const rows = html.slice(html.indexOf("function programRows()"), html.indexOf("const KIND_LABEL"));
+    expect(rows.indexOf("S.cards.map")).toBeLessThan(rows.indexOf("MOCK_PROGRAMS.map"));
+    expect(rows).toContain("example: true");
+    expect(html).toContain('p.example ? EG : ""');
+    // Tracked spend survived the rebuild — it left the headline because it is a
+    // fact about one programme's basket, not about the shop.
+    expect(rows).toContain("c.averageSpend > 0");
+  });
+
+  /**
+   * Campaigns are entirely made up — there is no campaign table — so the
+   * section says so twice: the chip on the heading and a line under the tiles.
+   */
+  it("marks the campaign numbers as example data", () => {
+    expect(home).toContain("'<h2 class=\"sec\">Campaigns' + EG");
+    expect(html).toContain("Not your data yet");
+    expect(html).toContain("function mockCampaignTotals()");
+  });
+
+  /**
+   * The insight area is three or four rules over numbers already on screen,
+   * and it stays silent when none of them fits. A box that always has an
+   * opinion is a box that is sometimes wrong.
+   */
+  it("says one thing about the numbers, or nothing at all", () => {
+    const ins = html.slice(html.indexOf("function drawInsight"), html.indexOf("function programRows"));
+    expect(ins).toContain("if (!total) return;");
+    expect(ins).toContain("if (!line) return;");
+    // No second sentence: exactly one branch wins.
+    expect(ins.match(/line = /g)!.length).toBeGreaterThan(2);
+    expect(ins).toContain("else if");
+  });
+});
+
+/**
+ * Anything drawn from the mock module says so on screen. A number an owner
+ * cannot tell apart from their own is worse than no number at all.
+ */
+describe("example data announces itself", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+
+  it("defines the chip once and renders it beside every made-up number", () => {
+    expect(html).toContain(".egchip {");
+    expect(html).toContain(`const EG = '<span class="egchip">Example</span>'`);
+  });
+
+  it("keeps every made-up name in one prefix, so deleting the file finds them all", () => {
+    const names = new Set([...html.matchAll(/\bMOCK_[A-Z_]+/g)].map((m) => m[0]));
+    expect(names.size).toBeGreaterThan(2);
+    // Nothing real may be named MOCK_, and nothing made-up may be named
+    // anything else: the whole deletion story rests on the prefix.
+    for (const n of names) expect(n.startsWith("MOCK_")).toBe(true);
+  });
+
+  it("never counts example data into a real total", () => {
+    const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function drawInsight"));
+    // The four headline tiles read S.cards and /api/customers, and nothing else.
+    expect(home).not.toContain("MOCK_");
   });
 });
 

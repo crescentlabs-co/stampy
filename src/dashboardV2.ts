@@ -8,6 +8,7 @@
  * test suites keep importing it from "../pages.js" exactly as before.
  * Dependencies point one way: pages.ts → dashboardV2.ts → ui/kit.ts.
  */
+import { DASHBOARD_MOCK_CSS, MOCK_JS } from "./ui/dashboardV2Mock.js";
 import {
   DESIGN_PANEL_CSS,
   DESIGN_PANEL_JS,
@@ -158,6 +159,32 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        neither of them has a bottom bar. */
     body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
 
+    /* --- Home: one row per programme, and one line about the numbers --- */
+    .prow { display: block; text-decoration: none; color: var(--ink);
+            border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+            margin-bottom: 8px; background: var(--surface); }
+    .prow:hover { border-color: var(--accent); }
+    .ptop { display: flex; align-items: center; gap: 8px; }
+    .ptop strong { font-size: 1rem; }
+    /* Status sits at the far end, so the eye finds it in the same place on
+       every row however long the name is. */
+    .pstat { margin-left: auto; font-size: .7rem; font-weight: 700; letter-spacing: .05em;
+             text-transform: uppercase; color: #15803d; background: #e9f7ee;
+             border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+    /* Ended is not a failure and is not red: the programme did its job and
+       stopped taking new sign-ups. Grey, like any other finished thing. */
+    .pstat.off { color: var(--muted); background: var(--ghost-bg); }
+    .pmeta { color: var(--muted); font-size: .82rem; margin-top: 3px; }
+    .pnums { display: flex; gap: 18px; margin-top: 10px; }
+    .pnums span { font-size: .72rem; color: var(--muted); }
+    .pnums b { display: block; font-family: var(--display); font-weight: 800; font-size: 1.15rem;
+               line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+               color: var(--ink); }
+    /* The one interpretive line on the page. Bordered rather than filled: it is
+       a note about the numbers above it, not a fifth number. */
+    .insight { border-left: 3px solid var(--ink); background: var(--surface);
+               border-radius: 0 12px 12px 0; padding: 12px 14px; margin: 14px 0 4px; }
+    .insight p { margin: 0; font-size: .88rem; line-height: 1.5; }
     .segwrap { margin: 8px 0 4px; }
     .segwrap .lbl { font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
     /* --- share tab --- */
@@ -304,6 +331,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .eye { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
     .eye input { width: auto; }
     ${MODAL_CSS}
+    ${DASHBOARD_MOCK_CSS}
   `;
   const js = /* js */ `
     ${PALETTE_JS}
@@ -427,74 +455,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // old single panel mixed a colour picker with the staff PIN behind one button.
     ${DESIGN_PANEL_JS}
     ${HEALTH_JS}
-
-    // ---- Home: totals across ALL cards + per-card breakdown + customer preview ----
-    function homePanel() {
-      const div = document.createElement("div");
-      const sum = (k) => S.cards.reduce((a, c) => a + (c.metrics[k] || 0), 0);
-      const breakdown = S.cards.length > 1
-        ? \`<label style="margin-top:16px">Breakdown by card</label>
-           <table class="breakdown"><tr><th>Card</th><th>Customers</th><th>Stamps</th><th>Rewards</th></tr>
-           \${S.cards.map((c) => '<tr><td>' + c.name + '</td><td class="n">' + c.metrics.active + '</td><td class="n">' + c.metrics.stamps + '</td><td class="n">' + c.metrics.redemptions + '</td></tr>').join("")}
-           </table>\`
-        : "";
-      div.innerHTML = \`
-        <!-- Named, because the section under it is named. Four unlabelled tiles
-             above a heading read as part of it, and these are a different
-             question: how much has happened, against what shape the base is.
-             "so far" answers the one an owner always asks next: since when? -->
-        <h2 class="sec first">Overview</h2>
-        <div class="totals" data-totals></div>
-        <p class="muted" data-gap style="margin:-6px 0 4px"></p>
-        <div data-health></div>
-        \${breakdown}\`;
-
-      // Money influenced = stamps × that card's average spend, summed per card
-      // (each card can have a different basket). Hidden until a spend is set,
-      // because a confident "0" would read as a real answer. The symbol comes
-      // from each card, not from whichever card happened to be first.
-      const priced = S.cards.filter((c) => c.averageSpend > 0);
-      const oneCurrency = priced.every((c) => c.currency === (priced[0] || {}).currency);
-      const influenced = priced.reduce((a, c) => a + c.metrics.stamps * c.averageSpend, 0);
-      const money = (n) =>
-        (oneCurrency ? (priced[0] || {}).currency || "" : "") +
-        n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-
-      // Four numbers, all time, in a fixed 2×2 — the same four tiles whether or
-      // not an average spend is set, so the shape of the page never shifts
-      // under an owner. The "came back" rate was here and is not any more: it
-      // needed a footnote about the week it takes to mean anything, and a tile
-      // that has to be explained is a tile nobody reads. The retention
-      // question is answered properly on the admin console. cardMetrics still
-      // computes matured/returned — nothing else moves if it comes back.
-      const host = div.querySelector("[data-totals]");
-      host.className = "totals";
-      host.innerHTML = \`
-        <div class="metric"><b>\${sum("active")}</b><span>customers</span></div>
-        <div class="metric"><b>\${sum("stamps")}</b><span>stamps</span></div>
-        <div class="metric"><b>\${sum("redemptions")}</b><span>rewards given</span></div>
-        <div class="metric"><b>\${priced.length ? money(influenced) : "—"}</b><span>tracked spend</span></div>\`;
-
-      // Only the empty state now. The two "issued but not counted" figures that
-      // used to sit here — cards abandoned at the Add sheet, and cards since
-      // deleted — are both things an owner can do nothing about, and reading
-      // them as a scoreline against yourself is worse than not knowing. Both
-      // are still tracked and both are on the admin console.
-      (async () => {
-        const { body } = await api("/customers");
-        const counts = body.counts || { active: 0, issuedNeverAdded: 0, removed: 0 };
-        const line = div.querySelector("[data-gap]");
-        line.innerHTML = counts.active
-          ? ""
-          : "No customers yet — they appear once someone adds your card and gets their first stamp.";
-        if (!priced.length) {
-          line.insertAdjacentHTML("afterend",
-            '<p class="muted" style="margin:2px 0 4px">Set an average spend in Card → Rules to see tracked spend.</p>');
-        }
-        drawHealth(div.querySelector("[data-health]"), body);
-      })();
-      return div;
-    }
+    ${MOCK_JS}
 
     /**
      * Customer health: the shape of the base, not its size.
@@ -1273,6 +1234,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // and offer the way back rather than painting an empty page.
       if (!el) el = notFoundScreen();
       host.appendChild(el);
+      // Screens carry [data-nav] links of their own — a programme row, a
+      // customer card. Wired here rather than in each screen, so a new screen
+      // cannot ship a link that reloads the whole page.
+      wireLinks(host);
       // Which nav item is lit. The deep screens light their section: a customer
       // is still Customers, a programme is still Manage.
       $(".botnav").querySelectorAll("[data-nav]").forEach((a) => {
@@ -1298,14 +1263,181 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // and rewriting them in the same change is how you lose track of which of
     // the two broke something.
 
+    /**
+     * Home — how the whole shop is doing, in one screen.
+     *
+     * Four numbers for the business, then the same question asked twice more:
+     * once of the programmes, once of the campaigns.
+     *
+     * **Every number here is worked out from the same list the screen under it
+     * uses.** "The headline disagreed with the list beneath it" is a bug this
+     * codebase has shipped twice, and both times it was two different queries
+     * answering one question. There is one request for the people
+     * (/api/customers) and one for the programmes (/api/overview, already in
+     * S), and nothing is counted a third way.
+     */
     function homeScreen() {
       const d = document.createElement("div");
-      d.appendChild(homePanel());
+      const sum = (k) => S.cards.reduce((a, c) => a + (c.metrics[k] || 0), 0);
+      d.innerHTML =
+        '<h2 class="sec first">How your shop is doing</h2>' +
+        '<div class="totals" data-totals></div>' +
+        '<p class="muted" data-gap style="margin:-6px 0 4px"></p>' +
+        '<div data-insight></div>' +
+        '<h2 class="sec">Programmes</h2>' +
+        '<div data-programs></div>' +
+        '<h2 class="sec">Campaigns' + EG + "</h2>" +
+        '<div data-campaigns></div>';
+
+      // The four headline tiles. Painted with what is already in S so the shape
+      // of the page is right before the request lands; the two that need the
+      // people are filled in below rather than left as a hole.
+      const tiles = (customers, freq) =>
+        '<div class="metric"><b>' + customers + "</b><span>customers</span></div>" +
+        '<div class="metric"><b>' + visitsLabel() + "</b><span>visits</span></div>" +
+        '<div class="metric"><b>' + sum("redemptions") + "</b><span>rewards given</span></div>" +
+        '<div class="metric"><b>' + freq + "</b><span>visit frequency</span></div>";
+
+      // Filled once the people arrive. Held in a closure so both the tiles and
+      // the insight below read the same numbers.
+      let people = null;
+      function visitsLabel() {
+        // VISITS, not stamps. A stamp is something that happened at the
+        // counter; a visit is a lifetime visit by a person, and signing up is
+        // visit 1. They are different numbers and reading one as the other is
+        // exactly how the headline came to disagree with the list.
+        if (!people) return "—";
+        return people.reduce((a, c) => a + (c.visits || 0), 0).toLocaleString();
+      }
+      /** The average gap between visits, across everyone who has two or more. */
+      function freqLabel() {
+        if (!people) return "—";
+        const gaps = people.map((c) => c.avgGapDays).filter((g) => isFinite(g) && g > 0);
+        if (!gaps.length) return "—";
+        const mean = gaps.reduce((a, g) => a + g, 0) / gaps.length;
+        return mean < 1.5 ? "Daily" : "Every " + Math.round(mean) + " days";
+      }
+
+      const host = d.querySelector("[data-totals]");
+      host.innerHTML = tiles("—", "—");
+      d.querySelector("[data-programs]").innerHTML = programRows();
+      d.querySelector("[data-campaigns]").innerHTML = campaignBlock();
+
+      (async () => {
+        const { body } = await api("/customers");
+        people = Array.isArray(body.customers) ? body.customers : [];
+        const counts = body.counts || { active: 0 };
+        host.innerHTML = tiles(counts.active, freqLabel());
+        d.querySelector("[data-gap]").innerHTML = counts.active
+          ? ""
+          : "No customers yet — they appear once someone adds your card and gets their first stamp.";
+        drawInsight(d.querySelector("[data-insight]"), body);
+      })();
       return d;
+    }
+
+    /**
+     * One sentence about what the numbers mean, and no more than one.
+     *
+     * There is no insights engine and this is not pretending to be one: it is
+     * three or four rules reading the segment split that is already on screen.
+     * It says the most useful true thing it can find, or it says nothing —
+     * a box that always has an opinion is a box that is sometimes wrong.
+     */
+    function drawInsight(host, body) {
+      const groups = {};
+      for (const g of body.health || []) groups[g.key] = g.customers;
+      const total = Object.values(groups).reduce((a, n) => a + n, 0);
+      if (!total) return;
+      let line = "";
+      if (groups.lost && groups.lost / total >= 0.4) {
+        line = "<strong>" + groups.lost + " of your " + total + " customers have gone quiet.</strong> " +
+          "A win-back campaign is the usual answer.";
+      } else if (groups.new && groups.new / total >= 0.5) {
+        line = "<strong>Most of your customers are new.</strong> " +
+          "Whether they come back a second time is the number worth watching next.";
+      } else if (groups.regular && groups.regular / total >= 0.3) {
+        line = "<strong>" + groups.regular + " regulars.</strong> " +
+          "That is the group that pays for the rest of this.";
+      } else if (groups.returning) {
+        line = "<strong>" + groups.returning + " customers are on their way to becoming regulars.</strong> " +
+          "They have been back, but not often enough yet.";
+      }
+      if (!line) return;
+      host.innerHTML = '<div class="insight"><p>' + line + "</p></div>";
+    }
+
+    /**
+     * Programmes, with the real one first.
+     *
+     * Tracked spend lives here rather than in the headline: it is stamps ×
+     * that programme's own average basket, so it is a fact about a programme,
+     * not about the shop. It was a fourth headline tile and the four headline
+     * slots are spoken for now.
+     */
+    function programRows() {
+      const real = S.cards.map((c) => {
+        const money = c.averageSpend > 0
+          ? (c.currency || "") + Math.round(c.metrics.stamps * c.averageSpend).toLocaleString()
+          : "";
+        return progRow({
+          href: "/manage/rewards/" + c.id,
+          name: c.shopName || c.name, kind: c.kind, status: "active",
+          customers: c.metrics.active, visits: c.metrics.stamps, rewards: c.metrics.redemptions,
+        }, money);
+      }).join("");
+      const eg = MOCK_PROGRAMS.map((m) => progRow({
+        href: "/manage/rewards/" + m.id, example: true,
+        name: m.name, kind: m.kind, status: m.status,
+        customers: m.customers, visits: m.visits, rewards: m.rewards,
+      }, "")).join("");
+      return real + eg;
+    }
+
+    /** Type names an owner would recognise, from the four the database holds. */
+    const KIND_LABEL = { stamp: "Stamps", milestones: "Stamps + milestones",
+                         membership: "Membership", points: "Points" };
+
+    function progRow(p, money) {
+      return '<a class="prow' + (p.example ? " egrow" : "") + '" href="' + ROOT + p.href +
+        '" data-nav="' + p.href + '">' +
+        '<div class="ptop"><strong>' + esc(p.name) + "</strong>" +
+          (p.example ? EG : "") +
+          '<span class="pstat' + (p.status === "ended" ? " off" : "") + '">' +
+            (p.status === "ended" ? "Ended" : "Active") + "</span></div>" +
+        '<div class="pmeta">' + (KIND_LABEL[p.kind] || "Stamps") +
+          (money ? " · " + money + " tracked" : "") + "</div>" +
+        '<div class="pnums"><span><b>' + p.customers + "</b>customers</span>" +
+          "<span><b>" + p.visits + "</b>stamps</span>" +
+          "<span><b>" + p.rewards + "</b>rewards</span></div>" +
+        "</a>";
+    }
+
+    /** Campaigns performance. Entirely example data — there is no campaign table. */
+    function campaignBlock() {
+      const t = mockCampaignTotals();
+      return '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
+        '<div class="metric"><b>' + t.targeted + "</b><span>targeted</span></div>" +
+        '<div class="metric"><b>' + t.returned + "</b><span>came back</span></div>" +
+        '<div class="metric"><b>' + t.activation + "%</b><span>activation</span></div>" +
+        "</div>" +
+        '<p class="muted" style="margin-top:8px">Not your data yet — this is what it will look like ' +
+        "once campaigns are running.</p>";
     }
 
     function customersScreen() {
       const d = document.createElement("div");
+      // The four segments — New, Regular, Returning, Lost. Left Home with the
+      // rebuild: Home says how big the shop is, this screen says who is in it.
+      // The list and the search arrive with the Customers commit; drawHealth
+      // and the message sender below it are what already worked.
+      const seg = document.createElement("div");
+      seg.innerHTML = '<h2 class="sec first">Your customers</h2><div data-health></div>';
+      d.appendChild(seg);
+      (async () => {
+        const { body } = await api("/customers");
+        drawHealth(seg.querySelector("[data-health]"), body);
+      })();
       d.appendChild(customersPanel());
       return d;
     }
