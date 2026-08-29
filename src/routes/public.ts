@@ -76,6 +76,7 @@ import {
   supportPage,
   termsPage,
 } from "../pages.js";
+import { customerCardPage } from "../ui/customerPage.js";
 
 export const publicRouter = Router();
 
@@ -621,6 +622,33 @@ publicRouter.get("/c/:cardId/qr", (req, res) => cardQr(req.params.cardId!, res))
  * The QR inside points at the MERCHANT join link, not this card, so the printed
  * sheet survives a rename or a second card (see CLAUDE.md).
  */
+/**
+ * The customer's own page.
+ *
+ * Additive, on the permanent /c/:cardId/* namespace, and it changes nothing
+ * about the routes beside it. Cards already in wallets do NOT link here — the
+ * links inside a pass are baked in when the pass is made — so today this is
+ * reached from a programme's sharing section, where an owner can look at it.
+ *
+ * Identified by the same signed per-merchant cookie the sign-up flow already
+ * sets, and by nothing else. A serial or an auth token in this URL would be
+ * putting a credential that lives inside a wallet card into an address bar.
+ */
+publicRouter.get("/c/:cardId/me", async (req, res) => {
+  const card = await findCafe(req.params.cardId!);
+  if (card === "no-db") return void res.status(503).type("html").send(notReadyPage());
+  if (!card) return void res.status(404).type("html").send(notReadyPage());
+  const [merchant, business, logoVersion] = await Promise.all([
+    merchantForCard(card.id).catch(() => null),
+    businessNameForCard(card),
+    cafeLogoVersion(card.id).catch(() => 0),
+  ]);
+  // Whether this BROWSER already holds a card for this shop. Not who they are:
+  // the cookie carries no name, email or phone, and this page asks for none.
+  const known = merchant ? !!readCustomerCookie(req, merchant.id) : false;
+  res.type("html").send(customerCardPage(card, business, logoVersion, known));
+});
+
 publicRouter.get("/c/:cardId/poster", async (req, res) => {
   const card = await findCafe(req.params.cardId!);
   if (card === "no-db") return void res.status(503).type("html").send(notReadyPage());

@@ -29,6 +29,7 @@ import {
   staffPage,
   termsPage,
 } from "../src/pages.js";
+import { customerCardPage } from "../src/ui/customerPage.js";
 
 /** Every <script>…</script> body in a page (skipping src-only tags). */
 function inlineScripts(html: string): string[] {
@@ -71,7 +72,22 @@ const pages: [string, string][] = [
   // The poster carries one small script — print, and a share sheet for phones,
   // where print() is often a no-op. It gets its own block below as well.
   ["poster", posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 3)],
+  // The customer's own page, both ways round: a browser that already holds a
+  // card for this shop, and one that does not.
+  ["customer card", customerCardPage(POSTER_CARD as never, "Kopi Corner", 3, true)],
+  ["customer card (no card yet)", customerCardPage(POSTER_CARD as never, "Kopi Corner", 0, false)],
 ];
+
+/**
+ * Pages that carry no inline script BY DESIGN, named one at a time.
+ *
+ * The suite below insists every other page has one, because if the extraction
+ * ever stops matching, a silent zero would make the whole thing pass by
+ * checking nothing. A page that genuinely has no script has to be listed here
+ * rather than allowed to slip through that guard — so a page that LOSES its
+ * script still fails.
+ */
+const SCRIPTLESS = new Set(["customer card", "customer card (no card yet)"]);
 
 describe("inline page scripts parse", () => {
   for (const [name, html] of pages) {
@@ -79,7 +95,8 @@ describe("inline page scripts parse", () => {
       const scripts = inlineScripts(html);
       // Guard the guard: if the extraction ever stops matching, this test would
       // otherwise pass by checking nothing.
-      expect(scripts.length).toBeGreaterThan(0);
+      if (!SCRIPTLESS.has(name)) expect(scripts.length).toBeGreaterThan(0);
+      else expect(scripts.length).toBe(0);
       for (const src of scripts) {
         // Function() compiles the body without executing it — a syntax error throws.
         expect(() => new Function(src), src.slice(0, 120)).not.toThrow();
@@ -2816,6 +2833,62 @@ describe("the create screens", () => {
   it("says who it reaches and who the limit will skip", () => {
     expect(campaign).toContain("const held = Math.max(0, total - ready);");
     expect(campaign).toContain("at the weekly limit and will be skipped");
+  });
+});
+
+/**
+ * The customer's own page — the first screen in this product addressed to a
+ * customer who already has a card.
+ */
+describe("the customer's own page", () => {
+  const mine = customerCardPage(POSTER_CARD as never, "Kopi Corner", 3, true);
+  const theirs = customerCardPage(POSTER_CARD as never, "Kopi Corner", 0, false);
+
+  it("wears the shop's colours and says what the deal is", () => {
+    expect(mine).toContain("Kopi Corner");
+    expect(mine).toContain(String(POSTER_CARD.stamps_target));
+    expect(mine).toContain(POSTER_CARD.reward);
+    expect(mine).toContain("mhero");
+  });
+
+  /**
+   * The privacy promise is made ON the page it most concerns. This is the one
+   * screen a customer reads after they have a card, and the temptation to ask
+   * for an email "so we can tell you about your reward" would land here first.
+   */
+  it("asks for nothing, and says so", () => {
+    expect(mine).toContain("No name, no phone number, no email — ever.");
+    expect(mine).toContain('href="/privacy"');
+    for (const field of ["type=\"email\"", "type=\"tel\"", 'name="name"', "autocomplete=\"name\""]) {
+      expect(mine).not.toContain(field);
+    }
+  });
+
+  /**
+   * No serial and no auth token, ever. Both live inside cards on customers'
+   * phones and the barcode content IS the serial — an address bar is not where
+   * either belongs.
+   */
+  it("carries no pass credential", () => {
+    for (const html of [mine, theirs]) {
+      expect(html).not.toContain("auth_token");
+      expect(html).not.toContain("authToken");
+      expect(html).not.toContain("serial");
+    }
+  });
+
+  /** A browser with no card is the ordinary case, not an error. */
+  it("offers a card rather than an error when this browser has none", () => {
+    expect(theirs).toContain("Get your card");
+    expect(theirs).not.toContain("Your progress will show here");
+    expect(mine).toContain("Your progress will show here");
+  });
+
+  /** What is not built yet is marked, rather than mocked up as working. */
+  it("marks the parts that are not built yet", () => {
+    expect(mine).toContain("msoon");
+    expect(mine).toContain("Marketing messages");
+    expect(mine).toContain("Deleting the card from your\n        wallet stops everything today.");
   });
 });
 
