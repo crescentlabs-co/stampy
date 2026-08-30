@@ -102,6 +102,66 @@ export function trialDaysLeft(m: Pick<MerchantHealthRow, "trial_day">): number {
 }
 
 /**
+ * The date this shop's trial actually runs out.
+ *
+ * A stored `trial_ends_at` wins outright — it exists so ONE shop can be given
+ * longer, and a derived date can never express that. Otherwise it is derived
+ * exactly as before: TRIAL_DAYS from the first stamp at a real counter.
+ *
+ * Null when a shop has never been stamped at. That is not "no trial" — it is a
+ * trial that has not STARTED, and showing a countdown to a shop that has never
+ * served a customer would be counting down something they never began. The
+ * console already says "never stamped" for these; the dashboard says the same.
+ */
+export function trialEndsAt(
+  m: Pick<MerchantHealthRow, "trial_day" | "trial_ends_at" | "first_stamp_at">,
+  now = Date.now(),
+): Date | null {
+  if (m.trial_ends_at) return new Date(m.trial_ends_at);
+  if (!m.first_stamp_at) return null;
+  return new Date(now + trialDaysLeft(m) * DAY);
+}
+
+/**
+ * Is this shop's trial over? Only ever true once the trial has STARTED.
+ *
+ * A shop that has never been stamped at is not "expired", it is unstarted —
+ * treating the two the same would switch features off for the shops that have
+ * not managed to use the product yet, which is precisely backwards.
+ */
+export function trialExpired(
+  m: Pick<MerchantHealthRow, "trial_day" | "trial_ends_at" | "first_stamp_at">,
+  now = Date.now(),
+): boolean {
+  const ends = trialEndsAt(m, now);
+  return ends !== null && ends.getTime() <= now;
+}
+
+/**
+ * What a shop can use right now.
+ *
+ * Two inputs and one rule: 'pro' has everything, and 'free' has everything
+ * until its trial runs out. Campaigns are the first thing behind it. Written
+ * once, here, because a feature gate copied into a page is a gate the server
+ * does not have — the browser is not where this may be decided.
+ *
+ * `campaigns` is the only gated capability today. Adding a tier means adding a
+ * case here, not a column.
+ */
+export interface PlanAllows {
+  campaigns: boolean;
+}
+
+export function planAllows(
+  plan: "free" | "pro",
+  m: Pick<MerchantHealthRow, "trial_day" | "trial_ends_at" | "first_stamp_at">,
+  now = Date.now(),
+): PlanAllows {
+  const inTrial = !trialExpired(m, now);
+  return { campaigns: plan === "pro" || inTrial };
+}
+
+/**
  * What the merchant got, in money, from numbers that are countable rather than
  * modelled.
  *
@@ -246,8 +306,11 @@ export function triage(m: MerchantHealthRow, now = Date.now()): Flag[] {
  * everything else, which meant a paying shop that had not stamped in a month
  * still read as the healthiest state on the board — the one shop whose silence
  * matters most was the one the console could not report. Paying is a separate
- * boolean (`paid_at`) shown beside the stage, because a shop can be paying AND
+ * field (`plan`) shown beside the stage, because a shop can be paying AND
  * churning and that pair is the most useful thing this page can tell you.
+ * (It was `paid_at`; that column is now only the date they FIRST went pro, and
+ * it keeps its value through a downgrade, so reading it here would have shown
+ * a shop that left as still paying.)
  *
  * "Activated" means the LOGIN EXISTS. It used to mean the first stamp, which
  * left no word at all for the state in between — claimed, able to stamp, and

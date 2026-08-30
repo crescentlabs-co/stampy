@@ -1082,7 +1082,11 @@ describe("the console says things once", () => {
       expect(html, `${s} is missing from the stage vocabulary`).toContain(s);
     }
     expect(html).toContain("const STAGE_LABEL = ");
-    expect(html).toContain('m.paid_at ? \'<span class="paypill">Paying</span>\'');
+    // The pill reads `plan`, never paid_at. paid_at keeps its value through a
+    // downgrade — it is the date they FIRST paid — so a shop that left would
+    // have gone on showing as paying for ever.
+    expect(html).toContain('m.plan === "pro" ? \'<span class="paypill">Paying</span>\'');
+    expect(html).not.toContain("m.paid_at ?");
     // The old vocabulary, gone from the browser entirely.
     expect(html).not.toContain('.stage.paid {');
     expect(html).not.toContain('m.stage === "active"');
@@ -1164,7 +1168,7 @@ describe("the console says things once", () => {
   it("puts every action on a shop behind one menu", () => {
     expect(html.match(/<details class="menu">/g)!.length).toBe(1);
     for (const act of ["Reset their password", "Hand it to someone else",
-                       "Mark as paying", "Archive shop", "Delete this shop…"]) {
+                       "Move to pro", "Archive shop", "Delete this shop…"]) {
       expect(html, `${act} is missing from the menu`).toContain(act);
     }
     // Two taps, never a browser dialog: a suppressed confirm() returns false
@@ -1732,10 +1736,39 @@ describe("dashboard information architecture", () => {
     expect(shop).toContain("Shop name");
     expect(shop).toContain("logothumb");
     expect(shop).toContain("data-golook");
-    // Billing is not built, so the plan block is chipped as an example.
-    expect(shop).toContain('<h2 class="sec">Plan\${EG}</h2>');
-    expect(shop).toContain("MOCK_ACCOUNT.trialEnds");
-    expect(shop).toContain("Billing isn’t switched on yet");
+    // The plan block is REAL now — merchants.plan, merchants.archived_at and
+    // the trial deadline — so it carries no example chip and reads no mock.
+    expect(shop).toContain('<h2 class="sec">Plan</h2>');
+    expect(shop).toContain("planLabel()");
+    expect(shop).toContain("statusLabel()");
+    expect(shop).toContain("trialLabel()");
+    // The chip and the mock are the two things that must NOT come back: either
+    // one means the screen went back to inventing an owner's billing state.
+    expect(shop).not.toContain("MOCK_ACCOUNT");
+    expect(shop).not.toContain('Plan\${EG}');
+  });
+
+  /**
+   * Whether campaigns are switched off is the SERVER's answer, read back.
+   *
+   * The gate exists twice on purpose — on the tile that links to campaigns and
+   * on the campaign screen itself — because every campaign address is real and
+   * refreshable, so a bookmark made during the trial would walk straight past a
+   * tile-only check. Neither may compute the rule for itself.
+   */
+  it("reads the campaign gate from the server and never recomputes it", () => {
+    const gate = html.slice(html.indexOf("function campaignsAllowed()"),
+                            html.indexOf("function accountPanel()"));
+    expect(gate).toContain("S.account.allows.campaigns");
+    // No trial arithmetic in the browser: a date compared here is a second
+    // rule, and the one the owner sees would drift from the one enforced.
+    expect(gate).not.toContain("trialEndsAt");
+    expect(gate).not.toContain("Date.now");
+    // Both the tile and the screen behind it consult it.
+    expect(html.slice(html.indexOf("function createScreen()"),
+                      html.indexOf("function createPickScreen"))).toContain("campaignsAllowed()");
+    expect(html.slice(html.indexOf("function createPickScreen"),
+                      html.indexOf("function createStepScreen"))).toContain("campaignsAllowed()");
   });
 
   /** Signing out has one home now, and Shop points at it rather than repeating it. */
@@ -2988,7 +3021,22 @@ describe("the customer's own page", () => {
  */
 describe("the screen builders, actually run", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
-  const cut = (from: string, to: string) => html.slice(html.indexOf(from), html.indexOf(to));
+  /**
+   * A named chunk of the real page text.
+   *
+   * Throws when either marker is gone, and that is the whole point: indexOf
+   * returns -1 for a marker that has been edited away, slice(from, -1) then
+   * quietly returns almost the entire page, and new Function() below receives
+   * a second copy of every declaration in it. The failure that produced was
+   * "Identifier 'ROOT' has already been declared" — a true statement about a
+   * problem nowhere near ROOT. Fail where the marker is instead.
+   */
+  const cut = (from: string, to: string) => {
+    const a = html.indexOf(from), b = html.indexOf(to);
+    if (a < 0) throw new Error(`screen-builder marker gone from the page: ${from.slice(0, 60)}`);
+    if (b < 0) throw new Error(`screen-builder end marker gone from the page: ${to.slice(0, 60)}`);
+    return html.slice(a, b);
+  };
 
   const B = new Function(
     'function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){' +
@@ -2996,8 +3044,8 @@ describe("the screen builders, actually run", () => {
       'const ROOT = "/dashboard";' +
       cut("const EG =", "/**\n   * Other loyalty programmes") +
       cut("const MOCK_PROGRAMS", "/** Campaigns. None of this exists yet") +
-      cut("const MOCK_CAMPAIGNS", "/**\n   * The billing side") +
-      cut("function mockCampaignTotals()", "/**\n   * The billing side") +
+      cut("const MOCK_CAMPAIGNS", "// MOCK_ACCOUNT was here") +
+      cut("function mockCampaignTotals()", "// MOCK_ACCOUNT was here") +
       cut("const KIND_LABEL =", "function progRow(p, money)") +
       cut("function progRow(p, money)", "/** Campaigns performance.") +
       cut("function campaignBlock()", "/**\n     * Customers — who is in the shop") +

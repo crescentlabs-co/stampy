@@ -41,7 +41,8 @@ import {
   getMerchant,
   hardDeleteMerchant,
   setClaimToken,
-  setMerchantPaid,
+  setMerchantPlan,
+  asPlan,
   unarchiveCard,
   getCard,
   getPass,
@@ -168,7 +169,7 @@ adminRouter.get("/api/overview", requireAdmin, async (_req, res) => {
     value: value(m),
     trialLeft: trialDaysLeft(m),
     // Derived, never stored — see stageOf. Paying is NOT part of the stage:
-    // paid_at travels on its own, because a shop can be paying and churning at
+    // `plan` travels on its own, because a shop can be paying and churning at
     // the same time and that pair is the whole point of this page.
     stage: stageOf(m),
   }));
@@ -503,11 +504,17 @@ adminRouter.delete("/api/merchant/:id", requireAdmin, async (req, res) => {
   res.json({ ok: true, cards: out.cards, passes: out.passes, ownerEmail: out.ownerEmail });
 });
 
-/** Whether this shop is paying. The one lifecycle fact nothing else implies. */
+/**
+ * What this shop is paying for. The one lifecycle fact nothing else implies.
+ *
+ * Still accepts the old `{paid:boolean}` body as well as `{plan}`, because the
+ * console's button sends the former and one of the two had to move first.
+ */
 adminRouter.post("/api/merchant/:id/paid", requireAdmin, async (req, res) => {
-  const { paid } = (req.body ?? {}) as { paid?: boolean };
-  await setMerchantPaid(req.params.id!, paid === true);
-  res.json({ ok: true });
+  const body = (req.body ?? {}) as { paid?: boolean; plan?: string };
+  const plan = body.plan !== undefined ? asPlan(body.plan) : body.paid === true ? "pro" : "free";
+  await setMerchantPlan(req.params.id!, plan);
+  res.json({ ok: true, plan });
 });
 
 // ------------------------------------ the designer, on a merchant's own card ----

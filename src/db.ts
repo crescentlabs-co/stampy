@@ -811,6 +811,21 @@ export async function migrate(): Promise<void> {
     -- rows that already exist, because a stored status is a second source of
     -- truth that drifts the first time a write is missed.
     ALTER TABLE merchants ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+    -- What the shop has RIGHT NOW: 'free' or 'pro'. Text, not a boolean, because
+    -- a second paid tier is expected and a yes/no column would have to be
+    -- replaced to get one — this one only needs a new string.
+    --
+    -- It replaces paid_at as the thing anything READS. paid_at stays, and
+    -- stays written, but it now means only "when they first went pro" —
+    -- history, in the same spirit as the event log: a downgrade is a new fact,
+    -- not an erasure of the old one. Nothing may branch on paid_at again, or
+    -- the two can disagree about whether a shop is paying.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'free';
+    -- When this shop's trial runs out. NULL means "work it out" — TRIAL_DAYS
+    -- from their first stamp, exactly as before — so every existing shop keeps
+    -- the date it already had and nothing needed backfilling. Setting it is the
+    -- only way to give ONE shop longer, which a derived date can never do.
+    ALTER TABLE merchants ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
     -- v2.3: how often this shop expects a customer back, in days.
     --
     -- NULLABLE on purpose, and it is the only nullable setting here. NULL means
@@ -1057,6 +1072,14 @@ export async function migrate(): Promise<void> {
     console.log(`[migrate] stamp grids keyed by target (${seeded.rowCount} strip(s) seeded)`);
   }
 
+  // Every shop already marked paying becomes 'pro'. One-time and idempotent:
+  // once plan is set the predicate matches nothing, and a shop later moved back
+  // to free is not dragged forward again because paid_at is history now.
+  const planned = await getPool().query(
+    `UPDATE merchants SET plan = 'pro' WHERE paid_at IS NOT NULL AND plan = 'free'`,
+  );
+  if (planned.rowCount) console.log(`[migrate] ${planned.rowCount} paying shop(s) moved to plan 'pro'`);
+
   // The till id already sitting inside the actor string as "staff:<id>".
   // Independent of merchants and customers, so it can run here.
   const devices = await getPool().query(
@@ -1299,6 +1322,11 @@ export interface MerchantRow {
   default_card_id: string | null;
   average_spend_cents: number;
   currency: string;
+  /** What they have now: 'free' or 'pro'. The only field that says so — see the
+   *  migration note on why paid_at must never be read for this again. */
+  plan: MerchantPlan;
+  /** When their trial runs out. NULL = derive it (trialEndsAt, src/health.ts). */
+  trial_ends_at: Date | null;
   /**
    * Days a shop expects between one customer's visits — 14, 21 or 28.
    *
@@ -1748,13 +1776,78 @@ export async function clearClaimToken(merchantId: string): Promise<void> {
   );
 }
 
-/** Record that a shop is paying, or has stopped. The one lifecycle fact no
- *  other row implies — every other stage is derived. */
-export async function setMerchantPaid(id: string, paid: boolean): Promise<void> {
+/**
+ * What a shop is paying for. The one lifecycle fact no other row implies —
+ * every other stage is derived from the event log.
+ *
+ * 'free' is the default and what a trial runs on; today only 'pro' unlocks
+ * anything. Adding a tier means adding a string here and teaching `planAllows`
+ * about it — no migration.
+ */
+export type MerchantPlan = "free" | "pro";
+
+export function asPlan(v: unknown): MerchantPlan {
+  return v === "pro" ? "pro" : "free";
+}
+
+/**
+ * Move a shop between plans.
+ *
+ * `paid_at` is stamped the FIRST time they go pro and never cleared again: it
+ * is the date they started paying, which stays true after a downgrade the same
+ * way an undone stamp does not delete the stamp. `plan` is the only field that
+ * answers "what do they have now".
+ */
+export async function setMerchantPlan(id: string, plan: MerchantPlan): Promise<void> {
   await getPool().query(
-    `UPDATE merchants SET paid_at = $2 WHERE id = $1`,
-    [id, paid ? new Date() : null],
+    `UPDATE merchants
+        SET plan = $2,
+            paid_at = CASE WHEN $2 = 'pro' AND paid_at IS NULL THEN now() ELSE paid_at END
+      WHERE id = $1`,
+    [id, plan],
   );
+}
+
+/**
+ * One shop's account, for its OWN dashboard.
+ *
+ * Deliberately not `merchantHealth()`: that builds fifty derived columns for
+ * every merchant on the platform to answer an operator's question, and an owner
+ * opening their Shop tab must not pay for that.
+ *
+ * `first_stamp_at` and `trial_day` are computed the same way merchantHealth
+ * computes them — from the first non-test stamp — so the owner's screen and the
+ * console can never disagree about when a trial started.
+ */
+export interface MerchantAccount {
+  plan: MerchantPlan;
+  trial_ends_at: Date | null;
+  archived_at: Date | null;
+  first_stamp_at: Date | null;
+  trial_day: number;
+}
+
+export async function merchantAccount(merchantId: string): Promise<MerchantAccount | null> {
+  const res = await getPool().query<MerchantAccount>(
+    `SELECT m.plan, m.trial_ends_at, m.archived_at,
+            s.first_stamp_at,
+            COALESCE(floor(extract(epoch FROM (now() - s.first_stamp_at)) / 86400.0), 0)::int AS trial_day
+       FROM merchants m
+       LEFT JOIN LATERAL (
+         SELECT min(e.created_at) AS first_stamp_at
+           FROM events e JOIN cards c ON c.id = e.card_id
+          WHERE c.merchant_id = m.id AND e.type = 'stamp' AND NOT e.is_test
+       ) s ON true
+      WHERE m.id = $1`,
+    [merchantId],
+  );
+  const row = res.rows[0];
+  return row ? { ...row, plan: asPlan(row.plan) } : null;
+}
+
+/** Give one shop longer, or put it back on the derived date by passing null. */
+export async function setMerchantTrialEnds(id: string, when: Date | null): Promise<void> {
+  await getPool().query(`UPDATE merchants SET trial_ends_at = $2 WHERE id = $1`, [id, when]);
 }
 
 export async function updateMerchant(
@@ -2010,8 +2103,11 @@ export async function hardDeleteMerchant(id: string): Promise<MerchantDeletion> 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const merchant = await client.query<{ owner_id: string | null; paid_at: Date | null }>(
-      `SELECT owner_id, paid_at FROM merchants WHERE id = $1 FOR UPDATE`,
+    // `plan`, not `paid_at`: paid_at is history and stays set after a
+    // downgrade, so guarding on it would refuse to delete a shop that stopped
+    // paying two years ago. What must never be destroyed is a shop paying NOW.
+    const merchant = await client.query<{ owner_id: string | null; plan: string }>(
+      `SELECT owner_id, plan FROM merchants WHERE id = $1 FOR UPDATE`,
       [id],
     );
     if (!merchant.rows.length) {
@@ -2028,7 +2124,7 @@ export async function hardDeleteMerchant(id: string): Promise<MerchantDeletion> 
 
     // The only refusal, and it is checked on the locked row rather than on
     // whatever the console was showing a few seconds ago.
-    if (merchant.rows[0]!.paid_at) {
+    if (merchant.rows[0]!.plan !== "free") {
       await client.query("ROLLBACK");
       return { ok: false, reason: "paid-shop" };
     }
@@ -2819,8 +2915,12 @@ export interface MerchantHealthRow {
   claim_token: string | null;
   /** When the shop was last taken back off an owner. History, beside claimed_at. */
   unclaimed_at: Date | null;
-  /** The one lifecycle fact nothing else implies. */
+  /** When they FIRST went pro. History — never branch on it; read `plan`. */
   paid_at: Date | null;
+  /** What they are on now. The one lifecycle fact nothing else implies. */
+  plan: MerchantPlan;
+  /** Set only when a shop was given a different deadline; NULL = derived. */
+  trial_ends_at: Date | null;
   /**
    * Days since the trial STARTED, which is the first stamp at a real counter —
    * not signup, and not the claim.
@@ -2948,6 +3048,7 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             (m.owner_id IS NOT NULL) AS has_owner,
             m.owner_id,
             m.claimed_at, m.claim_expires, m.claim_token, m.unclaimed_at, m.paid_at,
+            m.plan, m.trial_ends_at,
             floor(extract(epoch FROM (now() - LEAST(m.created_at, COALESCE(
               (SELECT o.created_at FROM owners o WHERE o.id = m.owner_id), m.created_at
             )))) / 86400.0)::int AS days_since_signup,

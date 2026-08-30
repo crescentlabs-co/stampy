@@ -2720,7 +2720,7 @@ export function adminPage(): string {
       // on the board.
       const stageChip = (m) =>
         '<span class="stage ' + m.stage + '">' + (STAGE_LABEL[m.stage] || m.stage) + "</span>" +
-        (m.paid_at ? '<span class="paypill">Paying</span>' : "");
+        (m.plan === "pro" ? '<span class="paypill">Paying</span>' : "");
 
       // ---- the weekly lines ---------------------------------------------------
       // An average over nobody at all is not zero, so it is null and the bar is
@@ -2907,8 +2907,8 @@ export function adminPage(): string {
               // issued from it.
               '<button data-unclaim="' + esc(m.id) + '">Hand it to someone else</button>'
             : "") +
-          '<hr><button data-paid="' + esc(m.id) + '" data-now="' + (m.paid_at ? "1" : "") + '">' +
-            (m.paid_at ? "Mark as not paying" : "Mark as paying") + "</button>" +
+          '<hr><button data-paid="' + esc(m.id) + '" data-now="' + (m.plan === "pro" ? "1" : "") + '">' +
+            (m.plan === "pro" ? "Move to free" : "Move to pro") + "</button>" +
           (m.archived_at
             ? '<button data-munarchive="' + esc(m.id) + '">Restore shop</button>'
             : '<button data-marchive="' + esc(m.id) + '">Archive shop</button>') +
@@ -2920,7 +2920,7 @@ export function adminPage(): string {
             (m.archived_at ? ' <span class="arch">archived</span>' : "") + "</h1>" +
             '<p class="purpose">' + stageChip(m) + " · " + esc(m.owners || "no owner") +
             " · signed up " + ago(m.signed_up_at) +
-            (m.paid_at ? "" : left < 0 ? ' · <span class="bad">trial ended ' + Math.abs(left) + "d ago</span>"
+            (m.plan === "pro" ? "" : left < 0 ? ' · <span class="bad">trial ended ' + Math.abs(left) + "d ago</span>"
               : m.first_stamp_at ? " · day " + m.trial_day + " of ${TRIAL_DAYS}" : "") +
             "</p></div>" + actions + "</div>" +
           '<div data-pwout></div>' +
@@ -3175,7 +3175,7 @@ export function adminPage(): string {
         const churning = live.filter((m) => m.stage === "churning");
         const never = live.filter((m) => m.stage === "activated");
         const unclaimed = live.filter((m) => m.stage === "not-claimed");
-        const paid = live.filter((m) => m.paid_at);
+        const paid = live.filter((m) => m.plan === "pro");
         const wide = (n) => live.length ? (n / live.length) * 100 : 0;
         const seg = (cls, list) => list.length
           ? '<i class="' + cls + '" style="width:' + wide(list.length) + '%"></i>' : "";
@@ -3540,7 +3540,7 @@ export function adminPage(): string {
         const paid = scope.querySelector("[data-paid]");
         if (paid) armBtn(paid, "Tap again to confirm", async () => {
           await api("/merchant/" + id + "/paid", {
-            method: "POST", body: JSON.stringify({ paid: !paid.dataset.now }),
+            method: "POST", body: JSON.stringify({ plan: paid.dataset.now ? "free" : "pro" }),
           });
           load();
         });

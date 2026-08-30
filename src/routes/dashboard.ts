@@ -36,6 +36,7 @@ import {
   counterActivity,
   ensureMerchantForOwner,
   currentSlug,
+  merchantAccount,
   merchantForOwner,
   clearResetToken,
   countOwners,
@@ -68,6 +69,9 @@ import {
 import { applyAndPush, refreshCardArt } from "../cardActions.js";
 import { clear, hit, peek } from "../rateLimit.js";
 import { config, setupStatus, signupOpen } from "../config.js";
+// The plan gate and the trial deadline are pure functions, shared with the
+// admin console so an owner and an operator never read different dates.
+import { planAllows, trialEndsAt } from "../health.js";
 import { rgbToHex } from "../color.js";
 import {
   artBytes,
@@ -342,6 +346,7 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   // designerCard() is shared with the admin console, which renders the same
   // designer against any merchant's card — see src/cardView.ts. The PIN is
   // never in it: only its scrypt hash is stored, so there is nothing to reveal.
+  const account = merchant ? await merchantAccount(merchant.id) : null;
   const out = [];
   for (const card of cards) {
     out.push({
@@ -363,6 +368,20 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
     // use it, because a merchant ref survives a rename, a second card and a
     // change of ownership in a way a card link does not.
     joinRef: merchant ? await currentSlug(merchant.id) : "",
+    // The Shop tab's Plan section, and the only thing that decides whether the
+    // campaign screens are offered. `allows` is computed on the SERVER and sent
+    // as an answer, not as ingredients: a gate the browser works out for itself
+    // is a gate anyone can change with the developer tools, and the endpoints
+    // behind it have to check anyway.
+    account: account
+      ? {
+          plan: account.plan,
+          status: account.archived_at ? "suspended" : "active",
+          trialEndsAt: trialEndsAt(account)?.toISOString() ?? null,
+          trialStarted: account.first_stamp_at !== null,
+          allows: planAllows(account.plan, account),
+        }
+      : null,
   });
 });
 

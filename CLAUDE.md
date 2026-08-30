@@ -270,6 +270,26 @@ target nobody holds any more. Never key card art by a number a card can change.
    promoting: invariant 1 means live will not complain, it will silently skip
    the feature.
 
+15. **A shop's plan is `merchants.plan`, and nothing else.** `paid_at` still
+   exists and is still written, but it now means only *when they FIRST went
+   pro* — history, kept through a downgrade the way an undone stamp does not
+   erase the stamp. **Never branch on `paid_at` again**: a shop that stopped
+   paying keeps its date, so the console showed it as Paying for ever. The
+   plan is TEXT (`free` / `pro`) rather than a flag because a second tier is
+   expected, and a yes/no column would have to be replaced to get one.
+   `merchants.trial_ends_at` is NULL for almost every shop, meaning "derive
+   it" — `TRIAL_DAYS` from the FIRST STAMP, never from signup — and exists
+   solely so one shop can be given longer, which a derived date cannot express.
+   A shop that has never been stamped at has **not started** a trial and must
+   never read as expired; that is the difference between "not begun" and
+   "finished", and getting it backwards switches features off for exactly the
+   shops that have not managed to use the product yet. What a plan unlocks
+   lives in **`planAllows` (src/health.ts) and nowhere else** — the dashboard
+   is SENT the answer (`account.allows`) and only reads it, because a gate the
+   browser computes is a gate anyone can switch off in devtools. Gate the
+   SCREEN as well as the link to it: every dashboard address is real and
+   refreshable, so a bookmark walks straight past a tile-only check.
+
 ## The event log is the source of truth
 
 `events` is append-only — nothing in this codebase may ever UPDATE or DELETE a

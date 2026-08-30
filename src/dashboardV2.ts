@@ -320,6 +320,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                    border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; text-decoration: none;
                    color: var(--ink); font-weight: 600; }
     .sharelist a:hover { border-color: var(--accent); }
+    /* A row that is switched off. Still readable and still clickable — it goes
+       to Shop, where the reason is — but it never takes the accent, because the
+       accent means "the next thing to press" and this is not it (DESIGN.md). */
+    .sharelist a.locked { opacity: .55; cursor: pointer; }
+    .sharelist a.locked:hover { border-color: var(--line); }
     /* Block, not inline: on a phone the description otherwise wrapped between
        the title and the "open →" and the row read as three broken fragments. */
     .sharelist a .sub2 { display: block; font-weight: 400; color: var(--muted); font-size: .82rem; margin-top: 2px; }
@@ -887,6 +892,57 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * they share: a poster is a fact about one programme, and once a shop can
      * have more than one, "the" sign-up link stops meaning anything.
      */
+    /**
+     * What the account IS, in the owner's words rather than the column's.
+     *
+     * All four read S.account and nothing else, so there is one answer on the
+     * screen and it is the server's. No account block (an operator looking at
+     * something odd) reads as a dash rather than an invented plan.
+     */
+    function planLabel() {
+      if (!S.account) return "\u2014";
+      return S.account.plan === "pro" ? "Pro \u2014 RM79 a month" : "Free";
+    }
+    function statusLabel() {
+      if (!S.account) return "\u2014";
+      return S.account.status === "suspended" ? "Suspended" : "Active";
+    }
+    function trialLabel() {
+      if (!S.account) return "\u2014";
+      if (S.account.plan === "pro") return "Not on trial";
+      // A shop nobody has stamped at has not STARTED a trial. Counting down
+      // from signup would run the clock on the shops that never got going,
+      // which are the ones least deserving of losing anything.
+      if (!S.account.trialStarted) return "Starts at your first stamp";
+      if (!S.account.trialEndsAt) return "\u2014";
+      const d = new Date(S.account.trialEndsAt);
+      const over = d.getTime() <= Date.now();
+      return (over ? "Ended " : "") +
+        d.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+    }
+    function planNote() {
+      if (!S.account) return "";
+      if (S.account.plan === "pro") return "Billing is not switched on yet, so nothing is charged.";
+      if (!campaignsAllowed()) {
+        return "Your free trial has ended, so campaigns are switched off. Everything else \u2014 " +
+          "your card, your stamps and your rewards \u2014 keeps working exactly as it did.";
+      }
+      return "First month free. Billing is not switched on yet, so nothing is charged.";
+    }
+
+    /**
+     * The one place this page asks whether campaigns are on.
+     *
+     * The SERVER decided it and sent the answer; this only reads it. Defaulting
+     * to allowed matters: an older server that sends no account block must not
+     * silently switch a paying shop's campaigns off, and the endpoints behind
+     * them check the plan again anyway, so an optimistic browser cannot let
+     * anything through.
+     */
+    function campaignsAllowed() {
+      return !S.account || !S.account.allows || S.account.allows.campaigns !== false;
+    }
+
     function accountPanel() {
       const div = document.createElement("div");
       const c = S.cards[0] || {};
@@ -936,15 +992,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <label class="eye"><input type="checkbox" data-eye="[data-cur],[data-new]"> Show passwords</label>
         <button class="btn btn-dark" style="margin-top:20px" data-pwsave>Update password</button>
 
-        <!-- Billing is not built. The price is real — it is what the marketing
-             page says — and the status and the date are not: there are no
-             columns behind either of them. -->
-        <h2 class="sec">Plan\${EG}</h2>
-        <div class="drow"><span>Plan</span><b>\${MOCK_ACCOUNT.plan}</b></div>
-        <div class="drow"><span>Status</span><b>\${MOCK_ACCOUNT.status}</b></div>
-        <div class="drow"><span>Trial ends</span><b>\${MOCK_ACCOUNT.trialEnds}</b></div>
-        <p class="muted">\${MOCK_ACCOUNT.trial}. Billing isn’t switched on yet — nothing is
-          charged and nothing stops working when this date passes.</p>
+        <!-- Real, all three: merchants.plan, merchants.archived_at, and the
+             trial deadline (stored on the shop, or derived from its first
+             stamp). Billing itself is still not built — no card is charged —
+             but what the account IS no longer comes from a mock. -->
+        <h2 class="sec">Plan</h2>
+        <div class="drow"><span>Plan</span><b>\${planLabel()}</b></div>
+        <div class="drow"><span>Status</span><b>\${statusLabel()}</b></div>
+        <div class="drow"><span>Trial ends</span><b>\${trialLabel()}</b></div>
+        <p class="muted">\${planNote()}</p>
 
         <p class="muted" style="margin-top:22px">Signing out is in the ⋯ menu, top right.</p>\`;
       const look = div.querySelector("[data-golook]");
@@ -1114,6 +1170,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // shows nothing selected rather than a default they never picked.
       S.cycleDays = Number(body.returnCycleDays) || 0;
       S.joinRef = body.joinRef || "";
+      // The server's answer about the plan, kept whole. Never recomputed here:
+      // The allows flag decides what this dashboard offers, and a browser that
+      // its own gate out is a gate anyone can switch off in devtools.
+      S.account = body.account || null;
       // An account that holds no shop. It happens when a shop is handed to
       // somebody else: the login survives — deleting it would take an account
       // away over a mis-click — but it owns nothing, and every tab below reads
@@ -1756,10 +1816,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<a href="' + ROOT + '/create/reward" data-nav="/create/reward">' +
             '<span>Reward programme<span class="sub2">Stamps, milestones, membership or points</span></span>' +
             '<span class="arr">→</span></a>' +
-          '<a href="' + ROOT + '/create/campaign" data-nav="/create/campaign">' +
-            '<span>Campaign<span class="sub2">Bring customers back with a message</span></span>' +
-            '<span class="arr">→</span></a>' +
+          // Shown either way, and greyed rather than hidden when the trial has
+          // run out: a feature that silently disappears reads as a bug, and an
+          // owner cannot decide to pay for something they can no longer see.
+          (campaignsAllowed()
+            ? '<a href="' + ROOT + '/create/campaign" data-nav="/create/campaign">' +
+                '<span>Campaign<span class="sub2">Bring customers back with a message</span></span>' +
+                '<span class="arr">→</span></a>'
+            : '<a class="locked" aria-disabled="true" data-golocked>' +
+                '<span>Campaign<span class="sub2">Your free trial has ended</span></span>' +
+                '<span class="arr">🔒</span></a>') +
         "</div>";
+      const locked = d.querySelector("[data-golocked]");
+      if (locked) locked.onclick = (e) => { e.preventDefault(); navigate("/shop"); };
       wireLinks(d);
       return d;
     }
@@ -1795,6 +1864,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /** Pick a type. Cards, because the choice deserves a sentence each. */
     function createPickScreen(kind) {
       if (kind !== "reward" && kind !== "campaign") return notFoundScreen();
+      // Every campaign address is real and refreshable, so the gate has to live
+      // on the SCREEN and not only on the tile that links to it — a bookmark
+      // from during the trial would otherwise walk straight past it.
+      if (kind === "campaign" && !campaignsAllowed()) {
+        return placeholder(
+          "Campaigns have paused",
+          "Your free trial has ended, so campaigns are switched off. Your card, your stamps " +
+          "and your rewards all keep working exactly as they did \u2014 nothing your customers " +
+          "hold has changed. The Shop tab shows where your account stands.",
+        );
+      }
       const reward = kind === "reward";
       const types = reward ? REWARD_TYPES : CAMPAIGN_TYPES;
       const d = document.createElement("div");

@@ -71,10 +71,8 @@ export const MOCK_JS = /* js */ `
     return { targeted, returned, activation: targeted ? Math.round((returned / targeted) * 100) : 0 };
   }
 
-  /**
-   * The billing side of the account. There is no plan column, no trial_ends_at
-   * and no billing in this product yet; the price itself is real.
-   */
-  const MOCK_ACCOUNT = { plan: "RM79 a month", trial: "First month free", status: "Trial",
-                         trialEnds: "26 September 2026" };
+  // MOCK_ACCOUNT was here. The plan, the status and the trial deadline are real
+  // columns now (merchants.plan, merchants.archived_at, merchants.trial_ends_at)
+  // and the Shop tab reads them through /api/overview. Billing is still not
+  // built — nothing is charged — but nothing on that screen is invented either.
 `;

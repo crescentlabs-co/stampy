@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL, stageOf, triage, triageScore, trialDaysLeft, value,
+  CHURN_DAYS, FLAG_GUIDE, STAGE_LABEL, planAllows, stageOf, triage, triageScore,
+  trialDaysLeft, trialEndsAt, trialExpired, value,
 } from "../src/health.js";
 import type { MerchantHealthRow } from "../src/db.js";
 
@@ -21,7 +22,7 @@ function healthy(over: Partial<MerchantHealthRow> = {}): MerchantHealthRow {
     contact_phone: "", contact_note: "",
     created_at: daysAgo(10), signed_up_at: daysAgo(10), archived_at: null,
     has_owner: true, owner_id: "o1", claimed_at: daysAgo(10), claim_expires: null,
-    claim_token: null, unclaimed_at: null, paid_at: null,
+    claim_token: null, unclaimed_at: null, paid_at: null, plan: "free", trial_ends_at: null,
     trial_day: 9, days_since_signup: 10,
     cards: 1, card_ids: ["c1"], basket_cents: 450, currency: "RM", stamps_target: 10,
     first_stamp_at: daysAgo(9), first_redeem_at: daysAgo(2), first_customer_at: daysAgo(9),
@@ -256,5 +257,46 @@ describe("sorting the work list", () => {
     const fine = triageScore(triage(healthy(), NOW));
     expect(broken).toBeLessThan(warned);
     expect(warned).toBeLessThan(fine);
+  });
+});
+
+describe("what a plan unlocks", () => {
+  // These four are the whole rule: pro always, free until the trial ends, and
+  // a shop that never started a trial is not treated as having finished one.
+  it("gives pro everything, trial or no trial", () => {
+    const m = healthy({ plan: "pro", first_stamp_at: daysAgo(200), trial_day: 200 });
+    expect(planAllows("pro", m, NOW).campaigns).toBe(true);
+  });
+
+  it("gives free everything while the trial is still running", () => {
+    const m = healthy({ plan: "free", first_stamp_at: daysAgo(3), trial_day: 3 });
+    expect(planAllows("free", m, NOW).campaigns).toBe(true);
+  });
+
+  it("switches campaigns off once a free trial has run out", () => {
+    const m = healthy({ plan: "free", first_stamp_at: daysAgo(60), trial_day: 60 });
+    expect(trialExpired(m, NOW)).toBe(true);
+    expect(planAllows("free", m, NOW).campaigns).toBe(false);
+  });
+
+  it("does not expire a shop that has never been stamped at", () => {
+    // Never started is not the same as finished. Expiring these would switch
+    // features off for the shops that have not managed to get going at all.
+    const m = healthy({ plan: "free", first_stamp_at: null, trial_day: 0 });
+    expect(trialEndsAt(m, NOW)).toBeNull();
+    expect(trialExpired(m, NOW)).toBe(false);
+    expect(planAllows("free", m, NOW).campaigns).toBe(true);
+  });
+
+  it("lets one shop be given a longer trial than the rule", () => {
+    // The entire reason trial_ends_at is stored rather than derived.
+    const past = healthy({ plan: "free", first_stamp_at: daysAgo(60), trial_day: 60 });
+    expect(planAllows("free", past, NOW).campaigns).toBe(false);
+    const extended = healthy({
+      plan: "free", first_stamp_at: daysAgo(60), trial_day: 60,
+      trial_ends_at: new Date(NOW + 14 * 86_400_000),
+    });
+    expect(planAllows("free", extended, NOW).campaigns).toBe(true);
+    expect(trialEndsAt(extended, NOW)!.getTime()).toBe(NOW + 14 * 86_400_000);
   });
 });
