@@ -119,16 +119,24 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   the weight renders at 400 and reads as body text.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
-- **App chrome** is a neon top bar and a `--bg` bottom nav that FLOATS — a pill
-  inset from the screen edges, not a strip welded to the bottom.
+- **App chrome** is a locked neon top bar, a scrolling sheet under it, and a
+  `--bg` bottom nav that FLOATS — a pill inset from the screen edges, not a
+  strip welded to the bottom.
 
-  The top bar is rule 1's fenced exception (see it). It is rounded at the
-  bottom with `--r-lg`, which is the same shape the customer's sign-up page
-  uses for its own brand block (`.lhero`) — one shape language across the two
-  surfaces a shop's colour appears on. Its text is `--on-accent` and its focus
-  rings are **ink**: `#c9f73d` is a LIGHT ground, so rule 3 sends the ring dark,
-  and this is the easy one to get backwards because the bar used to be
-  near-black.
+  **The box is the CONTENT, not the bar.** The bar is a flat neon block with no
+  rounding at all; the sheet beneath it carries `--r-lg` on its **top** corners
+  and tucks under it. That is the right way round because the sheet is also the
+  only thing on the screen that scrolls: the app is a fixed-height column, so
+  there is no "behind" for anything to fall into. A rounded, sticky bar was
+  tried first and you could watch content slide through the corner notches and
+  up into the staging strip. If a surface is rounded, the thing that scrolls
+  should be inside it — not passing behind it.
+
+  The bar is rule 1's fenced exception (see it). Its text is `--on-accent` and
+  its focus rings are **ink**: `#c9f73d` is a LIGHT ground, so rule 3 sends the
+  ring dark, and this is the easy one to get backwards because the bar used to
+  be near-black. The column behind the sheet is `--accent`, or the sheet's
+  rounded corners would have nothing to show through.
 
   A floating nav needs a real border and a real shadow, because content passes
   underneath it rather than stopping above it — without a lifted edge the two
@@ -136,9 +144,10 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   button, sitting inside the pill rather than raised out of it: a bar that
   already floats does not need a second thing floating off it.
 
-  The nav **reserves its own height plus the gap it floats in** in the page's
-  bottom padding — and so does anything else pinned to the bottom of the
-  viewport, which is how the toast came to sit underneath it.
+  **The SHEET reserves the nav's height plus the gap it floats in**, because the
+  page itself no longer scrolls and so cannot carry it. Anything pinned to the
+  viewport instead of to the sheet — the toast — has to be lifted separately,
+  which is how it came to sit underneath the bar.
 - **Three nav controls on one screen differ by SHAPE, not by hue.** The bottom
   nav marks its active item by **weight**; Manage's section switch is a neon
   pill; the card previews' switch is a neon underline. Reaching for a second

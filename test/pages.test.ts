@@ -1469,8 +1469,8 @@ describe("dashboard information architecture", () => {
      * white on it lands near 1.3:1.
      */
     it("puts neon on the header and on Create, and nowhere else", () => {
-      const bar = html.slice(html.indexOf(".topbar { position: sticky"),
-                             html.indexOf(".envstrip ~ #app.shell"));
+      const at = html.indexOf(".topbar { flex: none;");
+      const bar = html.slice(at, html.indexOf("}", at));
       expect(bar).toContain("background: var(--accent)");
       expect(bar).toContain("color: var(--on-accent)");
       expect(bar).not.toContain("var(--on-slab)");
@@ -1504,13 +1504,20 @@ describe("dashboard information architecture", () => {
     });
 
     /**
-     * The two shapes the founder asked for: a header with a rounded bottom —
-     * the same shape the customer's sign-up page uses for its brand block, so
-     * the two surfaces a shop's colour appears on speak once — and a bottom bar
-     * that floats clear of the screen edges rather than being welded to them.
+     * The BOX is the content, not the bar.
+     *
+     * The bar is a flat neon block; the sheet under it is what has the rounded
+     * corners, rounded at the TOP and tucked beneath it. That is the right way
+     * round because the sheet is also the only thing that scrolls — a rounded
+     * bar with the page sliding behind it showed content in the corner notches.
      */
-    it("shapes the header and floats the bar", () => {
-      expect(html).toContain("border-radius: 0 0 var(--r-lg) var(--r-lg);");
+    it("shapes the sheet, not the bar, and floats the nav", () => {
+      expect(html).toContain("border-radius: var(--r-lg) var(--r-lg) 0 0;");
+      const at = html.indexOf(".topbar { flex: none;");
+      const bar = html.slice(at, html.indexOf("}", at));
+      expect(bar).not.toContain("border-radius");
+      // Neon behind the sheet, or its rounded corners have nothing to show.
+      expect(html).toContain("background: var(--accent); }\n    /* position:relative");
       const nav = html.slice(html.indexOf(".botnav { position: fixed"),
                              html.indexOf(".botnav a {"));
       expect(nav).toContain("border-radius: 999px");
@@ -1528,7 +1535,10 @@ describe("dashboard information architecture", () => {
      * it 24px from the bottom, which is underneath this bar exactly.
      */
     it("reserves its own height, and lifts the toast above itself", () => {
-      expect(html).toContain("body.shelled { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px) + 20px); }");
+      // The page does not scroll any more, so the SHEET carries the clearance.
+      expect(html).toContain("padding: 0 16px calc(96px + env(safe-area-inset-bottom, 0px));");
+      // The toast is fixed to the viewport, so the sheet's padding does nothing
+      // for it — it has to be lifted on its own.
       expect(html).toContain("body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }");
       // The bar floats clear of the bottom edge, so the gap it floats in has to
       // clear the home bar as well as the bar itself.
@@ -1544,13 +1554,44 @@ describe("dashboard information architecture", () => {
     });
 
     /**
-     * On staging the "not the real site" strip is also stuck to the top and
-     * sits above everything on purpose. Without this the two share a top of 0
-     * and the strip covers half the bar — on the one copy the founder looks at.
+     * NOTHING scrolls behind the bar, because nothing outside the sheet scrolls
+     * at all.
+     *
+     * A sticky bar was not enough: the page still slid behind it, and with a
+     * rounded bottom you could watch content pass through the corner notches
+     * and up into the staging strip. The app is a fixed-height column now — the
+     * bar is locked, the sheet scrolls inside itself, and there is no "behind"
+     * for anything to fall into.
      */
-    it("starts below the staging strip rather than under it", () => {
-      expect(html).toContain(".envstrip ~ #app.shell .topbar { top: 31px; }");
-      expect(dashboardPage(false, "")).toContain(".envstrip ~ #app.shell .topbar");
+    it("locks the bar so nothing can scroll behind it", () => {
+      expect(html).toContain("body.shelled { padding: 0; height: 100vh; height: 100dvh; overflow: hidden; }");
+      expect(html).toContain(".topbar { flex: none;");
+      expect(html).not.toContain(".topbar { position: sticky");
+      // The sheet is the one scrolling thing.
+      expect(html).toContain(".sheet { flex: 1; min-height: 0; overflow-y: auto;");
+      expect(html).toContain("#app.shell { width: 100%; max-width: 480px; margin: 0 auto; padding: 0;");
+      expect(html).toContain("flex: 1; min-height: 0; display: flex; flex-direction: column;");
+      // 100vh first, then 100dvh: the second wins where it is understood and
+      // the first is what a browser that does not understand it falls back to.
+      expect(html.indexOf("height: 100vh;")).toBeLessThan(html.indexOf("height: 100dvh;"));
+    });
+
+    /**
+     * The shared shell prints "Powered by PunchMe" as a sibling of #app. With
+     * nothing outside the sheet scrolling, that strands it under the floating
+     * nav, so it moves inside the thing that does scroll.
+     */
+    it("moves the footer into the part that scrolls", () => {
+      expect(html).toContain('document.querySelector("body > .pby")');
+      expect(html).toContain('$(".sheet").appendChild(pby)');
+    });
+
+    /** Going to a screen means the top of the SHEET; the window no longer moves. */
+    it("scrolls the sheet to the top on a move, not the window", () => {
+      const nav = html.slice(html.indexOf("function navigate(path, opts)"),
+                             html.indexOf('window.addEventListener("popstate"'));
+      expect(nav).toContain("sheet.scrollTop = 0");
+      expect(nav).not.toContain("window.scrollTo");
     });
   });
 

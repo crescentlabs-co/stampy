@@ -73,29 +73,51 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        green, so white on it lands near 1.3:1 and is unreadable. That is the
        whole reason --on-accent exists and is always dark.
 
-       Rounded at the bottom, which is the same shape the customer's sign-up
-       page already uses for its own brand block (.lhero) — one shape language
-       across the two surfaces a shop's colour appears on. */
-    /* The page is a 480px column. The top bar spans it and breaks out of its
-       16px side padding; the bottom bar floats clear of the edges entirely.
+       THE BOX IS THE CONTENT, NOT THE BAR. The bar is a flat neon block and
+       the sheet under it is what has the rounded corners — rounded at the TOP,
+       tucked under the bar. That is the right way round for one reason: the
+       sheet is also the only thing on the screen that scrolls.
+
+       Sticky was not enough. A sticky bar still has the page sliding behind it,
+       and with a rounded bottom you could watch content pass through the corner
+       notches and up into the staging strip. Now nothing outside the sheet
+       scrolls at all — the app is a fixed-height column, the bar is locked, and
+       there is no "behind" for anything to fall into. */
+    /* The page is a 480px column, and inside it a full-height flex column: a bar
+       that cannot move, and a sheet that scrolls inside itself.
 
        Scoped to .shelled / .shell, which the script adds only once the chrome
        is mounted. The login form and the broken-page screen render into the
-       same #app and have no bars — they keep the ordinary padded card, which is
-       what they have always looked like. */
-    body.shelled { padding: 0; }
+       same #app and have no bars — they keep the ordinary padded card, and the
+       ordinary scrolling page, which is what they have always been. */
+    body.shelled { padding: 0; height: 100vh; height: 100dvh; overflow: hidden; }
+    /* The staging strip is a sibling above #app and keeps its own height, so
+       the column below it is what shrinks. */
+    body.shelled .envstrip { flex: none; }
     /* width:100% because body is a centred flex column — without it the column
-       shrinks to whatever its widest child happens to be. */
-    #app.shell { width: 100%; max-width: 480px; margin: 0 auto; padding: 0 16px;
-                 border: 0; box-shadow: none; border-radius: 0; background: var(--bg); }
-    .topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center;
+       shrinks to whatever its widest child happens to be. min-height:0 is what
+       lets the sheet inside actually scroll rather than stretching the column. */
+    #app.shell { width: 100%; max-width: 480px; margin: 0 auto; padding: 0;
+                 flex: 1; min-height: 0; display: flex; flex-direction: column;
+                 border: 0; box-shadow: none; border-radius: 0;
+                 /* Neon behind the sheet, so its rounded top corners have
+                    something to show through. */
+                 background: var(--accent); }
+    /* position:relative so the ⋯ menu has something to hang off now that the
+       bar is no longer sticky; z-index so it stays above the sheet's corners. */
+    .topbar { flex: none; position: relative; z-index: 40; display: flex; align-items: center;
               gap: 10px; background: var(--accent); color: var(--on-accent);
-              min-height: 68px; margin: 0 -16px; padding: 10px 18px 14px;
-              border-radius: 0 0 var(--r-lg) var(--r-lg); }
-    /* On a staging copy the "not the real site" strip is also stuck to the top,
-       and it sits above everything by design. Start below it rather than under
-       it. Live renders no strip, so this rule never matches there. */
-    .envstrip ~ #app.shell .topbar { top: 31px; }
+              min-height: 68px; padding: 10px 18px 14px; }
+    /* THE BOX. The only scrolling thing on the screen, and the only thing with
+       a shape. Its bottom padding clears the floating nav and the gap the nav
+       floats in — the page itself no longer scrolls, so it cannot carry that. */
+    .sheet { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+             background: var(--bg); border-radius: var(--r-lg) var(--r-lg) 0 0;
+             padding: 0 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
+    /* The Powered by line is a sibling of #app in the shared shell, which with
+       nothing scrolling would strand it under the floating nav. The script
+       moves it inside the sheet instead — see app(). */
+    .sheet .pby { margin-top: 30px; }
     .topbar img { width: 26px; height: 26px; border-radius: 7px; flex: none; }
     /* The shop name, centred. min-width:0 is what lets the ellipsis actually
        happen inside a flex row — without it a long name pushes the menu button
@@ -113,7 +135,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* The menu. It carries the login email, which is the only thing left on
        screen answering "which account am I in?" once the header stopped saying
        so, and it matters the moment somebody runs two shops. */
-    .tmenu { position: absolute; top: 62px; right: 10px; z-index: 41; min-width: 210px;
+    .tmenu { position: absolute; top: calc(100% - 4px); right: 10px; z-index: 41; min-width: 210px;
              background: var(--bg); color: var(--ink); border: 1px solid var(--line);
              border-radius: var(--r); box-shadow: var(--shadow); padding: 6px; }
     .tmenu .mwho { font-size: .76rem; color: var(--muted); padding: 8px 10px 6px;
@@ -164,13 +186,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* The word under it would crowd a pill this size, and a (+) needs no label. */
     .botnav .navadd span:not(.plus) { display: none; }
 
-    /* The nav floats over the page, so the page has to end above it — its own
-       height, plus the gap it floats in, twice. */
-    body.shelled { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px) + 20px); }
-    /* And so does the toast. baseCss pins it 24px from the bottom, which put
-       every confirmation on this screen UNDERNEATH the new bar. Lifted here
-       rather than in baseCss: the stamper and the console read that too, and
-       neither of them has a bottom bar. */
+    /* The toast is fixed to the viewport, so the sheet's bottom padding does
+       nothing for it. baseCss pins it 24px from the bottom, which is inside the
+       floating bar exactly. Lifted here rather than in baseCss: the stamper and
+       the console read that too, and neither of them has a bottom bar. */
     body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
 
     /* --- Home: one row per programme, and one line about the numbers --- */
@@ -1043,7 +1062,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       if (opts && opts.replace) history.replaceState({}, "", to);
       else history.pushState({}, "", to);
       render();
-      window.scrollTo(0, 0);
+      const sheet = document.querySelector(".sheet");
+      if (sheet) sheet.scrollTop = 0;
     }
     window.addEventListener("popstate", () => { render(); });
 
@@ -1113,9 +1133,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       $("#app").classList.add("shell");
       $("#app").innerHTML =
         topBarHtml() +
-        '<div id="pinwarn"></div>' +
-        '<div id="screen"></div>' +
+        '<div class="sheet"><div id="pinwarn"></div><div id="screen"></div></div>' +
         botNavHtml();
+      // The shared shell prints "Powered by PunchMe" as a sibling of #app. With
+      // nothing outside the sheet scrolling, that would strand it off-screen
+      // under the floating nav, so it moves inside the thing that does scroll.
+      const pby = document.querySelector("body > .pby");
+      if (pby) $(".sheet").appendChild(pby);
       wireChrome();
       renderPinWarning();
       render();
