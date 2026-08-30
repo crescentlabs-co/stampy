@@ -1457,30 +1457,69 @@ describe("dashboard information architecture", () => {
     });
 
     /**
-     * ONE neon object on the dashboard, and it is the Create button.
+     * Two neon surfaces, and both of them earn it.
      *
-     * The old neon header was rule 1's third fenced exception. Create needs no
-     * exception at all — rule 1 has always allowed the accent on a primary
-     * action — so the rule is down to two exceptions and the header is gone.
+     * The top bar is the shop's identity and DESIGN.md rule 1's one fenced
+     * exception inside the app — the founder's call, the same one that was made
+     * for the .greet header this bar replaced. The Create button is a primary
+     * action, which rule 1 has always allowed. Nothing else may take the accent
+     * as a fill.
      *
-     * Its glyph is --on-accent and never white: #c9f73d is a pale green, so
+     * Text on both is --on-accent and NEVER white: #c9f73d is a pale green, so
      * white on it lands near 1.3:1.
      */
-    it("puts the only neon on Create, and nothing else", () => {
-      expect(html).toContain(".botnav .navadd .plus");
+    it("puts neon on the header and on Create, and nowhere else", () => {
+      const bar = html.slice(html.indexOf(".topbar { position: sticky"),
+                             html.indexOf(".envstrip ~ #app.shell"));
+      expect(bar).toContain("background: var(--accent)");
+      expect(bar).toContain("color: var(--on-accent)");
+      expect(bar).not.toContain("var(--on-slab)");
+      expect(bar).not.toContain("#fff");
+
       const plus = html.slice(html.indexOf(".botnav .navadd .plus {"),
                               html.indexOf(".botnav .navadd.on"));
       expect(plus).toContain("background: var(--accent)");
       expect(plus).toContain("color: var(--on-accent)");
       expect(plus).not.toContain("#fff");
-      // The neon header is gone and may not come back by accident.
+
+      // The old header is still gone; this bar is not it coming back.
       expect(html).not.toContain(".greet {");
       expect(html).not.toContain('class="greet"');
-      // Active nav items are marked by weight, never by a second fill — the
+      // Active nav items are marked by weight, never by a third fill — the
       // bottom bar, Manage's pill and the designer's underline are three nav
       // controls on one screen, and DESIGN.md says they differ by shape.
       expect(html).toContain(".botnav a.on { color: var(--ink); font-weight: 800; }");
       expect(html).not.toContain(".botnav a.on { background: var(--accent)");
+    });
+
+    /**
+     * Rule 3: the focus ring is ink on light and neon on dark. #c9f73d is a
+     * LIGHT ground, so the ring on the header goes ink — a neon ring on neon
+     * is not a ring, and this is the one place that is easy to get backwards
+     * because the bar used to be near-black.
+     */
+    it("rings the header's button in ink, not in neon", () => {
+      expect(html).toContain(".topbar .dots:focus-visible { outline: 2px solid var(--ink);");
+      expect(html).not.toContain(".topbar .dots:focus-visible { outline: 2px solid var(--accent)");
+    });
+
+    /**
+     * The two shapes the founder asked for: a header with a rounded bottom —
+     * the same shape the customer's sign-up page uses for its brand block, so
+     * the two surfaces a shop's colour appears on speak once — and a bottom bar
+     * that floats clear of the screen edges rather than being welded to them.
+     */
+    it("shapes the header and floats the bar", () => {
+      expect(html).toContain("border-radius: 0 0 var(--r-lg) var(--r-lg);");
+      const nav = html.slice(html.indexOf(".botnav { position: fixed"),
+                             html.indexOf(".botnav a {"));
+      expect(nav).toContain("border-radius: 999px");
+      expect(nav).toContain("width: calc(100% - 28px)");
+      // A floating bar needs a lifted edge: content passes underneath it now,
+      // and without one the two read as a single surface.
+      expect(nav).toContain("box-shadow:");
+      expect(nav).toContain("border: 1px solid var(--line)");
+      expect(nav).not.toContain("border-top: 1px solid var(--line)");
     });
 
     /**
@@ -1489,9 +1528,11 @@ describe("dashboard information architecture", () => {
      * it 24px from the bottom, which is underneath this bar exactly.
      */
     it("reserves its own height, and lifts the toast above itself", () => {
-      expect(html).toContain("body.shelled { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 20px); }");
-      expect(html).toContain("body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }");
-      expect(html).toContain("padding-bottom: env(safe-area-inset-bottom, 0px); }");
+      expect(html).toContain("body.shelled { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px) + 20px); }");
+      expect(html).toContain("body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }");
+      // The bar floats clear of the bottom edge, so the gap it floats in has to
+      // clear the home bar as well as the bar itself.
+      expect(html).toContain("bottom: calc(12px + env(safe-area-inset-bottom, 0px));");
       // The login form and the broken-page screen share #app and have no bars.
       // They keep the ordinary padded card, so the layout is scoped to a class
       // the script adds when the chrome mounts and removes when they take over.

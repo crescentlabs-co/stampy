@@ -11,7 +11,7 @@ ever marks the next thing to press.
 
 ## Tokens
 
-Declared once, in `:root` inside `baseCss` (src/pages.ts). Everything reads
+Declared once, in `:root` inside `baseCss` (src/ui/kit.ts). Everything reads
 them through `var()`. There are no hardcoded colours in `src/routes/*.ts` and it
 should stay that way.
 
@@ -39,7 +39,7 @@ fighting it. A pure grey here reads as unconsidered.
 ## Type
 
 **Figtree**, one family, two jobs. `assets/fonts/figtree-latin.woff2` is a
-variable file covering 400–900, declared inline in `baseCss` and served from
+variable file covering 400–900, declared inline in `baseCss` (src/ui/kit.ts) and served from
 `/assets` with a long immutable cache, so the filename must change if the file
 ever does.
 
@@ -59,19 +59,26 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
    why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
-   **two** fenced exceptions, both described below: the marketing page's three
-   tile colours, and the neon reassurance band pinned to the bottom of that page.
+   **three** fenced exceptions, each described below: the marketing page's three
+   tile colours, the neon reassurance band pinned to the bottom of that page,
+   and the dashboard's **top bar**.
 
-   There used to be a third. The dashboard's `.greet` header was a neon block
-   carrying the shop name, the login email and a three-tab strip at once, and it
-   was fenced off here by name. The V2 restructure replaced it with a `--slab`
-   top bar and a bottom nav, so the exception went with it — the dashboard's one
-   neon object is now the **Create (+) button** in that nav, which needs no
-   exception at all: a primary action is what this rule has always allowed.
-   Nothing else on the dashboard may take the accent as a fill.
+   The top bar is neon on purpose, decided by the founder — the same call that
+   was made for the `.greet` header it replaced. It earns the exception on the
+   same grounds: it is the shop's identity, it is the only thing on the
+   dashboard that never changes as you move around, and it **carries no control
+   except the ⋯ menu**, so it cannot compete with whatever the owner came here
+   to do. Its text is `--on-accent`, never white.
+
+   The bottom nav's **Create (+) button** is also neon and needs no exception:
+   a primary action is what this rule has always allowed. Those two, and
+   nothing else on the dashboard, may take the accent as a fill — in
+   particular the nav's active item is marked by **weight**, because a third
+   neon object would leave the screen with no single place the eye goes.
 2. **Weight comes from the black panel, not from colour.** If something needs to
-   dominate, put it on `--slab`. The dashboard's top bar is `--slab` for exactly
-   this reason.
+   dominate, put it on `--slab`. The dashboard's top bar is the exception named
+   in rule 1; it was `--slab` for exactly this reason before the founder took
+   it neon.
 3. **Focus rings are ink on light and neon on dark.** A neon ring on a white
    page is too low-contrast to be an accessibility feature, and an ink ring
    vanishes on a black panel. Both directions are declared; keep them.
@@ -112,15 +119,26 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   the weight renders at 400 and reads as body text.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
-- **App chrome** is a `--slab` top bar and a `--bg` bottom nav with a `--line`
-  hairline. The top bar is rule 2 applied: it carries the shop's identity, and
-  weight for that comes from the black panel — the reference was another
-  product's blue header, and taking the blue would have been a second palette.
-  Its focus rings are neon, because ink vanishes on a black panel. The bottom
-  nav holds **exactly one** neon object, the Create (+) button, and the nav
-  **reserves its own height** in the page's bottom padding — including anything
-  else pinned to the bottom of the viewport, which is how the toast came to sit
-  underneath it. This bar replaced the neon `.greet` header; see rule 1.
+- **App chrome** is a neon top bar and a `--bg` bottom nav that FLOATS — a pill
+  inset from the screen edges, not a strip welded to the bottom.
+
+  The top bar is rule 1's fenced exception (see it). It is rounded at the
+  bottom with `--r-lg`, which is the same shape the customer's sign-up page
+  uses for its own brand block (`.lhero`) — one shape language across the two
+  surfaces a shop's colour appears on. Its text is `--on-accent` and its focus
+  rings are **ink**: `#c9f73d` is a LIGHT ground, so rule 3 sends the ring dark,
+  and this is the easy one to get backwards because the bar used to be
+  near-black.
+
+  A floating nav needs a real border and a real shadow, because content passes
+  underneath it rather than stopping above it — without a lifted edge the two
+  read as one surface. It holds **exactly one** neon object, the Create (+)
+  button, sitting inside the pill rather than raised out of it: a bar that
+  already floats does not need a second thing floating off it.
+
+  The nav **reserves its own height plus the gap it floats in** in the page's
+  bottom padding — and so does anything else pinned to the bottom of the
+  viewport, which is how the toast came to sit underneath it.
 - **Three nav controls on one screen differ by SHAPE, not by hue.** The bottom
   nav marks its active item by **weight**; Manage's section switch is a neon
   pill; the card previews' switch is a neon underline. Reaching for a second

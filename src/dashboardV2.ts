@@ -59,22 +59,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .cardselect .btn { width: auto; padding: 11px 14px; font-size: .9rem; white-space: nowrap; }
     ${SEG_CSS}
     /* --- the app chrome ------------------------------------------------------
-       A bar at the top that says whose shop this is, and a bar at the bottom
-       that is the whole of the navigation. They replaced a neon block that held
-       the shop name, the login email and a three-tab strip all at once.
+       A shaped neon block at the top that says whose shop this is, and a
+       floating pill at the bottom that is the whole of the navigation.
 
-       That block was DESIGN.md rule 1's third fenced exception, and it is gone,
-       so the exception went with it — the rule is down to two. The one neon
-       object on this screen is now the Create button in the bottom bar, which
-       needs no exception at all: rule 1 has always allowed the accent on a
-       primary action. Nothing else here takes it as a fill.
+       THE TOP BAR IS NEON, and it is DESIGN.md rule 1's one fenced exception
+       inside the app — decided by the founder, the same call that was made for
+       the .greet header this bar replaced. It earns it on the same grounds:
+       it is the shop's identity, it is the only thing on the dashboard that
+       never changes as you move around, and it carries no control except the
+       menu — so it cannot compete with whatever the owner came here to do.
 
-       The top bar is --slab. That is rule 2 applied as written — weight comes
-       from the black panel, not from colour — and it is what the Components
-       section always said a dashboard header should be. */
-    /* The page is a 480px column, so both bars are that column's full width and
-       break out of its 16px side padding. On a phone — which is what this is
-       read on — that is edge to edge.
+       Its text is --on-accent (near-black) and NEVER white: #c9f73d is a pale
+       green, so white on it lands near 1.3:1 and is unreadable. That is the
+       whole reason --on-accent exists and is always dark.
+
+       Rounded at the bottom, which is the same shape the customer's sign-up
+       page already uses for its own brand block (.lhero) — one shape language
+       across the two surfaces a shop's colour appears on. */
+    /* The page is a 480px column. The top bar spans it and breaks out of its
+       16px side padding; the bottom bar floats clear of the edges entirely.
 
        Scoped to .shelled / .shell, which the script adds only once the chrome
        is mounted. The login form and the broken-page screen render into the
@@ -86,29 +89,31 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     #app.shell { width: 100%; max-width: 480px; margin: 0 auto; padding: 0 16px;
                  border: 0; box-shadow: none; border-radius: 0; background: var(--bg); }
     .topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center;
-              gap: 10px; background: var(--slab); color: var(--on-slab);
-              height: 56px; margin: 0 -16px; padding: 0 14px; }
+              gap: 10px; background: var(--accent); color: var(--on-accent);
+              min-height: 68px; margin: 0 -16px; padding: 10px 18px 14px;
+              border-radius: 0 0 var(--r-lg) var(--r-lg); }
     /* On a staging copy the "not the real site" strip is also stuck to the top,
        and it sits above everything by design. Start below it rather than under
        it. Live renders no strip, so this rule never matches there. */
     .envstrip ~ #app.shell .topbar { top: 31px; }
-    .topbar img { width: 24px; height: 24px; border-radius: 6px; flex: none; }
+    .topbar img { width: 26px; height: 26px; border-radius: 7px; flex: none; }
     /* The shop name, centred. min-width:0 is what lets the ellipsis actually
        happen inside a flex row — without it a long name pushes the menu button
        off the end instead of truncating. */
     .topbar .shop { flex: 1; min-width: 0; text-align: center; font-family: var(--display);
-                    font-weight: 800; font-size: .95rem; letter-spacing: -.01em;
+                    font-weight: 800; font-size: 1rem; letter-spacing: -.01em;
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .topbar .dots { flex: none; width: 34px; height: 34px; border: 0; border-radius: 999px;
-                    background: transparent; color: var(--on-slab); font-size: 1.25rem;
+    .topbar .dots { flex: none; width: 36px; height: 36px; border: 0; border-radius: 999px;
+                    background: transparent; color: var(--on-accent); font-size: 1.3rem;
                     line-height: 1; cursor: pointer; padding: 0; }
-    .topbar .dots:hover { background: rgba(244,246,242,.12); }
-    /* Neon on dark, per rule 3 — an ink ring vanishes on --slab. */
-    .topbar .dots:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .topbar .dots:hover { background: rgba(12,14,13,.1); }
+    /* INK, not neon, per rule 3 — the ring goes dark on a light ground, and
+       #c9f73d is a light ground. A neon ring on neon is no ring at all. */
+    .topbar .dots:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
     /* The menu. It carries the login email, which is the only thing left on
        screen answering "which account am I in?" once the header stopped saying
        so, and it matters the moment somebody runs two shops. */
-    .tmenu { position: absolute; top: 50px; right: 8px; z-index: 41; min-width: 210px;
+    .tmenu { position: absolute; top: 62px; right: 10px; z-index: 41; min-width: 210px;
              background: var(--bg); color: var(--ink); border: 1px solid var(--line);
              border-radius: var(--r); box-shadow: var(--shadow); padding: 6px; }
     .tmenu .mwho { font-size: .76rem; color: var(--muted); padding: 8px 10px 6px;
@@ -118,18 +123,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                     border-radius: 10px; cursor: pointer; }
     .tmenu button:hover { background: var(--surface); }
 
-    /* The bottom bar. Fixed, because navigation that scrolls away is not
-       navigation. --bg with a hairline rather than a fill: the screen above it
-       is the content, and a solid bar would compete with it. */
-    .botnav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-              width: 100%; max-width: 480px; z-index: 40;
-              display: flex; align-items: flex-end; justify-content: center;
-              background: var(--bg); border-top: 1px solid var(--line);
-              padding-bottom: env(safe-area-inset-bottom, 0px); }
-    .botnav a { flex: 1; max-width: 96px; display: flex; flex-direction: column;
+    /* The bottom bar — a pill that floats clear of the screen edges rather than
+       a strip welded to the bottom. Fixed, because navigation that scrolls away
+       is not navigation.
+
+       It has a real border and a real shadow because it now sits ON the page
+       rather than below it: content passes underneath, and without a lifted
+       edge the two would read as one surface. */
+    .botnav { position: fixed; left: 50%; transform: translateX(-50%);
+              bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+              width: calc(100% - 28px); max-width: 420px; z-index: 40;
+              display: flex; align-items: center; justify-content: space-between;
+              gap: 2px; padding: 6px 8px;
+              background: var(--bg); border: 1px solid var(--line); border-radius: 999px;
+              box-shadow: 0 10px 30px -10px rgba(12,14,13,.28), 0 2px 8px rgba(12,14,13,.06); }
+    .botnav a { flex: 1; min-width: 0; display: flex; flex-direction: column;
                 align-items: center; justify-content: center; gap: 3px;
-                min-height: 56px; text-decoration: none; color: var(--muted);
-                font-size: .62rem; font-weight: 600; letter-spacing: .05em; padding: 6px 0 8px; }
+                min-height: 52px; border-radius: 999px; text-decoration: none;
+                color: var(--muted); font-size: .6rem; font-weight: 600;
+                letter-spacing: .04em; padding: 6px 0; }
     .botnav a svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
                     stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
     /* Active is marked by WEIGHT and ink, never by a fill. Three nav controls
@@ -138,26 +150,28 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        only one of them may be a filled pill. */
     .botnav a.on { color: var(--ink); font-weight: 800; }
     .botnav a.on svg { stroke-width: 2.4; }
-    .botnav a:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; border-radius: 10px; }
-    /* The one neon object on the dashboard: the primary action, raised out of
-       the bar so it reads as a button rather than a fifth tab. Its glyph is
-       --on-accent (near-black) and never white — #c9f73d is a pale green, and
-       white on it is about 1.3:1. */
-    .botnav .navadd { max-width: 72px; }
-    .botnav .navadd .plus { width: 44px; height: 44px; border-radius: 999px;
+    .botnav a:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; }
+    /* The primary action. Inside the pill rather than raised out of it: a bar
+       that already floats does not need a second thing floating off it. Its
+       glyph is --on-accent and never white, for the same reason the header's
+       text is. */
+    .botnav .navadd { flex: 0 0 auto; padding: 0 4px; }
+    .botnav .navadd .plus { width: 42px; height: 42px; border-radius: 999px;
                             background: var(--accent); color: var(--on-accent);
-                            display: flex; align-items: center; justify-content: center;
-                            margin-top: -14px; box-shadow: 0 6px 16px -6px rgba(12,14,13,.4); }
+                            display: flex; align-items: center; justify-content: center; }
     .botnav .navadd .plus svg { width: 22px; height: 22px; stroke: var(--on-accent); stroke-width: 2.6; }
     .botnav .navadd.on .plus { background: var(--accent-2); }
+    /* The word under it would crowd a pill this size, and a (+) needs no label. */
+    .botnav .navadd span:not(.plus) { display: none; }
 
-    /* The nav floats over the page, so the page has to end above it. */
-    body.shelled { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 20px); }
+    /* The nav floats over the page, so the page has to end above it — its own
+       height, plus the gap it floats in, twice. */
+    body.shelled { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px) + 20px); }
     /* And so does the toast. baseCss pins it 24px from the bottom, which put
        every confirmation on this screen UNDERNEATH the new bar. Lifted here
        rather than in baseCss: the stamper and the console read that too, and
        neither of them has a bottom bar. */
-    body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+    body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
 
     /* --- Home: one row per programme, and one line about the numbers --- */
     .prow { display: block; text-decoration: none; color: var(--ink);
@@ -369,7 +383,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        the page belongs to whatever the owner came here to do (DESIGN.md 1). */
     /* The gap between the top bar and whatever screen is under it. The banner
        takes it when there is one, so the two never stack their margins. */
-    #pinwarn:not(:empty), #screen { margin-top: 22px; }
+    #pinwarn:not(:empty), #screen { margin-top: 26px; }
     #pinwarn:not(:empty) + #screen { margin-top: 0; }
     .pinwarn { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
                background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
