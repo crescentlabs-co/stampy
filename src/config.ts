@@ -42,13 +42,6 @@ export const config = {
    *  Set CONTACT_EMAIL in Railway; when unset the pages say to use your dashboard account. */
   contactEmail: process.env.CONTACT_EMAIL ?? "",
   /**
-   * The WhatsApp number the marketing page's "Message us" buttons open, digits
-   * only and including the country code (a Malaysian number looks like
-   * 60123456789). Empty until it is set in Railway's Variables UI, and the page
-   * falls back to email, then to Instagram - it never renders a dead button.
-   */
-  whatsappNumber: (process.env.WHATSAPP_NUMBER ?? "").replace(/[^0-9]/g, ""),
-  /**
    * The card the marketing page's "try a demo card" buttons issue. It is the
    * PunchMe Demo shop, which exists to be that demo and nothing else — so its
    * dashboard doubles as the count of who tried the card from the website.
@@ -122,13 +115,6 @@ export interface SetupStatus {
   canGoogleWallet: boolean;
   /** True when transactional email (password reset / welcome) can be sent. */
   canEmail: boolean;
-  /**
-   * True when the marketing page's call to action opens WhatsApp rather than
-   * falling back to Instagram. Reported here because there was no way to SEE
-   * whether the variable had landed — the button keeps working either way,
-   * which is correct behaviour and also exactly what makes a typo invisible.
-   */
-  canWhatsapp: boolean;
 }
 
 export function setupStatus(): SetupStatus {
@@ -149,7 +135,6 @@ export function setupStatus(): SetupStatus {
     canPush: apnsKey && Boolean(config.passTypeId),
     canGoogleWallet: googleIssuer && googleServiceAccount,
     canEmail: Boolean(config.resendApiKey && config.emailFrom),
-    canWhatsapp: Boolean(config.whatsappNumber),
   };
 }
 

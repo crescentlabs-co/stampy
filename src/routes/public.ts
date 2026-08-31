@@ -496,11 +496,19 @@ publicRouter.get("/", (req, res) => {
  * page is already navigating away — so it is a real redirect through here
  * instead. No JavaScript involved, and it works with the page's script blocked.
  *
- * Only ever redirects to https. WhatsApp and Instagram both are; the mailto
- * fallback deliberately stays on the footer link rather than being redirected
- * to, because whether a 302 to a mailto: opens anything at all is up to the
- * browser, and a call to action that silently does nothing is the fault this
- * whole route exists to avoid.
+ * It goes to Instagram's direct-message link, not WhatsApp. The shop's WhatsApp
+ * account was restricted, and a button opening a chat nobody can answer is the
+ * same dead button this route exists to avoid — so the destination is a plain
+ * constant now rather than a Railway variable, and no leftover WHATSAPP_NUMBER
+ * can quietly point new merchants back at the banned account. If WhatsApp is
+ * ever restored, the one line below is the only thing to change back (with
+ * `?text=` for the opening line — Instagram has no equivalent, so the first
+ * message is now whatever the sender types).
+ *
+ * Only ever redirects to https. The mailto fallback deliberately stays on the
+ * footer link rather than being redirected to, because whether a 302 to a
+ * mailto: opens anything at all is up to the browser, and a call to action that
+ * silently does nothing is the fault this whole route exists to avoid.
  */
 publicRouter.get("/go/start", (req, res) => {
   if (!hasAnalyticsOptOut(req)) {
@@ -516,11 +524,11 @@ publicRouter.get("/go/start", (req, res) => {
       isBot: bot,
     }).catch((err) => console.error("[site_cta] not logged:", err));
   }
-  const text = encodeURIComponent("Hi! I'd like to try PunchMe for my shop.");
-  const to = config.whatsappNumber
-    ? `https://wa.me/${config.whatsappNumber}?text=${text}`
-    : "https://instagram.com/punchme.my";
-  res.redirect(302, to);
+  // ig.me/m/<handle> is Instagram's own "message this account" link: on a phone
+  // with the app installed it opens the chat itself, which is as close as
+  // Instagram gets to wa.me. A signed-out desktop browser meets a login page
+  // first — the profile link in the nav and the footer email cover that reader.
+  res.redirect(302, "https://ig.me/m/punchme.my");
 });
 
 /**
