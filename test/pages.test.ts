@@ -2610,9 +2610,29 @@ describe("the Home headline", () => {
 
   it("asks the question in the heading, and answers it in four tiles", () => {
     expect(home).toContain('<h2 class="sec first">How your shop is doing</h2>');
-    for (const label of ["customers", "visits", "rewards given", "visit frequency"]) {
-      expect(home).toContain("<span>" + label + "</span>");
+    for (const label of ["Customers", "Visits", "Rewards given", "Visit frequency"]) {
+      expect(home).toContain('tile("' + label + '"');
     }
+  });
+
+  /**
+   * A tile carries three lines, not two. It was a number and a label in a box
+   * with the rest of the box empty — the "lots of unused space" the founder
+   * pointed at — and the third line is the one that turns a figure into
+   * something you can act on.
+   */
+  it("gives every tile a label, a number and a way to read it", () => {
+    expect(home).toContain("const tile = (label, value, note)");
+    expect(home).toContain('class="mlabel"');
+    expect(home).toContain('class="mnote"');
+    // Each of the four says something true in the third slot, from data the
+    // screen already has.
+    expect(home).toContain("in the last 30 days");
+    expect(home).toContain("each on average");
+    expect(home).toContain("% of customers");
+    expect(home).toContain("You expect every ");
+    // ...and an em dash rather than a blank when it cannot.
+    expect(home).toContain('(note || "—")');
   });
 
   /**
@@ -2708,6 +2728,64 @@ describe("the Home headline", () => {
  * If a new value is genuinely needed here, one of the tokens is wrong for the
  * job — fix the token. Do not add a seventh size.
  */
+/**
+ * The sparkline, run rather than compiled.
+ *
+ * Its failure modes are all silent: a divide-by-zero on a flat series, a NaN
+ * in a path that makes the whole SVG vanish, or a confident line drawn through
+ * one data point. None of those throw, and none of them are visible to a test
+ * that only greps the page.
+ */
+describe("the sparkline, actually run", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+  const S = new Function(
+    html.slice(html.indexOf("function sparkline(values, opts)"), html.indexOf("function drawHealth(host, body)")) +
+      "return { sparkline, bucketByAge };",
+  )();
+
+  it("draws a line and the area under it", () => {
+    const svg = S.sparkline([1, 4, 2, 7, 3]);
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("stroke=\"currentColor\"");
+    expect(svg).not.toContain("NaN");
+    expect(svg).not.toContain("Infinity");
+  });
+
+  /** DESIGN.md: the accent means "press this", and a line on a graph is not. */
+  it("never puts the accent in a chart", () => {
+    const svg = S.sparkline([1, 2, 3]);
+    expect(svg).not.toContain("--accent");
+    expect(svg).not.toContain("#c9f73d");
+  });
+
+  /**
+   * Says nothing rather than something untrue. One point is a dot pretending
+   * to be a trend; all-zeroes is the absence of data drawn as data.
+   */
+  it("draws nothing it cannot honestly draw", () => {
+    expect(S.sparkline([])).toBe("");
+    expect(S.sparkline([5])).toBe("");
+    expect(S.sparkline([0, 0, 0, 0])).toBe("");
+    expect(S.sparkline(null)).toBe("");
+  });
+
+  /** A flat non-zero series would divide by zero, and drawn from the top would
+   *  read as a collapse. It sits mid-height instead. */
+  it("survives a series that never changes", () => {
+    const svg = S.sparkline([3, 3, 3, 3]);
+    expect(svg).toContain("<svg");
+    expect(svg).not.toContain("NaN");
+  });
+
+  it("buckets ages into weeks, most recent last", () => {
+    // 0 days ago is this week, 8 days ago is last week.
+    expect(S.bucketByAge([0, 1, 8, 20], 4, 7)).toEqual([0, 1, 1, 2]);
+    // Anything older than the window, or nonsense, is dropped rather than
+    // piled into the first bucket where it would read as a spike.
+    expect(S.bucketByAge([999, -1, NaN], 4, 7)).toEqual([0, 0, 0, 0]);
+  });
+});
+
 describe("the dashboard keeps to one scale", () => {
   const src = readFileSync(new URL("../src/dashboardV2.ts", import.meta.url), "utf8");
   const css = src.slice(src.indexOf("const css = /* css */ `"), src.indexOf("const js = /* js */ `"));

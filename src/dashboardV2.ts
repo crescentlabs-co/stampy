@@ -46,12 +46,41 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        job. An outline makes a screen read as a form; a fill makes it read as
        an app. Rule 9 still holds: a box INSIDE a --surface box goes back to
        --bg with a hairline, and that is the one place a border earns itself. */
+    /* A tile is three lines: a label, the number, and how to read it. It was
+       two — a number and a label — in a box with the rest of the box empty,
+       which is what "a lot of unused space" meant. The third line is also the
+       one that turns a figure into something you can act on. */
     .metric { background: var(--surface); border-radius: var(--r);
               padding: var(--s3); text-align: left; }
-    .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl); line-height: 1;
-                display: block; letter-spacing: -.035em; font-variant-numeric: tabular-nums; color: var(--ink); }
-    .metric span { display: block; margin-top: var(--s2); font-size: var(--t-sm);
-                   letter-spacing: .01em; color: var(--muted); }
+    .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
+                line-height: var(--lh-tight); display: block; letter-spacing: -.035em;
+                font-variant-numeric: tabular-nums; color: var(--ink); }
+    /* The label leads, small and tracked — the only place --t-xs is used. */
+    .mlabel { display: block; font-size: var(--t-xs); font-weight: 700; letter-spacing: .06em;
+              text-transform: uppercase; color: var(--muted); margin-bottom: var(--s2); }
+    /* And the reading of it sits under, quieter than the number and never the
+       same size as the label above — two small lines at one size would read as
+       a pair rather than as a top and a bottom. */
+    .mnote { display: block; margin-top: var(--s2); font-size: var(--t-sm);
+             line-height: var(--lh-body); color: var(--muted); }
+    .metric span:not(.mlabel):not(.mnote) { display: block; margin-top: var(--s2);
+                   font-size: var(--t-sm); letter-spacing: .01em; color: var(--muted); }
+    /* The one wide block on Home, and where the density changes: four equal
+       tiles, then one thing that is not a tile. */
+    .chartcard { background: var(--surface); border-radius: var(--r); padding: var(--s4);
+                 margin: var(--s2) 0 0; }
+    .chartcard b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
+                   line-height: var(--lh-tight); display: block; letter-spacing: -.035em;
+                   font-variant-numeric: tabular-nums; color: var(--ink); }
+    .chartcard .mnote { margin-top: var(--s1); }
+    /* --ink, never the accent: DESIGN.md keeps the neon for things you press,
+       and a line on a graph is not pressable. The area under it is the same
+       ink at low opacity, so the chart is one colour at two weights. */
+    .sparkwrap { color: var(--ink); margin-top: var(--s3); }
+    .spark { display: block; width: 100%; height: 56px; }
+    .sparkax { display: flex; justify-content: space-between; margin-top: var(--s2);
+               font-size: var(--t-xs); letter-spacing: .06em; text-transform: uppercase;
+               color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
     .links { display: flex; gap: var(--s3); margin-top: var(--s2); flex-wrap: wrap; font-size: var(--t-sm); }
@@ -1448,35 +1477,44 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       d.innerHTML =
         '<h2 class="sec first">How your shop is doing</h2>' +
         '<div class="totals" data-totals></div>' +
-        '<p class="muted" data-gap style="margin:-6px 0 4px"></p>' +
+        '<p class="muted" data-gap style="margin:0"></p>' +
+        '<div data-signups></div>' +
         '<div data-insight></div>' +
         '<h2 class="sec">Programmes</h2>' +
         '<div data-programs></div>' +
         '<h2 class="sec">Campaigns' + EG + "</h2>" +
         '<div data-campaigns></div>';
 
-      // The four headline tiles. Painted with what is already in S so the shape
-      // of the page is right before the request lands; the two that need the
-      // people are filled in below rather than left as a hole.
-      const tiles = (customers, freq) =>
-        '<div class="metric"><b>' + customers + "</b><span>customers</span></div>" +
-        '<div class="metric"><b>' + visitsLabel() + "</b><span>visits</span></div>" +
-        '<div class="metric"><b>' + sum("redemptions") + "</b><span>rewards given</span></div>" +
-        '<div class="metric"><b>' + freq + "</b><span>visit frequency</span></div>";
+      /**
+       * A tile is a LABEL, a number, and a line saying how to read it.
+       *
+       * It used to be a number and a label, in a box, with the rest of the box
+       * empty — which is what "there is a lot of unused space" meant. Three
+       * lines is what Wise and Binance put in a card this size, and the third
+       * is the one that turns a figure into something you can act on.
+       *
+       * A tile with nothing true to say in that slot gets an em dash, never a
+       * blank and never a confident zero.
+       */
+      const tile = (label, value, note) =>
+        '<div class="metric"><span class="mlabel">' + label + "</span>" +
+        "<b>" + value + "</b>" +
+        '<span class="mnote">' + (note || "—") + "</span></div>";
 
-      // Filled once the people arrive. Held in a closure so both the tiles and
-      // the insight below read the same numbers.
+      // Filled once the people arrive. Held in a closure so the tiles, the
+      // chart and the insight below all read the same numbers — one request,
+      // one source, so they cannot disagree with each other.
       let people = null;
-      function visitsLabel() {
-        // VISITS, not stamps. A stamp is something that happened at the
-        // counter; a visit is a lifetime visit by a person, and signing up is
-        // visit 1. They are different numbers and reading one as the other is
-        // exactly how the headline came to disagree with the list.
-        if (!people) return "—";
-        return people.reduce((a, c) => a + (c.visits || 0), 0).toLocaleString();
-      }
+
+      // VISITS, not stamps. A stamp is something that happened at the counter;
+      // a visit is a lifetime visit by a person, and signing up is visit 1.
+      // Reading one as the other is how the headline came to disagree with the
+      // list underneath it, twice.
+      const totalVisits = () =>
+        people ? people.reduce((a, c) => a + (c.visits || 0), 0) : 0;
+
       /** The average gap between visits, across everyone who has two or more. */
-      function freqLabel() {
+      function freqValue() {
         if (!people) return "—";
         const gaps = people.map((c) => c.avgGapDays).filter((g) => isFinite(g) && g > 0);
         if (!gaps.length) return "—";
@@ -1484,8 +1522,26 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         return mean < 1.5 ? "Daily" : "Every " + Math.round(mean) + " days";
       }
 
+      function tiles(active) {
+        const joined30 = people ? people.filter((c) => c.joinedDays <= 30).length : 0;
+        const rewards = sum("redemptions");
+        const visits = totalVisits();
+        return (
+          tile("Customers", active,
+            people ? (joined30 ? "+" + joined30 + " in the last 30 days" : "None joined this month") : "") +
+          tile("Visits", people ? visits.toLocaleString() : "—",
+            people && active ? (visits / active).toFixed(1) + " each on average" : "") +
+          tile("Rewards given", rewards,
+            people && active
+              ? (rewards ? Math.round((rewards / active) * 100) + "% of customers" : "Nobody has claimed one yet")
+              : "") +
+          tile("Visit frequency", freqValue(),
+            S.cycleDays ? "You expect every " + S.cycleDays + " days" : "You haven’t set one yet")
+        );
+      }
+
       const host = d.querySelector("[data-totals]");
-      host.innerHTML = tiles("—", "—");
+      host.innerHTML = tiles("—");
       d.querySelector("[data-programs]").innerHTML = programRows();
       d.querySelector("[data-campaigns]").innerHTML = campaignBlock();
 
@@ -1493,13 +1549,45 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const { body } = await api("/customers");
         people = Array.isArray(body.customers) ? body.customers : [];
         const counts = body.counts || { active: 0 };
-        host.innerHTML = tiles(counts.active, freqLabel());
+        host.innerHTML = tiles(counts.active);
         d.querySelector("[data-gap]").innerHTML = counts.active
           ? ""
           : "No customers yet — they appear once someone adds your card and gets their first stamp.";
+        drawSignups(d.querySelector("[data-signups]"), people);
         drawInsight(d.querySelector("[data-insight]"), body);
       })();
       return d;
+    }
+
+    /**
+     * Sign-ups by week, from real data.
+     *
+     * Every customer carries how many days ago they joined, so this series is
+     * already on the wire — no new endpoint, and nothing invented. It is the
+     * only true time series this page can build today: /api/counter covers one
+     * day, and last-visit tells you when somebody was last in but not when
+     * anyone else was.
+     *
+     * It is its own full-width block rather than a fifth tile. That is where
+     * the density on this screen varies — four equal tiles, then one wide
+     * thing — instead of stacked identical boxes all the way down.
+     */
+    function drawSignups(host, people) {
+      if (!host) return;
+      const WEEKS = 12;
+      const series = bucketByAge(people.map((c) => c.joinedDays), WEEKS, 7);
+      const svg = sparkline(series, { width: 300, height: 56 });
+      // Nothing honest to draw: fewer than two weeks with anybody in them.
+      if (!svg) { host.innerHTML = ""; return; }
+      const total = series.reduce((a, n) => a + n, 0);
+      host.innerHTML =
+        '<div class="chartcard">' +
+          '<span class="mlabel">New customers</span>' +
+          "<b>" + total + "</b>" +
+          '<span class="mnote">over the last ' + WEEKS + " weeks</span>" +
+          '<div class="sparkwrap">' + svg + "</div>" +
+          '<div class="sparkax"><span>' + WEEKS + " weeks ago</span><span>now</span></div>" +
+        "</div>";
     }
 
     /**
