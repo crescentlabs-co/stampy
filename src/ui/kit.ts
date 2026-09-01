@@ -97,12 +97,12 @@ export const baseCss = /* css */ `
        3.5px range, and a difference nobody can perceive does not read as a
        hierarchy — it reads as carelessness. If a new size seems needed, one of
        these six is wrong for the job; do not add a seventh. */
-    --t-hero: 2.5rem;    /* the one big number on a screen */
-    --t-xl: 1.75rem;     /* a metric's number, a screen title */
-    --t-lg: 1.25rem;     /* a section heading */
-    --t-md: 1rem;        /* body, and a row's value at 600 */
-    --t-sm: .8125rem;    /* explanatory text, meta */
-    --t-xs: .6875rem;    /* labels, uppercase and tracked. Nothing else */
+    --t-hero: 2rem;      /* 32px — the one big number on a screen */
+    --t-xl: 1.5rem;      /* 24px — a metric's number, a screen title */
+    --t-lg: 1.125rem;    /* 18px — a section heading */
+    --t-md: .9375rem;    /* 15px — body, and a row's value at 600 */
+    --t-sm: .8125rem;    /* 13px — explanatory text, meta */
+    --t-xs: .6875rem;    /* 11px — labels, uppercase and tracked. Nothing else */
     /* Line height belongs to the scale. One global 1.5 left headings loose and
        small text cramped, because those two want opposite things. */
     --lh-tight: 1.15;    /* headings and big numbers */
@@ -171,7 +171,10 @@ export const baseCss = /* css */ `
   @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
   .muted { color: var(--muted); font-size: var(--t-sm); line-height: var(--lh-read); }
   input, textarea, select {
-    width: 100%; padding: 13px 14px; border: 1px solid var(--field-border); border-radius: 12px;
+    width: 100%; padding: 13px 14px; border: 1px solid var(--field-border); border-radius: var(--r-sm);
+    /* 1rem and NOT --t-md, which is smaller. iOS Safari zooms the whole page
+       when you focus a field under 16px, and it does not zoom back out. This
+       one stays off the scale on purpose. */
     font-size: 1rem; font-family: inherit; background: var(--bg); color: var(--ink);
   }
   input:focus, textarea:focus, select:focus { outline: 2px solid var(--ink); outline-offset: 1px; border-color: transparent; }
@@ -3502,12 +3505,18 @@ export function page(
       // sticky, and without a way to select this strip the two would stick to
       // the same 0 and the strip — which sits far above everything on purpose —
       // would cover half the bar. The dashboard offsets itself below it.
-      : `<div class="envstrip" style="position:sticky;top:0;z-index:9999;background:#101312;color:#c9f73d;text-align:center;padding:7px 10px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">${esc(env)} — not the real site</div>`;
+      // padding-top carries the notch: the page paints into it now
+      // (viewport-fit=cover), and a strip that stopped below the status bar
+      // would leave a white band above the top of the app.
+      : `<div class="envstrip" style="position:sticky;top:0;z-index:9999;background:#101312;color:#c9f73d;text-align:center;padding:7px 10px;padding-top:calc(7px + env(safe-area-inset-top, 0px));font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">${esc(env)} — not the real site</div>`;
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- viewport-fit=cover lets a page paint into the notch and the home bar
+     area. Anything pinned to an edge then has to add the matching
+     env(safe-area-inset-*) itself, or it sits under the hardware. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 ${env === "live" ? "" : '<meta name="robots" content="noindex">'}
 <link rel="icon" type="image/png" href="/assets/img/punchme-favicon-v1.png">
 <title>${esc(title)}</title>

@@ -435,7 +435,9 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
     }
     html { scroll-behavior: smooth; }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-    body { display: block; padding: 0 0 46px; align-items: stretch;
+    /* The band is 46px plus whatever the home bar takes; the page reserves
+       both, so the ticker can never sit over the footer. */
+    body { display: block; padding: 0 0 calc(46px + env(safe-area-inset-bottom, 0px)); align-items: stretch;
            background: var(--paper); color: var(--ink); font-family: var(--body); }
     ::selection { background: var(--neon); color: var(--ink); }
     img { max-width: 100%; display: block; }
@@ -700,6 +702,9 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
        Height is fixed at 46px and body reserves it, so the band can never sit
        over the footer. */
     .ticker { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; height: 46px;
+              /* The page paints into the home-bar area now (viewport-fit=cover),
+                 so this band pads itself past it rather than sitting under it. */
+              box-sizing: content-box; padding-bottom: env(safe-area-inset-bottom, 0px);
               background: var(--neon); color: var(--ink); overflow: hidden;
               display: flex; align-items: center;
               border-top: 1px solid rgba(12,14,13,.16); }

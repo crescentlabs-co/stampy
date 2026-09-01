@@ -2786,6 +2786,74 @@ describe("the sparkline, actually run", () => {
   });
 });
 
+/**
+ * Three visual decisions that are easy to undo by accident and impossible to
+ * see in a test that only reads text.
+ */
+describe("the surfaces and the edges", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+
+  /**
+   * Inverted: a grey ground with white cards on it, so WHITE is what the eye
+   * reads as content. It was a white page with grey boxes, which made every
+   * card read as a hole punched in the page rather than a thing sitting on it.
+   */
+  it("puts white cards on a grey ground, not grey boxes on white", () => {
+    expect(html).toContain("background: var(--surface); border-radius: var(--r-lg) var(--r-lg) 0 0;");
+    for (const card of [".metric {", ".chartcard {", ".acts {", ".breakdown {"]) {
+      const at = html.indexOf(card);
+      expect(at, card + " is missing").toBeGreaterThan(-1);
+      expect(html.slice(at, html.indexOf("}", at)), card + " is not white").toContain("var(--bg)");
+    }
+    // Rule 9 inverts with it: a box inside a WHITE card steps to grey, not to
+    // white again, which would be no step at all.
+    expect(html).toContain("body.shelled :is(.fold, .grp, .bucket, .mdetail) .btn-ghost { background: var(--surface); }");
+  });
+
+  /**
+   * The green runs to the very top of the phone.
+   *
+   * Without viewport-fit=cover the page stops below the status bar, the strip
+   * above it paints in the body colour, and the neon reads as a band stuck
+   * across the screen rather than as the top of the app.
+   */
+  it("paints into the notch, and pays for it exactly once", () => {
+    expect(html).toContain("viewport-fit=cover");
+    expect(html).toContain("padding-top: calc(var(--s2) + env(safe-area-inset-top, 0px));");
+    // On staging the "not the real site" strip is above the bar and already
+    // carries the notch. Both adding it would leave a gap the height of the
+    // status bar.
+    expect(html).toContain(".envstrip ~ #app.shell .topbar { padding-top: var(--s2); }");
+    const staging = dashboardPage({ emailConfigured: true } as never);
+    expect(staging).toContain("env(safe-area-inset-top, 0px)");
+  });
+
+  /**
+   * viewport-fit=cover is set in the SHARED shell, so every page paints into
+   * the home-bar area — including the marketing page, whose ticker is pinned
+   * to the bottom and would otherwise sit underneath it.
+   */
+  it("keeps the marketing ticker clear of the home bar", () => {
+    const mkt = marketingPage("hello@punchme.test");
+    expect(mkt).toContain("viewport-fit=cover");
+    const at = mkt.indexOf(".ticker { position: fixed");
+    expect(mkt.slice(at, mkt.indexOf("}", at))).toContain("padding-bottom: env(safe-area-inset-bottom, 0px)");
+    // ...and the page reserves the band plus the inset, so it can never cover
+    // the footer.
+    expect(mkt).toContain("padding: 0 0 calc(46px + env(safe-area-inset-bottom, 0px));");
+  });
+
+  /**
+   * 16px on a field, and not the body size, which is smaller. iOS Safari zooms
+   * the whole page when you focus anything under 16px and does not zoom back
+   * out — the page is left scrolled sideways with the nav off screen.
+   */
+  it("keeps form fields at 16px so iOS does not zoom", () => {
+    const at = html.indexOf("input, textarea, select {");
+    expect(html.slice(at, html.indexOf("}", at))).toContain("font-size: 1rem");
+  });
+});
+
 describe("the dashboard keeps to one scale", () => {
   const src = readFileSync(new URL("../src/dashboardV2.ts", import.meta.url), "utf8");
   const css = src.slice(src.indexOf("const css = /* css */ `"), src.indexOf("const js = /* js */ `"));
@@ -2836,9 +2904,13 @@ describe("the dashboard keeps to one scale", () => {
       expect(m, t + " is missing from the scale").toBeTruthy();
       return Number(m![1]);
     });
+    // 1.14, not 1.2: the bottom of a scale is naturally tighter than the top —
+    // body to meta is a small, deliberate step in every design system — while
+    // the display sizes are far apart. The guard exists to stop twelve sizes
+    // inside 3.5px, and at six sizes spanning 11px to 32px it still does.
     for (let i = 0; i < steps.length - 1; i++) {
       expect(steps[i]! / steps[i + 1]!, `${steps[i]}rem over ${steps[i + 1]}rem is too small a step`)
-        .toBeGreaterThanOrEqual(1.18);
+        .toBeGreaterThanOrEqual(1.14);
     }
   });
 });

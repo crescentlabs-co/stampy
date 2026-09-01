@@ -50,7 +50,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        two — a number and a label — in a box with the rest of the box empty,
        which is what "a lot of unused space" meant. The third line is also the
        one that turns a figure into something you can act on. */
-    .metric { background: var(--surface); border-radius: var(--r);
+    .metric { background: var(--bg); border-radius: var(--r);
               padding: var(--s3); text-align: left; }
     .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                 line-height: var(--lh-tight); display: block; letter-spacing: -.035em;
@@ -67,7 +67,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                    font-size: var(--t-sm); letter-spacing: .01em; color: var(--muted); }
     /* The one wide block on Home, and where the density changes: four equal
        tiles, then one thing that is not a tile. */
-    .chartcard { background: var(--surface); border-radius: var(--r); padding: var(--s4);
+    .chartcard { background: var(--bg); border-radius: var(--r); padding: var(--s4);
                  margin: var(--s2) 0 0; }
     .chartcard b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                    line-height: var(--lh-tight); display: block; letter-spacing: -.035em;
@@ -142,12 +142,29 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        bar is no longer sticky; z-index so it stays above the sheet's corners. */
     .topbar { flex: none; position: relative; z-index: 40; display: flex; align-items: center;
               gap: var(--s2); background: var(--accent); color: var(--on-accent);
-              min-height: 68px; padding: var(--s2) var(--s4) var(--s3); }
+              /* The green runs to the very top of the phone. The page paints
+                 into the notch now (viewport-fit=cover), so the bar's own
+                 padding carries the status bar rather than leaving a white
+                 strip above it with the green starting underneath — which read
+                 as a band stuck across the screen rather than as the top of
+                 the app. Paying for the notch in padding also means the bar
+                 itself can be shorter, which is where the room below came
+                 from. */
+              min-height: 52px; padding: var(--s2) var(--s4) var(--s2);
+              padding-top: calc(var(--s2) + env(safe-area-inset-top, 0px)); }
+    /* ...unless the staging strip is above it and has already paid for the
+       notch. Two elements both adding the inset would leave a gap the height
+       of the status bar. Live renders no strip, so this never matches there. */
+    .envstrip ~ #app.shell .topbar { padding-top: var(--s2); }
     /* THE BOX. The only scrolling thing on the screen, and the only thing with
        a shape. Its bottom padding clears the floating nav and the gap the nav
        floats in — the page itself no longer scrolls, so it cannot carry that. */
+/* Inverted: the ground is grey and the cards on it are white, so WHITE is
+       what the eye reads as the content. It was the other way round — white
+       page, grey boxes — which made every card read as a hole rather than as a
+       thing sitting on the page. */
     .sheet { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-             background: var(--bg); border-radius: var(--r-lg) var(--r-lg) 0 0;
+             background: var(--surface); border-radius: var(--r-lg) var(--r-lg) 0 0;
              padding: 0 var(--s3) calc(96px + env(safe-area-inset-bottom, 0px)); }
     /* The Powered by line is a sibling of #app in the shared shell, which with
        nothing scrolling would strand it under the floating nav. The script
@@ -227,12 +244,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        the console read that too, and neither of them has a bottom bar. */
     body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
 
+    /* Rule 9 inverts with everything else. baseCss steps a ghost button inside
+       a tinted box back to --bg, which was the step DOWN when boxes were grey.
+       Inside a white card that is no step at all, so in here it goes to
+       --surface. Alternate; never repeat. */
+    body.shelled :is(.fold, .grp, .bucket, .mdetail) .btn-ghost { background: var(--surface); }
+    body.shelled :is(.fold, .grp, .bucket, .mdetail) .btn-ghost:hover { background: var(--ghost-bg); }
+
     /* --- Home: one row per programme, and one line about the numbers --- */
     .prow { display: block; text-decoration: none; color: var(--ink);
             border-radius: var(--r); padding: var(--s3);
-            margin-bottom: var(--s2); background: var(--surface); }
+            margin-bottom: var(--s2); background: var(--bg); }
     /* Hover moves the FILL, since there is no longer a border to tint. */
-    .prow:hover { background: var(--ghost-bg); }
+    .prow:hover { background: var(--surface); }
     .ptop { display: flex; align-items: center; gap: var(--s2); }
     .ptop strong { font-size: var(--t-md); }
     /* Status sits at the far end, so the eye finds it in the same place on
@@ -251,7 +275,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                color: var(--ink); }
     /* The one interpretive line on the page. Bordered rather than filled: it is
        a note about the numbers above it, not a fifth number. */
-    .insight { border-left: 3px solid var(--ink); background: var(--surface);
+    .insight { border-left: 3px solid var(--ink); background: var(--bg);
                border-radius: 0 var(--r) var(--r) 0; padding: var(--s3); margin: var(--s3) 0 var(--s1); }
     .insight p { margin: 0; font-size: var(--t-sm); line-height: 1.5; }
     /* --- Customers: search, segment chips, and one row per person --- */
@@ -271,12 +295,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        stacked down a screen is the shape this replaces: one block, with the
        hairline BETWEEN rows and never around them. */
     .ccard { display: flex; align-items: center; gap: var(--s2); text-decoration: none;
-             color: var(--ink); padding: var(--s3); background: var(--surface); }
+             color: var(--ink); padding: var(--s3); background: var(--bg); }
     .ccard:first-child { border-radius: var(--r) var(--r) 0 0; }
     .ccard:last-child { border-radius: 0 0 var(--r) var(--r); }
     .ccard:only-child { border-radius: var(--r); }
     .ccard + .ccard { box-shadow: inset 0 1px 0 var(--line); }
-    .ccard:hover { background: var(--ghost-bg); }
+    .ccard:hover { background: var(--surface); }
     .ccard .cid { font-weight: 800; letter-spacing: .04em; font-family: var(--display); }
     .ccard .cprog { margin-left: auto; color: var(--muted); font-size: var(--t-sm);
                     font-variant-numeric: tabular-nums; }
@@ -293,14 +317,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        is a fill, so a page of these reads as one object rather than a stack of
        ruled lines. */
     .drow { display: flex; align-items: baseline; gap: var(--s3);
-            padding: var(--s3); background: var(--surface); font-size: var(--t-sm); }
+            padding: var(--s3); background: var(--bg); font-size: var(--t-sm); }
     .drow:first-of-type { border-radius: var(--r) var(--r) 0 0; }
     .drow:last-of-type { border-radius: 0 0 var(--r) var(--r); }
     .drow + .drow { box-shadow: inset 0 1px 0 var(--line); }
     .drow span { color: var(--muted); }
     .drow b { margin-left: auto; text-align: right; }
     /* --- today at the counter --- */
-    .acts { background: var(--surface); border-radius: var(--r); overflow: hidden; }
+    .acts { background: var(--bg); border-radius: var(--r); overflow: hidden; }
     .act { display: flex; gap: var(--s3); padding: var(--s3); font-size: var(--t-sm); }
     .act + .act { box-shadow: inset 0 1px 0 var(--line); }
     .act .at { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 62px; }
@@ -320,7 +344,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* The QR sits on a --surface block rather than being outlined. The code
        itself stays on white and keeps a quiet zone round it — that is a
        scanning requirement, not a style choice. */
-    .qrbox { text-align: center; background: var(--surface); border-radius: var(--r);
+    .qrbox { text-align: center; background: var(--bg); border-radius: var(--r);
              padding: var(--s4); margin: var(--s2) 0 var(--s1); }
     .qrbox img { width: 168px; height: 168px; image-rendering: pixelated;
                  border-radius: var(--r-sm); padding: var(--s2); background: #fff; }
@@ -335,8 +359,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pick { display: grid; grid-template-columns: 1fr auto; align-items: center;
             gap: var(--s1) var(--s2); text-decoration: none; color: var(--ink);
             border-radius: var(--r); padding: var(--s4);
-            background: var(--surface); }
-    .pick:hover { background: var(--ghost-bg); }
+            background: var(--bg); }
+    .pick:hover { background: var(--surface); }
     .pick strong { font-size: var(--t-md); }
     .pick .sub2 { grid-column: 1; color: var(--muted); font-size: var(--t-sm); line-height: 1.45; }
     .pick .arr { grid-row: 1 / span 2; color: var(--muted); }
@@ -370,9 +394,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* --- share tab --- */
     .sharelist { display: flex; flex-direction: column; gap: var(--s2); margin: var(--s2) 0 var(--s3); }
     .sharelist a { display: flex; justify-content: space-between; align-items: center; gap: var(--s2);
-                   background: var(--surface); border-radius: var(--r); padding: var(--s3);
+                   background: var(--bg); border-radius: var(--r); padding: var(--s3);
                    text-decoration: none; color: var(--ink); font-weight: 600; }
-    .sharelist a:hover { background: var(--ghost-bg); }
+    .sharelist a:hover { background: var(--surface); }
     /* A row that is switched off. Still readable and still clickable — it goes
        to Shop, where the reason is — but it never takes the accent, because the
        accent means "the next thing to press" and this is not it (DESIGN.md). */
@@ -414,8 +438,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .h-returning { --hue: #1d4ed8; --hue-bg: #e9eefb; }
     .h-new       { --hue: #b45309; --hue-bg: #fdf4e3; }
     .h-lost      { --hue: #9a3412; --hue-bg: #fbedeb; }
-    .breakdown { width: 100%; border-collapse: collapse; font-size: var(--t-sm); margin-top: var(--s2); }
-    .breakdown { background: var(--surface); border-radius: var(--r); overflow: hidden; }
+    .breakdown { width: 100%; border-collapse: collapse; font-size: var(--t-sm);
+                 margin-top: var(--s2); background: var(--bg); border-radius: var(--r);
+                 overflow: hidden; }
     .breakdown th { text-align: left; color: var(--muted); font-size: var(--t-xs);
                     text-transform: uppercase; letter-spacing: .06em; padding: var(--s3); }
     .breakdown td { padding: var(--s3); }
@@ -429,7 +454,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .cardpick button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
     /* --- customer rows (Customers view) — the dashboard's own card style --- */
     .pass { border-radius: var(--r); padding: var(--s3); margin-top: var(--s3);
-            background: var(--surface); box-shadow: var(--shadow); }
+            background: var(--bg); box-shadow: var(--shadow); }
     .pass strong { font-size: var(--t-md); }
     .pass .row { display: flex; gap: var(--s2); margin-top: var(--s3); }
     .pass .row .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); }
@@ -437,13 +462,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* --- customers view: one collapsible section per recency group --- */
     .custctl { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s1); }
     .custctl > div { flex: 1; min-width: 130px; }
-    .grp { border-radius: var(--r); padding: 0 var(--s3) var(--s3); margin-bottom: var(--s2); background: var(--surface); }
+    .grp { border-radius: var(--r); padding: 0 var(--s3) var(--s3); margin-bottom: var(--s2); background: var(--bg); }
     .grp summary { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; cursor: pointer;
                    padding: var(--s3) 0; font-weight: 700; list-style: none; }
     .grp summary::-webkit-details-marker { display: none; }
     .grp summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
     .grp[open] summary::before { transform: rotate(90deg); }
-    .grp .gc { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); border-radius: 999px;
+    .grp .gc { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: 999px;
                padding: var(--s1) var(--s2); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
     .grp .gh { color: var(--muted); font-weight: 400; font-size: var(--t-sm); }
     .grp .gnudge { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); margin-bottom: var(--s1); }
@@ -474,7 +499,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                     background: #fff; border-color: #d9a441; color: #7c2d12; }
     /* --- Customers: one standalone row per lapse cohort (not a collapsible) --- */
     .bucket { border-radius: var(--r); padding: var(--s3);
-              margin-bottom: var(--s2); background: var(--surface); }
+              margin-bottom: var(--s2); background: var(--bg); }
     .bucket .cprog { text-align: right; padding-right: 6px; }
     .bucket .cn:disabled { opacity: .4; }
     /* --- a value shown exactly once (a new PIN) --- */
