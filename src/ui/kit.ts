@@ -91,14 +91,38 @@ export const baseCss = /* css */ `
        That is what --on-accent and --accent-dark are for. */
     --accent: #c9f73d; --accent-2: #b8e82c; --on-accent: #0c0e0d;
     --accent-dark: #2f3630; --on-slab: #f4f6f2;
-    --r: 14px; --r-lg: 22px;
+    /* --- the scale ---------------------------------------------------------
+       SIX text sizes, and the jump between them is roughly 1.3–1.45×. That gap
+       is the point: the dashboard had grown 22 sizes, twelve of them inside a
+       3.5px range, and a difference nobody can perceive does not read as a
+       hierarchy — it reads as carelessness. If a new size seems needed, one of
+       these six is wrong for the job; do not add a seventh. */
+    --t-hero: 2.5rem;    /* the one big number on a screen */
+    --t-xl: 1.75rem;     /* a metric's number, a screen title */
+    --t-lg: 1.25rem;     /* a section heading */
+    --t-md: 1rem;        /* body, and a row's value at 600 */
+    --t-sm: .8125rem;    /* explanatory text, meta */
+    --t-xs: .6875rem;    /* labels, uppercase and tracked. Nothing else */
+    /* Line height belongs to the scale. One global 1.5 left headings loose and
+       small text cramped, because those two want opposite things. */
+    --lh-tight: 1.15;    /* headings and big numbers */
+    --lh-body: 1.55;     /* body */
+    --lh-read: 1.6;      /* a paragraph somebody has to read */
+    /* THREE radii and the pill. Was six — 7, 8, 10, 12, 14 and 22px, side by
+       side on things that mean the same thing. */
+    --r-sm: 10px;        /* chips, inputs, small controls */
+    --r: 16px;           /* cards, rows, blocks */
+    --r-lg: 24px;        /* sheets, and the scroll box */
+    /* One 4px spacing scale, replacing twenty-odd paddings that differed by a
+       pixel or two. A card is --s3 or --s4 and nothing else. */
+    --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px; --s5: 40px;
     --shadow: 0 10px 30px -16px rgba(12,14,13,.18), 0 2px 6px rgba(12,14,13,.06);
     --display: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
-    font-family: var(--body); line-height: 1.5;
+    font-family: var(--body); line-height: var(--lh-body);
     background: var(--bg); color: var(--ink); min-height: 100vh;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     display: flex; flex-direction: column; align-items: center;
@@ -112,8 +136,10 @@ export const baseCss = /* css */ `
      tint. Higher specificity than a bare .card on purpose: every page's own CSS
      is declared after this one, and one of them kept turning the shell grey. */
   body > .card { background: var(--bg); }
-  h1 { font-family: var(--display); font-weight: 800; font-size: 1.75rem; letter-spacing: -.03em; margin-bottom: 10px; text-wrap: balance; }
-  h2 { font-family: var(--display); font-weight: 800; font-size: 1.18rem; letter-spacing: -.02em; margin: 24px 0 8px; }
+  h1 { font-family: var(--display); font-weight: 800; font-size: var(--t-xl); line-height: var(--lh-tight);
+       letter-spacing: -.03em; margin-bottom: 10px; text-wrap: balance; }
+  h2 { font-family: var(--display); font-weight: 800; font-size: var(--t-lg); line-height: var(--lh-tight);
+       letter-spacing: -.02em; margin: var(--s4) 0 var(--s2); }
   p.sub { color: var(--muted); margin-bottom: 22px; }
   .btn {
     display: block; width: 100%; text-align: center; padding: 15px 20px;
@@ -143,7 +169,7 @@ export const baseCss = /* css */ `
   .btn:active { transform: scale(.985); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
-  .muted { color: var(--muted); font-size: .85rem; }
+  .muted { color: var(--muted); font-size: var(--t-sm); line-height: var(--lh-read); }
   input, textarea, select {
     width: 100%; padding: 13px 14px; border: 1px solid var(--field-border); border-radius: 12px;
     font-size: 1rem; font-family: inherit; background: var(--bg); color: var(--ink);
@@ -163,7 +189,7 @@ export const baseCss = /* css */ `
      The card MOCKS keep their uppercase (.pv-lbl, .pvg-lbl): those transcribe
      what Apple and Google actually print, and lowercasing them would make the
      preview lie about the real card. */
-  label { font-size: .78rem; font-weight: 700; letter-spacing: .01em;
+  label { font-size: var(--t-sm); font-weight: 700; letter-spacing: .01em;
           color: var(--muted); display: block; margin: 14px 0 6px; }
   /* The one place our own name appears inside a merchant's dashboard, and the
      quietest thing on the page on purpose: what they are looking at is their

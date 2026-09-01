@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
+import { readFileSync } from "node:fs";
 import { CHURN_DAYS, FLAG_GUIDE } from "../src/health.js";
 import { V2_SCREENS } from "../src/routes/dashboard.js";
 import {
@@ -1540,7 +1541,7 @@ describe("dashboard information architecture", () => {
      */
     it("reserves its own height, and lifts the toast above itself", () => {
       // The page does not scroll any more, so the SHEET carries the clearance.
-      expect(html).toContain("padding: 0 16px calc(96px + env(safe-area-inset-bottom, 0px));");
+      expect(html).toContain("padding: 0 var(--s3) calc(96px + env(safe-area-inset-bottom, 0px));");
       // The toast is fixed to the viewport, so the sheet's padding does nothing
       // for it — it has to be lifted on its own.
       expect(html).toContain("body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }");
@@ -2690,6 +2691,76 @@ describe("the Home headline", () => {
  * Customers, and the one place the spec asked for something this product
  * refuses to hold.
  */
+/**
+ * The scale, policed.
+ *
+ * This dashboard grew 22 text sizes — twelve of them inside a 3.5px range — six
+ * corner radii and twenty-odd paddings. Every one was a sensible decision made
+ * on its own, with no reference to the others, and together they are what made
+ * the screen read as generated rather than designed. A difference nobody can
+ * perceive is not a hierarchy.
+ *
+ * So the scale is a rule the suite holds, not a intention in a comment. Reading
+ * the SOURCE rather than the rendered page on purpose: the page also carries
+ * the shared kit and the card designer, and the designer's sizes are mimicking
+ * a real wallet pass, which is a different job with different constraints.
+ *
+ * If a new value is genuinely needed here, one of the tokens is wrong for the
+ * job — fix the token. Do not add a seventh size.
+ */
+describe("the dashboard keeps to one scale", () => {
+  const src = readFileSync(new URL("../src/dashboardV2.ts", import.meta.url), "utf8");
+  const css = src.slice(src.indexOf("const css = /* css */ `"), src.indexOf("const js = /* js */ `"));
+  const values = (prop: string) =>
+    [...new Set([...css.matchAll(new RegExp(prop + ": ([^;}]+)", "g"))].map((m) => m[1]!.trim()))];
+
+  it("sizes text from the six tokens and nothing else", () => {
+    const off = values("font-size").filter(
+      // .48em is a RATIO of its parent — the share beside a health count — not
+      // a size, so it moves when the token it sits inside moves.
+      (v) => !v.startsWith("var(--t-") && v !== ".48em",
+    );
+    expect(off, "text sizes off the scale: " + off.join(", ")).toEqual([]);
+  });
+
+  it("rounds corners from the three tokens and the pill", () => {
+    const ok = /^(0|999px|var\(--r(-sm|-lg)?\)|0 var\(--r\) var\(--r\) 0|var\(--r-lg\) var\(--r-lg\) 0 0)$/;
+    const off = values("border-radius").filter((v) => !ok.test(v));
+    expect(off, "radii off the scale: " + off.join(", ")).toEqual([]);
+  });
+
+  it("spaces from the one 4px scale", () => {
+    const off = values("padding").filter((v) =>
+      // A calc() has spaces of its own, so lift it out before splitting the
+      // shorthand — otherwise "calc(96px + …)" reads as three bad values.
+      // Greedy to the LAST bracket: a calc() here nests an env(), so a lazy
+      // match stops inside it and leaves "0px)" looking like a bad value.
+      !v.replace(/calc\(.*\)/, "calc")
+        .split(/\s+/)
+        .every((part) => part.startsWith("var(--s") || part === "0" || part === "calc"),
+    );
+    expect(off, "padding off the scale: " + off.join(", ")).toEqual([]);
+  });
+
+  /**
+   * The jump between steps is the point. Twelve sizes inside 3.5px is what this
+   * replaced, so the tokens themselves have to stay far enough apart to read as
+   * levels — roughly 1.25× or more, every step.
+   */
+  it("keeps the steps far enough apart to be seen", () => {
+    const kit = readFileSync(new URL("../src/ui/kit.ts", import.meta.url), "utf8");
+    const steps = ["--t-hero", "--t-xl", "--t-lg", "--t-md", "--t-sm", "--t-xs"].map((t) => {
+      const m = kit.match(new RegExp(t + ": ([\\d.]+)rem"));
+      expect(m, t + " is missing from the scale").toBeTruthy();
+      return Number(m![1]);
+    });
+    for (let i = 0; i < steps.length - 1; i++) {
+      expect(steps[i]! / steps[i + 1]!, `${steps[i]}rem over ${steps[i + 1]}rem is too small a step`)
+        .toBeGreaterThanOrEqual(1.18);
+    }
+  });
+});
+
 describe("the customers screen", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
   const list = html.slice(html.indexOf("function customersScreen()"), html.indexOf("function custCard(x)"));
