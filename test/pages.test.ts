@@ -2790,6 +2790,68 @@ describe("the sparkline, actually run", () => {
  * Three visual decisions that are easy to undo by accident and impossible to
  * see in a test that only reads text.
  */
+/**
+ * A handler wired to markup that does not exist.
+ *
+ * This shipped. The Log out button moved from Shop into the ⋯ menu and its
+ * handler was left behind, so accountPanel ran
+ * `div.querySelector("[data-out]").onclick = …` against null, threw, and never
+ * returned — and the Shop screen rendered as a completely blank page.
+ *
+ * Nothing caught it. The name `div` is defined and the syntax is valid, so
+ * both compile suites passed; the failure is a runtime null. This is the
+ * cheap static check that would have.
+ */
+describe("no handler is wired to markup that isn't there", () => {
+  const src = readFileSync(new URL("../src/dashboardV2.ts", import.meta.url), "utf8");
+  const js = src.slice(src.indexOf("const js = /* js */ `"));
+
+  /**
+   * Judged per top-level function, and only for elements that function BUILT
+   * itself — `const div = document.createElement(…)`, then `div.innerHTML = …`,
+   * then `div.querySelector(…)`. A helper handed a root element queries markup
+   * somebody else rendered, and rightly, so those are not its business.
+   *
+   * Scoping matters both ways: a whole-file check passes this bug, because
+   * [data-out] does exist — in deadEnd(), a different screen.
+   */
+  it("only looks up data- attributes on elements it renders itself", () => {
+    const starts = [...js.matchAll(/\n    (?:async )?function [A-Za-z0-9_]+\(/g)].map((m) => m.index!);
+    const bad: string[] = [];
+    starts.forEach((from, i) => {
+      const body = js.slice(from, starts[i + 1] ?? js.length);
+      const name = body.match(/function ([A-Za-z0-9_]+)\(/)![1]!;
+      const built = [...new Set(
+        [...body.matchAll(/(?:const|let)\s+([A-Za-z0-9_]+)\s*=\s*document\.createElement/g)].map((m) => m[1]!),
+      )];
+      if (!built.length) return;
+      const looked = new Set(
+        [...body.matchAll(new RegExp(
+          "\\b(?:" + built.join("|") + ")\\.querySelector(?:All)?\\(\"\\[(data-[a-z0-9-]+)\\]\"\\)", "g"),
+        )].map((m) => m[1]!),
+      );
+      const declared = new Set([...body.matchAll(/[\s"'](data-[a-z0-9-]+)[\s=>"']/g)].map((m) => m[1]!));
+      for (const a of looked) {
+        if (!declared.has(a)) bad.push(`${name}() looks up [${a}] but never renders it`);
+      }
+    });
+    expect(bad, bad.join("; ")).toEqual([]);
+  });
+
+  /**
+   * And a screen that throws anyway must not leave a blank page. "Nothing on
+   * screen" and "this screen is empty" look identical, which is how the Shop
+   * screen sat blank without anybody noticing it was an error.
+   */
+  it("says a screen broke rather than rendering nothing", () => {
+    expect(js).toContain("function brokenScreen()");
+    expect(js).toContain("This screen didn’t load");
+    const render = js.slice(js.indexOf("function render()"), js.indexOf("function brokenScreen()"));
+    expect(render).toContain("try {");
+    expect(render).toContain("el = brokenScreen();");
+  });
+});
+
 describe("the surfaces and the edges", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
 

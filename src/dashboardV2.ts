@@ -1168,7 +1168,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         if (body.ok) { toast("Password updated ✓"); div.querySelector("[data-cur]").value = ""; div.querySelector("[data-new]").value = ""; }
         else toast(body.error || "Couldn’t update");
       };
-      div.querySelector("[data-out]").onclick = async () => { await api("/logout", { method: "POST" }); location.reload(); };
       return div;
     }
 
@@ -1447,7 +1446,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       let el = null;
       for (const [pattern, build] of ROUTES) {
         const params = matchRoute(pattern, S.path);
-        if (params) { el = build(params); break; }
+        if (!params) continue;
+        // A screen that throws used to render NOTHING, which looks exactly
+        // like a screen with nothing on it — which is how a handler wired to a
+        // button that had been deleted sat on the Shop screen unnoticed. Say
+        // it broke, and leave the navigation working so there is a way out.
+        try {
+          el = build(params);
+        } catch (e) {
+          console.error("[dashboard] screen failed:", S.path, e);
+          el = brokenScreen();
+        }
+        break;
       }
       // An address inside /dashboard that no screen claims. The server only
       // serves the ones in V2_SCREENS, so this is reachable by typing — say so
@@ -1465,6 +1475,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         a.classList.toggle("on", p === "/" ? S.path === "/" : S.path.indexOf(p) === 0);
       });
       wireInfo(host);
+    }
+
+    /** A screen that threw. Honest, and never a blank page. */
+    function brokenScreen() {
+      const d = document.createElement("div");
+      d.innerHTML = '<h2 class="sec first">This screen didn’t load</h2>' +
+        '<p class="muted">Something went wrong drawing it. The rest of the dashboard still works.</p>' +
+        '<button class="btn btn-ghost" style="width:auto;margin-top:var(--s3)" data-retry>Try again</button>';
+      d.querySelector("[data-retry]").onclick = () => render();
+      return d;
     }
 
     function notFoundScreen() {
