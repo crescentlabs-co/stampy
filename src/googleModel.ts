@@ -381,6 +381,26 @@ export function buildLoyaltyObject(
       value: passBarcode(row, card).message,
       alternateText: passBarcode(row, card).altText,
     },
+    // Per-CUSTOMER links. The class carries Terms and Privacy because those are
+    // the same for everyone; the stop link is not — it names this person's
+    // serial — so it can only live on the object.
+    //
+    // Written at creation, like the barcode beside it, which means Android
+    // cards issued before this do not have it until a resync. Apple rebuilds
+    // its pass on every fetch and needs no such thing.
+    ...(config.baseUrl
+      ? {
+          linksModuleData: {
+            uris: [
+              {
+                uri: `${config.baseUrl}/stop/${row.serial}`,
+                description: "Stop messages",
+                id: "stop",
+              },
+            ],
+          },
+        }
+      : {}),
     ...buildLoyaltyPatch(row, card, business),
   };
 }

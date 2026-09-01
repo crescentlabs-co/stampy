@@ -43,7 +43,7 @@ import { nudgeState, type NudgeState } from "./db.js";
  */
 export const MAX_NUDGES_PER_WEEK = 5;
 
-export type NudgeRefusal = "rate-limited" | "removed";
+export type NudgeRefusal = "rate-limited" | "removed" | "opted-out";
 
 /**
  * Kept as a pure function over `nudgeState` so the group the owner *sees* and
@@ -51,6 +51,11 @@ export type NudgeRefusal = "rate-limited" | "removed";
  * what happened when the cap lived in a browser dialog instead.
  */
 export function canNudge(state: NudgeState): { ok: true } | { ok: false; reason: NudgeRefusal } {
+  // Opted out comes FIRST, before the card and before the cap. It is the one
+  // refusal that is a decision the customer made rather than a state they are
+  // passing through, and an owner reading "at the weekly cap" about somebody who
+  // has asked to be left alone would wait a week and try again.
+  if (state.optedOut) return { ok: false, reason: "opted-out" };
   if (state.removed) return { ok: false, reason: "removed" };
   if (state.nudges7d >= MAX_NUDGES_PER_WEEK) return { ok: false, reason: "rate-limited" };
   return { ok: true };

@@ -36,6 +36,7 @@ import {
   counterActivity,
   ensureMerchantForOwner,
   currentSlug,
+  logMessage,
   merchantAccount,
   merchantForOwner,
   clearResetToken,
@@ -659,11 +660,23 @@ const BUCKETS = [
     hint: "removed it from their wallet — nothing can reach them",
     nudgeable: false,
   },
+  // A decision they made, not a state they are passing through — which is why
+  // it is worded as theirs and carries no hint about when it lifts. It does not.
+  {
+    key: "opted-out",
+    label: "Asked not to be messaged",
+    hint: "they turned messages off from their card — stamps still reach them",
+    nudgeable: false,
+  },
 ] as const;
 
 type BucketKey = (typeof BUCKETS)[number]["key"];
 
-function bucketOf(nudges7d: number, removed: boolean): BucketKey {
+// Same order as canNudge refuses in, and for the same reason: a customer who
+// has asked to be left alone must not be filed under "at the weekly cap", which
+// reads as "try again next week".
+function bucketOf(nudges7d: number, removed: boolean, optedOut: boolean): BucketKey {
+  if (optedOut) return "opted-out";
   if (removed) return "removed";
   return nudges7d >= MAX_NUDGES_PER_WEEK ? "cooling" : "ready";
 }
@@ -822,6 +835,9 @@ interface CustomerView {
   unanswered: number;
   nudges7d: number;
   removed: boolean;
+  /** They asked us to stop messaging them. Still a customer, still counted in
+   *  visits and health — just not reachable by a campaign. */
+  optedOut: boolean;
   bucket: BucketKey;
   /** Which health group they are in — a different axis to `bucket`. */
   health: HealthKey;
@@ -856,6 +872,7 @@ async function customerViews(cards: CardRow[], cycle: ReturnCycle = RETURN_CYCLE
         nudges7d: c.nudges_7d,
         unanswered: c.unanswered_nudges,
         removed: c.removed,
+        optedOut: c.opted_out,
       });
       out.push({
         serial: c.serial,
@@ -874,7 +891,8 @@ async function customerViews(cards: CardRow[], cycle: ReturnCycle = RETURN_CYCLE
         unanswered: c.unanswered_nudges,
         nudges7d: c.nudges_7d,
         removed: c.removed,
-        bucket: bucketOf(c.nudges_7d, c.removed),
+        optedOut: c.opted_out,
+        bucket: bucketOf(c.nudges_7d, c.removed, c.opted_out),
         health: healthOf(c.visits, lastDays, avgGapDays, cycle),
         canNudge: allowed.ok,
         blocked: allowed.ok ? "" : allowed.reason,
@@ -988,8 +1006,24 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
       // "deleted the card" are not the same news.
       cooling: members.filter((c) => c.bucket === "cooling").length,
       removed: members.filter((c) => c.removed).length,
+      optedOut: members.filter((c) => c.optedOut).length,
     };
   });
+
+  /**
+   * How many of these people a campaign could actually reach.
+   *
+   * A second number beside `active`, never a replacement for it. Someone who
+   * opted out is still a customer — they still visit, still count in the health
+   * groups, still spend — and dropping them from the shop's size would make
+   * opting out look like churn.
+   *
+   * It is the denominator for anything about messaging: an owner told "24 sent"
+   * against 40 customers reads a failure, and told "24 of 26 reachable" reads
+   * what actually happened.
+   */
+  const reachable = customers.filter((c) => c.canNudge).length;
+  const optedOut = customers.filter((c) => c.optedOut).length;
 
   res.json({
     customers,
@@ -1008,7 +1042,7 @@ dashboardRouter.get("/api/customers", requireOwner, async (req: OwnerRequest, re
       regularGapDays: REGULAR_GAP[cycle],
       lostAfterDays: LOST_AFTER[cycle],
     },
-    counts: { active, issuedNeverAdded, removed },
+    counts: { active, issuedNeverAdded, removed, reachable, optedOut },
     limits: { perWeek: MAX_NUDGES_PER_WEEK },
     cards: owned.map((c) => ({ id: c.id, name: c.name })),
   });
@@ -1078,13 +1112,41 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
     targets = everyone.filter((c) => c.bucket === body.target);
   }
 
-  const skipped = { rateLimited: 0, removed: 0 };
+  const skipped = { rateLimited: 0, removed: 0, optedOut: 0 };
   const eligible = targets.filter((c) => {
     if (c.canNudge) return true;
     if (c.blocked === "rate-limited") skipped.rateLimited++;
+    else if (c.blocked === "opted-out") skipped.optedOut++;
     else skipped.removed++;
     return false;
   });
+
+  /**
+   * A message we correctly did not send is still part of what happened.
+   *
+   * `messages` is the only history of messaging that exists — passes.message
+   * holds one wording and the next nudge overwrites it — so a send that was
+   * suppressed for consent has to leave a row, or "we respected this person's
+   * choice" is provable nowhere. `delivered:false` with the reason names it as
+   * a non-delivery rather than a failure to reach a phone.
+   *
+   * Not awaited: it is a record of something that already did not happen, and
+   * an owner's send must not wait on it.
+   */
+  for (const c of targets) {
+    if (c.blocked !== "opted-out") continue;
+    void logMessage({
+      eventId: null,
+      serial: c.serial,
+      customerId: c.customerId,
+      cardId: c.cardId,
+      kind: "suppressed-opt-out",
+      body: message,
+      platform: "",
+      delivered: false,
+      failReason: "opted-out",
+    }).catch((err: unknown) => console.error("[message] suppression not recorded:", err));
+  }
 
   const serials = eligible.slice(0, 1000);
   let sent = 0;
@@ -1111,6 +1173,8 @@ dashboardRouter.post("/api/nudge", requireOwner, async (req: OwnerRequest, res) 
     for (let i = next++; i < serials.length; i = next++) {
       const c = serials[i]!;
       const card = cardById.get(c.cardId)!;
+      // Refused inside applyAndPush too — this is the pre-filter, that is the
+      // gate. A null back from a nudge means the person is opted out.
       const r = await applyAndPush(card, c.serial, "nudge", () => setMessage(c.serial, message), {
         nudgeText: message,
         actor: `owner:${req.owner!.id}`,

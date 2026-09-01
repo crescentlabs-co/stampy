@@ -12,6 +12,7 @@
  * collapsing one into the other.
  */
 import { describe, expect, it } from "vitest";
+import { canNudge } from "../src/winback.js";
 import {
   HEALTH,
   healthOf,
@@ -179,5 +180,30 @@ describe("healthOf", () => {
         expect(healthOf(0, 0, Infinity, cycle)).toBe("new");
       }
     });
+  });
+});
+
+describe("a customer who asked not to be messaged", () => {
+  const base = { nudges7d: 0, unanswered: 0, removed: false, optedOut: false };
+
+  it("is refused, and refused for THAT reason", () => {
+    expect(canNudge({ ...base, optedOut: true })).toEqual({ ok: false, reason: "opted-out" });
+  });
+
+  /**
+   * Opting out outranks every other refusal, and the reason matters as much as
+   * the refusal: an owner told "at the weekly limit" about somebody who has
+   * asked to be left alone would wait a week and try again.
+   */
+  it("outranks the weekly cap and the deleted card", () => {
+    expect(canNudge({ ...base, optedOut: true, nudges7d: 99 }).ok).toBe(false);
+    expect((canNudge({ ...base, optedOut: true, nudges7d: 99 }) as { reason: string }).reason)
+      .toBe("opted-out");
+    expect((canNudge({ ...base, optedOut: true, removed: true }) as { reason: string }).reason)
+      .toBe("opted-out");
+  });
+
+  it("still lets everyone else through", () => {
+    expect(canNudge(base)).toEqual({ ok: true });
   });
 });

@@ -11,7 +11,7 @@ process.env.DEMO_CARD_ID = "demo-card";
 const {
   affordableRewards, benefitLines, benefitsText, buildPassJson, cardTerms, catalogueSummary,
   cheapestReward, getHeaderFieldValue, isFinalReward, isRewardReady, memberSince,
-  membershipTerms, messageFieldValue, milestoneSummary, nextMilestone, passBarcode,
+  legalText, membershipTerms, messageFieldValue, milestoneSummary, nextMilestone, passBarcode,
   pointsTerms, progressText, rewardFor, rewardTerms, stampDots, stampGrid, stripKey,
   targetFor, visibleMessage,
 } = await import("../src/passModel.js");
@@ -356,7 +356,19 @@ describe("buildPassJson", () => {
 
     expect(back.legal.value).toContain("https://stampy.example.test/terms");
     expect(back.legal.value).toContain("https://stampy.example.test/privacy");
-    expect(back.legal.value).toContain("delete this card from your wallet"); // the opt-out
+    // The opt-out is a LINK now, per pass, and it carries this card's serial so
+    // it resolves to the person rather than to one of their cards. Deleting the
+    // card is no longer the only way to stop being messaged, and the privacy
+    // notice stopped saying it was in the same change.
+    expect(back.legal.value).toContain("https://stampy.example.test/stop/" + row().serial);
+    expect(back.legal.value).not.toContain("delete this card from your wallet");
+  });
+
+  it("omits the stop link rather than printing a broken one", () => {
+    // legalText() is exported and called with no serial in a couple of places;
+    // a bare /stop/ would be a dead link on the back of a real card.
+    expect(legalText()).not.toContain("/stop/");
+    expect(legalText()).toContain("/privacy");
   });
 
   it("adds no lock-screen banner for the terms fields", () => {

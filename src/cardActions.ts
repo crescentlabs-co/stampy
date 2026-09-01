@@ -18,6 +18,7 @@ import {
   getPass,
   logEvent,
   logMessage,
+  optedOutSerial,
   pushTokensForCard,
   pushTokensForSerial,
   touchPassesForCard,
@@ -97,6 +98,17 @@ export async function applyAndPush(
   const { nudgeText, merchantId, deferPush, ...meta } = opts;
   const existing = await getPass(serial);
   if (!existing) return null;
+
+  // A customer who asked us to stop gets no marketing, whichever way the send
+  // was started. `canNudge` already filters the dashboard's list, but that is a
+  // PRE-FILTER in the route — this is the gate, and it is here because every
+  // nudge in the product passes through this function and nothing else does.
+  //
+  // Refused BEFORE update(): the mutation for a nudge is setMessage(), so
+  // running it would write wording onto a card nobody is allowed to message and
+  // Apple would banner it on the pass's next fetch. Only marketing is stopped;
+  // a stamp, an undo and a redeem all fall straight through.
+  if (eventType === "nudge" && (await optedOutSerial(serial))) return null;
 
   let onCard = card;
   if (existing.card_id !== card.id) {

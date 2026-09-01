@@ -2334,6 +2334,76 @@ async function main() {
     "...and holds back the one messaged moments ago",
   );
 
+  // ------------------------------------------------- the customer's own opt-out ----
+  //
+  // The one thing this feature has to get right: marketing stops, the card
+  // does not. A customer who opted out and then found their stamps had stopped
+  // updating would think the switch was broken and complain at the counter.
+  const stopPage = await get("/stop/" + p1.serial);
+  expect(stopPage.status === 200 && stopPage.body.includes("Stop sending me messages"),
+    "a customer can open the stop-messages page from their own card");
+  expect(stopPage.body.includes("Your card keeps working either way"),
+    "...and it says plainly that stamps keep arriving");
+  expect((await get("/stop/" + "not-a-real-serial")).status === 404,
+    "an unknown serial gets no page rather than a blank one");
+
+  // A plain form post, deliberately: the opt-out must work with JavaScript off.
+  const optOut = await fetch(base + "/stop/" + p1.serial, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "stop=1",
+  });
+  expect(optOut.status === 200 && (await optOut.text()).includes("Turn messages back on"),
+    "opting out saves, and the page offers the way back");
+
+  const { optedOutSerial: optedOutNow } = await import("../src/db.js");
+  expect(await optedOutNow(p1.serial), "the opt-out is recorded against the PERSON");
+
+  // The dashboard reports it, in the group and in the reachable count.
+  const afterOpt = JSON.parse(
+    (await get("/dashboard/api/customers?cardId=all", { headers: { cookie: cookieNow } })).body,
+  );
+  const optedRow = afterOpt.customers.find((c: any) => c.serial === p1.serial);
+  expect(optedRow && optedRow.optedOut === true && optedRow.canNudge === false,
+    "the owner sees that customer as opted out and unreachable");
+  expect(optedRow.bucket === "opted-out" && optedRow.blocked === "opted-out",
+    "...filed under their own decision, not under the weekly cap");
+  expect(afterOpt.counts.optedOut >= 1 && afterOpt.counts.reachable < afterOpt.counts.active,
+    "reachable is a smaller number than customers, and both are reported");
+
+  // Refused however the send was started — the route filters, and applyAndPush
+  // refuses again underneath it.
+  const nudgeOpted = await fetch(base + "/dashboard/api/nudge", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
+    body: JSON.stringify({ message: "please come back", target: [p1.serial] }),
+  });
+  const nudgeOptedOut = JSON.parse(await nudgeOpted.text());
+  expect(nudgeOptedOut.total === 0 && nudgeOptedOut.skipped.optedOut >= 1,
+    "a nudge aimed straight at an opted-out customer sends nothing");
+
+  const { applyAndPush: rawPush } = await import("../src/cardActions.js");
+  const { getCard: cardOf, setMessage: setMsg } = await import("../src/db.js");
+  const rawCard = (await cardOf(p1.card_id))!;
+  expect(await rawPush(rawCard, p1.serial, "nudge", () => setMsg(p1.serial, "raw"), {
+    nudgeText: "raw", actor: "owner:test",
+  }) === null, "...and the raw entry point refuses it too, not just the route");
+
+  // AND YET the card still works. This is the whole point of the split.
+  const stampOpted = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders,
+    body: JSON.stringify({ serial: p1.serial, force: true }),
+  });
+  expect(stampOpted.status === 200, "an opted-out customer can still be stamped");
+
+  // And they can change their mind, from the same page.
+  const optIn = await fetch(base + "/stop/" + p1.serial, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "stop=0",
+  });
+  expect(optIn.status === 200, "turning messages back on is one press on the same page");
+  expect(!(await optedOutNow(p1.serial)), "...and it really is off again");
+
   // A serial that isn't the owner's is silently dropped (only owned serials survive)
   const oNudgeForeign = await fetch(base + "/dashboard/api/nudge", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookie2 },
@@ -3256,8 +3326,11 @@ async function main() {
     JSON.parse((await get("/dashboard/api/customers", { headers: { cookie: cookieNow } })).body);
   const groups = (await custView()).buckets.map((b: any) => b.key);
   expect(
-    JSON.stringify(groups) === JSON.stringify(["ready", "cooling", "removed"]),
-    "the Customers tab has exactly the three cooldown groups",
+    JSON.stringify(groups) === JSON.stringify(["ready", "cooling", "removed", "opted-out"]),
+    // Four now. "opted-out" is last and is the only one that is a decision the
+    // customer made rather than a state they are passing through — which is why
+    // it is its own group and not folded into "removed".
+    "the Customers tab has exactly the four reachability groups",
   );
   expect(
     (await custView()).buckets.every((b: any) => typeof b.customers === "number"),

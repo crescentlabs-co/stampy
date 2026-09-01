@@ -353,10 +353,21 @@ export function messageFieldValue(
   return row.message + mark;
 }
 
-/** Links to the policies, for the back of the card. PassKit linkifies bare URLs. */
-export function legalText(): string {
+/**
+ * Links to the policies, for the back of the card. PassKit linkifies bare URLs.
+ *
+ * The stop link is per-pass, which is why this takes a serial: it is the only
+ * identifier a customer has, and it resolves to the PERSON, so one press covers
+ * every card they hold at that shop.
+ *
+ * The old wording said the only way to stop was deleting the card. That was
+ * true when it was written and is not any more — and it was the sentence the
+ * privacy notice made a promise out of, so both moved together.
+ */
+export function legalText(serial = ""): string {
   const base = config.baseUrl || "";
-  return `We never ask for your name, phone number or email. To stop, delete this card from your wallet.\n\nTerms: ${base}/terms\nPrivacy: ${base}/privacy`;
+  const stop = serial ? `\nStop messages: ${base}/stop/${serial}` : "";
+  return `We never ask for your name, phone number or email.\n\nTerms: ${base}/terms\nPrivacy: ${base}/privacy${stop}`;
 }
 
 /**
@@ -579,7 +590,7 @@ export function buildPassJson(
         {
           key: "legal",
           label: "Terms & privacy",
-          value: legalText(),
+          value: legalText(row.serial),
         },
       ],
     },

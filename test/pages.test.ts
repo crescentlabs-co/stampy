@@ -24,6 +24,7 @@ import {
   posterPage,
   privacyPage,
   privacyPageBm,
+  stopMessagesPage,
   supportPage,
   resetPage,
   shopNotOpenPage,
@@ -61,6 +62,10 @@ const pages: [string, string][] = [
   ["dashboard (email off, no contact)", dashboardPage(false, "")],
   ["admin", adminPage()],
   ["reset", resetPage()],
+  // No inline script on purpose: a consent control that needs a working
+  // script is a consent control that can fail silently, so it is a form.
+  ["stop messages (on)", stopMessagesPage("Kopi Corner", false)],
+  ["stop messages (off)", stopMessagesPage("Kopi Corner", true)],
   [
     "landing",
     landingPage(
@@ -88,7 +93,8 @@ const pages: [string, string][] = [
  * rather than allowed to slip through that guard — so a page that LOSES its
  * script still fails.
  */
-const SCRIPTLESS = new Set(["customer card", "customer card (no card yet)"]);
+const SCRIPTLESS = new Set(["customer card", "customer card (no card yet)",
+  "stop messages (on)", "stop messages (off)"]);
 
 describe("inline page scripts parse", () => {
   for (const [name, html] of pages) {
@@ -3027,13 +3033,29 @@ describe("the customers screen", () => {
    * a promise about. What is real — their card is gone, or they are at the
    * weekly limit — is shown as Reachability above it.
    */
-  it("shows real reachability, and marks the marketing toggle as an example", () => {
+  it("shows real reachability, the marketing state included", () => {
     expect(one).toContain("Reachability");
     expect(one).toContain("x.removed");
     expect(one).toContain("x.canNudge");
     expect(one).toContain("Card removed");
     expect(one).toContain("At the weekly limit");
-    expect(one).toContain("'<div class=\"drow\"><span>Marketing messages' + EG");
+    // The marketing state is REAL now. It was chipped as an Example while there
+    // was no consent column, because a switch that looked live but did not stop
+    // messages would have been this product lying about consent.
+    expect(one).toContain("x.optedOut");
+    expect(one).toContain("Asked not to be messaged");
+    expect(one).not.toContain("'<div class=\"drow\"><span>Marketing messages' + EG");
+  });
+
+  /**
+   * The owner may read a customer's consent and may never write it. A dashboard
+   * that could switch someone's marketing back on would make the whole
+   * mechanism worthless, so the screen carries no control for it at all.
+   */
+  it("gives the owner no way to switch a customer's marketing back on", () => {
+    expect(one).toContain("only they can, from the link on the back of their card");
+    expect(one).not.toContain("data-optout");
+    expect(one).not.toMatch(/api\("\/customer[^"]*opt/i);
   });
 
   /**
@@ -3559,5 +3581,53 @@ describe("a staging copy announces itself on every page", () => {
     } finally {
       delete process.env.ENV_NAME;
     }
+  });
+});
+
+/**
+ * The opt-out, as the customer meets it.
+ *
+ * The privacy notice exists in two languages and they are ONE obligation under
+ * PDPA s.7(3), not a translation nicety — src/pages.ts says a discrepancy
+ * between them is worse than either version alone. So the check that they moved
+ * together is a test, not a good intention.
+ */
+describe("stopping messages, as a customer", () => {
+  const en = privacyPage("hello@punchme.test");
+  const bm = privacyPageBm("hello@punchme.test");
+
+  it("no longer tells customers that deleting the card is the only way", () => {
+    // This was true when it was written and stopped being true the moment a
+    // consent column existed. It was also the sentence the notice made a
+    // promise out of, which is why it could not be left behind.
+    expect(en).not.toContain("That is the whole opt-out");
+    expect(en).toContain("Stop messages");
+    expect(bm).toContain("Stop messages");
+  });
+
+  it("says in BOTH languages that the card keeps working", () => {
+    // The honest surprise: stamps still arrive. Somebody expecting silence and
+    // still getting a lock-screen banner would think the switch was broken.
+    expect(en).toContain("Your card keeps working");
+    expect(bm).toContain("Kad anda tetap berfungsi");
+  });
+
+  it("still offers deleting the card as the way to stop everything", () => {
+    expect(en).toContain("To stop everything");
+    expect(bm).toContain("Untuk menghentikan semuanya");
+  });
+
+  it("gives the customer both directions on their own page", () => {
+    const on = stopMessagesPage("Kopi Corner", false);
+    const off = stopMessagesPage("Kopi Corner", true);
+    expect(on).toContain("Stop sending me messages");
+    expect(off).toContain("Turn messages back on");
+    // The one thing this page exists to say.
+    expect(on).toContain("Your card keeps working either way");
+    expect(off).toContain("Your card keeps working either way");
+  });
+
+  it("escapes the shop name, like every other page that prints one", () => {
+    expect(stopMessagesPage("</title><script>x</script>", false)).not.toContain("<script>x</script>");
   });
 });

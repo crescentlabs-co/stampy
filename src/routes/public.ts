@@ -43,6 +43,8 @@ import {
   getCardStampIcon,
   getCustomer,
   getPass,
+  optedOutSerial,
+  setOptedOut,
   getStampStrip,
   logEvent,
   businessNameForCard,
@@ -68,6 +70,7 @@ import {
   landingPage,
   marketingPage,
   notReadyPage,
+  stopMessagesPage,
   optOutPage,
   shopNotOpenPage,
   posterPage,
@@ -655,6 +658,41 @@ publicRouter.get("/c/:cardId/me", async (req, res) => {
   // the cookie carries no name, email or phone, and this page asks for none.
   const known = merchant ? !!readCustomerCookie(req, merchant.id) : false;
   res.type("html").send(customerCardPage(card, business, logoVersion, known));
+});
+
+/**
+ * The customer's own switch for marketing messages, opened from the back of
+ * their card. GET shows where they stand; POST changes it.
+ *
+ * Public and unauthenticated on purpose. The serial is the only thing a
+ * customer has — there is no account and we hold no email — and it is an
+ * unguessable UUID, so reaching this needs the card physically in hand. The
+ * worst a stranger with it could do is silence or restore somebody's marketing,
+ * on a page that says so and offers the opposite button.
+ *
+ * Marketing only. Nothing here touches the notification a stamp produces, and
+ * the page says that in as many words.
+ */
+async function stopPage(serial: string, done: boolean, res: import("express").Response): Promise<void> {
+  const pass = await getPass(serial).catch(() => null);
+  if (!pass) return void res.status(404).type("html").send(notReadyPage());
+  const card = await getCard(pass.card_id).catch(() => null);
+  const business = card ? await businessNameForCard(card).catch(() => "this shop") : "this shop";
+  res.type("html").send(stopMessagesPage(business, await optedOutSerial(serial), done));
+}
+
+publicRouter.get("/stop/:serial", async (req, res) => {
+  await stopPage(String(req.params.serial ?? ""), false, res);
+});
+
+publicRouter.post("/stop/:serial", async (req, res) => {
+  const serial = String(req.params.serial ?? "");
+  // Anything other than an explicit "1" turns messages back ON, so a mangled
+  // body can only ever fail towards the customer being reachable again rather
+  // than silently opting somebody out.
+  const stop = String((req.body ?? {}).stop ?? "") === "1";
+  await setOptedOut(serial, stop).catch(() => false);
+  await stopPage(serial, true, res);
 });
 
 publicRouter.get("/c/:cardId/poster", async (req, res) => {

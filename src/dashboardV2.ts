@@ -1862,11 +1862,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /**
      * One customer's own page.
      *
-     * Everything here is real except the marketing toggle, which is marked as
-     * an example: there is no consent column in the database, and a switch that
-     * looked live but did not actually stop messages would be this product
-     * lying about consent on the one subject its privacy page makes a promise
-     * about. What IS real sits above it, under Reachability.
+     * Everything here is real, the marketing state included. It used to be an
+     * Example chip: there was no consent column, and a switch that looked live
+     * but did not stop messages would have been this product lying about
+     * consent on the one subject its privacy page makes a promise about. There
+     * is a column now (customers.opted_out_at) and the state below is read from
+     * it.
+     *
+     * It is READ-ONLY here, and that is the point. Only the customer may change
+     * it, from the link on the back of their own card — an owner who could
+     * switch someone's consent back on from a dashboard would make the whole
+     * mechanism worthless.
      */
     function customerScreen(code) {
       const d = document.createElement("div");
@@ -1890,11 +1896,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           ? "Every " + Math.round(x.avgGapDays) + " days"
           : "Not enough visits yet";
         // Real, and the honest version of "can I contact this person".
-        const reach = x.removed
-          ? ["Card removed", "They deleted the card from their wallet. Nothing can reach them."]
-          : x.canNudge
-            ? ["Can be messaged", "They are inside the weekly limit."]
-            : ["At the weekly limit", "They have had the most messages allowed in the last 7 days."];
+        // Same order canNudge refuses in, so the screen and the server never
+        // give different reasons for the same person.
+        const reach = x.optedOut
+          ? ["Asked not to be messaged",
+             "They turned marketing off from their own card. Only they can turn it " +
+             "back on. Stamps still reach them normally."]
+          : x.removed
+            ? ["Card removed", "They deleted the card from their wallet. Nothing can reach them."]
+            : x.canNudge
+              ? ["Can be messaged", "They are inside the weekly limit."]
+              : ["At the weekly limit", "They have had the most messages allowed in the last 7 days."];
 
         host.innerHTML =
           '<h2 class="sec first">' + esc(x.code) +
@@ -1913,9 +1925,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<h2 class="sec">Reachability</h2>' +
           '<div class="drow"><span>' + reach[0] + "</span></div>" +
           '<p class="muted">' + reach[1] + "</p>" +
-          '<div class="drow"><span>Marketing messages' + EG + "</span><b>On</b></div>" +
-          '<p class="muted">Letting a customer opt out of marketing is coming. ' +
-          "Today the only limit is the weekly one above.</p>" +
+          '<div class="drow"><span>Marketing messages</span><b>' +
+            (x.optedOut ? "Off" : "On") + "</b></div>" +
+          '<p class="muted">' + (x.optedOut
+            ? "They switched this off themselves. You cannot switch it back on — " +
+              "only they can, from the link on the back of their card."
+            : "They can turn this off themselves from the back of their card. " +
+              "Being stamped still notifies them either way.") + "</p>" +
           (x.canNudge
             ? '<h2 class="sec">Message them</h2>' +
               '<textarea data-msg1 rows="3" placeholder="Type your message"></textarea>' +

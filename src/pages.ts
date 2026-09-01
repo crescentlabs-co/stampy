@@ -1097,6 +1097,59 @@ export function optOutPage(): string {
   );
 }
 
+/**
+ * The customer's own switch for marketing messages, opened from the back of
+ * their card.
+ *
+ * Reached by serial, which is unguessable and is the only thing the customer
+ * has — they never had an account and we hold no email to send them a link to.
+ * A stranger would need the card physically in front of them, and the worst
+ * they could do is silence or restore somebody's marketing, which is reversible
+ * on this same page.
+ *
+ * It says plainly what does NOT stop, because the honest surprise here is that
+ * stamps keep arriving. Somebody expecting total silence and still getting a
+ * lock-screen banner would think the switch was broken and never trust it.
+ */
+export function stopMessagesPage(business: string, optedOut: boolean, done = false): string {
+  const title = optedOut ? "Messages are off" : "Messages are on";
+  return page(
+    `${title} — ${business}`,
+    `<div class="card" style="text-align:center">
+      <h1>${esc(title)}</h1>
+      ${done
+        ? `<p class="sub">Saved. ${optedOut
+            ? "You will not get any more offers or reminders from " + esc(business) + "."
+            : "You will get offers and reminders from " + esc(business) + " again."}</p>`
+        : `<p class="sub">${optedOut
+            ? esc(business) + " cannot send you offers or reminders."
+            : esc(business) + " can send you offers and reminders through your card."}</p>`}
+
+      <form method="POST" style="margin-top:18px">
+        <input type="hidden" name="stop" value="${optedOut ? "0" : "1"}">
+        <button class="btn ${optedOut ? "btn-ghost" : "btn-dark"}" type="submit">
+          ${optedOut ? "Turn messages back on" : "Stop sending me messages"}
+        </button>
+      </form>
+
+      <!-- The whole reason this page exists is that "stop messages" and "stop
+           my card working" are different things, and a customer has no way to
+           know that unless it is written here. -->
+      <p class="muted" style="margin-top:18px;text-align:left">
+        <b>Your card keeps working either way.</b> You will still collect stamps,
+        still see your progress, and still get the notification when you are
+        stamped &mdash; that is your card updating, not an advert.
+        ${optedOut ? "" : "Turning messages off only stops offers and reminders."}
+      </p>
+      <p class="muted" style="margin-top:10px;text-align:left">
+        You can change this whenever you like, from the same link on the back of
+        your card. To remove the card altogether, delete it from your wallet.
+      </p>
+      <p class="muted" style="margin-top:14px"><a href="/privacy">Privacy Policy</a></p>
+    </div>`,
+  );
+}
+
 // -------------------------------------------------------------- legal ----
 
 const legalCss = /* css */ `
@@ -1158,8 +1211,10 @@ export function supportPage(contactEmail = ""): string {
     <ul>
       <li><strong>Stamps, rewards and whether something counted</strong> are the shop&rsquo;s to
         settle, not ours &mdash; they run the programme and we only run the card. Ask at the counter.</li>
-      <li><strong>To stop</strong>, delete the card from Apple Wallet or Google Wallet. That is the
-        whole opt-out: nothing further reaches you, and there is no account to close.</li>
+      <li><strong>To stop offers and reminders</strong>, open your card and tap &ldquo;Stop messages&rdquo;
+        on the back. Your stamps keep working and you are still told when you are stamped.</li>
+      <li><strong>To stop everything</strong>, delete the card from Apple Wallet or Google Wallet.
+        Nothing further reaches you, and there is no account to close.</li>
       <li><strong>Your data</strong> &mdash; we hold no name, email or phone number for you. To ask
         what we hold, correct it or have it deleted, ${contactLine(contactEmail)} and quote the
         short card code shown on your card, which is the only way we can find the right record.
@@ -1197,7 +1252,7 @@ export function privacyPage(contactEmail = ""): string {
     <p>PunchMe provides digital loyalty stamp cards that live in Apple Wallet and Google Wallet. This policy explains what we collect and why, in plain language. It is written to meet Malaysia&rsquo;s Personal Data Protection Act 2010 (PDPA).</p>
 
     <h2>The short version, for customers</h2>
-    <p>We never ask you for your name, phone number or email address, and there is no account to create. Your loyalty card is a card in your phone&rsquo;s wallet — nothing more. <strong>If you want to stop, delete the card from your wallet.</strong> That is the whole opt-out: no form, no email, nothing to cancel.</p>
+    <p>We never ask you for your name, phone number or email address, and there is no account to create. Your loyalty card is a card in your phone&rsquo;s wallet — nothing more. <strong>To stop offers and reminders, open your card and tap &ldquo;Stop messages&rdquo; on the back.</strong> Your card keeps working: you still collect stamps and you are still told when you are stamped, because that is your card updating and not an advert. <strong>To stop everything, delete the card from your wallet.</strong> Either way there is no form to fill in and no account to close.</p>
 
     <h2>What we collect from customers</h2>
     <p>We do <strong>not</strong> ask for, and never hold, your name, email address, phone number, date of birth or payment details. What we do hold, from the moment you add a card:</p>
@@ -1253,7 +1308,7 @@ export function privacyPage(contactEmail = ""): string {
     <p>In a managed PostgreSQL database at Railway, transmitted over encrypted (HTTPS) connections. Passwords and staff PINs are one-way hashed and are never stored in a form anyone can read back.</p>
 
     <h2>How long we keep it</h2>
-    <p>Your card and its stamps are kept while the card is in your wallet. <strong>Delete the card and it stops updating and receives nothing further</strong> — no more stamps, no more messages.</p>
+    <p>Your card and its stamps are kept while the card is in your wallet. <strong>Turn messages off and the offers stop, while your card carries on working.</strong> <strong>Delete the card and it stops updating and receives nothing further</strong> — no more stamps, no more messages. If you turn messages off we keep the date you asked, so that we can prove we honoured it.</p>
     <p>We do keep the record that the card existed and the stamps it earned, because that history is the café&rsquo;s own record of its business — how many people joined, how many came back, how many rewards it gave out. It stays attached to a random card number, never to a name. Cards that were never stamped and never reached a wallet are deleted automatically after 30 days.</p>
     <p>Café account data is kept while the account is open.</p>
 
@@ -1285,7 +1340,7 @@ export function privacyPageBm(contactEmail = ""): string {
     <p>PunchMe menyediakan kad setia digital yang disimpan di dalam Apple Wallet dan Google Wallet. Dasar ini menerangkan apa yang kami kumpul dan sebabnya, dalam bahasa yang mudah. Ia ditulis untuk memenuhi Akta Perlindungan Data Peribadi 2010 (PDPA) Malaysia.</p>
 
     <h2>Ringkasnya, untuk pelanggan</h2>
-    <p>Kami tidak pernah meminta nama, nombor telefon atau alamat e-mel anda, dan tiada akaun yang perlu dibuka. Kad setia anda hanyalah sekeping kad di dalam dompet telefon anda. <strong>Jika anda mahu berhenti, padamkan kad itu daripada dompet anda.</strong> Itu sahaja caranya: tiada borang, tiada e-mel, tiada apa-apa untuk dibatalkan.</p>
+    <p>Kami tidak pernah meminta nama, nombor telefon atau alamat e-mel anda, dan tiada akaun yang perlu dibuka. Kad setia anda hanyalah sekeping kad di dalam dompet telefon anda. <strong>Untuk menghentikan tawaran dan peringatan, buka kad anda dan tekan &ldquo;Stop messages&rdquo; di belakang kad.</strong> Kad anda tetap berfungsi: anda masih mengumpul setem dan masih diberitahu apabila kad anda disetem, kerana itu ialah kad anda dikemas kini dan bukan iklan. <strong>Untuk menghentikan semuanya, padamkan kad itu daripada dompet anda.</strong> Dalam kedua-dua cara, tiada borang untuk diisi dan tiada akaun untuk ditutup.</p>
 
     <h2>Apa yang kami kumpul daripada pelanggan</h2>
     <p>Kami <strong>tidak</strong> meminta, dan tidak pernah menyimpan, nama, alamat e-mel, nombor telefon, tarikh lahir atau maklumat pembayaran anda. Apa yang kami simpan, bermula saat anda menambah kad:</p>
@@ -1341,7 +1396,7 @@ export function privacyPageBm(contactEmail = ""): string {
     <p>Di dalam pangkalan data PostgreSQL terurus di Railway, dihantar melalui sambungan tersulit (HTTPS). Kata laluan dan PIN kakitangan dicincang sehala dan tidak pernah disimpan dalam bentuk yang boleh dibaca semula oleh sesiapa.</p>
 
     <h2>Berapa lama kami menyimpannya</h2>
-    <p>Kad anda dan setemnya disimpan selagi kad itu berada di dalam dompet anda. <strong>Padamkan kad itu dan ia berhenti dikemas kini serta tidak menerima apa-apa lagi</strong> — tiada setem, tiada mesej.</p>
+    <p>Kad anda dan setemnya disimpan selagi kad itu berada di dalam dompet anda. <strong>Matikan mesej dan tawaran akan berhenti, manakala kad anda terus berfungsi.</strong> <strong>Padamkan kad itu dan ia berhenti dikemas kini serta tidak menerima apa-apa lagi</strong> — tiada setem, tiada mesej. Jika anda mematikan mesej, kami menyimpan tarikh anda meminta, supaya kami boleh membuktikan bahawa kami mematuhinya.</p>
     <p>Kami memang menyimpan rekod bahawa kad itu pernah wujud dan setem yang diperolehnya, kerana sejarah itu ialah rekod perniagaan kafe itu sendiri — berapa ramai yang menyertai, berapa ramai yang kembali, berapa banyak ganjaran yang diberikan. Ia kekal terikat pada nombor kad rawak, tidak sekali-kali pada nama. Kad yang tidak pernah disetem dan tidak pernah sampai ke dompet akan dipadam secara automatik selepas 30 hari.</p>
     <p>Data akaun kafe disimpan selagi akaun itu dibuka.</p>
 

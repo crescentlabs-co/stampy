@@ -865,6 +865,21 @@ export async function migrate(): Promise<void> {
     -- excluded by the same rule, and onto events so the funnel and the counter
     -- log can filter without joining back to the pass on every row.
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
+    -- v2.9: the customer said stop. A DATE rather than a flag, because when they
+    -- asked is worth keeping and a boolean throws it away.
+    --
+    -- On the CUSTOMER, not the pass: a person holding an Apple and a Google card
+    -- at one shop opted out once, not once per card (invariant 5). The one pass
+    -- with a null customer_id is the unclaimed seeded card, which belongs to
+    -- nobody and can therefore never opt out — optedOutSerial() answers false
+    -- for it rather than failing.
+    --
+    -- It stops MARKETING only. A stamp still notifies: that push carries no
+    -- wording of ours (Apple gets an EMPTY payload and the phone renders the
+    -- card's own text), it is the service they asked for, and silencing it
+    -- would leave their card showing stale progress until they happened to open
+    -- it — breaking the product for them rather than respecting them.
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS opted_out_at timestamptz;
     ALTER TABLE events ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
     -- v2.2: a square version of the logo, for Google only.
     --
@@ -2489,6 +2504,9 @@ export interface CustomerRow {
   nudges_7d: number;
   /** True once the customer deleted the card from their wallet (Apple only). */
   removed: boolean;
+  /** True when this PERSON asked us to stop messaging them. Marketing only —
+   *  they still get a notification when they are stamped. */
+  opted_out: boolean;
 }
 
 // ---- shared SQL fragments (both assume the passes table is aliased `p`) ----
@@ -2631,6 +2649,19 @@ const NUDGES_7D_SQL = `(
 // list under it shows 13, which is exactly the bug this replaced.
 const PERSON_KEY_SQL = `COALESCE(p.customer_id, p.serial)`;
 
+/**
+ * Has the PERSON holding this pass asked us to stop messaging them?
+ *
+ * Reads the customer, not the pass, so one opt-out covers every card they hold.
+ * A pass with no customer (only the unclaimed seeded card) is not opted out —
+ * there is nobody to have asked.
+ */
+const OPTED_OUT_SQL = `(
+       p.customer_id IS NOT NULL AND EXISTS (
+         SELECT 1 FROM customers cu
+          WHERE cu.id = p.customer_id AND cu.opted_out_at IS NOT NULL)
+     )`;
+
 const REMOVED_PASS_SQL = `(
        EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_removed')
    AND NOT EXISTS (SELECT 1 FROM registrations r WHERE r.serial = p.serial)
@@ -2698,7 +2729,8 @@ const CUSTOMER_COLUMNS_SQL = `p.serial, p.customer_id, p.short_code AS code, p.s
             ${FIRST_VISIT_SQL} AS first_visit,
             ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges,
             ${NUDGES_7D_SQL} AS nudges_7d,
-            ${REMOVED_PASS_SQL} AS removed`;
+            ${REMOVED_PASS_SQL} AS removed,
+            ${OPTED_OUT_SQL} AS opted_out`;
 
 /**
  * A café's real customers, most-recently-visited first.
@@ -4118,20 +4150,57 @@ export interface NudgeState {
   nudges7d: number;
   unanswered: number;
   removed: boolean;
+  optedOut: boolean;
 }
 
 /** One round trip for the three numbers that gate a nudge. Unknown serial → null. */
 export async function nudgeState(serial: string): Promise<NudgeState | null> {
-  const res = await getPool().query<{ nudges_7d: number; unanswered_nudges: number; removed: boolean }>(
+  const res = await getPool().query<{
+    nudges_7d: number; unanswered_nudges: number; removed: boolean; opted_out: boolean;
+  }>(
     `SELECT ${NUDGES_7D_SQL} AS nudges_7d,
             ${UNANSWERED_NUDGES_SQL} AS unanswered_nudges,
-            ${REMOVED_PASS_SQL} AS removed
+            ${REMOVED_PASS_SQL} AS removed,
+            ${OPTED_OUT_SQL} AS opted_out
        FROM passes p WHERE p.serial = $1`,
     [serial],
   );
   const row = res.rows[0];
   if (!row) return null;
-  return { nudges7d: row.nudges_7d, unanswered: row.unanswered_nudges, removed: row.removed };
+  return {
+    nudges7d: row.nudges_7d,
+    unanswered: row.unanswered_nudges,
+    removed: row.removed,
+    optedOut: row.opted_out,
+  };
+}
+
+/**
+ * Stop, or resume, messaging this person. Idempotent: opting out twice keeps
+ * the FIRST date, because that is when they asked.
+ *
+ * Keyed by serial because that is all the customer has — the card in their
+ * hand. It resolves to the person, so one press covers every card they hold.
+ * Returns false when the pass has no customer behind it (the unclaimed seeded
+ * card), which is the one case with nobody to opt out.
+ */
+export async function setOptedOut(serial: string, optOut: boolean): Promise<boolean> {
+  const res = await getPool().query(
+    `UPDATE customers SET opted_out_at = CASE
+        WHEN $2::boolean THEN COALESCE(opted_out_at, now()) ELSE NULL END
+      WHERE id = (SELECT customer_id FROM passes WHERE serial = $1)`,
+    [serial, optOut],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** Is the person holding this pass opted out? Unknown or ownerless ⇒ false. */
+export async function optedOutSerial(serial: string): Promise<boolean> {
+  const res = await getPool().query<{ opted_out: boolean }>(
+    `SELECT ${OPTED_OUT_SQL} AS opted_out FROM passes p WHERE p.serial = $1`,
+    [serial],
+  );
+  return res.rows[0]?.opted_out === true;
 }
 
 export interface NudgeOutcomes {

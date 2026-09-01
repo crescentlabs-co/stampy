@@ -37,6 +37,12 @@ app.set("trust proxy", true);
 // the stamps (~190KB), base64-encoded. The old 2mb ceiling predates the banner
 // being baked into the strip and would reject the save outright.
 app.use(express.json({ limit: "8mb" }));
+// Plain form posts. Only one page sends one — the customer's "stop messages"
+// switch — and it is a FORM rather than the fetch() every other mutation uses
+// precisely so it still works with JavaScript off. A consent control that needs
+// a working script is a consent control that can fail silently. Tiny limit: the
+// only field is a single "0" or "1".
+app.use(express.urlencoded({ extended: false, limit: "1kb" }));
 
 // Static assets (self-hosted fonts + their stylesheet). Long-cached; these are
 // public, content-hashed-by-name files — no secrets.

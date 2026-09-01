@@ -113,6 +113,25 @@ target nobody holds any more. Never key card art by a number a card can change.
    send no Android phone ever showed. Spread over a week that ceiling is never
    met; five to one customer in an afternoon quietly loses two. Raising the cap
    again means a per-DAY rule in `canNudge`, not a bigger weekly one.
+   **A customer can switch marketing off, and only they can switch it back on**
+   (`customers.opted_out_at`, v2.9). It is on the CUSTOMER, so one press covers
+   every card that person holds. `canNudge` refuses it FIRST — before the
+   deleted card and before the weekly cap — because it is a decision they made
+   rather than a state they are passing through, and "at the weekly limit" reads
+   as "try again next week". The dashboard shows the state and offers no control
+   to reverse it: an owner who could re-consent someone would make the whole
+   mechanism worthless. The gate is in TWO places on purpose — `canNudge`
+   pre-filters the route's list, and `applyAndPush` refuses a nudge outright, so
+   the raw entry point is not left open. It stops MARKETING ONLY: a stamp still
+   notifies, because that push carries no wording of ours and silencing it would
+   leave their card showing stale progress until they happened to open it.
+   `refreshCardArt` is deliberately NOT blocked — it raises no notification.
+   A suppressed nudge still writes a `messages` row (`kind:"suppressed-opt-out"`)
+   because "we correctly did not send" is worth as much as a delivery, and that
+   table is the only history messaging has. **Two audience numbers, never one:**
+   `counts.active` is everyone, `counts.reachable` is who a campaign can reach,
+   and opted-out people stay in visits and health groups — dropping them would
+   make opting out look like churn.
    **`HEALTH` (routes/dashboard.ts) is a different axis and not a second copy
    of this one.** BUCKETS say whether a customer *may* be messaged; HEALTH says
    whether they are a Regular, Returning, New or Lost — judged on lifetime net
