@@ -94,15 +94,22 @@ async function main() {
   const landing = await get("/");
   expect(landing.status === 200 && landing.body.includes("lives in your customer"), "/ serves the marketing landing page");
   // Font faces are inline in the page CSS (no separate cacheable stylesheet) and
-  // point at uniquely-named woff2 files, which are served statically. The app
-  // reads in Bricolage and Instrument Serif; the landing sets its own display
-  // and body to Figtree, so both have to resolve.
+  // point at uniquely-named woff2 files, which are served statically. A face
+  // that is declared but does not serve is invisible until someone looks at the
+  // page: the browser falls back silently and nothing errors. So every file the
+  // CSS names is fetched here. Inter Tight and Inter are the two the product is
+  // actually set in (--display and --body); the rest are declared and unused.
   expect(landing.body.includes("/assets/fonts/instrument-serif-latin.woff2"), "pages declare the Instrument Serif @font-face inline");
   const woff = await get("/assets/fonts/instrument-serif-latin.woff2");
   expect(woff.status === 200, "GET /assets/fonts/*.woff2 serves the font file");
   expect(landing.body.includes("/assets/fonts/figtree-latin.woff2"), "pages declare the Figtree @font-face inline");
   const figtree = await get("/assets/fonts/figtree-latin.woff2");
   expect(figtree.status === 200, "GET /assets/fonts/figtree-latin.woff2 serves the landing display face");
+  for (const face of ["inter-tight-latin", "inter-latin"]) {
+    expect(landing.body.includes("/assets/fonts/" + face + ".woff2"), "pages declare the " + face + " @font-face inline");
+    const res = await get("/assets/fonts/" + face + ".woff2");
+    expect(res.status === 200, "GET /assets/fonts/" + face + ".woff2 serves the face the product is set in");
+  }
   // Every image the page names must actually serve: a broken one is a visible
   // hole in the argument, checked the same way the font is. The hero shot is
   // the page's proof, so it is named here rather than left to a spot check.

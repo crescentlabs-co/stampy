@@ -544,7 +544,8 @@ export function marketingPage(contactEmail = "", demoCardId = DEFAULT_CARD_ID): 
        above the line, and matching the hexagon leaves the letters at 60% of the
        size of the word beside them. The icon is already in the nav; what was
        asked for was the font.
-       .72em is Figtree's cap height at 800, and "PunchMe" has no descender, so
+       .72em is the cap height of --display (Inter Tight, .727em, and Figtree
+       before it), and "PunchMe" has no descender, so
        the file's ink bottom IS its baseline — which is where an inline image on
        vertical-align: baseline already sits. No nudge needed. */
     .lede.shout h2 .wordmark { height: .72em; width: auto; display: inline-block;

@@ -70,15 +70,32 @@ export const baseCss = /* css */ `
     font-display: swap;
     src: url("/assets/fonts/instrument-serif-latin-italic.woff2") format("woff2");
   }
-  /* The marketing page only. It sets its own --display and --body from this,
-     because the landing is the one surface that has to look like an ad; the
-     dashboard and the stamper stay on the faces chosen for reading. */
   @font-face {
     font-family: "Figtree";
     font-style: normal;
     font-weight: 400 900;
     font-display: swap;
     src: url("/assets/fonts/figtree-latin.woff2") format("woff2");
+  }
+  /* The two faces everything is actually set in. Two families, because one
+     family doing both jobs is why a heading and the paragraph under it used to
+     read as the same thing at two sizes. Inter Tight is the narrower cut of the
+     same design, so the pair agree about letter shapes and disagree about
+     width — which is the difference you want between a heading and a sentence.
+     Both are variable files: one request each covers every weight we set. */
+  @font-face {
+    font-family: "Inter Tight";
+    font-style: normal;
+    font-weight: 500 800;
+    font-display: swap;
+    src: url("/assets/fonts/inter-tight-latin.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/assets/fonts/inter-latin.woff2") format("woff2");
   }
   :root {
     /* See DESIGN.md. White page, near-black panels for weight, and one neon that
@@ -117,8 +134,11 @@ export const baseCss = /* css */ `
        pixel or two. A card is --s3 or --s4 and nothing else. */
     --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px; --s5: 40px;
     --shadow: 0 10px 30px -16px rgba(12,14,13,.18), 0 2px 6px rgba(12,14,13,.06);
-    --display: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --body: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* Headings and big numbers take the narrow cut, sentences take the normal
+       one. Change these two lines and the whole product changes with them —
+       nothing else in the codebase names a font family by hand. */
+    --display: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
   body {

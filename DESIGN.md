@@ -38,18 +38,28 @@ fighting it. A pure grey here reads as unconsidered.
 
 ## Type
 
-**Figtree**, one family, two jobs. `assets/fonts/figtree-latin.woff2` is a
-variable file covering 400–900, declared inline in `baseCss` (src/ui/kit.ts) and served from
-`/assets` with a long immutable cache, so the filename must change if the file
-ever does.
+**Two families, one for each job.** Both are variable files declared inline in
+`baseCss` (src/ui/kit.ts) and served from `/assets` with a long immutable cache,
+so the filename must change if the file ever does.
 
-- `--display` — headings, big numbers, prices. **800.** Tight tracking
-  (`-.02em` to `-.03em`); the bigger it is, the tighter it goes.
-- `--body` — everything you read. **400**, occasionally 600–700 for emphasis.
+- `--display` — **Inter Tight** (`inter-tight-latin.woff2`, 500–800). Headings,
+  big numbers, prices. **800.** Tight tracking (`-.02em` to `-.03em`); the
+  bigger it is, the tighter it goes.
+- `--body` — **Inter** (`inter-latin.woff2`, 400–700). Everything you read.
+  **400**, occasionally 600–700 for emphasis.
 
-Bricolage Grotesque and Instrument Serif are still in `assets/fonts` and still
-declared, because dropping a face is not free — but nothing should reach for
-them in new work.
+They are two cuts of one design, so they agree about letter shapes and disagree
+about width. That is the whole point: a heading should not be the sentence under
+it at a different size, which is what one family doing both jobs produced.
+
+**These two lines in `:root` are the only place a font family is named.** Every
+rule in the product goes through `var(--display)` or `var(--body)`. Swapping the
+type means editing two lines, and it must stay that way.
+
+Figtree, Bricolage Grotesque and Instrument Serif are still in `assets/fonts`
+and still declared, because dropping a face is not free — an unused `@font-face`
+is never downloaded, so they cost nothing. Nothing should reach for them in new
+work.
 
 Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
 

@@ -1,5 +1,9 @@
 These webfonts are used under the SIL Open Font License, Version 1.1.
 
+- Inter — © 2016 The Inter Project Authors
+  (https://github.com/rsms/inter)
+- Inter Tight — © 2016 The Inter Project Authors
+  (https://github.com/rsms/inter)
 - Bricolage Grotesque — © 2022 The Bricolage Grotesque Project Authors
   (https://github.com/ateliertriay/bricolage)
 - Space Mono — © 2016 Google Inc. (Colophon Foundry)
@@ -10,6 +14,6 @@ These webfonts are used under the SIL Open Font License, Version 1.1.
   (https://github.com/erikdkennedy/figtree)
 
 Files here are latin-subset woff2 builds obtained via Google Fonts.
-Bricolage Grotesque is a variable font covering weights 400–700 in one file;
-Figtree is a variable font covering weights 400–900 in one file.
+Inter covers weights 400–700 and Inter Tight 500–800, each in one variable
+file. Bricolage Grotesque covers 400–700; Figtree covers 400–900.
 Full OFL text: https://openfontlicense.org

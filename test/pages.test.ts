@@ -2928,6 +2928,24 @@ describe("the dashboard keeps to one scale", () => {
   const values = (prop: string) =>
     [...new Set([...css.matchAll(new RegExp(prop + ": ([^;}]+)", "g"))].map((m) => m[1]!.trim()))];
 
+  it("names a font family in one place, the :root tokens", () => {
+    // Swapping the product's type must stay a two-line edit. It was one family
+    // for both jobs and is now two, and the only way that stays true is if no
+    // rule anywhere spells a family out. Monospace is exempt: it is a stack of
+    // whatever the machine has, not a face we ship, and there is no token for
+    // it because nothing about it is a design decision.
+    const kit = readFileSync(new URL("../src/ui/kit.ts", import.meta.url), "utf8");
+    for (const [name, text] of [["dashboardV2.ts", css], ["kit.ts", kit], ["pages.ts", readFileSync(new URL("../src/pages.ts", import.meta.url), "utf8")]] as const) {
+      const named = [...text.matchAll(/font-family: (?!var\(--|inherit|ui-monospace)([^;}\n]+)/g)].map((m) => m[1]!.trim());
+      // kit.ts declares the @font-face blocks themselves, which is where the
+      // names are allowed to appear, and the two tokens that point at them.
+      const stray = named.filter((v) => !/^"(Inter Tight|Inter|Figtree|Bricolage Grotesque|Instrument Serif)"[,;]?$/.test(v));
+      expect(stray, name + " spells out a font family: " + stray.join(" | ")).toEqual([]);
+    }
+    expect(kit).toContain(`--display: "Inter Tight",`);
+    expect(kit).toContain(`--body: "Inter",`);
+  });
+
   it("sizes text from the six tokens and nothing else", () => {
     const off = values("font-size").filter(
       // .48em is a RATIO of its parent — the share beside a health count — not
