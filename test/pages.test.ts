@@ -2724,8 +2724,12 @@ describe("the dashboard keeps to one scale", () => {
   });
 
   it("rounds corners from the three tokens and the pill", () => {
-    const ok = /^(0|999px|var\(--r(-sm|-lg)?\)|0 var\(--r\) var\(--r\) 0|var\(--r-lg\) var\(--r-lg\) 0 0)$/;
-    const off = values("border-radius").filter((v) => !ok.test(v));
+    // Per corner, so the shorthand a grouped row needs — rounded at the top,
+    // square where the next row meets it — is judged on its parts.
+    const corner = /^(0|999px|var\(--r(-sm|-lg)?\))$/;
+    const off = values("border-radius").filter(
+      (v) => !v.split(/\s+/).every((c) => corner.test(c)),
+    );
     expect(off, "radii off the scale: " + off.join(", ")).toEqual([]);
   });
 
