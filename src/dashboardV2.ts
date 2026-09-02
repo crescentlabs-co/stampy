@@ -59,6 +59,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                 line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
                 font-variant-numeric: tabular-nums; color: var(--ink); }
+    /* Home's two, and only those two. .metric is also the health tiles on
+       Customers and the three-up grids on the detail screens — four of these
+       across a phone at hero size is a number that does not fit its own box. */
+    .metrics .metric b { font-size: var(--t-hero); line-height: var(--lh-num); }
     /* Every name on this screen is set the same way: sentence case, reading
        size, muted. A tile's label, the chart's two series and the chart's hint
        line are all the same kind of thing — the name of the number beside it —
@@ -66,13 +70,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        --t-xs is 11px and stays reserved for UPPERCASE tags: caps read larger
        than lowercase at the same size, so 11px caps and 13px sentence text look
        like one size, which is the point. A test holds that rule. */
-    .mlabel { display: block; font-size: var(--t-sm); font-weight: 500;
-              color: var(--muted); margin-bottom: var(--s2); }
+    .mlabel { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-md);
+              font-weight: 500; color: var(--muted); margin-bottom: var(--s2); }
     /* And the reading of it sits under, quieter than the number and never the
        same size as the label above — two small lines at one size would read as
        a pair rather than as a top and a bottom. */
-    .mnote { display: block; margin-top: var(--s2); font-size: var(--t-sm);
+    /* What the change is measured against, on its own line under the number —
+       the sentence does not have to fit beside a 32px figure in half a phone,
+       and the coloured part is then the only thing colour is doing. */
+    .mnote { display: block; margin-top: var(--s1); font-size: var(--t-md);
              line-height: var(--lh-body); color: var(--muted); }
+    /* The label under a number in every OTHER metric grid — the health tiles
+       and the detail screens. Home's tiles use .mlabel above and lead with it. */
     .metric span:not(.mlabel):not(.mnote) { display: block; margin-top: var(--s2);
                    font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--muted); }
     /* --- Home's header row: the title, and the window it is all measured over.
@@ -100,7 +109,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        (.h-regular and .h-lost). DESIGN.md rule 6: read the four, never pick a
        fifth. Never the neon: that marks the next thing to press, and a change
        since last week is not something you can press. */
-    .delta { font-size: var(--t-sm); font-weight: 500; letter-spacing: var(--tr-sm);
+    /* The change is a COLOUR and nothing else — not bigger, not heavier. It
+       sits on the number's baseline so the pair read as one figure. */
+    .delta { font-size: var(--t-md); font-weight: 600;
              font-variant-numeric: tabular-nums; white-space: nowrap; }
     .delta.up { color: #15803d; }
     .delta.down { color: #9a3412; }
@@ -111,37 +122,29 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        visits line carries a filled area, the rewards line is a bare stroke. */
     .chart { background: var(--bg); border-radius: var(--r); padding: var(--s4);
              margin: var(--s2) 0 0; }
-    .chartkeys { display: flex; gap: var(--s4); flex-wrap: wrap; }
-    .ckey { display: flex; align-items: baseline; gap: var(--s2);
-            font-size: var(--t-sm); color: var(--muted); }
-    .ckey::before { content: ""; width: 10px; height: 10px; border-radius: 999px;
-                    align-self: center; flex: none; }
-    .ckey.vis::before { background: var(--accent); border: 1.5px solid var(--accent-2); }
-    .ckey.rew::before { background: var(--ink); }
-    .ckey b { font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
-              letter-spacing: var(--tr-lg); color: var(--ink);
+    /* The chart's two figures are set exactly like the two tiles above: label,
+       then the number under it. They were a legend with the number tucked in
+       beside the word, which made them a third kind of thing on a screen that
+       only has two. The swatch is what still ties each one to its line. */
+    .chartfigs { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s3); }
+    .cfig b { font-family: var(--display); font-weight: 800; font-size: var(--t-hero);
+              line-height: var(--lh-num); letter-spacing: var(--tr-hero); color: var(--ink);
               font-variant-numeric: tabular-nums; }
-    /* The hint, set like every other name on this screen. It says what to do
-       and nothing else — the answer arrives in the tooltip, over the point that
-       was tapped, because a readout pinned to the top of the card makes you
-       look away from the thing your finger is on. */
-    .chartread { margin-top: var(--s3); font-size: var(--t-sm); font-weight: 500;
-                 line-height: var(--lh-body); color: var(--muted); }
+    .sw { width: 10px; height: 10px; border-radius: 999px; flex: none; }
+    .sw.v { background: var(--accent); border: 1.5px solid var(--accent-2); }
+    .sw.r { background: var(--ink); }
     /* The tooltip. --bg on a --bg card would vanish, so this is the one place
        rule 9 runs the other way: it earns its hairline by floating. */
     .ctip { position: absolute; z-index: 2; pointer-events: none;
             background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
             box-shadow: var(--shadow); padding: var(--s2) var(--s3);
             transform: translate(-50%, -100%); white-space: nowrap; }
-    .ctip .cd { display: block; font-size: var(--t-sm); font-weight: 700; color: var(--ink);
+    .ctip .cd { display: block; font-size: var(--t-md); font-weight: 700; color: var(--ink);
                 margin-bottom: var(--s1); }
     .ctip .cr { display: flex; align-items: center; gap: var(--s2);
-                font-size: var(--t-sm); color: var(--muted); }
+                font-size: var(--t-md); color: var(--muted); }
     .ctip .cr b { margin-left: var(--s4); color: var(--ink); font-weight: 700;
                   font-variant-numeric: tabular-nums; }
-    .ctip .sw { width: 9px; height: 9px; border-radius: 999px; flex: none; }
-    .ctip .sw.v { background: var(--accent-2); }
-    .ctip .sw.r { background: var(--ink); }
     .chartwrap { position: relative; margin-top: var(--s2); touch-action: pan-y;
                  cursor: crosshair; }
     .chartwrap svg { display: block; width: 100%; height: 132px; }
@@ -170,10 +173,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .chart .cdot.v { background: var(--accent-2); }
     .chart .cdot.r { background: var(--ink); }
     .chart .hidden { display: none; }
+    /* Dates, read as dates. They were 11px uppercase, which is a TAG size and
+       made the scale under the chart a fifth thing on a screen that wants
+       three. Three marks, not two: the middle one is what tells you the line
+       is a month rather than a week. */
     .chartax { display: flex; justify-content: space-between; margin-top: var(--s2);
-               font-size: var(--t-xs); letter-spacing: var(--tr-caps); text-transform: uppercase;
-               color: var(--muted); }
-    .chartempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
+               font-size: var(--t-md); color: var(--muted); }
+    .chartax span:nth-child(2) { text-align: center; }
+    .chartax span:last-child { text-align: right; }
+    .chartax span { flex: 1; min-width: 0; }
+    .chartempty { margin-top: var(--s3); font-size: var(--t-md); line-height: var(--lh-read);
                   color: var(--muted); }
     /* --- the two summary lists ------------------------------------------
        ONE container with the rows spaced inside it, the shape a transaction
@@ -194,19 +203,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        wrapping under the figure beside it and breaking the row's rhythm. */
     .srow .sn { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted); }
+    .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-md); color: var(--muted); }
     .srow .sr { flex: none; text-align: right; }
-    .srow .sv { display: block; font-family: var(--display); font-weight: 800;
-                font-size: var(--t-lg); letter-spacing: var(--tr-lg); color: var(--ink);
+    /* A row is FOUR facts at ONE size, two a side. The figure was --t-lg
+       display and the words around it 13px, which made a row carry three sizes
+       on its own. Left and right are peers here; neither is the headline. */
+    .srow .sv { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
                 font-variant-numeric: tabular-nums; }
-    /* The unit rides with the number rather than sitting under it: "3" alone on
-       a line does not say what it counts, and a third line would make each row
-       taller than the two facts in it deserve. */
-    .srow .sv i { font-family: var(--body); font-style: normal; font-weight: 500;
-                  font-size: var(--t-sm); color: var(--muted); }
-    .srow .sp { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted);
+    /* The unit rides with the number: "3" alone does not say what it counts,
+       and a third line would make the row taller than two facts deserve. */
+    .srow .sv i { font-style: normal; font-weight: 400; color: var(--muted); }
+    .srow .sp { display: block; margin-top: var(--s1); font-size: var(--t-md); color: var(--muted);
                 font-variant-numeric: tabular-nums; }
-    .slistempty { padding: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
+    .slistempty { padding: var(--s3); font-size: var(--t-md); line-height: var(--lh-read);
                   color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
@@ -1671,7 +1680,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "</div>" +
         '<div class="metrics" data-totals></div>' +
         '<div data-chart></div>' +
-        '<h2 class="sec">Programmes</h2>' +
+        '<h2 class="sec">Programmes' + EG + "</h2>" +
         '<div data-programs></div>' +
         '<h2 class="sec">Campaigns' + EG + "</h2>" +
         '<div data-campaigns></div>';
@@ -1682,9 +1691,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       d.querySelector("[data-programs]").innerHTML = homeProgrammes();
       d.querySelector("[data-campaigns]").innerHTML = homeCampaigns();
 
-      const tile = (label, value, delta) =>
+      const tile = (label, value, change, note) =>
         '<div class="metric"><span class="mlabel">' + label + "</span>" +
-        '<div class="mrow"><b>' + value + "</b>" + delta + "</div></div>";
+        '<div class="mrow"><b>' + value + "</b>" + change + "</div>" +
+        '<span class="mnote">' + note + "</span></div>";
 
       /**
        * The change since the start of the window, coloured by direction.
@@ -1694,32 +1704,33 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        * comparison of two different measures. All-time has nothing before it,
        * and says so rather than showing a confident zero.
        */
-      function delta(now, before, fmt, word) {
-        if (before === null || before === undefined) {
-          return '<span class="delta flat">all time</span>';
-        }
+      function delta(now, before, fmt) {
+        if (before === null || before === undefined) return "";
         const diff = now - before;
         const dir = diff > 0 ? "up" : diff < 0 ? "down" : "flat";
         const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
-        return '<span class="delta ' + dir + '">' + sign + fmt(Math.abs(diff)) + " " + word + "</span>";
+        return '<span class="delta ' + dir + '">' + sign + fmt(Math.abs(diff)) + "</span>";
       }
 
       const plain = (n) => n.toLocaleString();
 
       function paint(s) {
-        const word = s.window === 30 ? "vs last month" : s.window === 7 ? "vs last week" : "";
+        // All-time has nothing before it, and says so rather than showing a
+        // confident zero change.
+        const word = s.window === 30 ? "vs last month" : s.window === 7 ? "vs last week" : "all time";
         const cur = s.currency || "RM";
         const money = (cents) => Math.round(cents / 100).toLocaleString();
         totals.innerHTML =
-          tile("Customers", plain(s.customers.now), delta(s.customers.now, s.customers.before, plain, word)) +
+          tile("Customers", plain(s.customers.now),
+               delta(s.customers.now, s.customers.before, plain), word) +
           tile("Loyalty revenue (" + esc(cur) + ")", money(s.revenueCents.now),
-               delta(s.revenueCents.now, s.revenueCents.before, money, word));
+               delta(s.revenueCents.now, s.revenueCents.before, money), word);
         shopChart(chart, s);
       }
 
       /** Nothing on screen until the numbers land, rather than zeros that move. */
-      totals.innerHTML = tile("Customers", "—", "") +
-        tile("Loyalty revenue (RM)", "—", "");
+      totals.innerHTML = tile("Customers", "—", "", "") +
+        tile("Loyalty revenue (RM)", "—", "", "");
 
       let live = 0;
       async function load(win) {
@@ -1757,16 +1768,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function summaryRow(r) {
       const inner =
         '<span class="sl"><span class="sn">' + esc(r.name) + "</span>" +
-          // The chip rides on the TYPE line, not the name: a name can be
-          // anything the owner typed and already truncates, and a chip pushed
-          // onto the end of it would eat the name rather than mark the row.
-          '<span class="st">' + esc(r.type) + (r.example ? EG : "") + "</span></span>" +
+          '<span class="st">' + esc(r.type) + "</span></span>" +
         '<span class="sr"><span class="sv">' + r.value + "<i> " + esc(r.unit) + "</i></span>" +
           '<span class="sp">' + esc(r.share) + "</span></span>";
+      // No chip and no dimming on the row itself. Both sections carry ONE
+      // "Example" on their heading instead — a chip on every row was more
+      // marking than reading, and the founder asked for the quiet version.
       return r.href
-        ? '<a class="srow' + (r.example ? " egrow" : "") + '" href="' + ROOT + r.href +
-            '" data-nav="' + r.href + '">' + inner + "</a>"
-        : '<div class="srow' + (r.example ? " egrow" : "") + '">' + inner + "</div>";
+        ? '<a class="srow" href="' + ROOT + r.href + '" data-nav="' + r.href + '">' + inner + "</a>"
+        : '<div class="srow">' + inner + "</div>";
     }
 
     /** A share of a total, without dividing by zero and without a bare "0%". */
@@ -1792,7 +1802,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         visits: c.metrics.stamps,
       }));
       const eg = MOCK_PROGRAMS.map((m) => ({
-        href: "/manage/rewards/" + m.id, example: true,
+        href: "/manage/rewards/" + m.id,
         name: m.name,
         type: (KIND_LABEL[m.kind] || "Stamps") + (m.status === "ended" ? " · Ended" : ""),
         visits: m.visits,
@@ -1801,7 +1811,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const total = all.reduce((a, r) => a + r.visits, 0);
       if (!all.length) return '<div class="slist"><p class="slistempty">No programmes yet.</p></div>';
       return '<div class="slist">' + all.map((r) => summaryRow({
-        href: r.href, example: r.example, name: r.name, type: r.type,
+        href: r.href, name: r.name, type: r.type,
         value: r.visits.toLocaleString(), unit: r.visits === 1 ? "visit" : "visits",
         share: shareOf(r.visits, total, "of visits"),
       })).join("") + "</div>";
@@ -1814,7 +1824,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     function homeCampaigns() {
       return '<div class="slist">' + MOCK_CAMPAIGNS.map((c) => summaryRow({
-        href: "/manage/campaigns/" + c.id, example: true,
+        href: "/manage/campaigns/" + c.id,
         name: c.name,
         type: c.type + (c.status === "ended" ? " · Ended" : ""),
         value: c.returned.toLocaleString(), unit: "returned",
@@ -1843,11 +1853,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const rew = pts.map((p) => p.rewards);
       const totalV = vis.reduce((a, n) => a + n, 0);
       const totalR = rew.reduce((a, n) => a + n, 0);
-      const keys =
-        '<div class="chartkeys">' +
-          '<span class="ckey vis">Visits <b>' + totalV.toLocaleString() + "</b></span>" +
-          '<span class="ckey rew">Rewards <b>' + totalR.toLocaleString() + "</b></span>" +
-        "</div>";
+      const fig = (cls, label, n) =>
+        '<div class="cfig"><span class="mlabel"><i class="sw ' + cls + '"></i>' + label + "</span>" +
+        "<b>" + n.toLocaleString() + "</b></div>";
+      const keys = '<div class="chartfigs">' +
+        fig("v", "Visits", totalV) + fig("r", "Rewards", totalR) + "</div>";
 
       // Two points make a line; one does not, and a flat run of zeros drawn
       // along the floor reads as a collapse rather than as an empty shop.
@@ -1862,7 +1872,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
       host.innerHTML =
         '<div class="chart">' + keys +
-          '<div class="chartread" data-read></div>' +
           '<div class="chartwrap" data-wrap>' +
             '<svg viewBox="' + g.box + '" preserveAspectRatio="none" ' +
               'aria-hidden="true" focusable="false">' +
@@ -1878,20 +1887,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             '<span class="cdot r hidden" data-dotr></span>' +
             '<div class="ctip hidden" data-tip></div>' +
           "</div>" +
-          '<div class="chartax"><span>' + esc(edgeLabel(pts[0].at, s.bucketDays)) +
-            "</span><span>Now</span></div>" +
+          '<div class="chartax">' +
+            "<span>" + esc(edgeLabel(pts[0].at, s.bucketDays)) + "</span>" +
+            "<span>" + esc(edgeLabel(pts[Math.floor((pts.length - 1) / 2)].at, s.bucketDays)) + "</span>" +
+            "<span>" + esc(edgeLabel(pts[pts.length - 1].at, s.bucketDays)) + "</span>" +
+          "</div>" +
         "</div>";
 
       const wrap = host.querySelector("[data-wrap]");
-      const read = host.querySelector("[data-read]");
       const mark = host.querySelector("[data-mark]");
       const dotV = host.querySelector("[data-dotv]");
       const dotR = host.querySelector("[data-dotr]");
       const tip = host.querySelector("[data-tip]");
-      const unit = s.bucketDays > 1 ? "week" : "day";
       const floating = [mark, dotV, dotR, tip];
-
-      read.textContent = "Tap the chart to read a " + unit + ".";
 
       function clear() {
         floating.forEach((el) => el.classList.add("hidden"));

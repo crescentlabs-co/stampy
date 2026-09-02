@@ -2661,9 +2661,12 @@ describe("Home", () => {
    */
   it("colours the change by direction, and admits when there is none", () => {
     expect(home).toContain('const dir = diff > 0 ? "up" : diff < 0 ? "down" : "flat";');
-    expect(home).toContain('<span class="delta flat">all time</span>');
+    // The coloured part is the change and only the change. What it is measured
+    // against goes on its own line, unshouted, and all-time says so there.
+    expect(home).toContain('if (before === null || before === undefined) return "";');
     expect(home).toContain('"vs last week"');
     expect(home).toContain('"vs last month"');
+    expect(home).toContain('"all time"');
     // Green up and rust down are the customer segments' own two hues, not a
     // fifth colour, and neither of them is the neon.
     const css = html.slice(html.indexOf(".delta {"), html.indexOf(".delta.flat"));
@@ -2723,17 +2726,28 @@ describe("Home", () => {
    * two series, the chart's hint. They were three treatments, one of them
    * uppercase, which is what made them read as three different kinds of thing.
    */
-  it("sets every label on the screen the same way", () => {
+  it("sets every word on the screen at one size", () => {
+    // Home had five text sizes on it — 11, 13, 15, 18 and 24 — which is what
+    // "the font sizes are inconsistent" meant. It has four now, each with a
+    // job: the title, the section headings, the numbers, and every word.
     const label = html.slice(html.indexOf(".mlabel {"), html.indexOf(".mnote {"));
-    expect(label).toContain("var(--t-sm)");
+    expect(label).toContain("var(--t-md)");
     expect(label).not.toContain("uppercase");
-    for (const cls of [".ckey {", ".chartread {"]) {
+    for (const cls of [".mnote {", ".delta {", ".chartax {", ".srow .st {", ".srow .sv {",
+                       ".srow .sp {", ".ctip .cd {", ".ctip .cr {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
-      expect(rule, cls + " is off the label size").toContain("var(--t-sm)");
+      expect(rule, cls + " is off the one text size").toContain("var(--t-md)");
     }
-    // The change beside a number is coloured, not shouted.
-    const d = html.slice(html.indexOf(".delta {"), html.indexOf("}", html.indexOf(".delta {")));
-    expect(d).toContain("font-weight: 500");
+    // The two figures in the chart card are set exactly like the two tiles.
+    for (const cls of [".metrics .metric b {", ".cfig b {"]) {
+      const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
+      expect(rule, cls + " is not the hero size").toContain("var(--t-hero)");
+    }
+    // The change beside a number is a colour, not a size and not a weight.
+    const d = html.slice(html.indexOf(".delta {"), html.indexOf(".delta.up"));
+    expect(d).toContain("var(--t-md)");
+    // The hint line is gone; the tooltip is the answer.
+    expect(html).not.toContain("Tap the chart to read a");
   });
 
   /**
@@ -2763,9 +2777,13 @@ describe("Home", () => {
     const css = html.slice(html.indexOf(".slist {"), html.indexOf(".slistempty {"));
     expect(css).toContain(".slist > * + * { margin-top: var(--s1); }");
     expect(css).not.toMatch(/\.srow \{[^}]*border:/);
-    // Campaigns are entirely invented, so every row of them is marked.
+    // No chip and no dimming per row: both sections carry one "Example" on
+    // their heading instead, which is the whole marking the founder wanted.
     expect(list).toContain("MOCK_CAMPAIGNS.map((c) => summaryRow({");
-    expect(list).toMatch(/MOCK_CAMPAIGNS\.map[\s\S]{0,120}example: true/);
+    expect(list).not.toContain("example: true");
+    expect(list).not.toContain("egrow");
+    expect(home).toContain("'<h2 class=\"sec\">Programmes' + EG");
+    expect(home).toContain("'<h2 class=\"sec\">Campaigns' + EG");
   });
 
   /**
@@ -2773,8 +2791,16 @@ describe("Home", () => {
    * own smaller type, which made the page look like two grids that had not been
    * designed together.
    */
-  it("share their number size with the health tiles", () => {
+  it("leaves every other metric grid at the size it was", () => {
+    // .metric is Home's two tiles, the health tiles on Customers, and the
+    // three-up grids on the detail screens. Only Home's went to hero size; the
+    // health tiles take theirs from the shared rule and must keep doing so, or
+    // four numbers across a phone stop fitting their own boxes.
     expect(html).not.toMatch(/\.totals\.health \.metric b \{[^}]*font-size/);
+    const shared = html.slice(html.indexOf("\n    .metric b {"), html.indexOf(".metrics .metric b {"));
+    expect(shared).toContain("var(--t-xl)");
+    // And the label those grids use is a bare span, not .mlabel.
+    expect(html).toContain(".metric span:not(.mlabel):not(.mnote)");
   });
 
   /** Programmes: the real one, then the examples, each row marked. */
@@ -3585,12 +3611,18 @@ describe("example data announces itself", () => {
     const tiles = html.slice(html.indexOf("function homeScreen()"),
                              html.indexOf("function summaryRow(r)"));
     expect(tiles).not.toContain("MOCK_");
-    // The lists below them DO carry examples, and every one is marked.
+    // The lists below them DO carry examples. The marking is one chip on each
+    // section's heading rather than one per row — so what this has to hold is
+    // that no section reads a MOCK_ value without rendering EG somewhere.
+    const home = html.slice(html.indexOf("function homeScreen()"),
+                            html.indexOf("function summaryRow(r)"));
     const lists = html.slice(html.indexOf("function summaryRow(r)"),
                              html.indexOf("function shopChart(host, s)"));
-    for (const m of lists.matchAll(/MOCK_[A-Z_]+\.map\(\([^)]*\) => \(?\{([\s\S]{0,200}?)\}\)?\)/g)) {
-      expect(m[1], "an example row that does not say it is one").toContain("example: true");
+    for (const src of ["MOCK_PROGRAMS", "MOCK_CAMPAIGNS"]) {
+      expect(lists, src + " is read by no list").toContain(src);
     }
+    expect((home.match(/\+ EG \+/g) || []).length,
+      "each list that reads example data needs its own chip").toBe(2);
   });
 });
 

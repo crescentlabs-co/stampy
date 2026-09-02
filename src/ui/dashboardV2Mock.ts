@@ -28,8 +28,8 @@ export const DASHBOARD_MOCK_CSS = /* css */ `
      status. */
   .egchip { display: inline-block; vertical-align: middle; margin-left: 8px;
             background: var(--ghost-bg); color: var(--muted); border-radius: 999px;
-            padding: 3px 9px; font-size: .64rem; font-weight: 700; letter-spacing: .06em;
-            text-transform: uppercase; }
+            padding: var(--s1) var(--s2); font-size: var(--t-xs); font-weight: 700;
+            letter-spacing: var(--tr-caps); text-transform: uppercase; }
   h2 .egchip, h3 .egchip { position: relative; top: -2px; }
   /* A whole row that is an example, rather than a section. Quieter than the
      real rows beside it, so the eye sorts them without reading. */
