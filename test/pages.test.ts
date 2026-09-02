@@ -2946,6 +2946,23 @@ describe("the dashboard keeps to one scale", () => {
     expect(kit).toContain(`--body: "Inter",`);
   });
 
+  it("keeps 11px for uppercase tags, so small text is one size", () => {
+    // Two small sizes sat side by side — a 13px sentence next to an 11px
+    // caption — and read as a mistake rather than a hierarchy. The rule is that
+    // --t-xs is a TAG size: caps at 11px optically match sentence text at 13px,
+    // so uppercase is what earns it. Anything read as a phrase is --t-sm.
+    const rules = [...css.matchAll(/\n\s*(\.[^{}\n]*?) \{([^}]*)\}/g)]
+      .filter((m) => m[2]!.includes("var(--t-xs)"))
+      .map((m) => [m[1]!.trim(), m[2]!] as const);
+    // If this ever hits zero the regex has stopped matching and the check is
+    // passing on nothing, which is the failure mode a guard like this has.
+    expect(rules.length).toBeGreaterThan(4);
+    const lower = rules
+      .filter(([sel, body]) => !body.includes("text-transform: uppercase") && sel !== ".botnav a")
+      .map(([sel]) => sel);
+    expect(lower, "11px on text that is not an uppercase tag: " + lower.join(", ")).toEqual([]);
+  });
+
   it("spaces lines and letters from the tokens and nothing else", () => {
     // The type read as cramped, and the cause was that both of these had drifted
     // off the scale one rule at a time: five line heights and ten tracking

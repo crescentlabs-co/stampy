@@ -55,7 +55,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                 line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
                 font-variant-numeric: tabular-nums; color: var(--ink); }
-    /* The label leads, small and tracked — the only place --t-xs is used. */
+    /* The label leads, small and tracked. --t-xs is 11px and reserved for
+       UPPERCASE tags: caps read larger than lowercase at the same size, so 11px
+       caps and 13px sentence text look like one size, which is the point.
+       Anything you read as a phrase is --t-sm. A test holds the rule — captions
+       had drifted to 11px and sat next to 13px sentences looking like a
+       mistake. The bottom nav is the one named exception. */
     .mlabel { display: block; font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-caps);
               text-transform: uppercase; color: var(--muted); margin-bottom: var(--s2); }
     /* And the reading of it sits under, quieter than the number and never the
@@ -216,6 +221,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .botnav a { flex: 1; min-width: 0; display: flex; flex-direction: column;
                 align-items: center; justify-content: center; gap: var(--s1);
                 min-height: 52px; border-radius: 999px; text-decoration: none;
+                /* The one --t-xs that is not uppercase. Five labels share one
+                   pill on a 360px phone and "Customers" at --t-sm does not fit;
+                   every phone sets its nav in sentence case anyway. */
                 color: var(--muted); font-size: var(--t-xs); font-weight: 600;
                 letter-spacing: var(--tr-code); padding: var(--s2) 0; }
     .botnav a svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
@@ -271,7 +279,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pstat.off { color: var(--muted); background: var(--ghost-bg); }
     .pmeta { color: var(--muted); font-size: var(--t-sm); margin-top: var(--s1); }
     .pnums { display: flex; gap: var(--s3); margin-top: var(--s2); }
-    .pnums span { font-size: var(--t-xs); color: var(--muted); }
+    .pnums span { font-size: var(--t-sm); color: var(--muted); }
     .pnums b { display: block; font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
                line-height: var(--lh-num); letter-spacing: var(--tr-hero); font-variant-numeric: tabular-nums;
                color: var(--ink); }
@@ -375,6 +383,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .steps { display: flex; gap: var(--s2); list-style: none; padding: 0; margin: var(--s3) 0 var(--s1);
              counter-reset: s; }
     .steps li { counter-increment: s; flex: 1; font-size: var(--t-xs); font-weight: 700;
+                text-transform: uppercase;
                 letter-spacing: var(--tr-caps); color: var(--muted); padding-top: 8px;
                 border-top: 3px solid var(--line); }
     .steps li::before { content: counter(s) ". "; }
@@ -534,8 +543,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        number", never "this number is the interesting one". */
     .cact .cn { display: block; font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                 line-height: var(--lh-num); letter-spacing: var(--tr-hero); font-variant-numeric: tabular-nums; }
-    .cact .cl { display: block; margin-top: var(--s1); font-size: var(--t-xs); color: var(--muted); line-height: var(--lh-body); }
-    .cact .cgo { color: var(--muted); font-size: var(--t-xs); }
+    .cact .cl { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted); line-height: var(--lh-body); }
+    .cact .cgo { color: var(--muted); font-size: var(--t-sm); }
     .clist { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
     .clist th { text-align: left; color: var(--muted); font-size: var(--t-xs); text-transform: uppercase;
                 letter-spacing: var(--tr-caps); padding: var(--s2) var(--s2) var(--s2) 0; }
@@ -1652,16 +1661,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       if (!total) return;
       let line = "";
       if (groups.lost && groups.lost / total >= 0.4) {
-        line = "<strong>" + groups.lost + " of your " + total + " customers have gone quiet.</strong> " +
+        line = "<strong>" + groups.lost + " of your " + total +
+          (groups.lost === 1 ? " customers has gone quiet." : " customers have gone quiet.") + "</strong> " +
           "A win-back campaign is the usual answer.";
       } else if (groups.new && groups.new / total >= 0.5) {
         line = "<strong>Most of your customers are new.</strong> " +
           "Whether they come back a second time is the number worth watching next.";
       } else if (groups.regular && groups.regular / total >= 0.3) {
-        line = "<strong>" + groups.regular + " regulars.</strong> " +
+        line = "<strong>" + groups.regular + (groups.regular === 1 ? " regular." : " regulars.") + "</strong> " +
           "That is the group that pays for the rest of this.";
       } else if (groups.returning) {
-        line = "<strong>" + groups.returning + " customers are on their way to becoming regulars.</strong> " +
+        line = "<strong>" + groups.returning +
+          (groups.returning === 1 ? " customer is" : " customers are") +
+          " on their way to becoming " + (groups.returning === 1 ? "a regular." : "regulars.") + "</strong> " +
           "They have been back, but not often enough yet.";
       }
       if (!line) return;
