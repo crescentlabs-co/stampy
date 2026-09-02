@@ -39,7 +39,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           : "message whoever set up your PunchMe account"
       } and we’ll set a new password for you.</p>`;
   const css = /* css */ `
-    .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s2); margin: var(--s2) 0; }
+    /* The gap between the two tiles matches the sheet's own side padding, so
+       the gutter down the middle is the same width as the gutters at the edges.
+       At --s2 the pair read as one wide box someone had drawn a line through. */
+    .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s3);
+               margin: 0 0 var(--s3); }
     /* ONE card look, everywhere: a --surface fill, --r, and nothing drawn round
        it. Fifteen things on this screen used to carry a 1px outline — several
        with a fill AND a shadow as well, which is three separators doing one
@@ -55,14 +59,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                 line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
                 font-variant-numeric: tabular-nums; color: var(--ink); }
-    /* The label leads, small and tracked. --t-xs is 11px and reserved for
-       UPPERCASE tags: caps read larger than lowercase at the same size, so 11px
-       caps and 13px sentence text look like one size, which is the point.
-       Anything you read as a phrase is --t-sm. A test holds the rule — captions
-       had drifted to 11px and sat next to 13px sentences looking like a
-       mistake. The bottom nav is the one named exception. */
-    .mlabel { display: block; font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-caps);
-              text-transform: uppercase; color: var(--muted); margin-bottom: var(--s2); }
+    /* Every name on this screen is set the same way: sentence case, reading
+       size, muted. A tile's label, the chart's two series and the chart's hint
+       line are all the same kind of thing — the name of the number beside it —
+       and they used to be three different treatments, one of them uppercase.
+       --t-xs is 11px and stays reserved for UPPERCASE tags: caps read larger
+       than lowercase at the same size, so 11px caps and 13px sentence text look
+       like one size, which is the point. A test holds that rule. */
+    .mlabel { display: block; font-size: var(--t-sm); font-weight: 500;
+              color: var(--muted); margin-bottom: var(--s2); }
     /* And the reading of it sits under, quieter than the number and never the
        same size as the label above — two small lines at one size would read as
        a pair rather than as a top and a bottom. */
@@ -73,14 +78,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* --- Home's header row: the title, and the window it is all measured over.
        The selector belongs beside the title and not above the chart, because it
        governs the tiles as well — one control, everything on the screen. */
+    /* The title and the window it is all measured over, on one line. The
+       selector governs the tiles as well as the chart, so there is one of it
+       and it belongs beside the title rather than above the chart. */
     .homehead { display: flex; align-items: center; justify-content: space-between;
-                gap: var(--s3); flex-wrap: wrap; }
-    .homehead .sec { margin: var(--s5) 0 var(--s3); }
-    .homehead .sec.first { margin-top: var(--s3); }
-    /* A .seg sized down to sit on a heading row. Three windows have to fit
-       beside a word on a 360px phone, so this one drops to reading size. */
-    .winsel { flex: none; margin: var(--s3) 0; padding: var(--s1); }
-    .winsel button { font-size: var(--t-sm); padding: var(--s2) var(--s3); }
+                gap: var(--s3); flex-wrap: wrap; margin: var(--s3) 0 var(--s3); }
+    .homehead .sec { margin: 0; font-size: var(--t-xl); }
+    /* A .seg shrunk to sit on a heading row without towering over it: reading
+       size, and the smallest padding on the scale top and bottom. The labels
+       are "7d" and "30d" for the same reason — three words would not fit beside
+       a title on a 360px phone. */
+    .winsel { flex: none; margin: 0; padding: var(--s1); }
+    .winsel button { font-size: var(--t-sm); padding: var(--s1) var(--s3); }
     .winsel .thumb { top: var(--s1); bottom: var(--s1); }
     /* The number and its change share a line, sitting on the same baseline. It
        wraps on a narrow phone rather than shrinking: two tiles across 360px is
@@ -91,7 +100,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        (.h-regular and .h-lost). DESIGN.md rule 6: read the four, never pick a
        fifth. Never the neon: that marks the next thing to press, and a change
        since last week is not something you can press. */
-    .delta { font-size: var(--t-sm); font-weight: 700; letter-spacing: var(--tr-sm);
+    .delta { font-size: var(--t-sm); font-weight: 500; letter-spacing: var(--tr-sm);
              font-variant-numeric: tabular-nums; white-space: nowrap; }
     .delta.up { color: #15803d; }
     .delta.down { color: #9a3412; }
@@ -112,21 +121,39 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .ckey b { font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
               letter-spacing: var(--tr-lg); color: var(--ink);
               font-variant-numeric: tabular-nums; }
-    /* One line that answers the tap. It holds its height when nothing is
-       selected, so tapping across the chart does not shunt the chart up and
-       down under the finger doing the tapping. */
-    .chartread { margin-top: var(--s3); min-height: 20px; font-size: var(--t-sm);
-                 line-height: var(--lh-body); color: var(--muted);
-                 font-variant-numeric: tabular-nums; }
-    .chartread b { color: var(--ink); font-weight: 700; }
+    /* The hint, set like every other name on this screen. It says what to do
+       and nothing else — the answer arrives in the tooltip, over the point that
+       was tapped, because a readout pinned to the top of the card makes you
+       look away from the thing your finger is on. */
+    .chartread { margin-top: var(--s3); font-size: var(--t-sm); font-weight: 500;
+                 line-height: var(--lh-body); color: var(--muted); }
+    /* The tooltip. --bg on a --bg card would vanish, so this is the one place
+       rule 9 runs the other way: it earns its hairline by floating. */
+    .ctip { position: absolute; z-index: 2; pointer-events: none;
+            background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
+            box-shadow: var(--shadow); padding: var(--s2) var(--s3);
+            transform: translate(-50%, -100%); white-space: nowrap; }
+    .ctip .cd { display: block; font-size: var(--t-sm); font-weight: 700; color: var(--ink);
+                margin-bottom: var(--s1); }
+    .ctip .cr { display: flex; align-items: center; gap: var(--s2);
+                font-size: var(--t-sm); color: var(--muted); }
+    .ctip .cr b { margin-left: var(--s4); color: var(--ink); font-weight: 700;
+                  font-variant-numeric: tabular-nums; }
+    .ctip .sw { width: 9px; height: 9px; border-radius: 999px; flex: none; }
+    .ctip .sw.v { background: var(--accent-2); }
+    .ctip .sw.r { background: var(--ink); }
     .chartwrap { position: relative; margin-top: var(--s2); touch-action: pan-y;
                  cursor: crosshair; }
     .chartwrap svg { display: block; width: 100%; height: 132px; }
     /* Neon, and the one place on the dashboard it is not marking an action —
        the founder asked for it by name. It is a FILL under a line, never text
        and never the stroke on its own: #c9f73d on white cannot be read, which
-       is what --accent-2 is doing on top of it. See DESIGN.md rule 1. */
-    .chart .carea { fill: var(--accent); opacity: .5; }
+       is what --accent-2 is doing on top of it. See DESIGN.md rule 1.
+       It fades out downwards so the fill reads as depth under the line rather
+       than as a solid block of colour with a line on top. */
+    .chart .carea { fill: url(#pmChartFade); }
+    .chart .cg0 { stop-color: var(--accent); stop-opacity: .62; }
+    .chart .cg1 { stop-color: var(--accent); stop-opacity: .02; }
     .chart .cvis { fill: none; stroke: var(--accent-2); stroke-width: 2.5;
                    stroke-linecap: round; stroke-linejoin: round;
                    vector-effect: non-scaling-stroke; }
@@ -147,6 +174,39 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                font-size: var(--t-xs); letter-spacing: var(--tr-caps); text-transform: uppercase;
                color: var(--muted); }
     .chartempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
+                  color: var(--muted); }
+    /* --- the two summary lists ------------------------------------------
+       ONE container with the rows spaced inside it, the shape a transaction
+       list takes. Not a card per row: five cards stacked is five separators
+       doing the work of four gaps, and it was the stacked-boxes rhythm that
+       made this screen read as generated.
+
+       Two facts a side and no more. The full picture is on Manage, which still
+       carries customers, stamps and rewards per programme; Home answers "how
+       are they doing against each other" and nothing else. */
+    .slist { background: var(--bg); border-radius: var(--r); padding: var(--s2); }
+    .slist > * + * { margin-top: var(--s1); }
+    .srow { display: flex; align-items: center; gap: var(--s3); padding: var(--s3);
+            border-radius: var(--r-sm); text-decoration: none; color: inherit; }
+    a.srow:active { background: var(--surface); }
+    .srow .sl { flex: 1; min-width: 0; }
+    /* The name can be anything the owner typed, so it truncates rather than
+       wrapping under the figure beside it and breaking the row's rhythm. */
+    .srow .sn { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted); }
+    .srow .sr { flex: none; text-align: right; }
+    .srow .sv { display: block; font-family: var(--display); font-weight: 800;
+                font-size: var(--t-lg); letter-spacing: var(--tr-lg); color: var(--ink);
+                font-variant-numeric: tabular-nums; }
+    /* The unit rides with the number rather than sitting under it: "3" alone on
+       a line does not say what it counts, and a third line would make each row
+       taller than the two facts in it deserve. */
+    .srow .sv i { font-family: var(--body); font-style: normal; font-weight: 500;
+                  font-size: var(--t-sm); color: var(--muted); }
+    .srow .sp { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted);
+                font-variant-numeric: tabular-nums; }
+    .slistempty { padding: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
                   color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
@@ -1604,17 +1664,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<div class="homehead"><h2 class="sec first">Dashboard</h2>' +
           '<div class="seg winsel" data-win>' +
             '<span class="thumb"></span>' +
-            '<button class="on" data-w="7" type="button">7 days</button>' +
-            '<button data-w="30" type="button">30 days</button>' +
+            '<button class="on" data-w="7" type="button">7d</button>' +
+            '<button data-w="30" type="button">30d</button>' +
             '<button data-w="all" type="button">All</button>' +
           "</div>" +
         "</div>" +
         '<div class="metrics" data-totals></div>' +
-        '<div data-chart></div>';
+        '<div data-chart></div>' +
+        '<h2 class="sec">Programmes</h2>' +
+        '<div data-programs></div>' +
+        '<h2 class="sec">Campaigns' + EG + "</h2>" +
+        '<div data-campaigns></div>';
 
       const totals = d.querySelector("[data-totals]");
       const chart = d.querySelector("[data-chart]");
       const seg = d.querySelector("[data-win]");
+      d.querySelector("[data-programs]").innerHTML = homeProgrammes();
+      d.querySelector("[data-campaigns]").innerHTML = homeCampaigns();
 
       const tile = (label, value, delta) =>
         '<div class="metric"><span class="mlabel">' + label + "</span>" +
@@ -1675,8 +1741,85 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         moveThumb(seg);
         load(b.dataset.w);
       });
-      moveThumb(seg);
+      // Not moveThumb(seg) here: this element is not in the document yet, so
+      // offsetWidth is 0 and the highlight is drawn zero pixels wide — which is
+      // why the selector looked like it had nothing selected until you tapped
+      // it. One frame later it has been laid out and can be measured.
+      requestAnimationFrame(() => moveThumb(seg));
       return d;
+    }
+
+    /**
+     * One row: a name and its type on the left, one figure and its share on the
+     * right. The same shape serves programmes and campaigns, because they are
+     * the same question asked twice — how is this one doing against the others.
+     */
+    function summaryRow(r) {
+      const inner =
+        '<span class="sl"><span class="sn">' + esc(r.name) + "</span>" +
+          // The chip rides on the TYPE line, not the name: a name can be
+          // anything the owner typed and already truncates, and a chip pushed
+          // onto the end of it would eat the name rather than mark the row.
+          '<span class="st">' + esc(r.type) + (r.example ? EG : "") + "</span></span>" +
+        '<span class="sr"><span class="sv">' + r.value + "<i> " + esc(r.unit) + "</i></span>" +
+          '<span class="sp">' + esc(r.share) + "</span></span>";
+      return r.href
+        ? '<a class="srow' + (r.example ? " egrow" : "") + '" href="' + ROOT + r.href +
+            '" data-nav="' + r.href + '">' + inner + "</a>"
+        : '<div class="srow' + (r.example ? " egrow" : "") + '">' + inner + "</div>";
+    }
+
+    /** A share of a total, without dividing by zero and without a bare "0%". */
+    function shareOf(part, total, suffix) {
+      if (!total) return "—";
+      return Math.round((part / total) * 100) + "% " + suffix;
+    }
+
+    /**
+     * Programmes: visits, and what share of the shop's visits each one takes.
+     *
+     * Visits here are the programme's net stamps, the same arithmetic the chart
+     * above uses, so a programme's number and the chart's line cannot disagree.
+     * The share is of every programme's visits added together — including the
+     * examples, or the real programme would read as 100% of a shop that visibly
+     * has three.
+     */
+    function homeProgrammes() {
+      const real = S.cards.map((c) => ({
+        href: "/manage/rewards/" + c.id,
+        name: c.shopName || c.name,
+        type: KIND_LABEL[c.kind] || "Stamps",
+        visits: c.metrics.stamps,
+      }));
+      const eg = MOCK_PROGRAMS.map((m) => ({
+        href: "/manage/rewards/" + m.id, example: true,
+        name: m.name,
+        type: (KIND_LABEL[m.kind] || "Stamps") + (m.status === "ended" ? " · Ended" : ""),
+        visits: m.visits,
+      }));
+      const all = real.concat(eg);
+      const total = all.reduce((a, r) => a + r.visits, 0);
+      if (!all.length) return '<div class="slist"><p class="slistempty">No programmes yet.</p></div>';
+      return '<div class="slist">' + all.map((r) => summaryRow({
+        href: r.href, example: r.example, name: r.name, type: r.type,
+        value: r.visits.toLocaleString(), unit: r.visits === 1 ? "visit" : "visits",
+        share: shareOf(r.visits, total, "of visits"),
+      })).join("") + "</div>";
+    }
+
+    /**
+     * Campaigns: how many came back, and what share of the people it was sent
+     * to that is — the return rate, which is the only number that says whether
+     * a campaign worked. Entirely example data: there is no campaign table.
+     */
+    function homeCampaigns() {
+      return '<div class="slist">' + MOCK_CAMPAIGNS.map((c) => summaryRow({
+        href: "/manage/campaigns/" + c.id, example: true,
+        name: c.name,
+        type: c.type + (c.status === "ended" ? " · Ended" : ""),
+        value: c.returned.toLocaleString(), unit: "returned",
+        share: shareOf(c.returned, c.targeted, "return rate"),
+      })).join("") + "</div>";
     }
 
     /**
@@ -1723,6 +1866,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<div class="chartwrap" data-wrap>' +
             '<svg viewBox="' + g.box + '" preserveAspectRatio="none" ' +
               'aria-hidden="true" focusable="false">' +
+              '<defs><linearGradient id="pmChartFade" x1="0" y1="0" x2="0" y2="1">' +
+                '<stop class="cg0" offset="0"></stop><stop class="cg1" offset="1"></stop>' +
+              "</linearGradient></defs>" +
               '<path class="carea" d="' + g.area + '"></path>' +
               '<path class="cvis" d="' + g.vis + '"></path>' +
               '<path class="crew" d="' + g.rew + '"></path>' +
@@ -1730,6 +1876,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             '<span class="cmark hidden" data-mark></span>' +
             '<span class="cdot v hidden" data-dotv></span>' +
             '<span class="cdot r hidden" data-dotr></span>' +
+            '<div class="ctip hidden" data-tip></div>' +
           "</div>" +
           '<div class="chartax"><span>' + esc(edgeLabel(pts[0].at, s.bucketDays)) +
             "</span><span>Now</span></div>" +
@@ -1740,24 +1887,52 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const mark = host.querySelector("[data-mark]");
       const dotV = host.querySelector("[data-dotv]");
       const dotR = host.querySelector("[data-dotr]");
+      const tip = host.querySelector("[data-tip]");
       const unit = s.bucketDays > 1 ? "week" : "day";
+      const floating = [mark, dotV, dotR, tip];
+
+      read.textContent = "Tap the chart to read a " + unit + ".";
 
       function clear() {
-        read.innerHTML = "Tap the chart to read a " + unit + ".";
-        [mark, dotV, dotR].forEach((el) => el.classList.add("hidden"));
+        floating.forEach((el) => el.classList.add("hidden"));
       }
 
       function show(i) {
         const p = pts[i];
-        read.innerHTML = "<b>" + esc(bucketLabel(p.at, s.bucketDays)) + "</b> · " +
-          p.visits + (p.visits === 1 ? " visit" : " visits") + " · " +
-          p.rewards + (p.rewards === 1 ? " reward" : " rewards");
+        tip.innerHTML =
+          '<span class="cd">' + esc(bucketLabel(p.at, s.bucketDays)) + "</span>" +
+          '<span class="cr"><i class="sw v"></i>Visits<b>' + p.visits + "</b></span>" +
+          '<span class="cr"><i class="sw r"></i>Rewards<b>' + p.rewards + "</b></span>";
         mark.style.left = g.left[i] + "%";
         dotV.style.left = g.left[i] + "%";
         dotR.style.left = g.left[i] + "%";
         dotV.style.top = g.topV[i] + "%";
         dotR.style.top = g.topR[i] + "%";
-        [mark, dotV, dotR].forEach((el) => el.classList.remove("hidden"));
+        floating.forEach((el) => el.classList.remove("hidden"));
+        placeTip(i);
+      }
+
+      /**
+       * The tooltip sits over the point, above the higher of the two dots.
+       *
+       * Measured rather than guessed, because it is wider than the gap at
+       * either end of the chart: left at 0% would hang half of it off the side
+       * of the card, where it is clipped and unreadable. Near the top it flips
+       * underneath instead, for the same reason.
+       */
+      function placeTip(i) {
+        const wide = wrap.clientWidth || 1;
+        const tall = wrap.clientHeight || 1;
+        const w = tip.offsetWidth;
+        const half = w / 2 + 4;
+        const wanted = (g.left[i] / 100) * wide;
+        tip.style.left = Math.max(half, Math.min(wide - half, wanted)) + "px";
+        const topPct = Math.min(g.topV[i], g.topR[i]);
+        const above = (topPct / 100) * tall - 12;
+        const below = above + tip.offsetHeight + 36;
+        const flip = above < tip.offsetHeight;
+        tip.style.top = (flip ? below : above) + "px";
+        tip.style.transform = flip ? "translate(-50%, 0)" : "translate(-50%, -100%)";
       }
 
       function pick(e) {
@@ -1821,7 +1996,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         box: "0 0 " + W + " " + H,
         vis: visLine,
         rew: path(rew),
-        area: visLine + " L" + W + " " + H + " L0 " + H + " Z",
+        // Closed on the ZERO line, not on the bottom of the box. Closing at
+        // H hangs the fill ten pixels BELOW zero, which draws a green band
+        // under a day with nothing in it and reads as a negative number.
+        area: visLine + " L" + W + " " + yAt(0).toFixed(1) + " L0 " + yAt(0).toFixed(1) + " Z",
         left: vis.map((_, i) => (xAt(i) / W) * 100),
         topV: vis.map((v) => (yAt(v) / H) * 100),
         topR: rew.map((v) => (yAt(v) / H) * 100),

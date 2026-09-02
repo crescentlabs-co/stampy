@@ -2679,7 +2679,10 @@ describe("Home", () => {
    */
   it("puts the neon under the visits line and nowhere else in the chart", () => {
     const css = html.slice(html.indexOf(".chart .carea"), html.indexOf(".chartax {"));
-    expect(css).toMatch(/\.carea \{ fill: var\(--accent\)/);
+    // A gradient, so the fill reads as depth under the line rather than a slab.
+    expect(css).toContain(".carea { fill: url(#pmChartFade)");
+    expect(css).toMatch(/\.cg0 \{ stop-color: var\(--accent\)/);
+    expect(css).toMatch(/\.cg1 \{[^}]*stop-opacity: \.02/);
     expect(css).toMatch(/\.cvis \{[^}]*stroke: var\(--accent-2\)/);
     // The second series is ink, so the two are told apart by fill as well as
     // by colour — colour alone excludes anyone who cannot separate the hues.
@@ -2687,16 +2690,82 @@ describe("Home", () => {
     expect(css).toMatch(/\.crew \{[^}]*fill: none/);
   });
 
-  /** A tap has to answer with all three things, not just the number. */
-  it("answers a tap with the date and both figures", () => {
+  /**
+   * The fill closes on the ZERO line, not on the floor of the box. Closed at
+   * the floor it hangs ten pixels below zero, which paints a green band under a
+   * day that had nothing in it and reads as a negative number.
+   */
+  it("closes the filled area on zero, not below it", () => {
+    const geo = html.slice(html.indexOf("function chartGeometry(rawVis, rawRew)"),
+                           html.indexOf('/** "Mon 25 Aug"'));
+    expect(geo).toContain('area: visLine + " L" + W + " " + yAt(0).toFixed(1)');
+    expect(geo).not.toContain('area: visLine + " L" + W + " " + H');
+  });
+
+  /** A tap answers over the point, not in a line pinned to the top of the card. */
+  it("answers a tap with a tooltip carrying the date and both figures", () => {
     const chart = html.slice(html.indexOf("function shopChart(host, s)"),
                              html.indexOf("function chartGeometry(rawVis, rawRew)"));
     expect(chart).toContain("bucketLabel(p.at, s.bucketDays)");
-    expect(chart).toContain('p.visits === 1 ? " visit" : " visits"');
-    expect(chart).toContain('p.rewards === 1 ? " reward" : " rewards"');
+    expect(chart).toContain('<i class="sw v"></i>Visits<b>');
+    expect(chart).toContain('<i class="sw r"></i>Rewards<b>');
+    // Measured, not guessed: the card is wider than the gap at either end, so
+    // an unclamped tooltip on the last point hangs off the side and is clipped.
+    expect(chart).toContain("tip.offsetWidth");
+    expect(chart).toContain("Math.max(half, Math.min(wide - half, wanted))");
     // A finger reports no buttons, so a drag is tracked with a flag.
     expect(chart).toContain('wrap.addEventListener("pointerdown"');
     expect(chart).toContain("if (down) pick(e);");
+  });
+
+  /**
+   * Every name on this screen is set the same way — a tile's label, the chart's
+   * two series, the chart's hint. They were three treatments, one of them
+   * uppercase, which is what made them read as three different kinds of thing.
+   */
+  it("sets every label on the screen the same way", () => {
+    const label = html.slice(html.indexOf(".mlabel {"), html.indexOf(".mnote {"));
+    expect(label).toContain("var(--t-sm)");
+    expect(label).not.toContain("uppercase");
+    for (const cls of [".ckey {", ".chartread {"]) {
+      const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
+      expect(rule, cls + " is off the label size").toContain("var(--t-sm)");
+    }
+    // The change beside a number is coloured, not shouted.
+    const d = html.slice(html.indexOf(".delta {"), html.indexOf("}", html.indexOf(".delta {")));
+    expect(d).toContain("font-weight: 500");
+  });
+
+  /**
+   * The window highlight has to be right on arrival. moveThumb measures
+   * offsetWidth, which is 0 for an element that is not in the document yet —
+   * so calling it during the build drew the highlight zero pixels wide and the
+   * selector looked like nothing was chosen until you tapped it.
+   */
+  it("lights the chosen window before anyone taps it", () => {
+    expect(home).toContain("requestAnimationFrame(() => moveThumb(seg))");
+    expect(home).not.toMatch(/\n {6}moveThumb\(seg\);/);
+    for (const short of [">7d<", ">30d<", ">All<"]) expect(home).toContain(short);
+  });
+
+  /**
+   * Two facts a side and no more. Manage still carries customers, stamps and
+   * rewards per programme; Home answers how they compare and stops there.
+   */
+  it("summarises each programme and campaign in two facts", () => {
+    const list = html.slice(html.indexOf("function summaryRow(r)"),
+                            html.indexOf("function shopChart(host, s)"));
+    expect(list).toContain('shareOf(r.visits, total, "of visits")');
+    expect(list).toContain('shareOf(c.returned, c.targeted, "return rate")');
+    // A share of nothing is an em dash, never a confident 0%.
+    expect(list).toContain("if (!total) return \"—\";");
+    // One container with the rows spaced inside it, not a card per row.
+    const css = html.slice(html.indexOf(".slist {"), html.indexOf(".slistempty {"));
+    expect(css).toContain(".slist > * + * { margin-top: var(--s1); }");
+    expect(css).not.toMatch(/\.srow \{[^}]*border:/);
+    // Campaigns are entirely invented, so every row of them is marked.
+    expect(list).toContain("MOCK_CAMPAIGNS.map((c) => summaryRow({");
+    expect(list).toMatch(/MOCK_CAMPAIGNS\.map[\s\S]{0,120}example: true/);
   });
 
   /**
@@ -3510,10 +3579,18 @@ describe("example data announces itself", () => {
   });
 
   it("never counts example data into a real total", () => {
-    const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function shopChart"));
-    // The two headline figures and the chart come from /api/series, and from
-    // nothing else. Home is the one screen with no example data on it at all.
-    expect(home).not.toContain("MOCK_");
+    // The two headline figures and the chart come from /api/series and from
+    // nothing else: an example programme must never be added into the number
+    // an owner reads as their own.
+    const tiles = html.slice(html.indexOf("function homeScreen()"),
+                             html.indexOf("function summaryRow(r)"));
+    expect(tiles).not.toContain("MOCK_");
+    // The lists below them DO carry examples, and every one is marked.
+    const lists = html.slice(html.indexOf("function summaryRow(r)"),
+                             html.indexOf("function shopChart(host, s)"));
+    for (const m of lists.matchAll(/MOCK_[A-Z_]+\.map\(\([^)]*\) => \(?\{([\s\S]{0,200}?)\}\)?\)/g)) {
+      expect(m[1], "an example row that does not say it is one").toContain("example: true");
+    }
   });
 });
 
