@@ -121,10 +121,24 @@ export const baseCss = /* css */ `
     --t-sm: .8125rem;    /* 13px — explanatory text, meta */
     --t-xs: .6875rem;    /* 11px — labels, uppercase and tracked. Nothing else */
     /* Line height belongs to the scale. One global 1.5 left headings loose and
-       small text cramped, because those two want opposite things. */
-    --lh-tight: 1.15;    /* headings and big numbers */
-    --lh-body: 1.55;     /* body */
-    --lh-read: 1.6;      /* a paragraph somebody has to read */
+       small text cramped, because those two want opposite things. These are
+       deliberately airy: the whole complaint about the old type was that it
+       felt cramped, and line spacing is most of what "breathable" means. */
+    --lh-num: 1.1;       /* a number standing alone. No line below it to clear */
+    --lh-tight: 1.25;    /* headings */
+    --lh-body: 1.65;     /* body */
+    --lh-read: 1.75;     /* a paragraph somebody has to read */
+    /* Tracking belongs to the scale too, and it is paired to SIZE, because that
+       is how Inter is drawn: it wants tightening as it gets big and opening up
+       as it gets small. We had ten tracking values chosen one at a time, and
+       most of them squeezed. --display is Inter TIGHT, a narrow cut already;
+       tightening a narrow face is what made headings feel packed. */
+    --tr-hero: -.02em;   /* --t-hero and --t-xl: big display, gently closed */
+    --tr-lg: -.01em;     /* --t-lg section headings */
+    --tr-body: 0;        /* --t-md. Inter is drawn correct at reading size */
+    --tr-sm: .005em;     /* --t-sm. Small text needs air, not less of it */
+    --tr-caps: .06em;    /* --t-xs uppercase labels. Caps always need opening */
+    --tr-code: .04em;    /* a short code, read one character at a time */
     /* THREE radii and the pill. Was six — 7, 8, 10, 12, 14 and 22px, side by
        side on things that mean the same thing. */
     --r-sm: 10px;        /* chips, inputs, small controls */
@@ -142,7 +156,7 @@ export const baseCss = /* css */ `
   }
   * { box-sizing: border-box; margin: 0; }
   body {
-    font-family: var(--body); line-height: var(--lh-body);
+    font-family: var(--body); line-height: var(--lh-body); letter-spacing: var(--tr-body);
     background: var(--bg); color: var(--ink); min-height: 100vh;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     display: flex; flex-direction: column; align-items: center;
@@ -157,9 +171,9 @@ export const baseCss = /* css */ `
      is declared after this one, and one of them kept turning the shell grey. */
   body > .card { background: var(--bg); }
   h1 { font-family: var(--display); font-weight: 800; font-size: var(--t-xl); line-height: var(--lh-tight);
-       letter-spacing: -.03em; margin-bottom: 10px; text-wrap: balance; }
+       letter-spacing: var(--tr-hero); margin-bottom: 10px; text-wrap: balance; }
   h2 { font-family: var(--display); font-weight: 800; font-size: var(--t-lg); line-height: var(--lh-tight);
-       letter-spacing: -.02em; margin: var(--s4) 0 var(--s2); }
+       letter-spacing: var(--tr-lg); margin: var(--s4) 0 var(--s3); }
   p.sub { color: var(--muted); margin-bottom: 22px; }
   .btn {
     display: block; width: 100%; text-align: center; padding: 15px 20px;
@@ -212,7 +226,7 @@ export const baseCss = /* css */ `
      The card MOCKS keep their uppercase (.pv-lbl, .pvg-lbl): those transcribe
      what Apple and Google actually print, and lowercasing them would make the
      preview lie about the real card. */
-  label { font-size: var(--t-sm); font-weight: 700; letter-spacing: .01em;
+  label { font-size: var(--t-sm); font-weight: 700; letter-spacing: var(--tr-sm);
           color: var(--muted); display: block; margin: 14px 0 6px; }
   /* The one place our own name appears inside a merchant's dashboard, and the
      quietest thing on the page on purpose: what they are looking at is their

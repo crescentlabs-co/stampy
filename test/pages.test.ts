@@ -2946,6 +2946,21 @@ describe("the dashboard keeps to one scale", () => {
     expect(kit).toContain(`--body: "Inter",`);
   });
 
+  it("spaces lines and letters from the tokens and nothing else", () => {
+    // The type read as cramped, and the cause was that both of these had drifted
+    // off the scale one rule at a time: five line heights and ten tracking
+    // values, most of them squeezing. Breathing room is only a token change if
+    // every rule actually goes through the token.
+    const lh = values("line-height").filter(
+      // The ⋯ button centres one glyph in a 36px circle. That is a layout
+      // reset, not a reading decision, and no token should describe it.
+      (v) => !v.startsWith("var(--lh-") && v !== "1",
+    );
+    expect(lh, "line heights off the scale: " + lh.join(", ")).toEqual([]);
+    const tr = values("letter-spacing").filter((v) => !v.startsWith("var(--tr-"));
+    expect(tr, "tracking off the scale: " + tr.join(", ")).toEqual([]);
+  });
+
   it("sizes text from the six tokens and nothing else", () => {
     const off = values("font-size").filter(
       // .48em is a RATIO of its parent — the share beside a health count — not

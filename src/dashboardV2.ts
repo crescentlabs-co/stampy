@@ -53,10 +53,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .metric { background: var(--bg); border-radius: var(--r);
               padding: var(--s3); text-align: left; }
     .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
-                line-height: var(--lh-tight); display: block; letter-spacing: -.035em;
+                line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
                 font-variant-numeric: tabular-nums; color: var(--ink); }
     /* The label leads, small and tracked — the only place --t-xs is used. */
-    .mlabel { display: block; font-size: var(--t-xs); font-weight: 700; letter-spacing: .06em;
+    .mlabel { display: block; font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-caps);
               text-transform: uppercase; color: var(--muted); margin-bottom: var(--s2); }
     /* And the reading of it sits under, quieter than the number and never the
        same size as the label above — two small lines at one size would read as
@@ -64,13 +64,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .mnote { display: block; margin-top: var(--s2); font-size: var(--t-sm);
              line-height: var(--lh-body); color: var(--muted); }
     .metric span:not(.mlabel):not(.mnote) { display: block; margin-top: var(--s2);
-                   font-size: var(--t-sm); letter-spacing: .01em; color: var(--muted); }
+                   font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--muted); }
     /* The one wide block on Home, and where the density changes: four equal
        tiles, then one thing that is not a tile. */
     .chartcard { background: var(--bg); border-radius: var(--r); padding: var(--s4);
                  margin: var(--s2) 0 0; }
     .chartcard b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
-                   line-height: var(--lh-tight); display: block; letter-spacing: -.035em;
+                   line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
                    font-variant-numeric: tabular-nums; color: var(--ink); }
     .chartcard .mnote { margin-top: var(--s1); }
     /* --ink, never the accent: DESIGN.md keeps the neon for things you press,
@@ -79,7 +79,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .sparkwrap { color: var(--ink); margin-top: var(--s3); }
     .spark { display: block; width: 100%; height: 56px; }
     .sparkax { display: flex; justify-content: space-between; margin-top: var(--s2);
-               font-size: var(--t-xs); letter-spacing: .06em; text-transform: uppercase;
+               font-size: var(--t-xs); letter-spacing: var(--tr-caps); text-transform: uppercase;
                color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
@@ -175,10 +175,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        happen inside a flex row — without it a long name pushes the menu button
        off the end instead of truncating. */
     .topbar .shop { flex: 1; min-width: 0; text-align: center; font-family: var(--display);
-                    font-weight: 800; font-size: var(--t-md); letter-spacing: -.01em;
+                    font-weight: 800; font-size: var(--t-md); letter-spacing: var(--tr-lg);
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .topbar .dots { flex: none; width: 36px; height: 36px; border: 0; border-radius: 999px;
                     background: transparent; color: var(--on-accent); font-size: var(--t-lg);
+                    /* Not type: the glyph is centred in a 36px circle, so the
+                       line box has to be the glyph and nothing else. */
                     line-height: 1; cursor: pointer; padding: 0; }
     .topbar .dots:hover { background: rgba(12,14,13,.1); }
     /* INK, not neon, per rule 3 — the ring goes dark on a light ground, and
@@ -215,7 +217,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 align-items: center; justify-content: center; gap: var(--s1);
                 min-height: 52px; border-radius: 999px; text-decoration: none;
                 color: var(--muted); font-size: var(--t-xs); font-weight: 600;
-                letter-spacing: .04em; padding: var(--s2) 0; }
+                letter-spacing: var(--tr-code); padding: var(--s2) 0; }
     .botnav a svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
                     stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
     /* Active is marked by WEIGHT and ink, never by a fill. Three nav controls
@@ -261,7 +263,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .ptop strong { font-size: var(--t-md); }
     /* Status sits at the far end, so the eye finds it in the same place on
        every row however long the name is. */
-    .pstat { margin-left: auto; font-size: var(--t-xs); font-weight: 700; letter-spacing: .05em;
+    .pstat { margin-left: auto; font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-caps);
              text-transform: uppercase; color: #15803d; background: #e9f7ee;
              border-radius: 999px; padding: var(--s1) var(--s2); white-space: nowrap; }
     /* Ended is not a failure and is not red: the programme did its job and
@@ -271,13 +273,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pnums { display: flex; gap: var(--s3); margin-top: var(--s2); }
     .pnums span { font-size: var(--t-xs); color: var(--muted); }
     .pnums b { display: block; font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
-               line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+               line-height: var(--lh-num); letter-spacing: var(--tr-hero); font-variant-numeric: tabular-nums;
                color: var(--ink); }
     /* The one interpretive line on the page. Bordered rather than filled: it is
        a note about the numbers above it, not a fifth number. */
     .insight { border-left: 3px solid var(--ink); background: var(--bg);
                border-radius: 0 var(--r) var(--r) 0; padding: var(--s3); margin: var(--s3) 0 var(--s1); }
-    .insight p { margin: 0; font-size: var(--t-sm); line-height: 1.5; }
+    .insight p { margin: 0; font-size: var(--t-sm); line-height: var(--lh-read); }
     /* --- Customers: search, segment chips, and one row per person --- */
     .cfilter { display: flex; gap: var(--s2); flex-wrap: wrap; margin: var(--s3) 0 var(--s2); }
     .cfilter input[type="search"] { flex: 1; min-width: 160px; margin: 0; }
@@ -301,13 +303,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .ccard:only-child { border-radius: var(--r); }
     .ccard + .ccard { box-shadow: inset 0 1px 0 var(--line); }
     .ccard:hover { background: var(--surface); }
-    .ccard .cid { font-weight: 800; letter-spacing: .04em; font-family: var(--display); }
+    .ccard .cid { font-weight: 800; letter-spacing: var(--tr-code); font-family: var(--display); }
     .ccard .cprog { margin-left: auto; color: var(--muted); font-size: var(--t-sm);
                     font-variant-numeric: tabular-nums; }
     .ccard .cwhen { color: var(--muted); font-size: var(--t-sm); white-space: nowrap; }
     /* The segment, in the same four hues the tiles above use — read those, do
        not pick a fifth (DESIGN.md rule 6). */
-    .cseg { font-size: var(--t-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    .cseg { font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-code); text-transform: uppercase;
             color: var(--hue); background: var(--hue-bg); border-radius: 999px; padding: var(--s1) var(--s2);
             white-space: nowrap; }
     h2 .cseg { margin-left: var(--s2); position: relative; top: -3px; }
@@ -328,7 +330,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .act { display: flex; gap: var(--s3); padding: var(--s3); font-size: var(--t-sm); }
     .act + .act { box-shadow: inset 0 1px 0 var(--line); }
     .act .at { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 62px; }
-    .act .aw strong { letter-spacing: .04em; }
+    .act .aw strong { letter-spacing: var(--tr-code); }
     textarea { width: 100%; padding: var(--s2) var(--s3); border: 1px solid var(--field-border);
                border-radius: var(--r); font: inherit; resize: vertical; }
     /* --- Manage: the two lists, and one programme's page --- */
@@ -338,7 +340,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        own copy of the rules — so this explains what actually happens rather
        than disabling a field that is meant to work. */
     .locknote { background: var(--ghost-bg); border-radius: var(--r); padding: var(--s3);
-                margin-top: var(--s3); font-size: var(--t-sm); line-height: 1.5; color: var(--ink2); }
+                margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read); color: var(--ink2); }
     /* Every programme has its own QR, which is the whole of "multiple
        programmes means multiple QRs" said in one picture. */
     /* The QR sits on a --surface block rather than being outlined. The code
@@ -362,18 +364,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             background: var(--bg); }
     .pick:hover { background: var(--surface); }
     .pick strong { font-size: var(--t-md); }
-    .pick .sub2 { grid-column: 1; color: var(--muted); font-size: var(--t-sm); line-height: 1.45; }
+    .pick .sub2 { grid-column: 1; color: var(--muted); font-size: var(--t-sm); line-height: var(--lh-read); }
     .pick .arr { grid-row: 1 / span 2; color: var(--muted); }
     /* Says the quiet part out loud: nothing on this screen is saved. Amber like
        the setup banner — nothing is broken, something is outstanding. */
     .draftnote { background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
                  border-radius: var(--r); padding: var(--s3); margin: var(--s3) 0;
-                 font-size: var(--t-sm); line-height: 1.45; }
+                 font-size: var(--t-sm); line-height: var(--lh-read); }
     /* Three steps, so it is obvious there are three and which one you are on. */
     .steps { display: flex; gap: var(--s2); list-style: none; padding: 0; margin: var(--s3) 0 var(--s1);
              counter-reset: s; }
     .steps li { counter-increment: s; flex: 1; font-size: var(--t-xs); font-weight: 700;
-                letter-spacing: .03em; color: var(--muted); padding-top: 8px;
+                letter-spacing: var(--tr-caps); color: var(--muted); padding-top: 8px;
                 border-top: 3px solid var(--line); }
     .steps li::before { content: counter(s) ". "; }
     .steps li.on { color: var(--ink); border-top-color: var(--ink); }
@@ -383,7 +385,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .phone { background: var(--slab); border-radius: var(--r-lg); padding: var(--s3); margin-top: var(--s2); }
     .pnote { background: var(--bg); border-radius: var(--r); padding: var(--s3); }
     .pnote strong { font-size: var(--t-sm); }
-    .pnote p { margin: var(--s1) 0 0; font-size: var(--t-sm); line-height: 1.45; }
+    .pnote p { margin: var(--s1) 0 0; font-size: var(--t-sm); line-height: var(--lh-read); }
     /* The logo, at the size a row can hold. Boxed on white because a logo made
        for a dark card is invisible on a light page otherwise. */
     .logothumb { height: 30px; max-width: 130px; object-fit: contain; background: #fff;
@@ -429,7 +431,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        count is the fact, the percentage is how to read it. Tabular so four
        tiles line up down the column instead of shuffling by digit width. */
     .totals.health .metric b i { font-style: normal; font-size: .48em; font-weight: 700;
-                                 letter-spacing: 0; margin-left: var(--s2); opacity: .72; }
+                                 letter-spacing: var(--tr-body); margin-left: var(--s2); opacity: .72; }
     .totals.health .metric span { color: var(--ink2); font-weight: 600; }
     /* Semantic colour, rule 6 of DESIGN.md, plus the one blue this app has:
        these four are read against each other at a glance, and the hue does the
@@ -442,7 +444,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                  margin-top: var(--s2); background: var(--bg); border-radius: var(--r);
                  overflow: hidden; }
     .breakdown th { text-align: left; color: var(--muted); font-size: var(--t-xs);
-                    text-transform: uppercase; letter-spacing: .06em; padding: var(--s3); }
+                    text-transform: uppercase; letter-spacing: var(--tr-caps); padding: var(--s3); }
     .breakdown td { padding: var(--s3); }
     .breakdown tr + tr td { box-shadow: inset 0 1px 0 var(--line); }
     .breakdown td.n { text-align: right; font-variant-numeric: tabular-nums; }
@@ -476,7 +478,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        than being a second card-in-a-card. */
     .crow { padding: var(--s3) 0; box-shadow: inset 0 1px 0 var(--line); }
     .ctop { display: flex; align-items: center; gap: var(--s2); }
-    .ctop strong { font-size: var(--t-md); letter-spacing: .04em; }
+    .ctop strong { font-size: var(--t-md); letter-spacing: var(--tr-code); }
     .cprog { flex: 1; color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
     .cn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); }
     .cmeta { color: var(--muted); font-size: var(--t-sm); margin-top: var(--s1); }
@@ -493,7 +495,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pinwarn { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2);
                background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
                border-radius: var(--r); padding: var(--s3); margin-bottom: var(--s3);
-               font-size: var(--t-sm); line-height: 1.45; }
+               font-size: var(--t-sm); line-height: var(--lh-read); }
     .pinwarn p { margin: 0; flex: 1; min-width: 200px; }
     .pinwarn .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); flex: none;
                     background: #fff; border-color: #d9a441; color: #7c2d12; }
@@ -504,7 +506,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .bucket .cn:disabled { opacity: .4; }
     /* --- a value shown exactly once (a new PIN) --- */
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: var(--s2) var(--s3);
-            border-radius: var(--r-sm); margin-top: var(--s2); font-size: var(--t-sm); line-height: 1.5; }
+            border-radius: var(--r-sm); margin-top: var(--s2); font-size: var(--t-sm); line-height: var(--lh-read); }
     /* --- Card tab: Design / Rules section headings --- */
     /* Sections are separated by SPACE and a heading, never by a rule. A line
        above every heading is most of what made this read as a wiki page. */
@@ -531,12 +533,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        these are metrics. Every cell gets it equally: the weight says "this is a
        number", never "this number is the interesting one". */
     .cact .cn { display: block; font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
-                line-height: 1.1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-    .cact .cl { display: block; margin-top: var(--s1); font-size: var(--t-xs); color: var(--muted); line-height: 1.3; }
+                line-height: var(--lh-num); letter-spacing: var(--tr-hero); font-variant-numeric: tabular-nums; }
+    .cact .cl { display: block; margin-top: var(--s1); font-size: var(--t-xs); color: var(--muted); line-height: var(--lh-body); }
     .cact .cgo { color: var(--muted); font-size: var(--t-xs); }
     .clist { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
     .clist th { text-align: left; color: var(--muted); font-size: var(--t-xs); text-transform: uppercase;
-                letter-spacing: .06em; padding: var(--s2) var(--s2) var(--s2) 0; }
+                letter-spacing: var(--tr-caps); padding: var(--s2) var(--s2) var(--s2) 0; }
     .clist td { padding: var(--s2) var(--s2) var(--s2) 0; vertical-align: top; }
     .clist tr + tr td { box-shadow: inset 0 1px 0 var(--line); }
     .clist td.mono { font-family: ui-monospace, Menlo, monospace; font-size: var(--t-sm); }
