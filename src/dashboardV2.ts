@@ -72,7 +72,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        Home's two, and only those two. .metric is also the health tiles on
        Customers and the three-up grids on the detail screens — four of these
        across a phone at hero size is a number that does not fit its own box. */
-    .metrics .metric b { font-size: var(--t-xl); line-height: var(--lh-num); }
+    /* --body, not --display, and 700 rather than 800.
+       A figure sits INSIDE a block of small text — its label above it and what
+       it is measured against below — and --display is Inter TIGHT, a narrower
+       cut. Two widths of the same design at one size do not read as a level,
+       they read as a mismatch, which is what the chart card looked like with
+       its two figures in one family and its dates and tooltip in the other.
+       Slashed zero for the same reason a counter's short code drops O and 0:
+       these are figures to be read exactly, not words. */
+    .metrics .metric b { font-family: var(--body); font-weight: 700; font-size: var(--t-xl);
+                         line-height: var(--lh-num);
+                         font-variant-numeric: tabular-nums slashed-zero; }
     /* Every name on this screen is set the same way: sentence case, reading
        size, muted. A tile's label, the chart's two series and the chart's hint
        line are all the same kind of thing — the name of the number beside it —
@@ -91,8 +101,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .mnote { display: block; margin-top: var(--s1); font-size: var(--t-sm);
              line-height: var(--lh-body); color: var(--muted); }
     /* The label under a number in every OTHER metric grid — the health tiles
-       and the detail screens. Home's tiles use .mlabel above and lead with it. */
-    .metric span:not(.mlabel):not(.mnote) { display: block; margin-top: var(--s2);
+       and the detail screens. Home's tiles use .mlabel above and lead with it.
+
+       Every span this must NOT touch has to be excluded BY NAME, because the
+       selector outranks anything a single class can say: three classes and an
+       element beats .delta.up, so the change beside a number was being repainted
+       muted grey and forced onto its own line. Nothing reports that — the rule
+       is valid, the colour is applied, the wrong one simply wins. Add a span to
+       a .metric and add it here in the same edit. */
+    .metric span:not(.mlabel):not(.mnote):not(.delta) { display: block; margin-top: var(--s2);
                    font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--muted); }
     /* --- Home's header row: the title, and the window it is all measured over.
        The selector belongs beside the title and not above the chart, because it
@@ -141,9 +158,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        beside the word, which made them a third kind of thing on a screen that
        only has two. The swatch is what still ties each one to its line. */
     .chartfigs { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s3); }
-    .cfig b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
+    .cfig b { font-family: var(--body); font-weight: 700; font-size: var(--t-xl);
               line-height: var(--lh-num); letter-spacing: var(--tr-hero); color: var(--ink);
-              font-variant-numeric: tabular-nums; }
+              font-variant-numeric: tabular-nums slashed-zero; }
     .sw { width: 10px; height: 10px; border-radius: 999px; flex: none; }
     .sw.v { background: var(--accent); border: 1.5px solid var(--accent-2); }
     .sw.r { background: var(--ink); }
@@ -158,7 +175,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .ctip .cr { display: flex; align-items: center; gap: var(--s2);
                 font-size: var(--t-sm); color: var(--muted); }
     .ctip .cr b { margin-left: var(--s4); color: var(--ink); font-weight: 700;
-                  font-variant-numeric: tabular-nums; }
+                  font-variant-numeric: tabular-nums slashed-zero; }
     .chartwrap { position: relative; margin-top: var(--s2); touch-action: pan-y;
                  cursor: crosshair; }
     .chartwrap svg { display: block; width: 100%; height: 132px; }
@@ -223,10 +240,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        display and the words around it 13px, which made a row carry three sizes
        on its own. Left and right are peers here; neither is the headline. */
     .srow .sv { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
-                font-variant-numeric: tabular-nums; }
-    /* The unit rides with the number: "3" alone does not say what it counts,
-       and a third line would make the row taller than two facts deserve. */
-    .srow .sv i { font-style: normal; font-weight: 400; color: var(--muted); }
+                font-variant-numeric: tabular-nums slashed-zero; }
+    /* Both figures on the top line, both of their labels underneath, so the
+       eye reads the two numbers together and only then asks what they are.
+       The separator is a middle dot at the label's weight in both rows, so the
+       two lines line up as a little two-column block. */
+    .srow .sx { font-style: normal; font-weight: 400; color: var(--line);
+                padding: 0 var(--s1); }
+    .srow .sp .sx { color: var(--line); }
     .srow .sp { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted);
                 font-variant-numeric: tabular-nums; }
     .slistempty { padding: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
@@ -1783,11 +1804,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * the same question asked twice — how is this one doing against the others.
      */
     function summaryRow(r) {
+      const dot = '<i class="sx">·</i>';
       const inner =
         '<span class="sl"><span class="sn">' + esc(r.name) + "</span>" +
           '<span class="st">' + esc(r.type) + "</span></span>" +
-        '<span class="sr"><span class="sv">' + r.value + "<i> " + esc(r.unit) + "</i></span>" +
-          '<span class="sp">' + esc(r.share) + "</span></span>";
+        '<span class="sr"><span class="sv">' + r.value + dot + r.share + "</span>" +
+          '<span class="sp">' + esc(r.unit) + dot + esc(r.shareLabel) + "</span></span>";
       // No chip and no dimming on the row itself. Both sections carry ONE
       // "Example" on their heading instead — a chip on every row was more
       // marking than reading, and the founder asked for the quiet version.
@@ -1797,9 +1819,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     }
 
     /** A share of a total, without dividing by zero and without a bare "0%". */
-    function shareOf(part, total, suffix) {
+    function shareOf(part, total) {
       if (!total) return "—";
-      return Math.round((part / total) * 100) + "% " + suffix;
+      return Math.round((part / total) * 100) + "%";
     }
 
     /**
@@ -1836,7 +1858,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       return '<div class="slist">' + all.map((r) => summaryRow({
         href: r.href, name: r.name, type: r.type,
         value: r.customers.toLocaleString(), unit: r.customers === 1 ? "customer" : "customers",
-        share: shareOf(r.customers, total, "of customers"),
+        share: shareOf(r.customers, total), shareLabel: "of total",
       })).join("") + "</div>";
     }
 
@@ -1851,7 +1873,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         name: c.name,
         type: c.type + (c.status === "ended" ? " · Ended" : ""),
         value: c.returned.toLocaleString(), unit: "returned",
-        share: shareOf(c.returned, c.targeted, "return rate"),
+        share: shareOf(c.returned, c.targeted), shareLabel: "return rate",
       })).join("") + "</div>";
     }
 

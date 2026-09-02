@@ -2750,8 +2750,9 @@ describe("Home", () => {
     const label = html.slice(html.indexOf(".mlabel {"), html.indexOf(".mnote {"));
     expect(label).not.toContain("uppercase");
     // The change beside a number is a colour, not a size and not a weight.
-    const d = html.slice(html.indexOf(".delta {"), html.indexOf(".delta.up"));
-    expect(d).toContain("var(--t-sm)");
+    const dAt = html.indexOf("\n    .delta {");
+    expect(dAt, ".delta rule is gone").toBeGreaterThan(0);
+    expect(html.slice(dAt, html.indexOf("}", dAt))).toContain("var(--t-sm)");
     // The hint line is gone; the tooltip is the answer.
     expect(html).not.toContain("Tap the chart to read a");
   });
@@ -2779,10 +2780,17 @@ describe("Home", () => {
     // against the list's own total rather than the headline above it — a
     // person on two programmes belongs to both rows, so dividing by the
     // headline would let the shares add up past 100%.
-    expect(list).toContain('shareOf(r.customers, total, "of customers")');
+    expect(list).toContain("shareOf(r.customers, total)");
     expect(list).toContain("customers: c.metrics.active");
     expect(list).not.toContain("of visits");
-    expect(list).toContain('shareOf(c.returned, c.targeted, "return rate")');
+    expect(list).toContain("shareOf(c.returned, c.targeted)");
+    // Both figures on the top line, both of their labels underneath, so the two
+    // lines read as a little two-column block rather than two facts stacked.
+    expect(list).toContain("r.value + dot + r.share");
+    expect(list).toContain("esc(r.unit) + dot + esc(r.shareLabel)");
+    for (const lbl of ['shareLabel: "of total"', 'shareLabel: "return rate"']) {
+      expect(list, "a share with no label saying what it is a share of").toContain(lbl);
+    }
     // A share of nothing is an em dash, never a confident 0%.
     expect(list).toContain("if (!total) return \"—\";");
     // One container with the rows spaced inside it, not a card per row.
@@ -3074,6 +3082,62 @@ describe("the dashboard keeps to one scale", () => {
   const HOME = [".mlabel", ".mnote", ".delta", ".winsel button", ".chartax", ".chartempty",
                 ".ctip .cd", ".ctip .cr", ".srow .sn", ".srow .st", ".srow .sv", ".srow .sp",
                 ".slistempty", ".metrics .metric b", ".cfig b", ".home .sec"];
+
+  /**
+   * The change beside a number must actually come out green or rust.
+   *
+   * It did not, and nothing could see it. `.metric span:not(.mlabel):not(.mnote)`
+   * is three classes and an element; `.delta.up` is two classes. The broader
+   * rule won, repainted the change muted grey and forced it onto its own line —
+   * with both rules valid, both applied, and no error anywhere. A grep for
+   * "is the colour set" passes on a page where the colour never lands.
+   *
+   * So this works out which rule WINS, the way a browser does.
+   */
+  it("lets the change beside a number keep its colour", () => {
+    const score = (sel: string) => {
+      // Classes, attributes and pseudo-classes count the same, and :not() adds
+      // nothing itself but its contents count — which is the whole trap here.
+      const classes = (sel.match(/\.[a-zA-Z][\w-]*/g) || []).length;
+      const elements = (sel.replace(/:not\([^)]*\)/g, "").match(/(^|[\s>+~])[a-zA-Z][\w-]*/g) || []).length;
+      return classes * 100 + elements;
+    };
+    // Every rule in the dashboard that a <span class="delta up"> inside
+    // .metric > .mrow would match, and that has an opinion about colour.
+    const matches = [...css.matchAll(/\n\s*(\.[^{}\n]*?) \{([^}]*)\}/g)]
+      .map((m) => [m[1]!.trim(), m[2]!] as const)
+      .filter(([sel, body]) => {
+        if (!/(^|[;{\s])color:/.test(body)) return false;
+        if (sel === ".delta.up") return true;
+        // A descendant-span rule under .metric matches unless it excludes us.
+        return /^\.metric\b.*\bspan\b/.test(sel) && !sel.includes(":not(.delta)");
+      });
+    const winner = matches.sort((a, b) => score(b[0]) - score(a[0]))[0];
+    expect(winner, "no rule colours .delta.up at all").toBeTruthy();
+    expect(winner![0], "a broader rule outranks .delta.up and greys the change out")
+      .toBe(".delta.up");
+    expect(winner![1]).toContain("#15803d");
+    // ...and it must stay inline beside the number, not be pushed to its own
+    // line by that same rule's display: block.
+    const blockers = matches.filter(([sel, body]) => sel !== ".delta.up" && body.includes("display: block"));
+    expect(blockers.map(([sel]) => sel), "a broader rule forces the change onto its own line").toEqual([]);
+  });
+
+  /**
+   * A figure sits inside a block of small text, so it takes the text's family.
+   * --display is Inter TIGHT, a narrower cut of the same design: two widths at
+   * one size read as a mismatch rather than as a level, which is what the chart
+   * card looked like with its figures in one family and its dates in the other.
+   */
+  it("sets the chart card and the tiles in one family", () => {
+    for (const cls of [".metrics .metric b {", ".cfig b {"]) {
+      const rule = css.slice(css.indexOf(cls), css.indexOf("}", css.indexOf(cls)));
+      expect(rule, cls + " is not on the body family").toContain("font-family: var(--body)");
+      expect(rule, cls + " should not be the display face").not.toContain("var(--display)");
+      // Figures to be read exactly, not words.
+      expect(rule).toContain("tabular-nums slashed-zero");
+    }
+  });
 
   it("gives Home three text sizes and no others", () => {
     const rules = [...css.matchAll(/\n\s*(\.[^{}\n]*?) \{([^}]*)\}/g)]
