@@ -59,20 +59,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                 line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
                 font-variant-numeric: tabular-nums; color: var(--ink); }
-    /* --- Home has TWO text sizes and no others -------------------------
-       --t-lg is the title, the two section headings and every NUMBER; --t-xs
-       is every other word on the screen. It reached five sizes by adding one
-       sensible step at a time, and on a phone the result was a screen where
-       everything shouted. Two sizes with a 1.6x gap between them is a
-       hierarchy you can see without reading.
+    /* --- Home has THREE text sizes and no others ------------------------
+       --t-xl (24px) is the title, both section headings and every NUMBER.
+       --t-md (14px) is a row's name and a row's figure.
+       --t-sm (12px) is every other word: labels, subtext, dates, the tooltip.
 
-       --t-xs is 11px, which elsewhere in the app is a TAG size for uppercase
-       labels. On Home it is simply the small size, and a test holds the pair.
+       It reached five by adding one sensible step at a time, which is what made
+       it read as generated. These three each have a job you can say out loud,
+       and a test holds them. --t-xs (11px) is not one of them: off Home it is
+       the size for UPPERCASE tags and it stays that.
 
        Home's two, and only those two. .metric is also the health tiles on
        Customers and the three-up grids on the detail screens — four of these
        across a phone at hero size is a number that does not fit its own box. */
-    .metrics .metric b { font-size: var(--t-lg); line-height: var(--lh-num); }
+    .metrics .metric b { font-size: var(--t-xl); line-height: var(--lh-num); }
     /* Every name on this screen is set the same way: sentence case, reading
        size, muted. A tile's label, the chart's two series and the chart's hint
        line are all the same kind of thing — the name of the number beside it —
@@ -80,7 +80,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        --t-xs is 11px and stays reserved for UPPERCASE tags: caps read larger
        than lowercase at the same size, so 11px caps and 13px sentence text look
        like one size, which is the point. A test holds that rule. */
-    .mlabel { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-xs);
+    .mlabel { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm);
               font-weight: 500; color: var(--muted); margin-bottom: var(--s1); }
     /* And the reading of it sits under, quieter than the number and never the
        same size as the label above — two small lines at one size would read as
@@ -88,7 +88,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* What the change is measured against, on its own line under the number —
        the sentence does not have to fit beside a 32px figure in half a phone,
        and the coloured part is then the only thing colour is doing. */
-    .mnote { display: block; margin-top: var(--s1); font-size: var(--t-xs);
+    .mnote { display: block; margin-top: var(--s1); font-size: var(--t-sm);
              line-height: var(--lh-body); color: var(--muted); }
     /* The label under a number in every OTHER metric grid — the health tiles
        and the detail screens. Home's tiles use .mlabel above and lead with it. */
@@ -103,12 +103,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .homehead { display: flex; align-items: center; justify-content: space-between;
                 gap: var(--s3); flex-wrap: wrap; margin: var(--s3) 0 var(--s3); }
     .homehead .sec { margin: 0; }
+    /* Every heading on Home, not only the title: Programmes and Campaigns sit
+       at the same rank as it and as the numbers. .sec elsewhere keeps --t-lg,
+       which is why this hangs off the screen's own class. */
+    .home .sec { font-size: var(--t-xl); }
     /* A .seg shrunk to sit on a heading row without towering over it: reading
        size, and the smallest padding on the scale top and bottom. The labels
        are "7d" and "30d" for the same reason — three words would not fit beside
        a title on a 360px phone. */
     .winsel { flex: none; margin: 0; padding: var(--s1); }
-    .winsel button { font-size: var(--t-xs); padding: var(--s1) var(--s3); }
+    .winsel button { font-size: var(--t-sm); padding: var(--s1) var(--s3); }
     .winsel .thumb { top: var(--s1); bottom: var(--s1); }
     /* The number and its change share a line, sitting on the same baseline. It
        wraps on a narrow phone rather than shrinking: two tiles across 360px is
@@ -121,7 +125,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        since last week is not something you can press. */
     /* The change is a COLOUR and nothing else — not bigger, not heavier. It
        sits on the number's baseline so the pair read as one figure. */
-    .delta { font-size: var(--t-xs); font-weight: 600;
+    .delta { font-size: var(--t-sm); font-weight: 600;
              font-variant-numeric: tabular-nums; white-space: nowrap; }
     .delta.up { color: #15803d; }
     .delta.down { color: #9a3412; }
@@ -137,7 +141,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        beside the word, which made them a third kind of thing on a screen that
        only has two. The swatch is what still ties each one to its line. */
     .chartfigs { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s3); }
-    .cfig b { font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
+    .cfig b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
               line-height: var(--lh-num); letter-spacing: var(--tr-hero); color: var(--ink);
               font-variant-numeric: tabular-nums; }
     .sw { width: 10px; height: 10px; border-radius: 999px; flex: none; }
@@ -149,10 +153,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
             box-shadow: var(--shadow); padding: var(--s2) var(--s3);
             transform: translate(-50%, -100%); white-space: nowrap; }
-    .ctip .cd { display: block; font-size: var(--t-xs); font-weight: 700; color: var(--ink);
+    .ctip .cd { display: block; font-size: var(--t-sm); font-weight: 700; color: var(--ink);
                 margin-bottom: var(--s1); }
     .ctip .cr { display: flex; align-items: center; gap: var(--s2);
-                font-size: var(--t-xs); color: var(--muted); }
+                font-size: var(--t-sm); color: var(--muted); }
     .ctip .cr b { margin-left: var(--s4); color: var(--ink); font-weight: 700;
                   font-variant-numeric: tabular-nums; }
     .chartwrap { position: relative; margin-top: var(--s2); touch-action: pan-y;
@@ -188,11 +192,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        three. Three marks, not two: the middle one is what tells you the line
        is a month rather than a week. */
     .chartax { display: flex; justify-content: space-between; margin-top: var(--s2);
-               font-size: var(--t-xs); color: var(--muted); }
+               font-size: var(--t-sm); color: var(--muted); }
     .chartax span:nth-child(2) { text-align: center; }
     .chartax span:last-child { text-align: right; }
     .chartax span { flex: 1; min-width: 0; }
-    .chartempty { margin-top: var(--s3); font-size: var(--t-xs); line-height: var(--lh-read);
+    .chartempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
                   color: var(--muted); }
     /* --- the two summary lists ------------------------------------------
        ONE container with the rows spaced inside it, the shape a transaction
@@ -211,21 +215,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .srow .sl { flex: 1; min-width: 0; }
     /* The name can be anything the owner typed, so it truncates rather than
        wrapping under the figure beside it and breaking the row's rhythm. */
-    .srow .sn { display: block; font-size: var(--t-xs); font-weight: 600; color: var(--ink);
+    .srow .sn { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-xs); color: var(--muted); }
+    .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted); }
     .srow .sr { flex: none; text-align: right; }
     /* A row is FOUR facts at ONE size, two a side. The figure was --t-lg
        display and the words around it 13px, which made a row carry three sizes
        on its own. Left and right are peers here; neither is the headline. */
-    .srow .sv { display: block; font-size: var(--t-xs); font-weight: 600; color: var(--ink);
+    .srow .sv { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
                 font-variant-numeric: tabular-nums; }
     /* The unit rides with the number: "3" alone does not say what it counts,
        and a third line would make the row taller than two facts deserve. */
     .srow .sv i { font-style: normal; font-weight: 400; color: var(--muted); }
-    .srow .sp { display: block; margin-top: var(--s1); font-size: var(--t-xs); color: var(--muted);
+    .srow .sp { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted);
                 font-variant-numeric: tabular-nums; }
-    .slistempty { padding: var(--s3); font-size: var(--t-xs); line-height: var(--lh-read);
+    .slistempty { padding: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
                   color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
@@ -1679,6 +1683,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     function homeScreen() {
       const d = document.createElement("div");
+      // Named so its headings can be a rank bigger than every other screen's
+      // without a rule that reaches out and resizes theirs too.
+      d.className = "home";
       d.innerHTML =
         '<div class="homehead"><h2 class="sec first">Dashboard</h2>' +
           '<div class="seg winsel" data-win>' +

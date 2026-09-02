@@ -117,8 +117,8 @@ export const baseCss = /* css */ `
     --t-hero: 2rem;      /* 32px — the one big number on a screen */
     --t-xl: 1.5rem;      /* 24px — a metric's number, a screen title */
     --t-lg: 1.125rem;    /* 18px — a section heading */
-    --t-md: .9375rem;    /* 15px — body, and a row's value at 600 */
-    --t-sm: .8125rem;    /* 13px — explanatory text, meta */
+    --t-md: .875rem;     /* 14px — body, and a row's name or value */
+    --t-sm: .75rem;      /* 12px — the subtext under either of those */
     --t-xs: .6875rem;    /* 11px — labels, uppercase and tracked. Nothing else */
     /* Line height belongs to the scale. One global 1.5 left headings loose and
        small text cramped, because those two want opposite things. These are

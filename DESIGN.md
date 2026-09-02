@@ -129,10 +129,24 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   `.btn-ghost` is the quiet third. `--r`-cornered blocks are not buttons.
 - **Panels** are `--surface` on `--bg` with a `--line` border, or `--slab` when
   they need to carry.
-- **Metric numbers** are `--display` at 800, tabular, with an uppercase
-  `--muted` label under them at `.68rem` and `.05em` tracking. `--display` is a
-  variable face covering 400–900, so a number that sets the family and forgets
-  the weight renders at 400 and reads as body text.
+- **Metric numbers** are `--display` at 800, tabular, with a `--muted` label
+  ABOVE them — `--t-sm`, sentence case, no tracking. `--display` is a variable
+  face covering 400–900, so a number that sets the family and forgets the weight
+  renders at 400 and reads as body text.
+
+  **The dashboard's Home is set in exactly three sizes** and a test holds it:
+  `--t-xl` for the title, both section headings and every number; `--t-md` for a
+  row's name and a row's figure; `--t-sm` for every other word. It reached five
+  by adding one sensible step at a time, which is what made it read as generated
+  rather than designed. `--t-xs` is not one of the three: it is the size for
+  UPPERCASE tags, and Home has no uppercase on it.
+
+  **`--t-sm` (12px) and `--t-xs` (11px) are one pixel apart on purpose.** No eye
+  separates those on size, and they do not have to: `--t-xs` is only ever set on
+  uppercase text, and caps read a size or two larger than sentence case, so what
+  you see is the change of CASE. A test enforces the uppercase rule, and the
+  guard on step sizes exempts this one pair for that reason and only that
+  reason. Set `--t-xs` on sentence text and both stop being true.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
 - **App chrome** is a locked neon top bar, a scrolling sheet under it, and a

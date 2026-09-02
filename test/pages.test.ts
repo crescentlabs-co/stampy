@@ -2726,32 +2726,32 @@ describe("Home", () => {
    * two series, the chart's hint. They were three treatments, one of them
    * uppercase, which is what made them read as three different kinds of thing.
    */
-  it("sets every word on the screen at the one small size", () => {
+  it("sets the screen in three sizes, each with a job", () => {
     // Home reached FIVE text sizes — 11, 13, 15, 18 and 24 — one sensible step
-    // at a time, and on a phone the result was a screen where everything
-    // shouted. Two now, with a 1.6x gap: --t-lg for the title, the two headings
-    // and every number, --t-xs for every other word.
+    // at a time, which is what made it read as generated. Three now: 24 for the
+    // title, both headings and every number; 14 for a row's name and figure;
+    // 12 for every other word.
+    for (const cls of [".metrics .metric b {", ".cfig b {", ".home .sec {"]) {
+      const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
+      expect(rule, cls + " is off the big size").toContain("var(--t-xl)");
+    }
+    for (const cls of [".srow .sn {", ".srow .sv {"]) {
+      const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
+      expect(rule, cls + " is off the row size").toContain("var(--t-md)");
+    }
+    for (const cls of [".mlabel {", ".mnote {", ".delta {", ".chartax {", ".srow .st {",
+                       ".srow .sp {", ".ctip .cd {", ".ctip .cr {", ".winsel button {"]) {
+      const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
+      expect(rule, cls + " is off the subtext size").toContain("var(--t-sm)");
+    }
+    // Home's headings are a rank above every other screen's, so the rule hangs
+    // off the screen's own class rather than resizing .sec for everybody.
+    expect(html).toContain(".home .sec { font-size: var(--t-xl); }");
     const label = html.slice(html.indexOf(".mlabel {"), html.indexOf(".mnote {"));
-    expect(label).toContain("var(--t-xs)");
     expect(label).not.toContain("uppercase");
-    for (const cls of [".mnote {", ".delta {", ".chartax {", ".srow .sn {", ".srow .st {",
-                       ".srow .sv {", ".srow .sp {", ".ctip .cd {", ".ctip .cr {",
-                       ".winsel button {"]) {
-      const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
-      expect(rule, cls + " is off the one small size").toContain("var(--t-xs)");
-    }
-    // The title, the two headings and every number are the one big size, so a
-    // number and the heading above it read as the same rank of thing.
-    for (const cls of [".metrics .metric b {", ".cfig b {"]) {
-      const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
-      expect(rule, cls + " is off the one big size").toContain("var(--t-lg)");
-    }
-    // The heading takes .sec's own --t-lg rather than overriding it.
-    const head = html.slice(html.indexOf(".homehead .sec {"), html.indexOf("}", html.indexOf(".homehead .sec {")));
-    expect(head).not.toContain("font-size");
     // The change beside a number is a colour, not a size and not a weight.
     const d = html.slice(html.indexOf(".delta {"), html.indexOf(".delta.up"));
-    expect(d).toContain("var(--t-xs)");
+    expect(d).toContain("var(--t-sm)");
     // The hint line is gone; the tooltip is the answer.
     expect(html).not.toContain("Tap the chart to read a");
   });
@@ -3073,24 +3073,26 @@ describe("the dashboard keeps to one scale", () => {
    */
   const HOME = [".mlabel", ".mnote", ".delta", ".winsel button", ".chartax", ".chartempty",
                 ".ctip .cd", ".ctip .cr", ".srow .sn", ".srow .st", ".srow .sv", ".srow .sp",
-                ".slistempty", ".metrics .metric b", ".cfig b", ".homehead .sec"];
+                ".slistempty", ".metrics .metric b", ".cfig b", ".home .sec"];
 
-  it("gives Home two text sizes and no others", () => {
+  it("gives Home three text sizes and no others", () => {
     const rules = [...css.matchAll(/\n\s*(\.[^{}\n]*?) \{([^}]*)\}/g)]
       .map((m) => [m[1]!.trim(), m[2]!] as const)
       .filter(([sel]) => HOME.includes(sel));
     // If this stops matching, the check is passing on nothing.
     expect(rules.length).toBeGreaterThan(10);
     const off = rules
-      .filter(([, body]) => /font-size: (?!var\(--t-lg\)|var\(--t-xs\))/.test(body))
+      .filter(([, body]) => /font-size: (?!var\(--t-xl\)|var\(--t-md\)|var\(--t-sm\))/.test(body))
       .map(([sel]) => sel);
-    expect(off, "Home rules off its two sizes: " + off.join(", ")).toEqual([]);
-    // And both sizes are actually in use — one of them alone is not a hierarchy.
-    const used = new Set(rules.flatMap(([, b]) => [...b.matchAll(/font-size: (var\(--t-[a-z]+\))/g)].map((m) => m[1]!)));
-    expect([...used].sort()).toEqual(["var(--t-lg)", "var(--t-xs)"]);
+    expect(off, "Home rules off its three sizes: " + off.join(", ")).toEqual([]);
+    // All three in use, and NOT --t-xs: that one is the uppercase tag size and
+    // Home has no uppercase on it.
+    const used = new Set(rules.flatMap(([, b]) =>
+      [...b.matchAll(/font-size: (var\(--t-[a-z]+\))/g)].map((m) => m[1]!)));
+    expect([...used].sort()).toEqual(["var(--t-md)", "var(--t-sm)", "var(--t-xl)"]);
   });
 
-  it("keeps 11px for uppercase tags everywhere except Home", () => {
+  it("keeps 11px for uppercase tags, and Home never reaches for it", () => {
     // Off Home the rule still holds: caps at 11px optically match sentence text
     // at 13px, so uppercase is what earns the smaller size. A 13px sentence
     // next to an 11px caption reads as a mistake rather than a hierarchy.
@@ -3170,10 +3172,19 @@ describe("the dashboard keeps to one scale", () => {
     // body to meta is a small, deliberate step in every design system — while
     // the display sizes are far apart. The guard exists to stop twelve sizes
     // inside 3.5px, and at six sizes spanning 11px to 32px it still does.
-    for (let i = 0; i < steps.length - 1; i++) {
+    //
+    // ONE step is exempt, the last: --t-sm to --t-xs is 12px to 11px, which no
+    // eye can separate on size alone. It does not have to. --t-xs is only ever
+    // set on UPPERCASE text — the test above this file's HOME list enforces
+    // exactly that — and caps read a size or two larger than sentence case, so
+    // the step people actually see is the CASE, not the pixel. Take the
+    // uppercase rule away and this exemption stops being true.
+    for (let i = 0; i < steps.length - 2; i++) {
       expect(steps[i]! / steps[i + 1]!, `${steps[i]}rem over ${steps[i + 1]}rem is too small a step`)
         .toBeGreaterThanOrEqual(1.14);
     }
+    // The exempt pair still may not cross over or collide.
+    expect(steps[4]!, "--t-sm must stay larger than --t-xs").toBeGreaterThan(steps[5]!);
   });
 });
 
