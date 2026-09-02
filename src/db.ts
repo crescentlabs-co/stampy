@@ -3567,6 +3567,176 @@ export async function merchantSeries(merchantId: string, weeks = 26): Promise<Me
   return res.rows;
 }
 
+// ---------------------------------------------------------------------------
+// The owner's Home chart and its two headline tiles.
+//
+// Everything here is derived by query off the append-only log, like every other
+// metric — there is no stored daily aggregate and there must not be one.
+//
+// The window is 7 days, 30 days, or every day the shop has traded. Seven and
+// thirty bucket by DAY; all-time buckets by week, because a shop trading two
+// years would otherwise be 730 points in a chart 340 pixels wide, and a point
+// you cannot tap is not interactive.
+
+/** 7, 30, or 0 meaning every day the shop has traded. */
+export type ShopWindow = 7 | 30 | 0;
+
+export interface ShopSeriesPoint {
+  /** Bucket start, midnight in the database's timezone. */
+  at: Date;
+  /** Net stamps in the bucket — a visit to the counter. Undos come off. */
+  visits: number;
+  rewards: number;
+}
+
+export interface ShopSeries {
+  window: ShopWindow;
+  /** 1 for the day windows, 7 for all-time. The chart labels itself from this. */
+  bucketDays: number;
+  points: ShopSeriesPoint[];
+  /**
+   * The two headline tiles: where the number stands NOW, and where it stood at
+   * the start of the window, so the tile can show the change between them.
+   *
+   * A stock, not a flow. "Customers" on this dashboard has one meaning
+   * everywhere (invariant 5, ACTIVE_PASS_SQL) and it is a running total; making
+   * the headline "customers this week" would quietly give the word a second
+   * meaning on the one screen that shows it biggest. `before` is null for
+   * all-time, which has nothing before it to compare against.
+   */
+  customers: { now: number; before: number | null };
+  /** Net stamps × the shop's own basket. Same stock-not-flow rule. */
+  revenueCents: { now: number; before: number | null };
+  currency: string;
+}
+
+/**
+ * When each PERSON became a customer, for counting the total as at a date.
+ *
+ * Their first event on any pass they hold, falling back to when the pass row
+ * was written. Every customer under ACTIVE_PASS_SQL has been stamped, has a
+ * registration, or has a `pass_added` — the first and third are events, and the
+ * fallback covers the second, whose only timestamp is the pass itself.
+ *
+ * Per PERSON and not per pass (invariant 5): somebody holding an Apple card and
+ * a Google card became a customer once, on the earlier of the two.
+ */
+const BECAME_CUSTOMER_SQL = `SELECT ${PERSON_KEY_SQL} AS person,
+              min(COALESCE(ev.first_at, p.created_at)) AS became_at
+         FROM passes p
+         JOIN cards c ON c.id = p.card_id
+         LEFT JOIN LATERAL (
+           SELECT min(e.created_at) AS first_at
+             FROM events e WHERE e.serial = p.serial AND NOT e.is_test
+         ) ev ON true
+        WHERE c.merchant_id = $1 AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}
+        GROUP BY 1`;
+
+export async function shopSeries(merchantId: string, window: ShopWindow = 7): Promise<ShopSeries> {
+  const days = window === 30 ? 30 : window === 0 ? 0 : 7;
+  const unit = days ? "day" : "week";
+  const bucketDays = days ? 1 : 7;
+
+  // How many buckets to draw. A day window is exactly its own length; all-time
+  // runs from the shop's first event, capped at two years so one very old shop
+  // cannot ask for an unbounded chart. Two buckets minimum: one point is not a
+  // line, and sparkline() draws nothing for it.
+  let buckets = days;
+  if (!days) {
+    const span = await getPool().query<{ buckets: string }>(
+      `SELECT GREATEST(2, LEAST(104,
+         COALESCE(ceil(extract(epoch FROM (now() - min(e.created_at))) / 604800.0), 2) + 1))::text AS buckets
+         FROM events e JOIN cards c ON c.id = e.card_id
+        WHERE c.merchant_id = $1 AND NOT e.is_test`,
+      [merchantId],
+    );
+    buckets = Math.max(2, Number(span.rows[0]?.buckets ?? 2));
+  }
+
+  // generate_series, not a GROUP BY over the events: a day nobody stamped has
+  // no rows to group, so grouping alone closes the gap up and draws a straight
+  // line through a closed week as though it were trading.
+  const res = await getPool().query<{ at: Date; visits: number; rewards: number }>(
+    `WITH buckets AS (
+       SELECT generate_series(
+                date_trunc($2, now()) - ($3::int - 1) * ($4 || ' days')::interval,
+                date_trunc($2, now()),
+                ($4 || ' days')::interval) AS at
+     ),
+     ev AS (
+       SELECT date_trunc($2, e.created_at) AS at, e.type,
+              COALESCE(e.amount, 1) AS amount
+         FROM events e
+         JOIN cards c ON c.id = e.card_id
+        WHERE NOT e.is_test
+          AND c.merchant_id = $1
+          AND e.created_at >= (SELECT min(at) FROM buckets)
+     )
+     SELECT b.at,
+            -- The netStamps rule, spelled out: ev has already dropped test rows
+            -- and no longer carries the column to filter on, so the helper
+            -- cannot be pointed at it. Same arithmetic, same floor at zero.
+            COALESCE((SELECT GREATEST(
+                        COALESCE(sum(amount) FILTER (WHERE type = 'stamp'), 0)
+                      - COALESCE(sum(amount) FILTER (WHERE type = 'undo'), 0), 0)::int
+                        FROM ev WHERE ev.at = b.at), 0) AS visits,
+            COALESCE((SELECT count(*)::int FROM ev
+                       WHERE ev.at = b.at AND ev.type = 'redeem'), 0) AS rewards
+       FROM buckets b
+      ORDER BY b.at`,
+    [merchantId, unit, String(buckets), String(bucketDays)],
+  );
+
+  // The two tiles. `before` is the same number as it stood at the start of the
+  // window, so the tile subtracts rather than comparing two different measures.
+  const cut = days ? `now() - interval '${days} days'` : "NULL::timestamptz";
+  const totals = await getPool().query<{
+    cnow: string; cbefore: string | null; snow: string; sbefore: string | null; basket: string;
+  }>(
+    `WITH person AS (${BECAME_CUSTOMER_SQL}),
+     ev AS (
+       SELECT e.created_at, e.type, COALESCE(e.amount, 1) AS amount
+         FROM events e JOIN cards c ON c.id = e.card_id
+        WHERE NOT e.is_test AND c.merchant_id = $1
+     )
+     SELECT (SELECT count(*) FROM person)::text AS cnow,
+            (SELECT CASE WHEN ${cut} IS NULL THEN NULL
+                         ELSE count(*) FILTER (WHERE became_at <= ${cut}) END
+               FROM person)::text AS cbefore,
+            (SELECT GREATEST(
+                      COALESCE(sum(amount) FILTER (WHERE type = 'stamp'), 0)
+                    - COALESCE(sum(amount) FILTER (WHERE type = 'undo'), 0), 0)::int
+               FROM ev)::text AS snow,
+            (SELECT CASE WHEN ${cut} IS NULL THEN NULL ELSE GREATEST(
+                      COALESCE(sum(amount) FILTER (WHERE type = 'stamp' AND created_at <= ${cut}), 0)
+                    - COALESCE(sum(amount) FILTER (WHERE type = 'undo' AND created_at <= ${cut}), 0), 0)::int
+               END FROM ev)::text AS sbefore,
+            -- The CARD's basket, not the merchant's: only the card column is
+            -- written by the dashboard. merchants.average_spend_cents is a v1.3
+            -- leftover and is not kept up to date.
+            COALESCE((SELECT max(average_spend_cents) FROM cards WHERE merchant_id = $1), 0)::text AS basket`,
+    [merchantId],
+  );
+  const t = totals.rows[0]!;
+  const basket = Number(t.basket);
+  const currency = await getPool().query<{ currency: string }>(
+    `SELECT COALESCE(max(currency), 'RM') AS currency FROM cards WHERE merchant_id = $1`,
+    [merchantId],
+  );
+
+  return {
+    window: days === 30 ? 30 : days === 7 ? 7 : 0,
+    bucketDays,
+    points: res.rows.map((r) => ({ at: r.at, visits: Number(r.visits), rewards: Number(r.rewards) })),
+    customers: { now: Number(t.cnow), before: t.cbefore === null ? null : Number(t.cbefore) },
+    revenueCents: {
+      now: Number(t.snow) * basket,
+      before: t.sbefore === null ? null : Number(t.sbefore) * basket,
+    },
+    currency: currency.rows[0]?.currency || "RM",
+  };
+}
+
 export interface AdminStaffRow {
   /** MERCHANT id. There is one staff PIN per owner covering every card they
    *  run, so a counter phone was never card-scoped — grouping by card split one

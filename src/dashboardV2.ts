@@ -70,22 +70,84 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
              line-height: var(--lh-body); color: var(--muted); }
     .metric span:not(.mlabel):not(.mnote) { display: block; margin-top: var(--s2);
                    font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--muted); }
-    /* The one wide block on Home, and where the density changes: four equal
-       tiles, then one thing that is not a tile. */
-    .chartcard { background: var(--bg); border-radius: var(--r); padding: var(--s4);
-                 margin: var(--s2) 0 0; }
-    .chartcard b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
-                   line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
-                   font-variant-numeric: tabular-nums; color: var(--ink); }
-    .chartcard .mnote { margin-top: var(--s1); }
-    /* --ink, never the accent: DESIGN.md keeps the neon for things you press,
-       and a line on a graph is not pressable. The area under it is the same
-       ink at low opacity, so the chart is one colour at two weights. */
-    .sparkwrap { color: var(--ink); margin-top: var(--s3); }
-    .spark { display: block; width: 100%; height: 56px; }
-    .sparkax { display: flex; justify-content: space-between; margin-top: var(--s2);
+    /* --- Home's header row: the title, and the window it is all measured over.
+       The selector belongs beside the title and not above the chart, because it
+       governs the tiles as well — one control, everything on the screen. */
+    .homehead { display: flex; align-items: center; justify-content: space-between;
+                gap: var(--s3); flex-wrap: wrap; }
+    .homehead .sec { margin: var(--s5) 0 var(--s3); }
+    .homehead .sec.first { margin-top: var(--s3); }
+    /* A .seg sized down to sit on a heading row. Three windows have to fit
+       beside a word on a 360px phone, so this one drops to reading size. */
+    .winsel { flex: none; margin: var(--s3) 0; padding: var(--s1); }
+    .winsel button { font-size: var(--t-sm); padding: var(--s2) var(--s3); }
+    .winsel .thumb { top: var(--s1); bottom: var(--s1); }
+    /* The number and its change share a line, sitting on the same baseline. It
+       wraps on a narrow phone rather than shrinking: two tiles across 360px is
+       about 150px each, and "+3 vs last week" does not always fit beside a
+       four-figure number. */
+    .mrow { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
+    /* Green up, rust down — the SAME two hues the customer segments use below
+       (.h-regular and .h-lost). DESIGN.md rule 6: read the four, never pick a
+       fifth. Never the neon: that marks the next thing to press, and a change
+       since last week is not something you can press. */
+    .delta { font-size: var(--t-sm); font-weight: 700; letter-spacing: var(--tr-sm);
+             font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .delta.up { color: #15803d; }
+    .delta.down { color: #9a3412; }
+    .delta.flat { color: var(--muted); }
+    /* --- the one chart -------------------------------------------------------
+       Two series on one pair of axes, so the shape of the week can be read once
+       instead of twice. They are told apart by FILL as much as by colour: the
+       visits line carries a filled area, the rewards line is a bare stroke. */
+    .chart { background: var(--bg); border-radius: var(--r); padding: var(--s4);
+             margin: var(--s2) 0 0; }
+    .chartkeys { display: flex; gap: var(--s4); flex-wrap: wrap; }
+    .ckey { display: flex; align-items: baseline; gap: var(--s2);
+            font-size: var(--t-sm); color: var(--muted); }
+    .ckey::before { content: ""; width: 10px; height: 10px; border-radius: 999px;
+                    align-self: center; flex: none; }
+    .ckey.vis::before { background: var(--accent); border: 1.5px solid var(--accent-2); }
+    .ckey.rew::before { background: var(--ink); }
+    .ckey b { font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
+              letter-spacing: var(--tr-lg); color: var(--ink);
+              font-variant-numeric: tabular-nums; }
+    /* One line that answers the tap. It holds its height when nothing is
+       selected, so tapping across the chart does not shunt the chart up and
+       down under the finger doing the tapping. */
+    .chartread { margin-top: var(--s3); min-height: 20px; font-size: var(--t-sm);
+                 line-height: var(--lh-body); color: var(--muted);
+                 font-variant-numeric: tabular-nums; }
+    .chartread b { color: var(--ink); font-weight: 700; }
+    .chartwrap { position: relative; margin-top: var(--s2); touch-action: pan-y;
+                 cursor: crosshair; }
+    .chartwrap svg { display: block; width: 100%; height: 132px; }
+    /* Neon, and the one place on the dashboard it is not marking an action —
+       the founder asked for it by name. It is a FILL under a line, never text
+       and never the stroke on its own: #c9f73d on white cannot be read, which
+       is what --accent-2 is doing on top of it. See DESIGN.md rule 1. */
+    .chart .carea { fill: var(--accent); opacity: .5; }
+    .chart .cvis { fill: none; stroke: var(--accent-2); stroke-width: 2.5;
+                   stroke-linecap: round; stroke-linejoin: round;
+                   vector-effect: non-scaling-stroke; }
+    .chart .crew { fill: none; stroke: var(--ink); stroke-width: 2;
+                   stroke-linecap: round; stroke-linejoin: round;
+                   vector-effect: non-scaling-stroke; }
+    /* The marker and its dots are HTML, not SVG. The paths are drawn into a
+       viewBox stretched to the card's width, and that same stretch would turn a
+       circle into an ellipse — so these sit over the top in percentages. */
+    .chart .cmark { position: absolute; top: 0; bottom: 0; width: 1px;
+                    background: var(--ink); opacity: .3; transform: translateX(-.5px); }
+    .chart .cdot { position: absolute; width: 11px; height: 11px; border-radius: 999px;
+                   border: 2px solid var(--bg); transform: translate(-50%, -50%); }
+    .chart .cdot.v { background: var(--accent-2); }
+    .chart .cdot.r { background: var(--ink); }
+    .chart .hidden { display: none; }
+    .chartax { display: flex; justify-content: space-between; margin-top: var(--s2);
                font-size: var(--t-xs); letter-spacing: var(--tr-caps); text-transform: uppercase;
                color: var(--muted); }
+    .chartempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
+                  color: var(--muted); }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
     .links { display: flex; gap: var(--s3); margin-top: var(--s2); flex-wrap: wrap; font-size: var(--t-sm); }
@@ -283,11 +345,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pnums b { display: block; font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
                line-height: var(--lh-num); letter-spacing: var(--tr-hero); font-variant-numeric: tabular-nums;
                color: var(--ink); }
-    /* The one interpretive line on the page. Bordered rather than filled: it is
-       a note about the numbers above it, not a fifth number. */
-    .insight { border-left: 3px solid var(--ink); background: var(--bg);
-               border-radius: 0 var(--r) var(--r) 0; padding: var(--s3); margin: var(--s3) 0 var(--s1); }
-    .insight p { margin: 0; font-size: var(--t-sm); line-height: var(--lh-read); }
     /* --- Customers: search, segment chips, and one row per person --- */
     .cfilter { display: flex; gap: var(--s2); flex-wrap: wrap; margin: var(--s3) 0 var(--s2); }
     .cfilter input[type="search"] { flex: 1; min-width: 160px; margin: 0; }
@@ -1527,157 +1584,265 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * (/api/customers) and one for the programmes (/api/overview, already in
      * S), and nothing is counted a third way.
      */
+    /**
+     * Home.
+     *
+     * A heading, the window everything is measured over, two figures and one
+     * chart. It carried four tiles, a sign-ups sparkline, a sentence of
+     * commentary, the programme list and a campaigns block; the founder asked
+     * for the short version, and Manage still holds the programmes and the
+     * campaigns, so nothing here was the only way to reach anything.
+     *
+     * ONE request fills the whole screen (/api/series). The tiles and the chart
+     * therefore cannot disagree about the window, which is the failure this
+     * codebase has had twice — a headline and the list under it answering the
+     * same question differently because each fetched its own numbers.
+     */
     function homeScreen() {
       const d = document.createElement("div");
-      const sum = (k) => S.cards.reduce((a, c) => a + (c.metrics[k] || 0), 0);
       d.innerHTML =
-        '<h2 class="sec first">How your shop is doing</h2>' +
-        '<div class="totals" data-totals></div>' +
-        '<p class="muted" data-gap style="margin:0"></p>' +
-        '<div data-signups></div>' +
-        '<div data-insight></div>' +
-        '<h2 class="sec">Programmes</h2>' +
-        '<div data-programs></div>' +
-        '<h2 class="sec">Campaigns' + EG + "</h2>" +
-        '<div data-campaigns></div>';
+        '<div class="homehead"><h2 class="sec first">Dashboard</h2>' +
+          '<div class="seg winsel" data-win>' +
+            '<span class="thumb"></span>' +
+            '<button class="on" data-w="7" type="button">7 days</button>' +
+            '<button data-w="30" type="button">30 days</button>' +
+            '<button data-w="all" type="button">All</button>' +
+          "</div>" +
+        "</div>" +
+        '<div class="metrics" data-totals></div>' +
+        '<div data-chart></div>';
+
+      const totals = d.querySelector("[data-totals]");
+      const chart = d.querySelector("[data-chart]");
+      const seg = d.querySelector("[data-win]");
+
+      const tile = (label, value, delta) =>
+        '<div class="metric"><span class="mlabel">' + label + "</span>" +
+        '<div class="mrow"><b>' + value + "</b>" + delta + "</div></div>";
 
       /**
-       * A tile is a LABEL, a number, and a line saying how to read it.
+       * The change since the start of the window, coloured by direction.
        *
-       * It used to be a number and a label, in a box, with the rest of the box
-       * empty — which is what "there is a lot of unused space" meant. Three
-       * lines is what Wise and Binance put in a card this size, and the third
-       * is the one that turns a figure into something you can act on.
-       *
-       * A tile with nothing true to say in that slot gets an em dash, never a
-       * blank and never a confident zero.
+       * Both figures are STOCKS — where the number stands now, and where the
+       * same number stood a week ago — so this is a subtraction and not a
+       * comparison of two different measures. All-time has nothing before it,
+       * and says so rather than showing a confident zero.
        */
-      const tile = (label, value, note) =>
-        '<div class="metric"><span class="mlabel">' + label + "</span>" +
-        "<b>" + value + "</b>" +
-        '<span class="mnote">' + (note || "—") + "</span></div>";
-
-      // Filled once the people arrive. Held in a closure so the tiles, the
-      // chart and the insight below all read the same numbers — one request,
-      // one source, so they cannot disagree with each other.
-      let people = null;
-
-      // VISITS, not stamps. A stamp is something that happened at the counter;
-      // a visit is a lifetime visit by a person, and signing up is visit 1.
-      // Reading one as the other is how the headline came to disagree with the
-      // list underneath it, twice.
-      const totalVisits = () =>
-        people ? people.reduce((a, c) => a + (c.visits || 0), 0) : 0;
-
-      /** The average gap between visits, across everyone who has two or more. */
-      function freqValue() {
-        if (!people) return "—";
-        const gaps = people.map((c) => c.avgGapDays).filter((g) => isFinite(g) && g > 0);
-        if (!gaps.length) return "—";
-        const mean = gaps.reduce((a, g) => a + g, 0) / gaps.length;
-        return mean < 1.5 ? "Daily" : "Every " + Math.round(mean) + " days";
+      function delta(now, before, fmt, word) {
+        if (before === null || before === undefined) {
+          return '<span class="delta flat">all time</span>';
+        }
+        const diff = now - before;
+        const dir = diff > 0 ? "up" : diff < 0 ? "down" : "flat";
+        const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
+        return '<span class="delta ' + dir + '">' + sign + fmt(Math.abs(diff)) + " " + word + "</span>";
       }
 
-      function tiles(active) {
-        const joined30 = people ? people.filter((c) => c.joinedDays <= 30).length : 0;
-        const rewards = sum("redemptions");
-        const visits = totalVisits();
-        return (
-          tile("Customers", active,
-            people ? (joined30 ? "+" + joined30 + " in the last 30 days" : "None joined this month") : "") +
-          tile("Visits", people ? visits.toLocaleString() : "—",
-            people && active ? (visits / active).toFixed(1) + " each on average" : "") +
-          tile("Rewards given", rewards,
-            people && active
-              ? (rewards ? Math.round((rewards / active) * 100) + "% of customers" : "Nobody has claimed one yet")
-              : "") +
-          tile("Visit frequency", freqValue(),
-            S.cycleDays ? "You expect every " + S.cycleDays + " days" : "You haven’t set one yet")
-        );
+      const plain = (n) => n.toLocaleString();
+
+      function paint(s) {
+        const word = s.window === 30 ? "vs last month" : s.window === 7 ? "vs last week" : "";
+        const cur = s.currency || "RM";
+        const money = (cents) => Math.round(cents / 100).toLocaleString();
+        totals.innerHTML =
+          tile("Customers", plain(s.customers.now), delta(s.customers.now, s.customers.before, plain, word)) +
+          tile("Loyalty revenue (" + esc(cur) + ")", money(s.revenueCents.now),
+               delta(s.revenueCents.now, s.revenueCents.before, money, word));
+        shopChart(chart, s);
       }
 
-      const host = d.querySelector("[data-totals]");
-      host.innerHTML = tiles("—");
-      d.querySelector("[data-programs]").innerHTML = programRows();
-      d.querySelector("[data-campaigns]").innerHTML = campaignBlock();
+      /** Nothing on screen until the numbers land, rather than zeros that move. */
+      totals.innerHTML = tile("Customers", "—", "") +
+        tile("Loyalty revenue (RM)", "—", "");
 
-      (async () => {
-        const { body } = await api("/customers");
-        people = Array.isArray(body.customers) ? body.customers : [];
-        const counts = body.counts || { active: 0 };
-        host.innerHTML = tiles(counts.active);
-        d.querySelector("[data-gap]").innerHTML = counts.active
-          ? ""
-          : "No customers yet — they appear once someone adds your card and gets their first stamp.";
-        drawSignups(d.querySelector("[data-signups]"), people);
-        drawInsight(d.querySelector("[data-insight]"), body);
-      })();
+      let live = 0;
+      async function load(win) {
+        const mine = ++live;
+        const { body } = await api("/series?window=" + win);
+        // A slow first request must not overwrite a faster second one: tapping
+        // 7 → 30 → 7 can land out of order, and the tiles would then disagree
+        // with the tab that is lit.
+        if (mine !== live) return;
+        if (body && body.ok && body.series) paint(body.series);
+      }
+      load("7");
+
+      seg.addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-w]");
+        if (!b || b.classList.contains("on")) return;
+        seg.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+        b.classList.add("on");
+        moveThumb(seg);
+        load(b.dataset.w);
+      });
+      moveThumb(seg);
       return d;
     }
 
     /**
-     * Sign-ups by week, from real data.
+     * The one chart: visits and rewards, on one pair of axes, tappable.
      *
-     * Every customer carries how many days ago they joined, so this series is
-     * already on the wire — no new endpoint, and nothing invented. It is the
-     * only true time series this page can build today: /api/counter covers one
-     * day, and last-visit tells you when somebody was last in but not when
-     * anyone else was.
+     * Both series share a y-scale so the two can be read against each other —
+     * that is the whole reason they are in one chart rather than two. They are
+     * told apart by FILL as well as colour: visits carry a filled area, rewards
+     * are a bare line. Colour alone would exclude anyone who cannot separate
+     * these two hues.
      *
-     * It is its own full-width block rather than a fifth tile. That is where
-     * the density on this screen varies — four equal tiles, then one wide
-     * thing — instead of stacked identical boxes all the way down.
+     * The paths are drawn into a viewBox that is STRETCHED to the card's width
+     * (preserveAspectRatio="none"), which keeps the geometry simple but would
+     * squash a circle into an ellipse. So the marker and its two dots are plain
+     * HTML positioned in percentages over the top, not SVG.
      */
-    function drawSignups(host, people) {
+    function shopChart(host, s) {
       if (!host) return;
-      const WEEKS = 12;
-      const series = bucketByAge(people.map((c) => c.joinedDays), WEEKS, 7);
-      const svg = sparkline(series, { width: 300, height: 56 });
-      // Nothing honest to draw: fewer than two weeks with anybody in them.
-      if (!svg) { host.innerHTML = ""; return; }
-      const total = series.reduce((a, n) => a + n, 0);
-      host.innerHTML =
-        '<div class="chartcard">' +
-          '<span class="mlabel">New customers</span>' +
-          "<b>" + total + "</b>" +
-          '<span class="mnote">over the last ' + WEEKS + " weeks</span>" +
-          '<div class="sparkwrap">' + svg + "</div>" +
-          '<div class="sparkax"><span>' + WEEKS + " weeks ago</span><span>now</span></div>" +
+      const pts = s.points || [];
+      const vis = pts.map((p) => p.visits);
+      const rew = pts.map((p) => p.rewards);
+      const totalV = vis.reduce((a, n) => a + n, 0);
+      const totalR = rew.reduce((a, n) => a + n, 0);
+      const keys =
+        '<div class="chartkeys">' +
+          '<span class="ckey vis">Visits <b>' + totalV.toLocaleString() + "</b></span>" +
+          '<span class="ckey rew">Rewards <b>' + totalR.toLocaleString() + "</b></span>" +
         "</div>";
+
+      // Two points make a line; one does not, and a flat run of zeros drawn
+      // along the floor reads as a collapse rather than as an empty shop.
+      if (pts.length < 2 || (!totalV && !totalR)) {
+        host.innerHTML = '<div class="chart">' + keys +
+          '<p class="chartempty">No stamps in this window yet. The chart fills in ' +
+          "as your counter is used.</p></div>";
+        return;
+      }
+
+      const g = chartGeometry(vis, rew);
+
+      host.innerHTML =
+        '<div class="chart">' + keys +
+          '<div class="chartread" data-read></div>' +
+          '<div class="chartwrap" data-wrap>' +
+            '<svg viewBox="' + g.box + '" preserveAspectRatio="none" ' +
+              'aria-hidden="true" focusable="false">' +
+              '<path class="carea" d="' + g.area + '"></path>' +
+              '<path class="cvis" d="' + g.vis + '"></path>' +
+              '<path class="crew" d="' + g.rew + '"></path>' +
+            "</svg>" +
+            '<span class="cmark hidden" data-mark></span>' +
+            '<span class="cdot v hidden" data-dotv></span>' +
+            '<span class="cdot r hidden" data-dotr></span>' +
+          "</div>" +
+          '<div class="chartax"><span>' + esc(edgeLabel(pts[0].at, s.bucketDays)) +
+            "</span><span>Now</span></div>" +
+        "</div>";
+
+      const wrap = host.querySelector("[data-wrap]");
+      const read = host.querySelector("[data-read]");
+      const mark = host.querySelector("[data-mark]");
+      const dotV = host.querySelector("[data-dotv]");
+      const dotR = host.querySelector("[data-dotr]");
+      const unit = s.bucketDays > 1 ? "week" : "day";
+
+      function clear() {
+        read.innerHTML = "Tap the chart to read a " + unit + ".";
+        [mark, dotV, dotR].forEach((el) => el.classList.add("hidden"));
+      }
+
+      function show(i) {
+        const p = pts[i];
+        read.innerHTML = "<b>" + esc(bucketLabel(p.at, s.bucketDays)) + "</b> · " +
+          p.visits + (p.visits === 1 ? " visit" : " visits") + " · " +
+          p.rewards + (p.rewards === 1 ? " reward" : " rewards");
+        mark.style.left = g.left[i] + "%";
+        dotV.style.left = g.left[i] + "%";
+        dotR.style.left = g.left[i] + "%";
+        dotV.style.top = g.topV[i] + "%";
+        dotR.style.top = g.topR[i] + "%";
+        [mark, dotV, dotR].forEach((el) => el.classList.remove("hidden"));
+      }
+
+      function pick(e) {
+        const r = wrap.getBoundingClientRect();
+        if (!r.width) return;
+        const f = (e.clientX - r.left) / r.width;
+        show(Math.max(0, Math.min(pts.length - 1, Math.round(f * (pts.length - 1)))));
+      }
+
+      // A finger reports no buttons, so dragging is tracked with a flag rather
+      // than read off the event. Pointer capture keeps the readout following a
+      // finger that slides off the side of the card mid-drag.
+      let down = false;
+      wrap.addEventListener("pointerdown", (e) => {
+        down = true;
+        if (wrap.setPointerCapture) wrap.setPointerCapture(e.pointerId);
+        pick(e);
+      });
+      wrap.addEventListener("pointermove", (e) => { if (down) pick(e); });
+      wrap.addEventListener("pointerup", () => { down = false; });
+      wrap.addEventListener("pointercancel", () => { down = false; });
+      // A mouse leaving puts the summary back; a finger lifting does not, so
+      // the number stays readable after the finger that chose it has gone.
+      wrap.addEventListener("mouseleave", () => { if (!down) clear(); });
+      clear();
     }
 
     /**
-     * One sentence about what the numbers mean, and no more than one.
+     * Where every point sits. Separated from the drawing so it can be run
+     * without a DOM — the failure modes of chart maths are all silent. A NaN
+     * anywhere in a path makes the WHOLE svg vanish, with no error, and a
+     * divide-by-zero on an all-quiet window is the easiest way to produce one.
      *
-     * There is no insights engine and this is not pretending to be one: it is
-     * three or four rules reading the segment split that is already on screen.
-     * It says the most useful true thing it can find, or it says nothing —
-     * a box that always has an opinion is a box that is sometimes wrong.
+     * Both series share one y-scale, which is the reason they are in one chart:
+     * scaled separately, two rewards and two hundred visits would draw the same
+     * height and the picture would be a lie.
+     *
+     * Positions come back as PERCENTAGES because the marker and its dots are
+     * HTML over the top of a stretched viewBox, not SVG inside it.
      */
-    function drawInsight(host, body) {
-      const groups = {};
-      for (const g of body.health || []) groups[g.key] = g.customers;
-      const total = Object.values(groups).reduce((a, n) => a + n, 0);
-      if (!total) return;
-      let line = "";
-      if (groups.lost && groups.lost / total >= 0.4) {
-        line = "<strong>" + groups.lost + " of your " + total +
-          (groups.lost === 1 ? " customers has gone quiet." : " customers have gone quiet.") + "</strong> " +
-          "A win-back campaign is the usual answer.";
-      } else if (groups.new && groups.new / total >= 0.5) {
-        line = "<strong>Most of your customers are new.</strong> " +
-          "Whether they come back a second time is the number worth watching next.";
-      } else if (groups.regular && groups.regular / total >= 0.3) {
-        line = "<strong>" + groups.regular + (groups.regular === 1 ? " regular." : " regulars.") + "</strong> " +
-          "That is the group that pays for the rest of this.";
-      } else if (groups.returning) {
-        line = "<strong>" + groups.returning +
-          (groups.returning === 1 ? " customer is" : " customers are") +
-          " on their way to becoming " + (groups.returning === 1 ? "a regular." : "regulars.") + "</strong> " +
-          "They have been back, but not often enough yet.";
-      }
-      if (!line) return;
-      host.innerHTML = '<div class="insight"><p>' + line + "</p></div>";
+    function chartGeometry(rawVis, rawRew) {
+      // Clean BEFORE taking the maximum, not inside the y function. One NaN
+      // anywhere makes Math.max return NaN, which makes every coordinate NaN,
+      // which makes the browser drop the whole svg — silently, with a
+      // correct-looking card and no chart in it.
+      const num = (a) => (a || []).map((v) => {
+        const n = Number(v);
+        return isFinite(n) && n > 0 ? n : 0;
+      });
+      const vis = num(rawVis), rew = num(rawRew);
+      const n = vis.length;
+      const W = 320, H = 132, padY = 10;
+      // Floor the scale at 1: a window where nothing happened divides by zero.
+      const max = Math.max(1, Math.max.apply(null, vis.concat(rew, [0])));
+      const xAt = (i) => (n > 1 ? (i * W) / (n - 1) : 0);
+      const yAt = (v) => H - padY - (v / max) * (H - padY * 2);
+      const path = (a) =>
+        a.map((v, i) => (i ? "L" : "M") + xAt(i).toFixed(1) + " " + yAt(v).toFixed(1)).join(" ");
+      const visLine = path(vis);
+      return {
+        box: "0 0 " + W + " " + H,
+        vis: visLine,
+        rew: path(rew),
+        area: visLine + " L" + W + " " + H + " L0 " + H + " Z",
+        left: vis.map((_, i) => (xAt(i) / W) * 100),
+        topV: vis.map((v) => (yAt(v) / H) * 100),
+        topR: rew.map((v) => (yAt(v) / H) * 100),
+      };
+    }
+
+    /** "Mon 25 Aug", or the week it starts. Used in the readout. */
+    function bucketLabel(iso, bucketDays) {
+      const d = new Date(iso);
+      if (!isFinite(d.getTime())) return "";
+      return bucketDays > 1
+        ? "Week of " + d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+        : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    }
+
+    /** The left-hand end of the axis. Shorter than the readout — it is a scale. */
+    function edgeLabel(iso, bucketDays) {
+      const d = new Date(iso);
+      if (!isFinite(d.getTime())) return "";
+      return d.toLocaleDateString(undefined,
+        bucketDays > 1 ? { month: "short", year: "numeric" } : { day: "numeric", month: "short" });
     }
 
     /**
@@ -1726,17 +1891,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "</a>";
     }
 
-    /** Campaigns performance. Entirely example data — there is no campaign table. */
-    function campaignBlock() {
-      const t = mockCampaignTotals();
-      return '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
-        '<div class="metric"><b>' + t.targeted + "</b><span>targeted</span></div>" +
-        '<div class="metric"><b>' + t.returned + "</b><span>came back</span></div>" +
-        '<div class="metric"><b>' + t.activation + "%</b><span>activation</span></div>" +
-        "</div>" +
-        '<p class="muted" style="margin-top:8px">Not your data yet — this is what it will look like ' +
-        "once campaigns are running.</p>";
-    }
 
     /**
      * Customers — who is in the shop, and what they have been doing.

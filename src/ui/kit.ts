@@ -3322,58 +3322,6 @@ export const DESIGN_PANEL_JS = /* js */ `
  * and `esc` from the page around it.
  */
 export const HEALTH_JS = /* js */ `
-/**
- * A sparkline: one series, drawn by hand as inline SVG.
- *
- * There is no chart library here and no build step to add one, which is a
- * constraint and also the reason this stays a single primitive rather than
- * growing into a chart kit. DESIGN.md's rules apply and are not negotiable:
- * one series, emphasis from WEIGHT not colour, and the accent NEVER appears in
- * a chart — the accent means "press this", and a line on a graph is not
- * pressable.
- *
- * Returns "" for anything it cannot honestly draw. A sparkline of one point is
- * a dot pretending to be a trend, and a flat line of zeroes reads as data when
- * it is the absence of it.
- */
-function sparkline(values, opts) {
-  const o = opts || {};
-  const w = o.width || 260, h = o.height || 44, pad = 3;
-  const pts = (values || []).map(Number).filter((n) => isFinite(n));
-  if (pts.length < 2 || pts.every((n) => n === 0)) return "";
-  const max = Math.max.apply(null, pts), min = Math.min.apply(null, pts);
-  // A flat series would divide by zero and, drawn from the top, would also
-  // read as a collapse. Give it a range so it sits mid-height.
-  const span = max - min || 1;
-  const x = (i) => pad + (i * (w - pad * 2)) / (pts.length - 1);
-  const y = (v) => h - pad - ((v - min) / span) * (h - pad * 2);
-  const line = pts.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
-  const area = line + " L" + x(pts.length - 1).toFixed(1) + " " + h + " L" + x(0).toFixed(1) + " " + h + " Z";
-  return '<svg class="spark" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" ' +
-    'aria-hidden="true" focusable="false">' +
-    '<path d="' + area + '" fill="currentColor" opacity=".12"></path>' +
-    '<path d="' + line + '" fill="none" stroke="currentColor" stroke-width="2" ' +
-    'stroke-linecap="round" stroke-linejoin="round"></path>' +
-    "</svg>";
-}
-
-/**
- * Count things into equal buckets going back from today.
- *
- * \`agesInDays\` is how long ago each thing happened; the last bucket is the most
- * recent. Used for sign-ups by week, which is a real series this page already
- * holds — every customer carries how many days ago they joined.
- */
-function bucketByAge(agesInDays, buckets, daysPer) {
-  const out = new Array(buckets).fill(0);
-  for (const age of agesInDays) {
-    if (!isFinite(age) || age < 0) continue;
-    const i = buckets - 1 - Math.floor(age / daysPer);
-    if (i >= 0 && i < buckets) out[i]++;
-  }
-  return out;
-}
-
 function drawHealth(host, body) {
   if (!host) return;
   const groups = body.health || [];

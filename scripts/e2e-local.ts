@@ -432,6 +432,41 @@ async function main() {
   expect(m.cards === 3, `metrics: 3 cards incl. the cooldown-test card (got ${m.cards})`);
   expect(m.stamps >= 2 && m.redemptions === 1, `metrics: stamps=${m.stamps} redemptions=${m.redemptions}`);
 
+  // Home's chart and its two figures, in one request. Real stamps and one
+  // redemption have already landed above, so this is checked against a shop
+  // that has traded rather than against an empty one.
+  for (const [win, buckets] of [["7", 7], ["30", 30]] as const) {
+    const sr = JSON.parse((await get("/dashboard/api/series?window=" + win, { headers: { cookie } })).body);
+    expect(sr.ok === true, `series(${win}): answers`);
+    expect(sr.series.points.length === buckets,
+      `series(${win}): one bucket per day, empty ones included (got ${sr.series.points.length})`);
+    // generate_series, not a GROUP BY: a day nobody stamped still has a point,
+    // or the chart closes the gap up and draws a line through a closed shop.
+    expect(sr.series.points.every((p: { visits: number; rewards: number }) =>
+      Number.isInteger(p.visits) && Number.isInteger(p.rewards) && p.visits >= 0 && p.rewards >= 0),
+      `series(${win}): every bucket is a whole count, never null`);
+    const visits = sr.series.points.reduce((a: number, p: { visits: number }) => a + p.visits, 0);
+    expect(visits >= 2, `series(${win}): the stamps above are in the chart (got ${visits})`);
+    expect(sr.series.customers.now >= 1, `series(${win}): counts the customers`);
+    expect(sr.series.customers.before !== null, `series(${win}): has something to compare against`);
+    expect(sr.series.customers.now >= sr.series.customers.before,
+      `series(${win}): the total cannot be lower now than at the start of the window`);
+  }
+  const srAll = JSON.parse((await get("/dashboard/api/series?window=all", { headers: { cookie } })).body);
+  expect(srAll.series.bucketDays === 7, "series(all): buckets by week, not by day");
+  // All time has nothing before it, and the tile says so rather than showing a
+  // confident zero change.
+  expect(srAll.series.customers.before === null, "series(all): nothing to compare against");
+  expect(srAll.series.revenueCents.before === null, "series(all): and no revenue to compare either");
+  // The window reaches SQL as an interval, so it is validated to the three the
+  // selector offers rather than passed through.
+  const srJunk = JSON.parse((await get("/dashboard/api/series?window=99'; DROP TABLE events;--",
+    { headers: { cookie } })).body);
+  expect(srJunk.series.points.length === 7, "series: an unknown window falls back to seven days");
+  const srAnon = await get("/dashboard/api/series");
+  expect(srAnon.status === 401 || srAnon.status === 302,
+    `series: refuses a caller with no session (got ${srAnon.status})`);
+
   // V1 is one card per merchant: the dashboard's add-card endpoint refuses a
   // second one outright. (The button is gone too, but the server is the limit.)
   const secondViaApi = await fetch(base + "/dashboard/api/cards", {

@@ -64,13 +64,6 @@ export const MOCK_JS = /* js */ `
       targeted: 19, returned: 9, sent: "21 Aug" },
   ];
 
-  /** The Campaigns block on Home. Derived from the rows above so the two agree. */
-  function mockCampaignTotals() {
-    const targeted = MOCK_CAMPAIGNS.reduce((a, c) => a + c.targeted, 0);
-    const returned = MOCK_CAMPAIGNS.reduce((a, c) => a + c.returned, 0);
-    return { targeted, returned, activation: targeted ? Math.round((returned / targeted) * 100) : 0 };
-  }
-
   // MOCK_ACCOUNT was here. The plan, the status and the trial deadline are real
   // columns now (merchants.plan, merchants.archived_at, merchants.trial_ends_at)
   // and the Shop tab reads them through /api/overview. Billing is still not

@@ -39,6 +39,8 @@ import {
   logMessage,
   merchantAccount,
   merchantForOwner,
+  shopSeries,
+  type ShopWindow,
   clearResetToken,
   countOwners,
   asCardKind,
@@ -943,6 +945,22 @@ function onePerCustomer(views: CustomerView[]): CustomerView[] {
 dashboardRouter.get("/api/counter", requireOwner, async (req: OwnerRequest, res) => {
   const owned = await cardsForOwner(req.owner!.id);
   res.json({ ok: true, counter: await counterActivity(owned.map((c) => c.id)) });
+});
+
+/**
+ * GET /api/series?window=7|30|all — Home's chart and its two headline tiles.
+ *
+ * One request answers the whole screen, so the tiles and the chart can never
+ * disagree about the same window. The window is validated to the three the
+ * selector offers rather than passed through: it reaches SQL as an interval,
+ * and "whatever the query string said" is not a number.
+ */
+dashboardRouter.get("/api/series", requireOwner, async (req: OwnerRequest, res) => {
+  const merchant = await merchantForOwner(req.owner!.id);
+  if (!merchant) { res.json({ ok: false, reason: "no-merchant" }); return; }
+  const asked = String(req.query.window ?? "7");
+  const window: ShopWindow = asked === "30" ? 30 : asked === "all" ? 0 : 7;
+  res.json({ ok: true, series: await shopSeries(merchant.id, window) });
 });
 
 /** GET /api/customers?cardId=all|<id> — cohort summary, counts, and the searchable list. */

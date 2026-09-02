@@ -2610,64 +2610,99 @@ describe("the visit-cycle setting", () => {
   });
 });
 
-describe("the Home headline", () => {
+describe("Home", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
-  const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function drawInsight"));
-
-  it("asks the question in the heading, and answers it in four tiles", () => {
-    expect(home).toContain('<h2 class="sec first">How your shop is doing</h2>');
-    for (const label of ["Customers", "Visits", "Rewards given", "Visit frequency"]) {
-      expect(home).toContain('tile("' + label + '"');
-    }
-  });
+  const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function shopChart(host, s)"));
 
   /**
-   * A tile carries three lines, not two. It was a number and a label in a box
-   * with the rest of the box empty — the "lots of unused space" the founder
-   * pointed at — and the third line is the one that turns a figure into
-   * something you can act on.
-   */
-  it("gives every tile a label, a number and a way to read it", () => {
-    expect(home).toContain("const tile = (label, value, note)");
-    expect(home).toContain('class="mlabel"');
-    expect(home).toContain('class="mnote"');
-    // Each of the four says something true in the third slot, from data the
-    // screen already has.
-    expect(home).toContain("in the last 30 days");
-    expect(home).toContain("each on average");
-    expect(home).toContain("% of customers");
-    expect(home).toContain("You expect every ");
-    // ...and an em dash rather than a blank when it cannot.
-    expect(home).toContain('(note || "—")');
-  });
-
-  /**
-   * Visits are NOT stamps, and this is the whole point of the tile.
+   * Two figures and one chart, and nothing else on the screen.
    *
-   * A stamp is something that happened at the counter. A visit is a lifetime
-   * visit by a person, and signing up counts as visit 1 — the shop's own
-   * health groups are judged on visits, so a headline reading stamps would
-   * disagree with every segment under it. That disagreement has shipped twice.
+   * It carried four tiles, a sign-ups sparkline, a sentence of commentary, the
+   * programme list and a campaigns block. The founder asked for the short
+   * version. Manage still lists the programmes and the campaigns, so this
+   * removed a duplicate view rather than the only way to reach anything.
    */
-  it("counts visits per person, never the stamp total", () => {
-    expect(home).toContain('a + (c.visits || 0)');
-    expect(home).not.toContain('sum("stamps")');
-    // Rewards and customers come from the two sources already on the page —
-    // no third query answering a question the other two already answer.
-    expect(home).toContain('sum("redemptions")');
-    expect(home).toContain("counts.active");
+  it("shows two figures under one heading", () => {
+    expect(home).toContain('<h2 class="sec first">Dashboard</h2>');
+    expect(home).toContain('tile("Customers"');
+    expect(home).toContain('tile("Loyalty revenue (');
+    // The four that went, and the two blocks under them.
+    for (const gone of ["Visit frequency", "Rewards given", "How your shop is doing", "data-signups"]) {
+      expect(home).not.toContain(gone);
+    }
+    expect(html).not.toContain("function drawInsight");
+    expect(html).not.toContain("function campaignBlock");
   });
 
-  /** An unanswerable number is an em dash, never a confident zero. */
-  it("shows a dash rather than a zero it cannot stand behind", () => {
-    expect(home).toContain('if (!people) return "—";');
-    expect(home).toContain('if (!gaps.length) return "—";');
+  /** The window governs the tiles as well as the chart, so there is one of it. */
+  it("offers three windows and starts on seven days", () => {
+    for (const w of ["7", "30", "all"]) expect(home).toContain('data-w="' + w + '"');
+    expect(home).toMatch(/class="on" data-w="7"/);
+    expect(home).toContain('load("7")');
   });
 
   /**
-   * The health tiles must read as the same family as these four. They carried
-   * their own smaller type, which made the page look like two grids that had
-   * not been designed together.
+   * One request fills the whole screen. Two would let the tiles and the chart
+   * answer the same question differently, which is the failure this codebase
+   * has shipped twice.
+   */
+  it("fills the tiles and the chart from one request", () => {
+    expect((home.match(/await api\(/g) || []).length).toBe(1);
+    expect(home).toContain('api("/series?window=" + win)');
+    // Tapping 7 -> 30 -> 7 can land out of order; the tiles must end up
+    // agreeing with the tab that is lit, not with whichever reply was slowest.
+    expect(home).toContain("if (mine !== live) return;");
+  });
+
+  /**
+   * The change is a subtraction of one number from itself a week ago, so it
+   * can be signed. All-time has nothing before it and says so, rather than
+   * showing a confident zero.
+   */
+  it("colours the change by direction, and admits when there is none", () => {
+    expect(home).toContain('const dir = diff > 0 ? "up" : diff < 0 ? "down" : "flat";');
+    expect(home).toContain('<span class="delta flat">all time</span>');
+    expect(home).toContain('"vs last week"');
+    expect(home).toContain('"vs last month"');
+    // Green up and rust down are the customer segments' own two hues, not a
+    // fifth colour, and neither of them is the neon.
+    const css = html.slice(html.indexOf(".delta {"), html.indexOf(".delta.flat"));
+    expect(css).toContain("#15803d");
+    expect(css).toContain("#9a3412");
+    expect(css).not.toContain("--accent");
+  });
+
+  /**
+   * The neon in the chart is a deliberate exception, granted by the founder,
+   * and it is a FILL. Rule 1 still holds for everything else: #c9f73d on white
+   * cannot be read, so nothing is drawn in it as a line on its own or as text.
+   */
+  it("puts the neon under the visits line and nowhere else in the chart", () => {
+    const css = html.slice(html.indexOf(".chart .carea"), html.indexOf(".chartax {"));
+    expect(css).toMatch(/\.carea \{ fill: var\(--accent\)/);
+    expect(css).toMatch(/\.cvis \{[^}]*stroke: var\(--accent-2\)/);
+    // The second series is ink, so the two are told apart by fill as well as
+    // by colour — colour alone excludes anyone who cannot separate the hues.
+    expect(css).toMatch(/\.crew \{[^}]*stroke: var\(--ink\)/);
+    expect(css).toMatch(/\.crew \{[^}]*fill: none/);
+  });
+
+  /** A tap has to answer with all three things, not just the number. */
+  it("answers a tap with the date and both figures", () => {
+    const chart = html.slice(html.indexOf("function shopChart(host, s)"),
+                             html.indexOf("function chartGeometry(rawVis, rawRew)"));
+    expect(chart).toContain("bucketLabel(p.at, s.bucketDays)");
+    expect(chart).toContain('p.visits === 1 ? " visit" : " visits"');
+    expect(chart).toContain('p.rewards === 1 ? " reward" : " rewards"');
+    // A finger reports no buttons, so a drag is tracked with a flag.
+    expect(chart).toContain('wrap.addEventListener("pointerdown"');
+    expect(chart).toContain("if (down) pick(e);");
+  });
+
+  /**
+   * The health tiles must read as the same family as these. They carried their
+   * own smaller type, which made the page look like two grids that had not been
+   * designed together.
    */
   it("share their number size with the health tiles", () => {
     expect(html).not.toMatch(/\.totals\.health \.metric b \{[^}]*font-size/);
@@ -2679,33 +2714,9 @@ describe("the Home headline", () => {
     expect(rows.indexOf("S.cards.map")).toBeLessThan(rows.indexOf("MOCK_PROGRAMS.map"));
     expect(rows).toContain("example: true");
     expect(html).toContain('p.example ? EG : ""');
-    // Tracked spend survived the rebuild — it left the headline because it is a
-    // fact about one programme's basket, not about the shop.
+    // Tracked spend survived the rebuild — it is a fact about one programme's
+    // basket, not about the shop.
     expect(rows).toContain("c.averageSpend > 0");
-  });
-
-  /**
-   * Campaigns are entirely made up — there is no campaign table — so the
-   * section says so twice: the chip on the heading and a line under the tiles.
-   */
-  it("marks the campaign numbers as example data", () => {
-    expect(home).toContain("'<h2 class=\"sec\">Campaigns' + EG");
-    expect(html).toContain("Not your data yet");
-    expect(html).toContain("function mockCampaignTotals()");
-  });
-
-  /**
-   * The insight area is three or four rules over numbers already on screen,
-   * and it stays silent when none of them fits. A box that always has an
-   * opinion is a box that is sometimes wrong.
-   */
-  it("says one thing about the numbers, or nothing at all", () => {
-    const ins = html.slice(html.indexOf("function drawInsight"), html.indexOf("function programRows"));
-    expect(ins).toContain("if (!total) return;");
-    expect(ins).toContain("if (!line) return;");
-    // No second sentence: exactly one branch wins.
-    expect(ins.match(/line = /g)!.length).toBeGreaterThan(2);
-    expect(ins).toContain("else if");
   });
 });
 
@@ -2735,60 +2746,59 @@ describe("the Home headline", () => {
  * job — fix the token. Do not add a seventh size.
  */
 /**
- * The sparkline, run rather than compiled.
+ * Home's chart geometry, run rather than compiled.
  *
- * Its failure modes are all silent: a divide-by-zero on a flat series, a NaN
- * in a path that makes the whole SVG vanish, or a confident line drawn through
- * one data point. None of those throw, and none of them are visible to a test
- * that only greps the page.
+ * Every failure mode here is silent. A NaN anywhere in a path makes the WHOLE
+ * svg disappear with no error in the console; a divide-by-zero on a window
+ * where nothing happened is the easiest way to get one; and a second series
+ * scaled separately from the first would draw two rewards the same height as
+ * two hundred visits, which is a picture that lies rather than one that breaks.
  */
-describe("the sparkline, actually run", () => {
+describe("the home chart, actually run", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
   const S = new Function(
-    html.slice(html.indexOf("function sparkline(values, opts)"), html.indexOf("function drawHealth(host, body)")) +
-      "return { sparkline, bucketByAge };",
+    html.slice(html.indexOf("function chartGeometry(rawVis, rawRew)"),
+               html.indexOf("/** \"Mon 25 Aug\", or the week it starts.")) +
+      "return { chartGeometry };",
   )();
 
-  it("draws a line and the area under it", () => {
-    const svg = S.sparkline([1, 4, 2, 7, 3]);
-    expect(svg).toContain("<svg");
-    expect(svg).toContain("stroke=\"currentColor\"");
-    expect(svg).not.toContain("NaN");
-    expect(svg).not.toContain("Infinity");
+  it("draws both series and the area under visits", () => {
+    const g = S.chartGeometry([1, 4, 2, 7, 3], [0, 1, 0, 2, 1]);
+    expect(g.vis.startsWith("M")).toBe(true);
+    expect(g.rew.startsWith("M")).toBe(true);
+    expect(g.area.endsWith("Z")).toBe(true);
+    for (const d of [g.vis, g.rew, g.area]) {
+      expect(d).not.toContain("NaN");
+      expect(d).not.toContain("Infinity");
+    }
   });
 
-  /** DESIGN.md: the accent means "press this", and a line on a graph is not. */
-  it("never puts the accent in a chart", () => {
-    const svg = S.sparkline([1, 2, 3]);
-    expect(svg).not.toContain("--accent");
-    expect(svg).not.toContain("#c9f73d");
+  /** The reason the two are in one chart at all. */
+  it("scales both series against the same maximum", () => {
+    const g = S.chartGeometry([100, 0], [1, 0]);
+    // 1 out of a 100 maximum sits near the floor, not at the ceiling.
+    expect(g.topR[0]).toBeGreaterThan(80);
+    expect(g.topV[0]).toBeLessThan(20);
+    // The zero ends of both series land on exactly the same line.
+    expect(g.topR[1]).toBeCloseTo(g.topV[1], 6);
   });
 
-  /**
-   * Says nothing rather than something untrue. One point is a dot pretending
-   * to be a trend; all-zeroes is the absence of data drawn as data.
-   */
-  it("draws nothing it cannot honestly draw", () => {
-    expect(S.sparkline([])).toBe("");
-    expect(S.sparkline([5])).toBe("");
-    expect(S.sparkline([0, 0, 0, 0])).toBe("");
-    expect(S.sparkline(null)).toBe("");
+  it("survives a window where nothing happened", () => {
+    const g = S.chartGeometry([0, 0, 0], [0, 0, 0]);
+    expect(g.vis).not.toContain("NaN");
+    expect(g.topV.every((n: number) => isFinite(n))).toBe(true);
   });
 
-  /** A flat non-zero series would divide by zero, and drawn from the top would
-   *  read as a collapse. It sits mid-height instead. */
-  it("survives a series that never changes", () => {
-    const svg = S.sparkline([3, 3, 3, 3]);
-    expect(svg).toContain("<svg");
-    expect(svg).not.toContain("NaN");
+  it("survives rubbish in the series rather than vanishing", () => {
+    const g = S.chartGeometry([1, null, 3], [NaN, 2, undefined]);
+    for (const d of [g.vis, g.rew, g.area]) expect(d).not.toContain("NaN");
   });
 
-  it("buckets ages into weeks, most recent last", () => {
-    // 0 days ago is this week, 8 days ago is last week.
-    expect(S.bucketByAge([0, 1, 8, 20], 4, 7)).toEqual([0, 1, 1, 2]);
-    // Anything older than the window, or nonsense, is dropped rather than
-    // piled into the first bucket where it would read as a spike.
-    expect(S.bucketByAge([999, -1, NaN], 4, 7)).toEqual([0, 0, 0, 0]);
+  /** The marker is HTML over a stretched viewBox, so it needs percentages. */
+  it("puts the first and last points at the two ends", () => {
+    const g = S.chartGeometry([1, 2, 3], [0, 0, 0]);
+    expect(g.left[0]).toBe(0);
+    expect(g.left[2]).toBe(100);
   });
 });
 
@@ -2868,7 +2878,7 @@ describe("the surfaces and the edges", () => {
    */
   it("puts white cards on a grey ground, not grey boxes on white", () => {
     expect(html).toContain("background: var(--surface); border-radius: var(--r-lg) var(--r-lg) 0 0;");
-    for (const card of [".metric {", ".chartcard {", ".acts {", ".breakdown {"]) {
+    for (const card of [".metric {", ".chart {", ".acts {", ".breakdown {"]) {
       const at = html.indexOf(card);
       expect(at, card + " is missing").toBeGreaterThan(-1);
       expect(html.slice(at, html.indexOf("}", at)), card + " is not white").toContain("var(--bg)");
@@ -3404,16 +3414,13 @@ describe("the screen builders, actually run", () => {
       cut("const EG =", "/**\n   * Other loyalty programmes") +
       cut("const MOCK_PROGRAMS", "/** Campaigns. None of this exists yet") +
       cut("const MOCK_CAMPAIGNS", "// MOCK_ACCOUNT was here") +
-      cut("function mockCampaignTotals()", "// MOCK_ACCOUNT was here") +
       cut("const KIND_LABEL =", "function progRow(p, money)") +
-      cut("function progRow(p, money)", "/** Campaigns performance.") +
-      cut("function campaignBlock()", "/**\n     * Customers — who is in the shop") +
+      cut("function progRow(p, money)", "/**\n     * Customers — who is in the shop") +
       cut("function campaignRows()", "function manageDetailScreen") +
       cut("function custCard(x)", "/**\n     * What happened at the counter today.") +
-      cut("function drawInsight(host, body)", "/**\n     * Programmes, with the real one first.") +
       cut("function dealLine(card)", "function endedNote()") +
-      "return { progRow, campaignBlock, campaignRows, custCard, drawInsight, dealLine, segLabel," +
-      " mockCampaignTotals, MOCK_CAMPAIGNS, KIND_LABEL };",
+      "return { progRow, campaignRows, custCard, dealLine, segLabel," +
+      " MOCK_CAMPAIGNS, KIND_LABEL };",
   )();
 
   it("renders a programme row for every type the card supports", () => {
@@ -3450,15 +3457,10 @@ describe("the screen builders, actually run", () => {
   });
 
   /** Every campaign percentage is a division, and every division can be by zero. */
-  it("computes campaign activation without dividing by zero", () => {
-    const totals = B.mockCampaignTotals();
-    expect(totals.activation).toBeGreaterThanOrEqual(0);
-    expect(totals.activation).toBeLessThanOrEqual(100);
-    expect(String(totals.activation)).not.toContain("NaN");
+  it("renders every campaign row without dividing by zero", () => {
     const rows = B.campaignRows();
     expect(rows).not.toContain("NaN");
     expect(rows).not.toContain("Infinity");
-    expect(B.campaignBlock()).not.toContain("NaN");
   });
 
   it("renders a customer row for each segment, and for someone in today", () => {
@@ -3479,32 +3481,6 @@ describe("the screen builders, actually run", () => {
    * nothing — an empty shop being told about its segments is the sort of
    * confident nonsense that makes a whole screen untrustworthy.
    */
-  it("says nothing to a shop with no customers", () => {
-    const host = { innerHTML: "" };
-    B.drawInsight(host, { health: [
-      { key: "regular", customers: 0 }, { key: "returning", customers: 0 },
-      { key: "new", customers: 0 }, { key: "lost", customers: 0 },
-    ] });
-    expect(host.innerHTML).toBe("");
-  });
-
-  it("says exactly one thing when there is something to say", () => {
-    const say = (counts: Record<string, number>) => {
-      const host = { innerHTML: "" };
-      B.drawInsight(host, { health: Object.entries(counts).map(([key, customers]) => ({ key, customers })) });
-      return host.innerHTML;
-    };
-    const lost = say({ regular: 1, returning: 1, new: 1, lost: 7 });
-    expect(lost).toContain("gone quiet");
-    expect((lost.match(/<p>/g) || []).length).toBe(1);
-    expect(say({ regular: 0, returning: 0, new: 9, lost: 1 })).toContain("Most of your customers are new");
-    expect(say({ regular: 5, returning: 3, new: 1, lost: 1 })).toContain("regulars");
-    // Every branch that fires names a real number, never "undefined of".
-    for (const out of [lost, say({ regular: 0, returning: 4, new: 1, lost: 1 })]) {
-      expect(out).not.toContain("undefined");
-      expect(out).not.toContain("NaN");
-    }
-  });
 
   it("describes the deal for each kind of card", () => {
     expect(B.dealLine({ kind: "stamp", stampsTarget: 10, reward: "a free coffee" }))
@@ -3534,8 +3510,9 @@ describe("example data announces itself", () => {
   });
 
   it("never counts example data into a real total", () => {
-    const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function drawInsight"));
-    // The four headline tiles read S.cards and /api/customers, and nothing else.
+    const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function shopChart"));
+    // The two headline figures and the chart come from /api/series, and from
+    // nothing else. Home is the one screen with no example data on it at all.
     expect(home).not.toContain("MOCK_");
   });
 });

@@ -69,9 +69,9 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
    why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
-   **three** fenced exceptions, each described below: the marketing page's three
+   **four** fenced exceptions, each described below: the marketing page's three
    tile colours, the neon reassurance band pinned to the bottom of that page,
-   and the dashboard's **top bar**.
+   the dashboard's **top bar**, and the **area under Home's visits line**.
 
    The top bar is neon on purpose, decided by the founder — the same call that
    was made for the `.greet` header it replaced. It earns the exception on the
@@ -79,6 +79,12 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    dashboard that never changes as you move around, and it **carries no control
    except the ⋯ menu**, so it cannot compete with whatever the owner came here
    to do. Its text is `--on-accent`, never white.
+
+   Home's chart fills the area **under** the visits line with neon, also the
+   founder's call. It is a fill and never a stroke on its own: `#c9f73d` is too
+   pale to read as a line on white, so the line on top of it is `--accent-2`
+   and the second series is `--ink`. It stays an exception rather than becoming
+   the rule, and the rest of the chart guidance below still holds.
 
    The bottom nav's **Create (+) button** is also neon and needs no exception:
    a primary action is what this rule has always allowed. Those two, and
@@ -167,13 +173,24 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
 - **Charts** are hand-rolled inline SVG — there is no chart library and no build
   step to add one. Emphasis is **weight, not colour**: the period being read is
   `--ink`, the context behind it is `--field-border`, and the baseline is a
-  solid `--line` hairline (never dashed). **The accent never appears in a
-  chart** — rule 1 gives it one job, so a neon bar is decoration. Bars cap at
-  24px with a 2px gap, square at the baseline and 3–4px rounded at the data
-  end. One series per chart: six small multiples beat six lines on one plot,
-  and sidestep needing a second palette. Never a number on every point — the
-  hover title carries it and a table view underneath carries all of them,
-  because hover does not exist on a phone.
+  solid `--line` hairline (never dashed). **The accent appears in exactly one
+  chart** — the area under Home's visits line, the fenced exception in rule 1 —
+  and nowhere else, because rule 1 gives it one job and a neon bar somewhere
+  else is decoration. Bars cap at 24px with a 2px gap, square at the baseline
+  and 3–4px rounded at the data end.
+
+  **One series per chart, with one exception, and it is the same chart.** Six
+  small multiples beat six lines on one plot and sidestep needing a second
+  palette. Home's chart carries two — visits and rewards — because the question
+  it answers is how the two move together, which two charts cannot show. They
+  share one y-scale, or two rewards would draw the same height as two hundred
+  visits, and they are told apart by **fill as much as by colour**: visits carry
+  the filled area, rewards are a bare `--ink` line. Colour alone would exclude
+  anyone who cannot separate those two hues.
+
+  Never a number on every point — on Home a tap puts the date and both figures
+  in one line above the chart, which is the phone's answer to a hover title. A
+  table view underneath carries all of them where one exists.
 
 ## The marketing page's above-the-fold
 
