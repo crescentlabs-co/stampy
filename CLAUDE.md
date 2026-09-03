@@ -65,6 +65,25 @@ permanent routes for the same reason — additive only, never retired.
 id, or any slug they have ever held (retired slugs 301 forever, so a rename can
 never kill a printed poster).
 
+**A card has TWO ways of being over, and they are different columns.**
+`cards.archived_at` means GONE: `cardsForMerchant` filters those rows out and the
+owner stops seeing it. `cards.ended_at` (v2.10) means FINISHED: no new sign-ups,
+and nothing else changes — it is still listed, still stamped, still redeemed,
+still counted in every metric. Never overload archiving to mean ending. A shop
+that finishes a promotion has not withdrawn the promise made to everyone already
+holding the card, and that promise is the whole product.
+
+**The gate is `shopOpen` (src/routes/public.ts) and it is the only one.** Both
+wallets' enrol routes and the landing page ask it, so they close together; the
+page it renders takes a REASON, because telling somebody scanning last season's
+poster that the shop "isn't open yet" reads as "this business does not exist" and
+leaves the one thing they need to know — their card still works — unsaid.
+`joinTargetCard` skips ended cards, so a poster falls through to whichever card is
+still running. **The one-card-per-merchant cap counts only cards that have not
+ended**, which is what lets a shop start next season's card without deleting last
+season's — and deleting it would take `passes` with it, orphaning every card
+already on a phone.
+
 **A pass carries its own ruleset**, snapshotted at issue: `stamps_target` and
 `reward`. Editing the card never rewrites them — the promise on a card already
 in a wallet stands. `redeemPass` is the one exception and the only one there

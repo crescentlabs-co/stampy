@@ -201,6 +201,17 @@ export interface CardRow {
   signup_message: string;
   /** Retired: hidden from the owner and off the join link. Issued passes still work. */
   archived_at: Date | null;
+  /**
+   * Finished: no NEW sign-ups, and nothing else changes.
+   *
+   * NOT archived_at, which means gone — cardsForMerchant filters those rows out
+   * entirely and the owner stops seeing the card at all. An ENDED programme is
+   * still listed, still stamped, still redeemed and still counted; the only door
+   * that closes is the one new customers come through. Two states, two columns.
+   * Never overload the one that hides things: a shop that ends a promotion has
+   * not deleted the promise made to everyone already holding the card.
+   */
+  ended_at: Date | null;
 }
 
 export interface OwnerRow {
@@ -1013,6 +1024,10 @@ export async function migrate(): Promise<void> {
   await getPool().query(
     `ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_texture text NOT NULL DEFAULT 'flat'`,
   );
+  // v2.10: a programme can be finished without being deleted. NULL — every
+  // existing card — means running, which is the only honest default: a shop
+  // that has never had the control cannot have used it.
+  await getPool().query(`ALTER TABLE cards ADD COLUMN IF NOT EXISTS ended_at timestamptz`);
   // The default was 'gradient' — one of ten textures that no longer exist — so
   // every card created since they were removed was born holding a dead value.
   // Harmless to draw (the flatten below catches it on the next boot) but it
@@ -1897,12 +1912,39 @@ export async function cardsForMerchant(merchantId: string): Promise<CardRow[]> {
 }
 
 /**
+ * Finish a programme, or start it again.
+ *
+ * One column and nothing else: no pass is touched, no event is rewritten, no
+ * customer is told anything. Everything that closes hangs off `ended_at` being
+ * read at the door — see shopOpen in src/routes/public.ts, which is the ONE
+ * place both wallets and the landing page ask.
+ */
+export async function endCard(cardId: string): Promise<void> {
+  await getPool().query(`UPDATE cards SET ended_at = now() WHERE id = $1`, [cardId]);
+}
+
+export async function reopenCard(cardId: string): Promise<void> {
+  await getPool().query(`UPDATE cards SET ended_at = NULL WHERE id = $1`, [cardId]);
+}
+
+/** The merchant's cards that are still taking sign-ups. */
+export async function liveCardsForMerchant(merchantId: string): Promise<CardRow[]> {
+  return (await cardsForMerchant(merchantId)).filter((c) => !c.ended_at);
+}
+
+/**
  * Which card a /j/ link should issue: the merchant's explicit choice, else their
  * only card. Null when they somehow have none, or several with no default set —
  * the route renders a picker for that, which V1 can never reach.
+ *
+ * A FINISHED programme is never the answer, even when it is the default. The
+ * default is a preference; ending one is a decision, and a poster pointing at a
+ * card that has closed must not keep minting it. If ending the default leaves
+ * exactly one card still running, that one is issued — which is what an owner
+ * replacing last season's card expects to happen without touching a setting.
  */
 export async function joinTargetCard(merchant: MerchantRow): Promise<CardRow | null> {
-  const cards = await cardsForMerchant(merchant.id);
+  const cards = (await cardsForMerchant(merchant.id)).filter((c) => !c.ended_at);
   if (merchant.default_card_id) {
     const chosen = cards.find((c) => c.id === merchant.default_card_id);
     if (chosen) return chosen;
@@ -4434,6 +4476,13 @@ export interface CafeMetrics {
   matured: number;
   returned: number;
   returnRate: number | null;
+  /**
+   * The average gap between one customer's visits, in days, across this card.
+   *
+   * Null — never 0 — when nobody has been in twice: there is no rhythm to
+   * report yet, and a confident zero would read as "they come in every day".
+   */
+  avgGapDays: number | null;
 }
 
 export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
@@ -4451,6 +4500,7 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
     redemptions30d: string;
     matured: string;
     returned: string;
+    avgGapDays: string | null;
   }>(
     `SELECT
        (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
@@ -4470,7 +4520,33 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
        (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
           WHERE ${MATURE_PASS_SQL}
             AND EXISTS (SELECT 1 FROM events e
-                         WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp'))::text AS returned
+                         WHERE e.serial IN ${CUSTOMER_SERIALS_SQL} AND e.type = 'stamp'))::text AS returned,
+       -- The shop's rhythm on this card, built from the SAME three fragments
+       -- the Customers screen reads per person (see customerViews): their whole
+       -- span divided by the gaps in it, so three visits give two gaps. Written
+       -- out of the shared SQL rather than reimplemented, because a second
+       -- definition of "how often do they come in" would drift from the first
+       -- and the two screens would quietly disagree.
+       --
+       -- DISTINCT ON per PERSON, not per pass (invariant 5): somebody holding
+       -- an Apple and a Google card has one rhythm, not two.
+       --
+       -- Anyone with fewer than two visits is left OUT rather than counted as
+       -- zero. A shop where nine people came once and one comes weekly has one
+       -- rhythm worth reporting, and averaging in nine zeroes would report a
+       -- daily one.
+       (SELECT avg(GREATEST(
+                 EXTRACT(epoch FROM (q.last_visit - q.first_visit)) / 86400.0 / (q.visits - 1), 0))
+          FROM (
+            SELECT DISTINCT ON (${PERSON_KEY_SQL})
+                   ${CUSTOMER_VISITS_SQL} AS visits,
+                   ${LAST_VISIT_SQL} AS last_visit,
+                   ${FIRST_VISIT_SQL} AS first_visit
+              FROM passes p
+             WHERE p.card_id = $1 AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}
+             ORDER BY ${PERSON_KEY_SQL}
+          ) q
+         WHERE q.visits >= 2 AND q.first_visit IS NOT NULL)::text AS "avgGapDays"
      FROM events WHERE card_id = $1 AND NOT is_test`,
     [cardId],
   );
@@ -4487,6 +4563,7 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
     matured,
     returned,
     returnRate: matured ? returned / matured : null,
+    avgGapDays: r.avgGapDays === null ? null : Number(r.avgGapDays),
   };
 }
 

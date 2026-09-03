@@ -47,21 +47,25 @@ export const MOCK_JS = /* js */ `
    */
   const MOCK_PROGRAMS = [
     { id: "eg-points", name: "Points card", kind: "points", status: "active",
-      customers: 38, visits: 214, rewards: 9,
+      customers: 38, visits: 214, rewards: 9, avgGapDays: 11.4,
+      // Days ago, not a date: a fixed date would age until "newest first" put
+      // an example above a programme created this morning.
+      createdDaysAgo: 40,
       setup: "1 point per RM1 spent · 100 points = RM10 off" },
     { id: "eg-winter", name: "Winter stamps", kind: "stamp", status: "ended",
-      customers: 61, visits: 402, rewards: 47,
+      customers: 61, visits: 402, rewards: 47, avgGapDays: 19.8,
+      createdDaysAgo: 210,
       setup: "Collect 8 stamps, get a free pastry" },
   ];
 
   /** Campaigns. None of this exists yet — there is no campaign table at all. */
   const MOCK_CAMPAIGNS = [
-    { id: "eg-winback", name: "Come back for a coffee", type: "Win-back", status: "active",
-      targeted: 42, returned: 11, sent: "3 Aug" },
-    { id: "eg-quiet", name: "Tuesday afternoons", type: "Quiet period", status: "ended",
-      targeted: 88, returned: 24, sent: "12 Jul" },
-    { id: "eg-progress", name: "Two stamps to go", type: "Progress reminder", status: "active",
-      targeted: 19, returned: 9, sent: "21 Aug" },
+    { id: "eg-winback", name: "Come back for a coffee", kind: "winback", type: "Win-back",
+      status: "active", targeted: 42, returned: 11, sent: "3 Aug", createdDaysAgo: 30 },
+    { id: "eg-quiet", name: "Tuesday afternoons", kind: "quiet", type: "Quiet period",
+      status: "ended", targeted: 88, returned: 24, sent: "12 Jul", createdDaysAgo: 52 },
+    { id: "eg-progress", name: "Two stamps to go", kind: "progress", type: "Progress reminder",
+      status: "active", targeted: 19, returned: 9, sent: "21 Aug", createdDaysAgo: 12 },
   ];
 
   // MOCK_ACCOUNT was here. The plan, the status and the trial deadline are real

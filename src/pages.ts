@@ -263,6 +263,16 @@ export function shopNotOpenPage(
   cardId = "",
   /** The card, for its colours. Omitted ⇒ the plain site palette. */
   card?: Pick<CardRow, "background_color">,
+  /**
+   * WHICH kind of closed. "not-ready" is a shop that has not been claimed or
+   * has been archived; "ended" is a programme the shop finished on purpose.
+   *
+   * They are not interchangeable. Telling somebody scanning last season's
+   * poster that the shop "isn't open yet" reads as "this business does not
+   * exist", and the one thing they most need to know — that the card already in
+   * their wallet still works — goes unsaid.
+   */
+  why: "" | "not-ready" | "ended" = "not-ready",
 ): string {
   const base = !cardId || cardId === "default" ? "" : `/c/${cardId}`;
   // Same hero as the join page, deliberately: this is the SAME poster being
@@ -284,14 +294,20 @@ export function shopNotOpenPage(
   const logo = logoVersion && cardId
     ? `<img src="${base}/art/logo.png?v=${logoVersion}" alt="">`
     : "";
+  const ended = why === "ended";
   return page(
-    `${business} — coming soon`,
+    ended ? `${business} — this card has finished` : `${business} — coming soon`,
     `<div class="card" style="text-align:center">
       <div class="${bg ? "lhero" : ""}">
         ${logo}
         <h1>${esc(business)}</h1>
       </div>
-      <p class="sub">Their loyalty card isn’t open yet. Check back soon.</p>
+      <p class="sub">${
+        ended
+          ? "This card has finished, so there are no new sign-ups. " +
+            "<strong>If you already have one, it still works</strong> — keep collecting and claim your reward as usual."
+          : "Their loyalty card isn’t open yet. Check back soon."
+      }</p>
     </div>`,
     css,
   );

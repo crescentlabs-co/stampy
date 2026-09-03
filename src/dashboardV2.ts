@@ -158,6 +158,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        beside the word, which made them a third kind of thing on a screen that
        only has two. The swatch is what still ties each one to its line. */
     .chartfigs { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s3); }
+    /* The key, under the line it describes. Centred, so it reads as a caption
+       for the chart rather than as a third column of figures. */
+    .chartkey { display: flex; justify-content: center; gap: var(--s4);
+                margin-top: var(--s3); font-size: var(--t-sm); color: var(--muted); }
+    .chartkey span { display: flex; align-items: center; gap: var(--s2); }
     .cfig b { font-family: var(--body); font-weight: 700; font-size: var(--t-xl);
               line-height: var(--lh-num); letter-spacing: var(--tr-hero); color: var(--ink);
               font-variant-numeric: tabular-nums slashed-zero; }
@@ -215,43 +220,81 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .chartax span { flex: 1; min-width: 0; }
     .chartempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
                   color: var(--muted); }
-    /* --- the two summary lists ------------------------------------------
-       ONE container with the rows spaced inside it, the shape a transaction
-       list takes. Not a card per row: five cards stacked is five separators
-       doing the work of four gaps, and it was the stacked-boxes rhythm that
-       made this screen read as generated.
+    /* --- the two comparison charts --------------------------------------
+       Programmes and campaigns were LISTS, which answer "what have I got". The
+       question a shop with more than one actually has is "which is working
+       better", and that is a comparison, so it is a chart.
 
-       Two facts a side and no more. The full picture is on Manage, which still
-       carries customers, stamps and rewards per programme; Home answers "how
-       are they doing against each other" and nothing else. */
-    .slist { background: var(--bg); border-radius: var(--r); padding: var(--s2); }
-    .slist > * + * { margin-top: var(--s1); }
-    .srow { display: flex; align-items: center; gap: var(--s3); padding: var(--s3);
-            border-radius: var(--r-sm); text-decoration: none; color: inherit; }
-    a.srow:active { background: var(--surface); }
-    .srow .sl { flex: 1; min-width: 0; }
-    /* The name can be anything the owner typed, so it truncates rather than
-       wrapping under the figure beside it and breaking the row's rhythm. */
-    .srow .sn { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
-                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted); }
-    .srow .sr { flex: none; text-align: right; }
-    /* A row is FOUR facts at ONE size, two a side. The figure was --t-lg
-       display and the words around it 13px, which made a row carry three sizes
-       on its own. Left and right are peers here; neither is the headline. */
-    .srow .sv { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
-                font-variant-numeric: tabular-nums slashed-zero; }
-    /* Both figures on the top line, both of their labels underneath, so the
-       eye reads the two numbers together and only then asks what they are.
-       The separator is a middle dot at the label's weight in both rows, so the
-       two lines line up as a little two-column block. */
-    .srow .sx { font-style: normal; font-weight: 400; color: var(--line);
-                padding: 0 var(--s1); }
-    .srow .sp .sx { color: var(--line); }
-    .srow .sp { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted);
-                font-variant-numeric: tabular-nums; }
-    .slistempty { padding: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
-                  color: var(--muted); }
+       ONE metric at a time, therefore one series, therefore ONE colour: every
+       bar is the same neon, never shaded by size, which would encode the order
+       twice and make the colour mean rank. Ordered by creation date rather than
+       by value — the founder's call — so a replacement sits above the thing it
+       replaced and the card reads as a timeline. */
+    .cmp { background: var(--bg); border-radius: var(--r); padding: var(--s4);
+           margin: var(--s2) 0 0; }
+    .cmphead { display: flex; align-items: center; gap: var(--s2); }
+    /* The metric, top left, as the thing you press — a word and a caret, not a
+       control with a box round it. It IS the chart's title. */
+    .cmpmetric { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s1);
+                 background: none; border: 0; padding: 0; font: inherit;
+                 font-size: var(--t-md); font-weight: 600; color: var(--ink);
+                 text-align: left; cursor: pointer; }
+    .cmpmetric svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
+                     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .cmpfilter { flex: none; width: 32px; height: 32px; display: flex; align-items: center;
+                 justify-content: center; border: 0; border-radius: 999px; padding: 0;
+                 background: none; color: var(--muted); cursor: pointer; }
+    .cmpfilter svg { width: 18px; height: 18px; fill: none; stroke: currentColor;
+                     stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .cmpfilter.on, .cmpfilter:hover { background: var(--surface); color: var(--ink); }
+    .cmpfilter:focus-visible, .cmpmetric:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .cmpbars { margin-top: var(--s3); }
+    /* A bar is a row you can press: it opens the programme it stands for. No
+       tooltip — the value is already printed on the end of the bar, and a
+       tooltip that repeats what is on screen is a second thing to dismiss. */
+    .cmpbar { display: block; text-decoration: none; color: inherit; padding: var(--s2) 0; }
+    .cmpbar + .cmpbar { border-top: 1px solid var(--line); }
+    .cmpbar:active { background: var(--surface); }
+    .cmpname { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-sm);
+               color: var(--muted); }
+    .cmpname b { flex: 1; min-width: 0; font-size: var(--t-md); font-weight: 600; color: var(--ink);
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cmpname i { font-style: normal; flex: none; font-size: var(--t-md); font-weight: 600;
+                 color: var(--ink); font-variant-numeric: tabular-nums slashed-zero; }
+    /* The track is the full width, so a short bar reads as a small share of
+       something rather than as a mistake. DESIGN.md's bar spec: capped height,
+       square where it starts and rounded at the data end. */
+    .cmptrack { margin-top: var(--s2); height: 10px; border-radius: 0 999px 999px 0;
+                background: var(--ghost-bg); overflow: hidden; }
+    .cmpfill { height: 100%; border-radius: 0 999px 999px 0; background: var(--accent);
+               border-right: 1.5px solid var(--accent-2); min-width: 3px; }
+    .cmpfoot { margin-top: var(--s3); font-size: var(--t-sm); color: var(--muted); }
+    .cmpempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
+                color: var(--muted); }
+    /* --- one popover, opened by either control --------------------------- */
+    .cmpwrap { position: relative; }
+    .pop { position: absolute; z-index: 30; top: calc(100% + var(--s2));
+           background: var(--bg); border: 1px solid var(--line); border-radius: var(--r);
+           box-shadow: var(--shadow); padding: var(--s3); min-width: 200px;
+           max-width: calc(100% - var(--s2)); max-height: 60vh; overflow-y: auto; }
+    .pop.right { right: 0; }
+    .pop.left { left: 0; }
+    .popgrp + .popgrp { margin-top: var(--s3); border-top: 1px solid var(--line);
+                        padding-top: var(--s3); }
+    .popgrp > span { display: block; font-size: var(--t-sm); color: var(--muted);
+                     margin-bottom: var(--s2); }
+    .popopt { display: flex; align-items: center; gap: var(--s2); width: 100%;
+              background: none; border: 0; padding: var(--s2); border-radius: var(--r-sm);
+              font: inherit; font-size: var(--t-md); color: var(--ink); text-align: left;
+              cursor: pointer; }
+    .popopt:hover { background: var(--surface); }
+    .popopt.on { font-weight: 600; }
+    /* A tick, not a fill: the neon marks the next thing to press and a chosen
+       option is not that. */
+    .popopt::before { content: ""; width: 16px; flex: none; }
+    .popopt.on::before { content: "✓"; }
+    .popopt:disabled { color: var(--muted); cursor: default; }
+    .popopt:disabled:hover { background: none; }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
     .links { display: flex; gap: var(--s3); margin-top: var(--s2); flex-wrap: wrap; font-size: var(--t-sm); }
@@ -1405,6 +1448,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       };
     }
 
+    /**
+     * Re-read the shop after something that changes what OTHER screens offer.
+     *
+     * Ending a programme frees the one-programme slot, so Create stops refusing
+     * a new one. Patching the card in place would leave that screen answering
+     * from a copy of the shop that is a decision out of date.
+     */
+    async function refreshCards() {
+      const { body } = await api("/overview");
+      if (body && Array.isArray(body.cards)) S.cards = body.cards;
+    }
+
     async function app() {
       const { status, body } = await api("/overview");
       if (status === 401) return authForm("login");
@@ -1726,8 +1781,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const totals = d.querySelector("[data-totals]");
       const chart = d.querySelector("[data-chart]");
       const seg = d.querySelector("[data-win]");
-      d.querySelector("[data-programs]").innerHTML = homeProgrammes();
-      d.querySelector("[data-campaigns]").innerHTML = homeCampaigns();
+      // Their own state, held here so switching screens and coming back starts
+      // clean rather than restoring a filter the owner has forgotten setting.
+      comparison(d.querySelector("[data-programs]"), PROGRAMME_SPEC,
+        { metric: "per", type: "all", status: "all", picked: [] });
+      comparison(d.querySelector("[data-campaigns]"), CAMPAIGN_SPEC,
+        { metric: "rate", type: "all", status: "all", picked: [] });
 
       const tile = (label, value, change, note) =>
         '<div class="metric"><span class="mlabel">' + label + "</span>" +
@@ -1803,19 +1862,172 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * right. The same shape serves programmes and campaigns, because they are
      * the same question asked twice — how is this one doing against the others.
      */
-    function summaryRow(r) {
-      const dot = '<i class="sx">·</i>';
-      const inner =
-        '<span class="sl"><span class="sn">' + esc(r.name) + "</span>" +
-          '<span class="st">' + esc(r.type) + "</span></span>" +
-        '<span class="sr"><span class="sv">' + r.value + dot + r.share + "</span>" +
-          '<span class="sp">' + esc(r.unit) + dot + esc(r.shareLabel) + "</span></span>";
-      // No chip and no dimming on the row itself. Both sections carry ONE
-      // "Example" on their heading instead — a chip on every row was more
-      // marking than reading, and the founder asked for the quiet version.
-      return r.href
-        ? '<a class="srow" href="' + ROOT + r.href + '" data-nav="' + r.href + '">' + inner + "</a>"
-        : '<div class="srow">' + inner + "</div>";
+    /** The two icons these cards use, in the style of the nav's single paths. */
+    const ICON_CARET = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+    const ICON_FUNNEL = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>';
+
+    /** How many rows a comparison may draw. More than five bars on a phone is a
+     *  list again, and the point of the card is that you can see it at once. */
+    const CMP_MAX = 5;
+
+    /**
+     * The comparison card: one metric, up to five rows, ordered newest first.
+     *
+     * Programmes and campaigns are the same question asked about different
+     * rows — which of these is doing better — so they are one builder used
+     * twice rather than two that drift.
+     *
+     * Rows are NEVER added together. Two versions of the same stamp card are
+     * two bars, because telling them apart is the entire reason to look.
+     *
+     * spec is { metrics, types, rows, href } and nothing else knows what a
+     * programme or a campaign is.
+     */
+    function comparison(host, spec, state) {
+      if (!host) return;
+      const metric = spec.metrics.find((m) => m.k === state.metric) || spec.metrics[0];
+
+      // Filter, then order, THEN cut to five — cutting first would let a filter
+      // hide a row that should have made the cut.
+      let rows = spec.rows();
+      if (state.picked.length) {
+        rows = rows.filter((r) => state.picked.indexOf(r.id) >= 0);
+      } else {
+        if (state.type !== "all") rows = rows.filter((r) => r.kind === state.type);
+        if (state.status !== "all") rows = rows.filter((r) => (r.ended ? "ended" : "active") === state.status);
+      }
+      const matched = rows.length;
+      rows = rows.slice().sort((a, b) => a.daysAgo - b.daysAgo).slice(0, CMP_MAX);
+
+      const head =
+        '<div class="cmphead">' +
+          '<button type="button" class="cmpmetric" data-metric>' +
+            "<span>" + esc(metric.name) + "</span>" + ICON_CARET +
+          "</button>" +
+          '<button type="button" class="cmpfilter" data-filter aria-label="Filter">' +
+            ICON_FUNNEL +
+          "</button>" +
+        "</div>";
+
+      if (!rows.length) {
+        host.innerHTML = '<div class="cmp"><div class="cmpwrap">' + head +
+          '<p class="cmpempty">Nothing matches that filter.</p></div></div>';
+        wireComparison(host, spec, state);
+        return;
+      }
+
+      // The scale is the biggest VALUE on screen, floored above zero so a set of
+      // all-zero rows draws nothing rather than dividing by it.
+      const vals = rows.map((r) => metric.of(r));
+      const max = Math.max.apply(null, vals.concat([0]).map((v) => (isFinite(v) && v > 0 ? v : 0)));
+      const bars = rows.map((r, i) => {
+        const v = vals[i];
+        const w = max > 0 && isFinite(v) && v > 0 ? (v / max) * 100 : 0;
+        return '<a class="cmpbar" href="' + ROOT + spec.href(r) + '" data-nav="' + spec.href(r) + '">' +
+          '<span class="cmpname"><b>' + esc(r.name) + "</b>" +
+            "<i>" + esc(metric.fmt(v)) + "</i></span>" +
+          '<span class="cmptrack"><span class="cmpfill" style="width:' + w.toFixed(1) + '%"></span></span>' +
+        "</a>";
+      }).join("");
+
+      // Said out loud, because neither is guessable from the bars: these figures
+      // ignore the window selector at the top of the screen, and the order is
+      // recency rather than size.
+      const foot = "All time · newest first" +
+        (matched > rows.length ? " · showing " + rows.length + " of " + matched : "");
+
+      host.innerHTML = '<div class="cmp"><div class="cmpwrap">' + head +
+        '<div class="cmpbars">' + bars + "</div>" +
+        '<p class="cmpfoot">' + foot + "</p>" +
+        "</div></div>";
+      wireComparison(host, spec, state);
+    }
+
+    /**
+     * The two buttons, and the one popover both of them open.
+     *
+     * One popover with different contents, not two popovers: a caret that opens
+     * a list and a funnel that opens three lists are the same object doing the
+     * same job, and building them separately is how two things that should
+     * always agree start disagreeing about where they sit and how they close.
+     */
+    function wireComparison(host, spec, state) {
+      const wrap = host.querySelector(".cmpwrap");
+      const mBtn = host.querySelector("[data-metric]");
+      const fBtn = host.querySelector("[data-filter]");
+      let pop = null;
+
+      function close() {
+        if (pop) { pop.remove(); pop = null; }
+        fBtn.classList.remove("on");
+        document.removeEventListener("pointerdown", away, true);
+        document.removeEventListener("keydown", onKey, true);
+      }
+      function away(e) { if (pop && !pop.contains(e.target) && !mBtn.contains(e.target) && !fBtn.contains(e.target)) close(); }
+      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
+
+      function open(side, html) {
+        if (pop) { const was = pop.dataset.side; close(); if (was === side) return; }
+        pop = document.createElement("div");
+        pop.className = "pop " + side;
+        pop.dataset.side = side;
+        pop.innerHTML = html;
+        wrap.appendChild(pop);
+        if (side === "right") fBtn.classList.add("on");
+        document.addEventListener("pointerdown", away, true);
+        document.addEventListener("keydown", onKey, true);
+        pop.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-set]");
+          if (!b || b.disabled) return;
+          const [key, val] = b.dataset.set.split(":");
+          if (key === "pick") {
+            const at = state.picked.indexOf(val);
+            if (at >= 0) state.picked.splice(at, 1);
+            else if (state.picked.length < CMP_MAX) state.picked.push(val);
+          } else {
+            state[key] = val;
+            // Choosing a type or a status is choosing a GROUP, so it clears a
+            // hand-picked set rather than fighting with it. The two filters
+            // would otherwise both be on with only one of them visible.
+            if (key !== "metric") state.picked = [];
+          }
+          close();
+          comparison(host, spec, state);
+        });
+      }
+
+      const opt = (set, name, on, off) =>
+        '<button type="button" class="popopt' + (on ? " on" : "") + '" data-set="' + set + '"' +
+        (off ? " disabled" : "") + ">" + esc(name) + "</button>";
+
+      mBtn.onclick = () => open("left",
+        spec.metrics.map((m) => opt("metric:" + m.k, m.name, m.k === state.metric)).join(""));
+
+      fBtn.onclick = () => {
+        const all = spec.rows();
+        const groups = [
+          '<div class="popgrp"><span>' + esc(spec.typeLabel) + "</span>" +
+            opt("type:all", "All", state.type === "all") +
+            spec.types().map((t) => opt("type:" + t.k, t.name, state.type === t.k)).join("") +
+          "</div>",
+          '<div class="popgrp"><span>Status</span>' +
+            opt("status:active", "Active", state.status === "active") +
+            opt("status:ended", "Inactive", state.status === "ended") +
+            opt("status:all", "All", state.status === "all") +
+          "</div>",
+          // Hand-picked, capped at five. Anything not already ticked is
+          // disabled once five are, so the cap is visible rather than a tap
+          // that silently does nothing.
+          '<div class="popgrp"><span>Or compare up to ' + CMP_MAX + "</span>" +
+            all.map((r) => {
+              const on = state.picked.indexOf(r.id) >= 0;
+              return opt("pick:" + r.id, r.name, on, !on && state.picked.length >= CMP_MAX);
+            }).join("") +
+          "</div>",
+        ];
+        open("right", groups.join(""));
+      };
     }
 
     /** A share of a total, without dividing by zero and without a bare "0%". */
@@ -1824,58 +2036,79 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       return Math.round((part / total) * 100) + "%";
     }
 
-    /**
-     * Programmes: customers, and what share of them each one holds.
-     *
-     * Counted per PERSON, the same definition as everywhere else (invariant 5)
-     * — c.metrics.active, so somebody holding an Apple and a Google card of the
-     * same programme is one customer here as well.
-     *
-     * The share is of every programme's customers ADDED TOGETHER, not of the
-     * headline figure above. Those two are different totals on purpose: a
-     * person on two programmes is one customer to the shop and belongs to both
-     * rows, so the rows sum to memberships. Dividing by the headline instead
-     * would let the shares add up past 100%, which is the worse of the two
-     * lies. It is also why the list is not offered as a breakdown of the
-     * number above it.
-     */
-    function homeProgrammes() {
-      const real = S.cards.map((c) => ({
-        href: "/manage/rewards/" + c.id,
-        name: c.shopName || c.name,
-        type: KIND_LABEL[c.kind] || "Stamps",
-        customers: c.metrics.active,
-      }));
-      const eg = MOCK_PROGRAMS.map((m) => ({
-        href: "/manage/rewards/" + m.id,
-        name: m.name,
-        type: (KIND_LABEL[m.kind] || "Stamps") + (m.status === "ended" ? " · Ended" : ""),
-        customers: m.customers,
-      }));
-      const all = real.concat(eg);
-      const total = all.reduce((a, r) => a + r.customers, 0);
-      if (!all.length) return '<div class="slist"><p class="slistempty">No programmes yet.</p></div>';
-      return '<div class="slist">' + all.map((r) => summaryRow({
-        href: r.href, name: r.name, type: r.type,
-        value: r.customers.toLocaleString(), unit: r.customers === 1 ? "customer" : "customers",
-        share: shareOf(r.customers, total), shareLabel: "of total",
-      })).join("") + "</div>";
+    /** Days since an ISO date, for ordering by recency. */
+    function daysSince(iso) {
+      const t = new Date(iso).getTime();
+      return isFinite(t) ? Math.max(0, (Date.now() - t) / 86400000) : 1e9;
     }
 
     /**
-     * Campaigns: how many came back, and what share of the people it was sent
-     * to that is — the return rate, which is the only number that says whether
-     * a campaign worked. Entirely example data: there is no campaign table.
+     * Programmes, compared one metric at a time.
+     *
+     * Visits are the programme's net stamps, the same arithmetic the chart
+     * above uses; customers are counted per PERSON (invariant 5), the same
+     * definition as everywhere else. Visits per customer and visit frequency
+     * are the two that actually rank a programme — a card with 400 visits from
+     * 300 people is doing worse than one with 90 from 20.
      */
-    function homeCampaigns() {
-      return '<div class="slist">' + MOCK_CAMPAIGNS.map((c) => summaryRow({
-        href: "/manage/campaigns/" + c.id,
-        name: c.name,
-        type: c.type + (c.status === "ended" ? " · Ended" : ""),
-        value: c.returned.toLocaleString(), unit: "returned",
-        share: shareOf(c.returned, c.targeted), shareLabel: "return rate",
-      })).join("") + "</div>";
-    }
+    const PROGRAMME_SPEC = {
+      typeLabel: "Programme type",
+      // A FUNCTION, not an array. REWARD_TYPES is declared further down this
+      // script, so evaluating it here would read a const in its temporal dead
+      // zone — a ReferenceError at load, which blanks the whole dashboard. The
+      // compile tests cannot see it: the syntax is valid and the name is
+      // defined, just not yet. Same reason rows() is a function.
+      types: () => REWARD_TYPES.map((t) => ({ k: t.k, name: t.name })),
+      href: (r) => "/manage/rewards/" + r.id,
+      metrics: [
+        { k: "per", name: "Visits per customer",
+          of: (r) => (r.customers ? r.visits / r.customers : 0),
+          fmt: (v) => (v > 0 ? v.toFixed(1) : "—") },
+        { k: "freq", name: "Visit frequency",
+          of: (r) => (r.avgGapDays > 0 ? r.avgGapDays : 0),
+          // Days BETWEEN visits, so a smaller number is a better programme. The
+          // bar still grows with the value, which would rank it upside down —
+          // so the label carries the unit and the ordering is recency, not size.
+          fmt: (v) => (v > 0 ? "every " + Math.round(v) + "d" : "—") },
+        { k: "visits", name: "Visits", of: (r) => r.visits, fmt: (v) => v.toLocaleString() },
+        { k: "customers", name: "Customers", of: (r) => r.customers, fmt: (v) => v.toLocaleString() },
+      ],
+      rows: () => S.cards.map((c) => ({
+        id: c.id, name: c.shopName || c.name, kind: c.kind || "stamp",
+        ended: Boolean(c.endedAt), daysAgo: daysSince(c.createdAt),
+        customers: c.metrics.active, visits: c.metrics.stamps,
+        avgGapDays: c.metrics.avgGapDays || 0,
+      })).concat(MOCK_PROGRAMS.map((m) => ({
+        id: m.id, name: m.name, kind: m.kind,
+        ended: m.status === "ended", daysAgo: m.createdDaysAgo,
+        customers: m.customers, visits: m.visits, avgGapDays: m.avgGapDays,
+      }))),
+    };
+
+    /**
+     * Campaigns, compared the same way. Entirely example data — there is no
+     * campaign table — which is why the heading carries the chip.
+     *
+     * Return rate is the only number that says whether a campaign worked:
+     * "11 came back" means nothing until you know it went to 42 people.
+     */
+    const CAMPAIGN_SPEC = {
+      typeLabel: "Campaign type",
+      types: () => CAMPAIGN_TYPES.map((t) => ({ k: t.k, name: t.name })),
+      href: (r) => "/manage/campaigns/" + r.id,
+      metrics: [
+        { k: "rate", name: "Return rate",
+          of: (r) => (r.targeted ? (r.returned / r.targeted) * 100 : 0),
+          fmt: (v) => (v > 0 ? Math.round(v) + "%" : "—") },
+        { k: "reached", name: "Customers reached",
+          of: (r) => r.targeted, fmt: (v) => v.toLocaleString() },
+      ],
+      rows: () => MOCK_CAMPAIGNS.map((c) => ({
+        id: c.id, name: c.name, kind: c.kind,
+        ended: c.status === "ended", daysAgo: c.createdDaysAgo,
+        targeted: c.targeted, returned: c.returned,
+      })),
+    };
 
     /**
      * The one chart: visits and rewards, on one pair of axes, tappable.
@@ -1898,11 +2131,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const rew = pts.map((p) => p.rewards);
       const totalV = vis.reduce((a, n) => a + n, 0);
       const totalR = rew.reduce((a, n) => a + n, 0);
-      const fig = (cls, label, n) =>
-        '<div class="cfig"><span class="mlabel"><i class="sw ' + cls + '"></i>' + label + "</span>" +
+      const fig = (label, n) =>
+        '<div class="cfig"><span class="mlabel">' + label + "</span>" +
         "<b>" + n.toLocaleString() + "</b></div>";
       const keys = '<div class="chartfigs">' +
-        fig("v", "Visits", totalV) + fig("r", "Rewards", totalR) + "</div>";
+        fig("Visits", totalV) + fig("Rewards", totalR) + "</div>";
+      // The colour key sits UNDER the chart, not beside the figures above it.
+      // Up there the swatch reads as decoration on a label; down here, right
+      // after the line it describes, it is the thing that says which is which.
+      const key = '<div class="chartkey">' +
+        '<span><i class="sw v"></i>Visits</span>' +
+        '<span><i class="sw r"></i>Rewards</span>' +
+      "</div>";
 
       // Two points make a line; one does not, and a flat run of zeros drawn
       // along the floor reads as a collapse rather than as an empty shop.
@@ -1936,7 +2176,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             "<span>" + esc(edgeLabel(pts[0].at, s.bucketDays)) + "</span>" +
             "<span>" + esc(edgeLabel(pts[Math.floor((pts.length - 1) / 2)].at, s.bucketDays)) + "</span>" +
             "<span>" + esc(edgeLabel(pts[pts.length - 1].at, s.bucketDays)) + "</span>" +
-          "</div>" +
+          "</div>" + key +
         "</div>";
 
       const wrap = host.querySelector("[data-wrap]");
@@ -2696,9 +2936,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
       const m = card.metrics || {};
       const enrolled = m.active > 0;
+      const over = Boolean(card.endedAt);
       d.innerHTML = back +
         '<h2 class="sec first">' + esc(card.shopName || card.name) +
-          '<span class="pstat">Active</span></h2>' +
+          '<span class="pstat' + (over ? " off" : "") + '">' +
+          (over ? "Ended" : "Active") + "</span></h2>" +
         '<h2 class="sec">Performance</h2>' +
         '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
           '<div class="metric"><b>' + (m.active || 0) + "</b><span>customers</span></div>" +
@@ -2726,19 +2968,33 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<div class="qrbox"><img alt="Sign-up QR code" src="/j/' + esc(S.joinRef) + '/qr">' +
         '<p class="muted">Every programme has its own QR. This one is yours.</p></div>' +
         '<h2 class="sec">Status</h2>' +
-        '<p class="muted">Ending a programme stops new sign-ups. Everyone already holding ' +
-        "a card keeps collecting on it, and keeps getting their reward.</p>" +
+        '<p class="muted">' + (over
+          ? "This programme has ended, so nobody new can sign up. Everyone who already " +
+            "holds a card is still collecting on it and can still claim their reward."
+          : "Ending a programme stops new sign-ups. Everyone already holding a card keeps " +
+            "collecting on it, and keeps getting their reward.") + "</p>" +
         '<button class="btn btn-ghost" style="width:auto;padding:11px 18px;margin-top:10px" data-end>' +
-        "End sign-ups</button>" +
+        (over ? "Start sign-ups again" : "End sign-ups") + "</button>" +
         '<h2 class="sec">What it looks like</h2>' +
         '<div data-design></div>';
 
       d.querySelector("[data-back]").onclick = () => navigate("/manage/rewards");
       // Two taps, never a browser dialog: a browser lets somebody silence
       // those, after which confirm() answers "no" in silence.
-      arm(d.querySelector("[data-end]"), "Tap again to end sign-ups", () => {
-        toast("Ending a programme arrives with V2 — nothing has changed.");
-      });
+      arm(d.querySelector("[data-end]"),
+        over ? "Tap again to reopen" : "Tap again — existing cards keep working",
+        async () => {
+          const { body } = await api("/card/" + encodeURIComponent(card.id) + "/ended", {
+            method: "POST", body: JSON.stringify({ ended: !over }),
+          });
+          if (!body || !body.ok) { toast("That didn’t save. Try again."); return; }
+          // Re-read the shop rather than patching the card in place: ending one
+          // frees the single-programme slot, so Create changes too, and a local
+          // edit would leave that screen saying the opposite.
+          await refreshCards();
+          navigate("/manage/rewards/" + card.id, true);
+          toast(over ? "Sign-ups are open again." : "Sign-ups closed. Existing cards still work.");
+        });
       d.querySelector("[data-design]").appendChild(designerFor(card));
       return d;
     }

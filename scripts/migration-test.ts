@@ -406,6 +406,34 @@ async function main(): Promise<void> {
     `a new card is born with a flat band, not a dead texture (default is ${bandDefault})`,
   );
 
+  // v2.10: a programme can be finished without being deleted. Every card that
+  // existed before the column did must read as RUNNING — a shop that has never
+  // had the control cannot have used it, and an upgrade that quietly closed
+  // sign-ups on live shops is the one way this change could do real harm.
+  const endedCol = (await sql.query<{ column_name: string; is_nullable: string }>(
+    `SELECT column_name, is_nullable FROM information_schema.columns
+      WHERE table_name = 'cards' AND column_name = 'ended_at'`,
+  )).rows[0];
+  expect(Boolean(endedCol), "the ended_at column arrives on an upgraded database");
+  expect(endedCol?.is_nullable === "YES", "...and NULL is allowed, which is what running means");
+  const closedByUpgrade = (await sql.query<{ n: string }>(
+    `SELECT count(*)::text n FROM cards WHERE ended_at IS NOT NULL`,
+  )).rows[0]!.n;
+  expect(
+    closedByUpgrade === "0",
+    `the upgrade closes no existing programme (${closedByUpgrade} came back ended)`,
+  );
+  // Ending is not archiving. They are separate columns and the upgrade must not
+  // have confused one for the other.
+  const bothCols = (await sql.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'cards' AND column_name IN ('ended_at', 'archived_at')`,
+  )).rows.map((r) => r.column_name).sort();
+  expect(
+    bothCols.join(",") === "archived_at,ended_at",
+    `ending and archiving stay two columns (${bothCols.join(", ")})`,
+  );
+
   console.log(failures === 0 ? "\nMIGRATION OK ✅" : `\n${failures} FAILURE(S) ❌`);
 
   // Close the pool BEFORE stopping Postgres. Otherwise the server terminates

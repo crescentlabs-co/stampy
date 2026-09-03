@@ -4286,6 +4286,93 @@ async function main() {
     "...but does not act on it",
   );
 
+  // --- ending a programme -------------------------------------------------
+  //
+  // Last, because it creates a second card once the slot is free and nothing
+  // may run after that on a shop the earlier checks expect to hold exactly one.
+  //
+  // The whole promise is a pair: NEW sign-ups stop, and everyone already
+  // holding a card carries on. Neither half is visible from the browser, and
+  // the second half is the one an owner is trusting us with.
+  const ovEnd = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  const liveCard = ovEnd.cards[0].id as string;
+  const liveRef = ovEnd.joinRef as string;
+  expect(ovEnd.cards[0].endedAt === null, "a programme starts out running, not ended");
+  expect(typeof ovEnd.cards[0].createdAt === "string", "a programme carries its creation date");
+  expect(ovEnd.cards[0].metrics.avgGapDays === null || typeof ovEnd.cards[0].metrics.avgGapDays === "number",
+    "a programme reports its visit rhythm, or null when nobody has been in twice");
+
+  const setEnded = async (id: string, ended: boolean) => JSON.parse(await (await fetch(
+    base + `/dashboard/api/card/${id}/ended`,
+    { method: "POST", headers: { "Content-Type": "application/json", cookie }, body: JSON.stringify({ ended }) },
+  )).text());
+  // This shop collected several cards over the multi-card checks above, so
+  // "closed" means every one of them — one still running keeps the poster link
+  // open, which is correct and is checked separately below.
+  const allCards = (ovEnd.cards as { id: string }[]).map((c) => c.id);
+  for (const id of allCards) {
+    expect((await setEnded(id, true)).ok === true, `ending ${id} answers ok`);
+  }
+
+  // Closed to new customers, on every door, and saying WHICH kind of closed.
+  const endedLanding = await get(`/c/${liveCard}`);
+  expect(endedLanding.body.includes("no new sign-ups"), "the sign-up page says the card has finished");
+  expect(!endedLanding.body.includes("isn’t open yet"),
+    "...and never tells them the shop does not exist");
+  expect(endedLanding.body.includes("it still works"),
+    "...and tells anyone already holding one that theirs is fine");
+  for (const path of [`/c/${liveCard}/enroll`, `/c/${liveCard}/enroll/google`]) {
+    const gone = await get(path);
+    expect(gone.status === 403, `${path} refuses a new card on an ended programme (got ${gone.status})`);
+  }
+  const endedJoin = await get(`/j/${liveRef}`);
+  expect(endedJoin.body.includes("no new sign-ups"),
+    "with every card finished, the poster link says so");
+  expect(!endedJoin.body.includes("isn’t open yet"),
+    "...and still never says the shop does not exist");
+
+  // ...and the half that matters most: an existing customer is untouched.
+  // staffRot, not staffHeaders: rotating the PIN above signed every earlier
+  // staff phone out, which is its whole job.
+  const stampAfterEnd = await fetch(base + "/staff/api/stamp", {
+    method: "POST",
+    headers: { ...staffHeaders, cookie: staffRot.cookie },
+    body: JSON.stringify({ serial: p1.serial }),
+  });
+  const stillOut = JSON.parse(await stampAfterEnd.text());
+  // 200, or the anti-double-scan cooldown — this pass was stamped earlier in the
+  // run. Either answer proves the point: the counter treated it as an ordinary
+  // open card and got all the way to its own rules. A closed programme would
+  // have been refused at the door with a 403 long before that.
+  expect(
+    (stampAfterEnd.status === 200 && typeof stillOut.pass.stamps === "number") ||
+      (stampAfterEnd.status === 409 && stillOut.error === "too-soon"),
+    `an existing card is still stamped after the programme ends ` +
+      `(got ${stampAfterEnd.status} ${JSON.stringify(stillOut)})`,
+  );
+  expect(stampAfterEnd.status !== 403, "...and is never refused for the programme being closed");
+
+  // The slot is free, so the shop can start the next one.
+  const nextCard = await fetch(base + "/dashboard/api/cards", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({ name: "Next season" }),
+  });
+  expect(nextCard.status === 200, `ending one frees the slot for the next (got ${nextCard.status})`);
+
+  // With ONE card running again, the poster link falls through to it rather
+  // than closing — even though the merchant's chosen default is the ended one.
+  // That is what an owner replacing last season's card is counting on, and it
+  // happens without them touching a setting.
+  for (const id of allCards) if (id !== liveCard) await setEnded(id, false);
+  const joinFellThrough = await get(`/j/${liveRef}`);
+  expect(!joinFellThrough.body.includes("no new sign-ups"),
+    "/j/ falls through to a card still running rather than closing");
+
+  // Reopening is the same control the other way round.
+  expect((await setEnded(liveCard, false)).ok === true, "reopening answers ok");
+  const reopened = await get(`/c/${liveCard}/enroll`);
+  expect(reopened.status !== 403, `reopening lets new customers in again (got ${reopened.status})`);
+
   // Nothing may ever rewrite history.
   const eventUpdates = (await getPool().query<{ n: string }>(
     `SELECT count(*) n FROM events WHERE created_at > now() + interval '1 minute'`)).rows[0]!.n;

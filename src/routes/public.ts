@@ -135,15 +135,31 @@ function viewMeta(req: import("express").Request): { ua: string; bot: boolean } 
  *
  * The env-seeded default card has no merchant at all and stays open — it is the
  * bootstrap card, and nothing has been promised to anyone about it.
+ *
+ * A FINISHED programme (cards.ended_at) is the third way to be closed, and it
+ * is closed to NEW customers only: everybody already holding the card keeps it,
+ * keeps being stamped and keeps redeeming, because none of that comes through
+ * here. This is the one place the three are asked, which is why both wallets
+ * and the landing page shut together — do not add a second check anywhere.
+ *
+ * `why` exists so the page can say which of the three it is. "This shop is not
+ * open yet" told a customer scanning last season's poster that the shop does
+ * not exist, which is a different and much worse thing than "that card has
+ * finished".
  */
-async function shopOpen(card: CardRow): Promise<{ open: boolean; business: string; logoVersion: number }> {
+type ClosedReason = "" | "not-ready" | "ended";
+
+async function shopOpen(
+  card: CardRow,
+): Promise<{ open: boolean; why: ClosedReason; business: string; logoVersion: number }> {
   const merchant = await merchantForCard(card.id).catch(() => null);
   const [business, logoVersion] = await Promise.all([
     businessNameForCard(card),
     cafeLogoVersion(card.id).catch(() => 0),
   ]);
-  const open = !merchant || (Boolean(merchant.owner_id) && !merchant.archived_at);
-  return { open, business, logoVersion };
+  const claimed = !merchant || (Boolean(merchant.owner_id) && !merchant.archived_at);
+  const why: ClosedReason = !claimed ? "not-ready" : card.ended_at ? "ended" : "";
+  return { open: why === "", why, business, logoVersion };
 }
 
 async function landing(
@@ -170,13 +186,13 @@ async function landing(
   // The shop's own name and mark. Both are read fresh on every request, so an
   // owner who uploads a logo sees it on this page (and on the poster) straight
   // away — there is nothing to regenerate.
-  const { open, business, logoVersion } = await shopOpen(card);
+  const { open, why, business, logoVersion } = await shopOpen(card);
   // Not open yet, or closed: their name and their mark, and no way to be issued
   // a card. The scan is still logged above — a poster that went up before the
   // shop was claimed is worth knowing about, and the funnel would otherwise
   // lose it silently.
   if (!open) {
-    return void res.type("html").send(shopNotOpenPage(business, logoVersion, card.id, card));
+    return void res.type("html").send(shopNotOpenPage(business, logoVersion, card.id, card, why));
   }
   res.type("html").send(
     landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId, business, logoVersion),
@@ -343,7 +359,7 @@ async function enroll(
   const gateApple = await shopOpen(card);
   if (!gateApple.open) {
     return void res.status(403).type("html").send(
-      shopNotOpenPage(gateApple.business, gateApple.logoVersion, card.id),
+      shopNotOpenPage(gateApple.business, gateApple.logoVersion, card.id, card, gateApple.why),
     );
   }
   if (!setupStatus().canSignPasses) {
@@ -391,7 +407,7 @@ async function enrollGoogle(
   const gateGoogle = await shopOpen(card);
   if (!gateGoogle.open) {
     return void res.status(403).type("html").send(
-      shopNotOpenPage(gateGoogle.business, gateGoogle.logoVersion, card.id),
+      shopNotOpenPage(gateGoogle.business, gateGoogle.logoVersion, card.id, card, gateGoogle.why),
     );
   }
   if (!setupStatus().canGoogleWallet) {
@@ -602,6 +618,17 @@ publicRouter.get("/j/:ref", async (req, res) => {
   const card = await joinTargetCard(found.merchant);
   if (!card) {
     const cards = await cardsForMerchant(found.merchant.id);
+    // Every card they have has finished. That is not "pick one" — there is
+    // nothing to pick — and it is not "this shop does not exist" either. Hand
+    // the poster's reader the last card's own colours and the true reason.
+    const live = cards.filter((c) => !c.ended_at);
+    if (cards.length && !live.length) {
+      const last = cards[cards.length - 1]!;
+      return void res.type("html").send(
+        shopNotOpenPage(found.merchant.name, await cafeLogoVersion(last.id).catch(() => 0),
+          last.id, last, "ended"),
+      );
+    }
     return void res.type("html").send(cardPickerPage(found.merchant, cards, query));
   }
   await landing(card.id, req, res);

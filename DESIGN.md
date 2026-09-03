@@ -71,7 +71,7 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
    **four** fenced exceptions, each described below: the marketing page's three
    tile colours, the neon reassurance band pinned to the bottom of that page,
-   the dashboard's **top bar**, and the **area under Home's visits line**.
+   the dashboard's **top bar**, and **Home's charts**.
 
    The top bar is neon on purpose, decided by the founder — the same call that
    was made for the `.greet` header it replaced. It earns the exception on the
@@ -80,11 +80,13 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    except the ⋯ menu**, so it cannot compete with whatever the owner came here
    to do. Its text is `--on-accent`, never white.
 
-   Home's chart fills the area **under** the visits line with neon, also the
-   founder's call. It is a fill and never a stroke on its own: `#c9f73d` is too
-   pale to read as a line on white, so the line on top of it is `--accent-2`
-   and the second series is `--ink`. It stays an exception rather than becoming
-   the rule, and the rest of the chart guidance below still holds.
+   Home's charts are neon, also the founder's call: the area **under** the
+   visits line, and the bars in the two comparison cards. Always a FILL and
+   never a stroke on its own — `#c9f73d` is too pale to read as a line on white,
+   which is why the line on top of it is `--accent-2` and the second series is
+   `--ink`. The exception is that screen and those three charts; a neon bar
+   anywhere else is decoration, and the rest of the chart guidance below holds
+   in full.
 
    The bottom nav's **Create (+) button** is also neon and needs no exception:
    a primary action is what this rule has always allowed. Those two, and
@@ -187,11 +189,19 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
 - **Charts** are hand-rolled inline SVG — there is no chart library and no build
   step to add one. Emphasis is **weight, not colour**: the period being read is
   `--ink`, the context behind it is `--field-border`, and the baseline is a
-  solid `--line` hairline (never dashed). **The accent appears in exactly one
-  chart** — the area under Home's visits line, the fenced exception in rule 1 —
-  and nowhere else, because rule 1 gives it one job and a neon bar somewhere
-  else is decoration. Bars cap at 24px with a 2px gap, square at the baseline
-  and 3–4px rounded at the data end.
+  solid `--line` hairline (never dashed). **The accent appears on Home and
+  nowhere else** — the fenced exception in rule 1 — because rule 1 gives it one
+  job and a neon bar on any other screen is decoration. Bars cap at 24px with a
+  2px gap, square at the baseline and 3–4px rounded at the data end.
+
+  **A comparison chart is ONE metric, so one series, so one colour.** Home's
+  programme and campaign cards let you switch which metric is being compared;
+  what they never do is shade a bar by its own size, which would encode the
+  order twice and make the colour mean rank — and rank changes the moment a
+  filter changes who is in the chart. Ordering there is by creation date rather
+  than by value, so a replacement sits above the thing it replaced. With five
+  bars or fewer the value is printed on the end of each one and there is no
+  axis: at that count the labels ARE the axis.
 
   **One series per chart, with one exception, and it is the same chart.** Six
   small multiples beat six lines on one plot and sidestep needing a second

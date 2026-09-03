@@ -211,6 +211,16 @@ export function artBytes(kind: ArtKind, png: unknown): Buffer | string {
 export interface DesignerCard {
   id: string;
   name: string;
+  /** When the programme was created — what the Home charts order by. ISO. */
+  createdAt: string;
+  /**
+   * When it stopped taking NEW sign-ups, or null while it is running.
+   *
+   * Sent as well as `createdAt` because the dashboard has to show the state and
+   * offer the reverse of it; the GATE that enforces it is on the server
+   * (shopOpen, src/routes/public.ts) and never reads this.
+   */
+  endedAt: string | null;
   /** Which kind of card the designer is editing — see CardKind. */
   kind: string;
   /** Perks for a membership card, one per line. '' on a stamp card. */
@@ -275,6 +285,8 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
   return {
     id: card.id,
     name: card.name,
+    createdAt: card.created_at.toISOString(),
+    endedAt: card.ended_at ? card.ended_at.toISOString() : null,
     kind: card.kind,
     benefits: card.benefits,
     milestones: card.milestones ?? [],

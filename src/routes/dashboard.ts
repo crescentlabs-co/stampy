@@ -39,6 +39,9 @@ import {
   logMessage,
   merchantAccount,
   merchantForOwner,
+  endCard,
+  reopenCard,
+  liveCardsForMerchant,
   shopSeries,
   type ShopWindow,
   clearResetToken,
@@ -408,7 +411,11 @@ dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) 
   };
   if (!name?.trim()) return void res.status(400).json({ error: "missing-name" });
   const merchant = await ensureMerchantForOwner(req.owner!.id, name.trim());
-  if ((await cardsForMerchant(merchant.id)).length > 0) {
+  // Only cards still TAKING SIGN-UPS count against the cap. A finished
+  // programme frees the slot, which is the whole point of being able to finish
+  // one: a shop replacing last season's card would otherwise have to delete it,
+  // and deleting it takes the history of everyone who held it.
+  if ((await liveCardsForMerchant(merchant.id)).length > 0) {
     return void res.status(409).json({ error: "one-card-per-merchant" });
   }
   const card = await createCard({
@@ -490,6 +497,29 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
  * Returns both wallets. Which one is useful depends on the phone in the owner's
  * hand, and they are the only person who knows that.
  */
+/**
+ * Finish a programme, or start it again.
+ *
+ * Sign-ups stop and NOTHING else does: every customer holding the card keeps it,
+ * keeps being stamped and keeps redeeming. The door this closes is the one at
+ * `shopOpen` (src/routes/public.ts) and it is the only one.
+ *
+ * Not a delete. Deleting the card would take `passes` with it — the serials and
+ * auth tokens that live inside cards already on phones — and orphan every one of
+ * them permanently. Finishing is the reversible version, and reopening is the
+ * same button the other way round.
+ */
+dashboardRouter.post("/api/card/:id/ended", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(404).json({ error: "not-your-card" });
+  }
+  const ended = Boolean((req.body ?? {}).ended);
+  if (ended) await endCard(cardId);
+  else await reopenCard(cardId);
+  res.json({ ok: true, ended });
+});
+
 dashboardRouter.get("/api/card/:id/test-link", requireOwner, async (req: OwnerRequest, res) => {
   const cardId = req.params.id!;
   if (!(await ownerHasCard(req.owner!.id, cardId))) {

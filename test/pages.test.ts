@@ -2612,7 +2612,8 @@ describe("the visit-cycle setting", () => {
 
 describe("Home", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
-  const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("function shopChart(host, s)"));
+  const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("const ICON_CARET"));
+  const cmp = html.slice(html.indexOf("const ICON_CARET"), html.indexOf("function shopChart(host, s)"));
 
   /**
    * Two figures and one chart, and nothing else on the screen.
@@ -2626,12 +2627,17 @@ describe("Home", () => {
     expect(home).toContain('<h2 class="sec first">Dashboard</h2>');
     expect(home).toContain('tile("Customers"');
     expect(home).toContain('tile("Loyalty revenue (');
-    // The four that went, and the two blocks under them.
-    for (const gone of ["Visit frequency", "Rewards given", "How your shop is doing", "data-signups"]) {
+    for (const gone of ["Rewards given", "How your shop is doing", "data-signups"]) {
       expect(home).not.toContain(gone);
     }
     expect(html).not.toContain("function drawInsight");
     expect(html).not.toContain("function campaignBlock");
+    // The lists became charts. A list answers "what have I got"; the question a
+    // shop with more than one programme has is which is doing better.
+    expect(html).not.toContain("function summaryRow");
+    expect(html).not.toContain("function homeProgrammes");
+    expect(home).toContain("comparison(d.querySelector(\"[data-programs]\"), PROGRAMME_SPEC");
+    expect(home).toContain("comparison(d.querySelector(\"[data-campaigns]\"), CAMPAIGN_SPEC");
   });
 
   /** The window governs the tiles as well as the chart, so there is one of it. */
@@ -2735,12 +2741,13 @@ describe("Home", () => {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the big size").toContain("var(--t-xl)");
     }
-    for (const cls of [".srow .sn {", ".srow .sv {"]) {
+    for (const cls of [".cmpname b {", ".cmpname i {", ".cmpmetric {", ".popopt {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the row size").toContain("var(--t-md)");
     }
-    for (const cls of [".mlabel {", ".mnote {", ".delta {", ".chartax {", ".srow .st {",
-                       ".srow .sp {", ".ctip .cd {", ".ctip .cr {", ".winsel button {"]) {
+    for (const cls of [".mlabel {", ".mnote {", ".delta {", ".chartax {", ".cmpname {",
+                       ".cmpfoot {", ".chartkey {", ".ctip .cd {", ".ctip .cr {",
+                       ".winsel button {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the subtext size").toContain("var(--t-sm)");
     }
@@ -2773,37 +2780,53 @@ describe("Home", () => {
    * Two facts a side and no more. Manage still carries customers, stamps and
    * rewards per programme; Home answers how they compare and stops there.
    */
-  it("summarises each programme and campaign in two facts", () => {
-    const list = html.slice(html.indexOf("function summaryRow(r)"),
-                            html.indexOf("function shopChart(host, s)"));
-    // Counted per PERSON, the same definition as everywhere else, and shared
-    // against the list's own total rather than the headline above it — a
-    // person on two programmes belongs to both rows, so dividing by the
-    // headline would let the shares add up past 100%.
-    expect(list).toContain("shareOf(r.customers, total)");
-    expect(list).toContain("customers: c.metrics.active");
-    expect(list).not.toContain("of visits");
-    expect(list).toContain("shareOf(c.returned, c.targeted)");
-    // Both figures on the top line, both of their labels underneath, so the two
-    // lines read as a little two-column block rather than two facts stacked.
-    expect(list).toContain("r.value + dot + r.share");
-    expect(list).toContain("esc(r.unit) + dot + esc(r.shareLabel)");
-    for (const lbl of ['shareLabel: "of total"', 'shareLabel: "return rate"']) {
-      expect(list, "a share with no label saying what it is a share of").toContain(lbl);
-    }
-    // A share of nothing is an em dash, never a confident 0%.
-    expect(list).toContain("if (!total) return \"—\";");
-    // One container with the rows spaced inside it, not a card per row.
-    const css = html.slice(html.indexOf(".slist {"), html.indexOf(".slistempty {"));
-    expect(css).toContain(".slist > * + * { margin-top: var(--s1); }");
-    expect(css).not.toMatch(/\.srow \{[^}]*border:/);
-    // No chip and no dimming per row: both sections carry one "Example" on
-    // their heading instead, which is the whole marking the founder wanted.
-    expect(list).toContain("MOCK_CAMPAIGNS.map((c) => summaryRow({");
-    expect(list).not.toContain("example: true");
-    expect(list).not.toContain("egrow");
-    expect(home).toContain("'<h2 class=\"sec\">Programmes' + EG");
-    expect(home).toContain("'<h2 class=\"sec\">Campaigns' + EG");
+  /**
+   * One metric at a time, so ONE series, so one colour and no legend. Bars are
+   * never shaded by size: that would encode the order twice and make the colour
+   * mean rank, which breaks the moment a filter changes who is in the chart.
+   */
+  it("compares programmes and campaigns in one chart each", () => {
+    expect(cmp).toContain("of: (r) => (r.customers ? r.visits / r.customers : 0)");
+    expect(cmp).toContain("of: (r) => (r.targeted ? (r.returned / r.targeted) * 100 : 0)");
+    // Rows are never added together — comparing two versions of one card is the
+    // entire point — and the order is recency, not size.
+    expect(cmp).toContain("sort((a, b) => a.daysAgo - b.daysAgo).slice(0, CMP_MAX)");
+    expect(cmp).toContain("const CMP_MAX = 5");
+    // The type lists are READ from the arrays the Create screen already holds,
+    // so a fifth type appears in the filter the day it is added...
+    expect(cmp).toContain("REWARD_TYPES.map((t) => ({ k: t.k, name: t.name }))");
+    expect(cmp).toContain("CAMPAIGN_TYPES.map((t) => ({ k: t.k, name: t.name }))");
+    // ...as a FUNCTION. Both arrays are declared further down the same script,
+    // so evaluating them where the spec is built reads a const in its temporal
+    // dead zone: a ReferenceError at load that blanks the whole dashboard, with
+    // valid syntax and a defined name, which no compile check can see.
+    expect(cmp).toContain("types: () => REWARD_TYPES");
+    expect(cmp).toContain("types: () => CAMPAIGN_TYPES");
+    expect(cmp).not.toMatch(/types: REWARD_TYPES/);
+    // The cap is visible: past five, the unticked options go disabled rather
+    // than accepting a tap that silently does nothing.
+    expect(cmp).toContain("!on && state.picked.length >= CMP_MAX");
+    // One popover, opened by either control, and the neon is not in it: a
+    // chosen option is marked with a tick, not a fill.
+    expect((cmp.match(/document\.createElement\("div"\)/g) || []).length).toBe(1);
+    const pop = html.slice(html.indexOf(".popopt.on::before"), html.indexOf(".popopt:disabled"));
+    expect(pop).not.toContain("--accent");
+    // Both figures ignore the window selector, and the card says so out loud.
+    expect(cmp).toContain('"All time · newest first"');
+  });
+
+  /**
+   * A bar is a link to the thing it stands for, not a tooltip repeating a
+   * number already printed on the end of it.
+   */
+  it("makes every bar open its own programme", () => {
+    expect(cmp).toContain('<a class="cmpbar" href="\' + ROOT + spec.href(r)');
+    expect(cmp).toContain('data-nav="\' + spec.href(r)');
+    // A set of all-zero rows draws nothing rather than dividing by zero.
+    expect(cmp).toContain("Math.max.apply(null, vals.concat([0])");
+    expect(cmp).toContain("max > 0 && isFinite(v) && v > 0 ? (v / max) * 100 : 0");
+    // A filter that matches nothing says so instead of drawing an empty card.
+    expect(cmp).toContain("Nothing matches that filter.");
   });
 
   /**
@@ -3080,8 +3103,9 @@ describe("the dashboard keeps to one scale", () => {
    * held below, and this list is what separates them.
    */
   const HOME = [".mlabel", ".mnote", ".delta", ".winsel button", ".chartax", ".chartempty",
-                ".ctip .cd", ".ctip .cr", ".srow .sn", ".srow .st", ".srow .sv", ".srow .sp",
-                ".slistempty", ".metrics .metric b", ".cfig b", ".home .sec"];
+                ".ctip .cd", ".ctip .cr", ".chartkey", ".cmpmetric", ".cmpname", ".cmpname b",
+                ".cmpname i", ".cmpfoot", ".cmpempty", ".popgrp > span", ".popopt",
+                ".metrics .metric b", ".cfig b", ".home .sec"];
 
   /**
    * The change beside a number must actually come out green or rust.
@@ -3403,16 +3427,27 @@ describe("the manage screens", () => {
   });
 
   /**
-   * Ending a programme cannot do anything yet — there is no column for it —
-   * so the button says so instead of pretending. It is two taps, never a
-   * browser dialog: a browser lets somebody silence those, after which
-   * confirm() answers "no" in silence and the button looks broken.
+   * Ending a programme really ends it now — cards.ended_at — and the button
+   * asks twice, never with a browser dialog: a browser lets somebody silence
+   * those, after which confirm() answers "no" in silence and the button looks
+   * broken on a staff phone.
+   *
+   * The second tap's wording carries the promise, because that is the moment
+   * somebody hesitates: existing cards keep working.
    */
-  it("asks twice to end sign-ups, and admits it has not ended anything", () => {
+  it("asks twice to end sign-ups, and says what survives it", () => {
     expect(detail).toContain("End sign-ups");
     expect(detail).toContain('arm(d.querySelector("[data-end]")');
-    expect(detail).toContain("nothing has changed");
-    expect(detail).toContain("keeps collecting");
+    expect(detail).toContain("Tap again — existing cards keep working");
+    // Both states say what survives, in the section and on the button.
+    expect(detail).toContain("Ending a programme stops new sign-ups.");
+    expect(detail).toContain("still collecting on it");
+    // It is reversible, and the same control both ways.
+    expect(detail).toContain("Start sign-ups again");
+    expect(detail).toContain('ended: !over');
+    // Ending one frees the single-programme slot, so Create changes too — the
+    // shop is re-read rather than the card patched where it sits.
+    expect(detail).toContain("await refreshCards()");
     expect(html).toContain("function arm(btn, prompt, go)");
     // A real call always passes a message; the four remaining mentions are
     // comments explaining why this app never makes one.
@@ -3722,21 +3757,19 @@ describe("example data announces itself", () => {
     // The two headline figures and the chart come from /api/series and from
     // nothing else: an example programme must never be added into the number
     // an owner reads as their own.
-    const tiles = html.slice(html.indexOf("function homeScreen()"),
-                             html.indexOf("function summaryRow(r)"));
-    expect(tiles).not.toContain("MOCK_");
-    // The lists below them DO carry examples. The marking is one chip on each
-    // section's heading rather than one per row — so what this has to hold is
-    // that no section reads a MOCK_ value without rendering EG somewhere.
     const home = html.slice(html.indexOf("function homeScreen()"),
-                            html.indexOf("function summaryRow(r)"));
-    const lists = html.slice(html.indexOf("function summaryRow(r)"),
-                             html.indexOf("function shopChart(host, s)"));
+                            html.indexOf("const ICON_CARET"));
+    expect(home).not.toContain("MOCK_");
+    // The two charts below them DO carry examples. The marking is one chip on
+    // each section's heading rather than one per bar — so what this has to hold
+    // is that no section reads a MOCK_ value without rendering EG somewhere.
+    const charts = html.slice(html.indexOf("const ICON_CARET"),
+                              html.indexOf("function shopChart(host, s)"));
     for (const src of ["MOCK_PROGRAMS", "MOCK_CAMPAIGNS"]) {
-      expect(lists, src + " is read by no list").toContain(src);
+      expect(charts, src + " is read by no chart").toContain(src);
     }
     expect((home.match(/\+ EG \+/g) || []).length,
-      "each list that reads example data needs its own chip").toBe(2);
+      "each chart that reads example data needs its own chip").toBe(2);
   });
 });
 
