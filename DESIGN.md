@@ -194,6 +194,13 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   job and a neon bar on any other screen is decoration. Bars cap at 24px with a
   2px gap, square at the baseline and 3–4px rounded at the data end.
 
+  **A bar chart's bars STAND UP.** Five heights against one shared floor is what
+  makes them comparable at a glance. A fill running left to right along a row is
+  a progress bar, and progress — how far along is this one thing — is a different
+  question from which of these is bigger. The value goes above each bar, the name
+  under it, and four dashed `--line` rules sit behind so a height can be read
+  without an axis.
+
   **A comparison chart is ONE metric, so one series, so one colour.** Home's
   programme and campaign cards let you switch which metric is being compared;
   what they never do is shade a bar by its own size, which would encode the

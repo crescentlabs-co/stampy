@@ -2741,13 +2741,13 @@ describe("Home", () => {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the big size").toContain("var(--t-xl)");
     }
-    for (const cls of [".cmpname b {", ".cmpname i {", ".cmpmetric {", ".popopt {"]) {
+    for (const cls of [".cmpmetric {", ".popopt {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the row size").toContain("var(--t-md)");
     }
-    for (const cls of [".mlabel {", ".mnote {", ".delta {", ".chartax {", ".cmpname {",
-                       ".cmpfoot {", ".chartkey {", ".ctip .cd {", ".ctip .cr {",
-                       ".winsel button {"]) {
+    for (const cls of [".mlabel {", ".mnote {", ".delta {", ".chartax {", ".vval {",
+                       ".vnames span {", ".cmpfoot {", ".chartkey {", ".ctip .cd {",
+                       ".ctip .cr {", ".winsel button {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the subtext size").toContain("var(--t-sm)");
     }
@@ -2816,17 +2816,38 @@ describe("Home", () => {
   });
 
   /**
-   * A bar is a link to the thing it stands for, not a tooltip repeating a
-   * number already printed on the end of it.
+   * Bars STAND UP from a shared baseline. Five heights against one floor is
+   * what makes them comparable at a glance; a fill running left to right is a
+   * progress bar, and progress is a different question from "which is bigger".
+   *
+   * Nothing in the card is a link. It is a chart, not a menu — the founder
+   * asked for the detail pages to come off it.
    */
-  it("makes every bar open its own programme", () => {
-    expect(cmp).toContain('<a class="cmpbar" href="\' + ROOT + spec.href(r)');
-    expect(cmp).toContain('data-nav="\' + spec.href(r)');
-    // A set of all-zero rows draws nothing rather than dividing by zero.
+  it("draws standing bars and nothing clickable", () => {
+    expect(cmp).toContain('<div class="vcol" style="--h:');
+    expect(cmp).toContain('<div class="vnames">');
+    expect(cmp).not.toContain("cmpbar");
+    expect(cmp).not.toContain("data-nav");
+    expect(cmp).not.toContain("<a ");
+    // A set of all-zero rows draws nothing rather than dividing by zero, and
+    // the tallest stops short of the ceiling so its own value label fits above.
     expect(cmp).toContain("Math.max.apply(null, vals.concat([0])");
-    expect(cmp).toContain("max > 0 && isFinite(v) && v > 0 ? (v / max) * 100 : 0");
+    expect(cmp).toContain("max > 0 && isFinite(v) && v > 0 ? (v / max) * 88 : 0");
     // A filter that matches nothing says so instead of drawing an empty card.
     expect(cmp).toContain("Nothing matches that filter.");
+  });
+
+  /**
+   * The panel hung off the whole card, whose 100% is below the bars and the
+   * footnote — so it opened a chart's height away from the button that opened
+   * it. Anchored to the header row, it lands under the control you pressed.
+   */
+  it("opens the filter panel under the button that opens it", () => {
+    expect(cmp).toContain('host.querySelector(".cmphead")');
+    expect(cmp).not.toContain("cmpwrap");
+    const rule = html.slice(html.indexOf(".cmphead {"), html.indexOf("}", html.indexOf(".cmphead {")));
+    expect(rule, "the header row has to be the thing the panel is measured from")
+      .toContain("position: relative");
   });
 
   /**
@@ -3103,8 +3124,8 @@ describe("the dashboard keeps to one scale", () => {
    * held below, and this list is what separates them.
    */
   const HOME = [".mlabel", ".mnote", ".delta", ".winsel button", ".chartax", ".chartempty",
-                ".ctip .cd", ".ctip .cr", ".chartkey", ".cmpmetric", ".cmpname", ".cmpname b",
-                ".cmpname i", ".cmpfoot", ".cmpempty", ".popgrp > span", ".popopt",
+                ".ctip .cd", ".ctip .cr", ".chartkey", ".cmpmetric", ".vval", ".vnames span",
+                ".cmpfoot", ".cmpempty", ".popgrp > span", ".popopt",
                 ".metrics .metric b", ".cfig b", ".home .sec"];
 
   /**
@@ -3224,11 +3245,23 @@ describe("the dashboard keeps to one scale", () => {
   it("rounds corners from the three tokens and the pill", () => {
     // Per corner, so the shorthand a grouped row needs — rounded at the top,
     // square where the next row meets it — is judged on its parts.
-    const corner = /^(0|999px|var\(--r(-sm|-lg)?\))$/;
+    //
+    // 4px is allowed and is NOT a fourth radius: DESIGN.md's chart rules ask for
+    // a bar "square at the baseline and 3–4px rounded at the data end", and a
+    // --r-sm corner on a 44px bar is a lozenge rather than a bar. It is a MARK
+    // spec, the way a stroke width is, and only a bar may take it — which the
+    // loop below holds.
+    const corner = /^(0|4px|999px|var\(--r(-sm|-lg)?\))$/;
     const off = values("border-radius").filter(
       (v) => !v.split(/\s+/).every((c) => corner.test(c)),
     );
     expect(off, "radii off the scale: " + off.join(", ")).toEqual([]);
+    for (const m of css.matchAll(/\n\s*(\.[^{}\n]*?) \{([^}]*)\}/g)) {
+      if (/border-radius:[^;}]*4px/.test(m[2]!)) {
+        expect(m[1]!.trim(), "4px corners are a chart bar's mark spec, nothing else")
+          .toBe(".vbar");
+      }
+    }
   });
 
   it("spaces from the one 4px scale", () => {

@@ -232,7 +232,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        replaced and the card reads as a timeline. */
     .cmp { background: var(--bg); border-radius: var(--r); padding: var(--s4);
            margin: var(--s2) 0 0; }
-    .cmphead { display: flex; align-items: center; gap: var(--s2); }
+    .cmphead { display: flex; align-items: center; gap: var(--s2); position: relative; }
     /* The metric, top left, as the thing you press — a word and a caret, not a
        control with a box round it. It IS the chart's title. */
     .cmpmetric { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s1);
@@ -248,31 +248,48 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                      stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
     .cmpfilter.on, .cmpfilter:hover { background: var(--surface); color: var(--ink); }
     .cmpfilter:focus-visible, .cmpmetric:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-    .cmpbars { margin-top: var(--s3); }
-    /* A bar is a row you can press: it opens the programme it stands for. No
-       tooltip — the value is already printed on the end of the bar, and a
-       tooltip that repeats what is on screen is a second thing to dismiss. */
-    .cmpbar { display: block; text-decoration: none; color: inherit; padding: var(--s2) 0; }
-    .cmpbar + .cmpbar { border-top: 1px solid var(--line); }
-    .cmpbar:active { background: var(--surface); }
-    .cmpname { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-sm);
-               color: var(--muted); }
-    .cmpname b { flex: 1; min-width: 0; font-size: var(--t-md); font-weight: 600; color: var(--ink);
-                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .cmpname i { font-style: normal; flex: none; font-size: var(--t-md); font-weight: 600;
-                 color: var(--ink); font-variant-numeric: tabular-nums slashed-zero; }
-    /* The track is the full width, so a short bar reads as a small share of
-       something rather than as a mistake. DESIGN.md's bar spec: capped height,
-       square where it starts and rounded at the data end. */
-    .cmptrack { margin-top: var(--s2); height: 10px; border-radius: 0 999px 999px 0;
-                background: var(--ghost-bg); overflow: hidden; }
-    .cmpfill { height: 100%; border-radius: 0 999px 999px 0; background: var(--accent);
-               border-right: 1.5px solid var(--accent-2); min-width: 3px; }
+    /* Bars STANDING UP from a shared baseline, which is what makes five of them
+       comparable at a glance: the eye reads height against one floor. Rows with
+       a fill running left to right are progress bars, and progress is a
+       different question from "which of these is bigger".
+
+       Plain HTML rather than SVG. There is no build step here, five boxes and a
+       height each is the whole geometry, and a percentage height re-lays itself
+       on rotation for free — which an SVG with a fixed viewBox does not. */
+    .vplot { position: relative; display: flex; align-items: flex-end; gap: var(--s2);
+             height: 150px; margin-top: var(--s5); }
+    /* Four dashed rules behind the bars, so a height can be read roughly
+       without an axis. Recessive on purpose — they are a backdrop, not data. */
+    .vgrid { position: absolute; inset: 0; display: flex; flex-direction: column;
+             justify-content: space-between; pointer-events: none; }
+    .vgrid i { display: block; border-top: 1px dashed var(--line); }
+    .vcol { position: relative; flex: 1; min-width: 0; height: 100%;
+            display: flex; align-items: flex-end; justify-content: center; }
+    /* DESIGN.md's bar spec, stood up: capped width, square where it meets the
+       baseline, rounded at the data end. The floor of 3px is so a programme with
+       nothing yet still shows a mark rather than reading as absent. */
+    .vbar { width: 100%; max-width: 44px; height: var(--h); min-height: 3px;
+            background: var(--accent); border-radius: 4px 4px 0 0;
+            border-top: 1.5px solid var(--accent-2); }
+    .vval { position: absolute; left: 0; right: 0; bottom: calc(var(--h) + 6px);
+            text-align: center; font-size: var(--t-sm); font-weight: 600; color: var(--ink);
+            font-variant-numeric: tabular-nums slashed-zero; white-space: nowrap; }
+    /* The names sit under the plot in a row that mirrors it exactly — same flex,
+       same gap — so a label stays under its own bar at every width. Two lines
+       and then an ellipsis: a shop's programme name can be anything they typed,
+       and one long name must not make its column taller than the rest. */
+    .vnames { display: flex; gap: var(--s2); margin-top: var(--s2); }
+    .vnames span { flex: 1; min-width: 0; text-align: center; font-size: var(--t-sm);
+                   line-height: var(--lh-body); color: var(--muted);
+                   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+                   overflow: hidden; }
     .cmpfoot { margin-top: var(--s3); font-size: var(--t-sm); color: var(--muted); }
     .cmpempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
                 color: var(--muted); }
-    /* --- one popover, opened by either control --------------------------- */
-    .cmpwrap { position: relative; }
+    /* --- one popover, opened by either control ---------------------------
+       Anchored to the HEADER ROW, not to the card. It hung off .cmpwrap, whose
+       100% is the bottom of everything — bars, footnote and all — so the panel
+       opened a chart's height below the button that opened it. */
     .pop { position: absolute; z-index: 30; top: calc(100% + var(--s2));
            background: var(--bg); border: 1px solid var(--line); border-radius: var(--r);
            box-shadow: var(--shadow); padding: var(--s3); min-width: 200px;
@@ -1881,7 +1898,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * Rows are NEVER added together. Two versions of the same stamp card are
      * two bars, because telling them apart is the entire reason to look.
      *
-     * spec is { metrics, types, rows, href } and nothing else knows what a
+     * spec is { metrics, types, rows } and nothing else knows what a
      * programme or a campaign is.
      */
     function comparison(host, spec, state) {
@@ -1911,8 +1928,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "</div>";
 
       if (!rows.length) {
-        host.innerHTML = '<div class="cmp"><div class="cmpwrap">' + head +
-          '<p class="cmpempty">Nothing matches that filter.</p></div></div>';
+        host.innerHTML = '<div class="cmp">' + head +
+          '<p class="cmpempty">Nothing matches that filter.</p></div>';
         wireComparison(host, spec, state);
         return;
       }
@@ -1921,15 +1938,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // all-zero rows draws nothing rather than dividing by it.
       const vals = rows.map((r) => metric.of(r));
       const max = Math.max.apply(null, vals.concat([0]).map((v) => (isFinite(v) && v > 0 ? v : 0)));
-      const bars = rows.map((r, i) => {
+      // 88, not 100: the value sits above its own bar, and a bar at full height
+      // would push its label off the top of the plot.
+      const cols = rows.map((r, i) => {
         const v = vals[i];
-        const w = max > 0 && isFinite(v) && v > 0 ? (v / max) * 100 : 0;
-        return '<a class="cmpbar" href="' + ROOT + spec.href(r) + '" data-nav="' + spec.href(r) + '">' +
-          '<span class="cmpname"><b>' + esc(r.name) + "</b>" +
-            "<i>" + esc(metric.fmt(v)) + "</i></span>" +
-          '<span class="cmptrack"><span class="cmpfill" style="width:' + w.toFixed(1) + '%"></span></span>' +
-        "</a>";
+        const h = (max > 0 && isFinite(v) && v > 0 ? (v / max) * 88 : 0).toFixed(1) + "%";
+        return '<div class="vcol" style="--h:' + h + '">' +
+          '<span class="vval">' + esc(metric.fmt(v)) + "</span>" +
+          '<span class="vbar"></span>' +
+        "</div>";
       }).join("");
+      const names = rows.map((r) => "<span>" + esc(r.name) + "</span>").join("");
 
       // Said out loud, because neither is guessable from the bars: these figures
       // ignore the window selector at the top of the screen, and the order is
@@ -1937,10 +1956,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const foot = "All time · newest first" +
         (matched > rows.length ? " · showing " + rows.length + " of " + matched : "");
 
-      host.innerHTML = '<div class="cmp"><div class="cmpwrap">' + head +
-        '<div class="cmpbars">' + bars + "</div>" +
+      host.innerHTML = '<div class="cmp">' + head +
+        '<div class="vplot"><div class="vgrid"><i></i><i></i><i></i><i></i></div>' + cols + "</div>" +
+        '<div class="vnames">' + names + "</div>" +
         '<p class="cmpfoot">' + foot + "</p>" +
-        "</div></div>";
+        "</div>";
       wireComparison(host, spec, state);
     }
 
@@ -1953,7 +1973,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * always agree start disagreeing about where they sit and how they close.
      */
     function wireComparison(host, spec, state) {
-      const wrap = host.querySelector(".cmpwrap");
+      const wrap = host.querySelector(".cmphead");
       const mBtn = host.querySelector("[data-metric]");
       const fBtn = host.querySelector("[data-filter]");
       let pop = null;
@@ -2059,7 +2079,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // compile tests cannot see it: the syntax is valid and the name is
       // defined, just not yet. Same reason rows() is a function.
       types: () => REWARD_TYPES.map((t) => ({ k: t.k, name: t.name })),
-      href: (r) => "/manage/rewards/" + r.id,
       metrics: [
         { k: "per", name: "Visits per customer",
           of: (r) => (r.customers ? r.visits / r.customers : 0),
@@ -2095,7 +2114,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     const CAMPAIGN_SPEC = {
       typeLabel: "Campaign type",
       types: () => CAMPAIGN_TYPES.map((t) => ({ k: t.k, name: t.name })),
-      href: (r) => "/manage/campaigns/" + r.id,
       metrics: [
         { k: "rate", name: "Return rate",
           of: (r) => (r.targeted ? (r.returned / r.targeted) * 100 : 0),
