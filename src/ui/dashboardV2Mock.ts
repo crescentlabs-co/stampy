@@ -51,12 +51,45 @@ export const MOCK_JS = /* js */ `
       // Days ago, not a date: a fixed date would age until "newest first" put
       // an example above a programme created this morning.
       createdDaysAgo: 40,
+      reward: "RM10 off", stampsTarget: 100,
+      bg: "#1f2933", fg: "#f4f6f2", label: "#9fb3c8", band: "#2d3b47",
       setup: "1 point per RM1 spent · 100 points = RM10 off" },
     { id: "eg-winter", name: "Winter stamps", kind: "stamp", status: "ended",
       customers: 61, visits: 402, rewards: 47, avgGapDays: 19.8,
       createdDaysAgo: 210,
+      reward: "A free pastry", stampsTarget: 8,
+      bg: "#3d2a3f", fg: "#fdf6ff", label: "#c9a7d1", band: "#513a54",
       setup: "Collect 8 stamps, get a free pastry" },
   ];
+
+  /**
+   * An example, shaped like a real card so the SAME preview draws it.
+   *
+   * The tiles beside it are the actual Apple and Android faces, rendered by the
+   * designer; a flat placeholder next to those reads as a broken tile rather
+   * than as an example. Every art version is 0 so nothing is fetched — there is
+   * no /c/eg-points/art/logo.png to fetch — and the id keeps its eg- prefix, so
+   * anything that reaches for a real card with it finds nothing rather than
+   * somebody else's.
+   */
+  function mockCard(m) {
+    return {
+      id: m.id, name: m.name, shopName: m.name,
+      reward: m.reward, stampsTarget: m.stampsTarget, stampsStart: 0,
+      averageSpend: 0, currency: "RM",
+      bg: m.bg, fg: m.fg, label: m.label, accent: m.label, bandColor: m.band,
+      bandTexture: "flat", stampStyle: "",
+      logoHasName: false,
+      logoVersion: 0, bannerVersion: 0, markVersion: 0, stampIconVersion: 0, stampsVersion: 0,
+      targetsInUse: [m.stampsTarget],
+      winbackMessage: "", signupMessage: "",
+      kind: m.kind, benefits: "", milestones: [], pointPresets: "",
+      createdAt: new Date(Date.now() - m.createdDaysAgo * 86400000).toISOString(),
+      endedAt: m.status === "ended" ? new Date().toISOString() : null,
+      metrics: { active: m.customers, stamps: m.visits, redemptions: m.rewards,
+                 avgGapDays: m.avgGapDays },
+    };
+  }
 
   /** Campaigns. None of this exists yet — there is no campaign table at all. */
   const MOCK_CAMPAIGNS = [

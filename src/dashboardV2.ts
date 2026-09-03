@@ -299,27 +299,34 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        centring — the founder asked for the first card to have nothing beside
        it, and a centred snap would open with a gap where a previous card would
        be. The next tile peeks so it is obvious there is one. */
-    /* Padding of (100% - slide) / 2 either side, so a snapped card sits in the
-       MIDDLE of the screen and the first one still has empty space to its left
-       rather than a neighbour. scroll-snap-align: center alone would not do it:
-       the first card cannot scroll left past zero, so without the padding it
-       stays pinned to the edge and reads as off-centre. */
-    .carousel { --slide: 82%;
-                display: flex; gap: var(--s3); overflow-x: auto; scroll-snap-type: x mandatory;
+    /* Every card sits in the MIDDLE of the screen — the first one with empty
+       space to its left rather than a neighbour, the rest with both neighbours
+       showing. scroll-snap-align: center alone cannot do it: the first card
+       cannot scroll left past zero, so it stays pinned to the edge.
+
+       The padding is the leftover, halved. The slide is then 100% of what is
+       left — of the CONTENT box the padding has just sized — which is the only
+       way the two agree. Written as a percentage of the slide it was mixing two
+       different widths: a padding percentage measures the containing block,
+       a flex-basis percentage measures the content box the padding has already
+       shrunk, and the card came out 82% of 82% and off-centre.
+
+       Which is also why there is no full-bleed negative margin any more: it
+       made the strip wider than the block its own padding was measured from. */
+    .carousel { --slide: 78%;
+                display: flex; gap: var(--s2); overflow-x: auto; scroll-snap-type: x mandatory;
                 -webkit-overflow-scrolling: touch; scrollbar-width: none;
-                margin: 0 calc(-1 * var(--s3));
                 padding: 0 calc((100% - var(--slide)) / 2) var(--s2); }
     .carousel::-webkit-scrollbar { display: none; }
-    .slide { flex: 0 0 var(--slide); scroll-snap-align: center; min-width: 0; }
-    /* An example has no card behind it — no colours, no logo, no designer — so
-       it is a flat tile that says so rather than a pass preview of nothing. */
-    .egtile, .addtile { display: flex; flex-direction: column; align-items: center;
-                        justify-content: center; gap: var(--s2); min-height: 190px;
-                        border-radius: var(--r); background: var(--bg); padding: var(--s4);
-                        text-align: center; }
-    .egt-n { font-size: var(--t-md); font-weight: 600; color: var(--ink); }
-    .egt-t { font-size: var(--t-sm); color: var(--muted); }
-    .addtile { border: 1px dashed var(--field-border); background: var(--bg);
+    .slide { position: relative; flex: 0 0 100%; scroll-snap-align: center; min-width: 0; }
+    /* The Example chip, on the tile rather than only in the Info under it:
+       somebody swiping past four cards should not have to read a caption to
+       tell which two are real. */
+    .egmark { position: absolute; top: var(--s2); right: var(--s2); }
+    .addtile { display: flex; flex-direction: column; align-items: center;
+               justify-content: center; gap: var(--s2); min-height: 190px;
+               border-radius: var(--r); padding: var(--s4); text-align: center;
+               border: 1px dashed var(--field-border); background: var(--bg);
                color: var(--muted); text-decoration: none; }
     .addtile span:first-child { font-size: var(--t-xl); font-weight: 700; line-height: 1; }
     .addtile span + span { font-size: var(--t-sm); }
@@ -2961,8 +2968,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // Newest first, the same order the Home charts use, so the two agree
       // about which programme is "the current one".
       const real = S.cards.slice().sort((a, b) => daysSince(a.createdAt) - daysSince(b.createdAt));
+      // Examples are drawn by the SAME preview as a real card. A flat
+      // placeholder beside two real faces reads as a broken tile rather than as
+      // an example, and the point of having them here is to see what running
+      // more than one looks like.
       const tiles = real.map((c) => ({ card: c }))
-        .concat(MOCK_PROGRAMS.map((m) => ({ eg: m })));
+        .concat(MOCK_PROGRAMS.map((m) => ({ card: mockCard(m), eg: m })));
 
       host.innerHTML =
         '<div class="cardhead">' +
@@ -2981,22 +2992,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       let face = "apple";
       const panels = [];
 
-      real.forEach((c) => {
+      tiles.forEach((t) => {
         const slide = document.createElement("div");
         slide.className = "slide";
-        const panel = designerFor(c, { previewOnly: true, customersPath: null, titled: false });
+        const panel = designerFor(t.card, { previewOnly: true, customersPath: null, titled: false });
         slide.appendChild(panel);
+        // Marked on the tile, not only in the Info below it: somebody swiping
+        // past four cards should not have to read a caption to tell which two
+        // are real.
+        if (t.eg) {
+          const chip = document.createElement("div");
+          chip.className = "egmark";
+          chip.innerHTML = EG;
+          slide.appendChild(chip);
+        }
         panels.push(panel);
-        car.appendChild(slide);
-      });
-
-      // An example has no card behind it — no colours, no logo, no designer —
-      // so it is a flat tile that says so rather than a pass preview of nothing.
-      MOCK_PROGRAMS.forEach((m) => {
-        const slide = document.createElement("div");
-        slide.className = "slide";
-        slide.innerHTML = '<div class="egtile"><span class="egt-n">' + esc(m.name) + EG + "</span>" +
-          '<span class="egt-t">' + esc(KIND_LABEL[m.kind] || "Stamps") + "</span></div>";
         car.appendChild(slide);
       });
 
@@ -3019,19 +3029,35 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           panels.forEach((p) => p.setSurface && p.setSurface(face));
         }, faceBtn);
 
-      /** Whichever tile is under the middle of the strip right now. */
+      /**
+       * Whichever tile is nearest the middle of the strip right now.
+       *
+       * Measured against the strip's own box, not offsetLeft: offsetLeft is
+       * relative to whichever ancestor happens to be positioned, and the
+       * carousel is not one — so the arithmetic was comparing two different
+       * origins and picked the wrong tile as soon as the strip had scrolled.
+       * That is why the details and the buttons came and went while swiping.
+       *
+       * Nearest-centre rather than "the last one that has started", so a
+       * half-scrolled strip resolves to whatever is most on screen instead of
+       * flipping at an arbitrary edge.
+       */
       function current() {
-        const mid = car.scrollLeft + car.clientWidth / 2;
-        const slides = [...car.children];
-        let at = 0;
-        slides.forEach((sl, i) => { if (sl.offsetLeft <= mid) at = i; });
+        const r = car.getBoundingClientRect();
+        const mid = r.left + r.width / 2;
+        let at = 0, best = Infinity;
+        [...car.children].forEach((sl, i) => {
+          const b = sl.getBoundingClientRect();
+          const d = Math.abs(b.left + b.width / 2 - mid);
+          if (d < best) { best = d; at = i; }
+        });
         return tiles[at] || null;
       }
 
       function paint() {
         const t = current();
         body.innerHTML = t ? cardBody(t) : "";
-        if (!t || !t.card) return;
+        if (!t || t.eg) return;
         const c = t.card;
         body.querySelector("[data-poster]").onclick = () =>
           window.open("/c/" + encodeURIComponent(c.id) + "/poster", "_blank", "noopener");
@@ -3051,7 +3077,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
     /** The three actions and the setup, under whichever card is showing. */
     function cardBody(t) {
-      if (!t.card) {
+      if (t.eg) {
+        // The three actions are dead on an example: there is no poster to open,
+        // no link to copy and no designer behind it. Disabled and visible
+        // rather than absent, so the shape of the screen does not change as you
+        // swipe past one.
         return '<div class="cardacts">' +
             actBtn("", ICON_POSTER, "Poster", true) +
             actBtn("", ICON_SHARE, "Share", true) +

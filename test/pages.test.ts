@@ -3462,16 +3462,30 @@ describe("the manage screens", () => {
     expect(pane).toContain("panels.forEach");
     // The last tile is the way to make the next programme.
     expect(pane).toContain('data-nav="/create/reward"');
-    // Examples are flat tiles carrying the chip — there is no card behind them.
-    expect(pane).toContain('class="egtile"');
-    expect(pane).toContain("MOCK_PROGRAMS.forEach");
+    // Examples are drawn by the SAME preview as a real card — a flat
+    // placeholder beside two real faces reads as a broken tile, not an example
+    // — and they carry the chip on the tile so you can tell them apart while
+    // swiping, without reading the caption under it.
+    expect(pane).toContain("MOCK_PROGRAMS.map((m) => ({ card: mockCard(m), eg: m }))");
+    expect(pane).toContain('chip.className = "egmark"');
+    expect(html).not.toContain("egtile");
+    // Which tile is showing is MEASURED against the strip's own box. offsetLeft
+    // is relative to whichever ancestor happens to be positioned and the
+    // carousel is not one, so the old arithmetic compared two different origins
+    // and lost the details and the buttons as soon as the strip had scrolled.
+    expect(pane).toContain("car.getBoundingClientRect()");
+    // The USE of it, not the word: the comment where the arithmetic used to be
+    // names offsetLeft to say why it went, and that sentence is worth keeping.
+    expect(pane).not.toMatch(/\.offsetLeft\b/);
   });
 
   /** Poster, Share, Edit — and nothing on an example, which has none of them. */
   it("offers three actions under the card, and none on an example", () => {
     const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
     for (const a of ["Poster", "Share", "Edit"]) expect(body).toContain(a);
-    // The example branch passes the disabled flag on all three.
+    // All three are dead on an example — no poster, no link, no designer — and
+    // disabled rather than absent, so the shape of the screen does not change
+    // as you swipe past one.
     const eg = body.slice(0, body.indexOf("const c = t.card;"));
     expect((eg.match(/, true\)/g) || []).length).toBe(3);
     // Info is SETUP, not numbers.
