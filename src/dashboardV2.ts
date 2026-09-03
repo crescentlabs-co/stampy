@@ -286,6 +286,68 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .cmpfoot { margin-top: var(--s3); font-size: var(--t-sm); color: var(--muted); }
     .cmpempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
                 color: var(--muted); }
+    /* --- Manage: the card, and the three things you do to it -------------
+       This screen stopped reporting. Home's charts answer how a programme is
+       doing; here you look at the card and change it, so there is not a single
+       figure on it. */
+    .cardhead { position: relative; display: flex; margin: var(--s3) 0 var(--s2); }
+    /* The strip scrolls and snaps, and it starts flush LEFT rather than
+       centring — the founder asked for the first card to have nothing beside
+       it, and a centred snap would open with a gap where a previous card would
+       be. The next tile peeks so it is obvious there is one. */
+    .carousel { display: flex; gap: var(--s3); overflow-x: auto; scroll-snap-type: x mandatory;
+                -webkit-overflow-scrolling: touch; scrollbar-width: none;
+                margin: 0 calc(-1 * var(--s3)); padding: 0 var(--s3) var(--s2); }
+    .carousel::-webkit-scrollbar { display: none; }
+    .slide { flex: 0 0 86%; scroll-snap-align: start; min-width: 0; }
+    /* An example has no card behind it — no colours, no logo, no designer — so
+       it is a flat tile that says so rather than a pass preview of nothing. */
+    .egtile, .addtile { display: flex; flex-direction: column; align-items: center;
+                        justify-content: center; gap: var(--s2); min-height: 190px;
+                        border-radius: var(--r); background: var(--surface); padding: var(--s4);
+                        text-align: center; }
+    .egt-n { font-size: var(--t-md); font-weight: 600; color: var(--ink); }
+    .egt-t { font-size: var(--t-sm); color: var(--muted); }
+    .addtile { border: 1px dashed var(--field-border); background: var(--bg);
+               color: var(--muted); text-decoration: none; }
+    .addtile span:first-child { font-size: var(--t-xl); font-weight: 700; line-height: 1; }
+    .addtile span + span { font-size: var(--t-sm); }
+    .addtile:active { background: var(--surface); }
+    /* Three circles under the card, the shape in the reference. Ink on a tinted
+       disc, never neon: the neon marks the ONE next thing to press, and these
+       are three equals. */
+    .cardacts { display: flex; justify-content: center; gap: var(--s5); margin: var(--s4) 0 var(--s3); }
+    .actbtn { display: flex; flex-direction: column; align-items: center; gap: var(--s2);
+              background: none; border: 0; padding: 0; font: inherit; font-size: var(--t-sm);
+              color: var(--ink); cursor: pointer; }
+    .actcirc { display: flex; align-items: center; justify-content: center;
+               width: 52px; height: 52px; border-radius: 999px; background: var(--surface); }
+    .actcirc svg { width: 22px; height: 22px; fill: none; stroke: currentColor;
+                   stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .actbtn:active .actcirc { background: var(--ghost-bg); }
+    .actbtn:disabled { color: var(--muted); cursor: default; }
+    .actbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+    /* --- Manage: campaigns, a list rather than a carousel -----------------
+       A campaign has no artwork to swipe through, and a card shape round a line
+       of text is a card shape pretending there is something to look at. */
+    .slist { background: var(--bg); border-radius: var(--r); padding: var(--s2); }
+    .slist > * + * { margin-top: var(--s1); }
+    .srow { display: flex; align-items: center; gap: var(--s3); padding: var(--s3);
+            border-radius: var(--r-sm); }
+    .srow .sl { flex: 1; min-width: 0; }
+    .srow .sn { display: block; font-size: var(--t-md); font-weight: 600; color: var(--ink);
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted); }
+    .rowedit { flex: none; font-size: var(--t-sm); font-weight: 600; color: var(--ink);
+               text-decoration: none; padding: var(--s2) var(--s3); border-radius: 999px;
+               background: var(--surface); }
+    .addrow { display: block; margin-top: var(--s3); padding: var(--s3); text-align: center;
+              border: 1px dashed var(--field-border); border-radius: var(--r);
+              font-size: var(--t-sm); font-weight: 600; color: var(--muted); text-decoration: none; }
+    .addrow:active { background: var(--surface); }
+    /* The share sheet's options. A LIST, not a confirm dialog with the action
+       disguised as its OK button — the next entry is a line, not a rewrite. */
+    .sharelist2 { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s3); }
     /* --- one popover, opened by either control ---------------------------
        Anchored to the HEADER ROW, not to the card. It hung off .cmpwrap, whose
        100% is the bottom of everything — bars, footnote and all — so the panel
@@ -487,28 +549,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     body.shelled :is(.fold, .grp, .bucket, .mdetail) .btn-ghost { background: var(--surface); }
     body.shelled :is(.fold, .grp, .bucket, .mdetail) .btn-ghost:hover { background: var(--ghost-bg); }
 
-    /* --- Home: one row per programme, and one line about the numbers --- */
-    .prow { display: block; text-decoration: none; color: var(--ink);
-            border-radius: var(--r); padding: var(--s3);
-            margin-bottom: var(--s2); background: var(--bg); }
-    /* Hover moves the FILL, since there is no longer a border to tint. */
-    .prow:hover { background: var(--surface); }
-    .ptop { display: flex; align-items: center; gap: var(--s2); }
-    .ptop strong { font-size: var(--t-md); }
-    /* Status sits at the far end, so the eye finds it in the same place on
-       every row however long the name is. */
-    .pstat { margin-left: auto; font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-caps);
-             text-transform: uppercase; color: #15803d; background: #e9f7ee;
-             border-radius: 999px; padding: var(--s1) var(--s2); white-space: nowrap; }
-    /* Ended is not a failure and is not red: the programme did its job and
-       stopped taking new sign-ups. Grey, like any other finished thing. */
-    .pstat.off { color: var(--muted); background: var(--ghost-bg); }
-    .pmeta { color: var(--muted); font-size: var(--t-sm); margin-top: var(--s1); }
-    .pnums { display: flex; gap: var(--s3); margin-top: var(--s2); }
-    .pnums span { font-size: var(--t-sm); color: var(--muted); }
-    .pnums b { display: block; font-family: var(--display); font-weight: 800; font-size: var(--t-lg);
-               line-height: var(--lh-num); letter-spacing: var(--tr-hero); font-variant-numeric: tabular-nums;
-               color: var(--ink); }
     /* --- Customers: search, segment chips, and one row per person --- */
     .cfilter { display: flex; gap: var(--s2); flex-wrap: wrap; margin: var(--s3) 0 var(--s2); }
     .cfilter input[type="search"] { flex: 1; min-width: 160px; margin: 0; }
@@ -1879,10 +1919,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * right. The same shape serves programmes and campaigns, because they are
      * the same question asked twice — how is this one doing against the others.
      */
-    /** The two icons these cards use, in the style of the nav's single paths. */
+    /** The icons, in the style of the nav's single paths. */
     const ICON_CARET = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
     const ICON_FUNNEL = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>';
+    const ICON_POSTER = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M7 8V4h10v4M7 18v2h10v-2M5 8h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z"/></svg>';
+    const ICON_SHARE = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M12 15V3m0 0L8 7m4-4l4 4M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>';
+    const ICON_EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3zM14 7l3 3"/></svg>';
 
     /** How many rows a comparison may draw. More than five bars on a phone is a
      *  list again, and the point of the card is that you can see it at once. */
@@ -1972,57 +2018,93 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * same job, and building them separately is how two things that should
      * always agree start disagreeing about where they sit and how they close.
      */
-    function wireComparison(host, spec, state) {
-      const wrap = host.querySelector(".cmphead");
-      const mBtn = host.querySelector("[data-metric]");
-      const fBtn = host.querySelector("[data-filter]");
-      let pop = null;
-
+    /**
+     * One little panel that opens under a button, anywhere on the dashboard.
+     *
+     * Lifted out of the comparison chart the moment a second control wanted the
+     * same behaviour. "Opens under the thing you pressed, closes on Escape,
+     * closes on a tap outside, and only one is ever open" is four rules that
+     * have to agree with each other; two copies of them are two chances to get
+     * the third one wrong.
+     *
+     *   host   the positioned element it hangs inside (position: relative)
+     *   side   "left" or "right" — which edge it lines up with
+     *   pick   called with the value of the [data-set] that was tapped
+     *
+     * Returns a controller with open(html), close() and isOpen(). Tapping the
+     * same button again closes it, which is what a caret expects to do.
+     */
+    function popover(host, buttons) {
+      let pop = null, openSide = "";
+      function away(e) {
+        if (!pop) return;
+        if (pop.contains(e.target)) return;
+        if (buttons.some((b) => b && b.contains(e.target))) return;
+        close();
+      }
+      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
       function close() {
         if (pop) { pop.remove(); pop = null; }
-        fBtn.classList.remove("on");
+        openSide = "";
+        buttons.forEach((b) => b && b.classList.remove("on"));
         document.removeEventListener("pointerdown", away, true);
         document.removeEventListener("keydown", onKey, true);
       }
-      function away(e) { if (pop && !pop.contains(e.target) && !mBtn.contains(e.target) && !fBtn.contains(e.target)) close(); }
-      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
-
-      function open(side, html) {
-        if (pop) { const was = pop.dataset.side; close(); if (was === side) return; }
+      function open(side, html, onPick, mark) {
+        const was = openSide;
+        close();
+        if (was === side) return;
         pop = document.createElement("div");
         pop.className = "pop " + side;
-        pop.dataset.side = side;
+        openSide = side;
         pop.innerHTML = html;
-        wrap.appendChild(pop);
-        if (side === "right") fBtn.classList.add("on");
+        host.appendChild(pop);
+        if (mark) mark.classList.add("on");
         document.addEventListener("pointerdown", away, true);
         document.addEventListener("keydown", onKey, true);
         pop.addEventListener("click", (e) => {
           const b = e.target.closest("[data-set]");
           if (!b || b.disabled) return;
-          const [key, val] = b.dataset.set.split(":");
-          if (key === "pick") {
-            const at = state.picked.indexOf(val);
-            if (at >= 0) state.picked.splice(at, 1);
-            else if (state.picked.length < CMP_MAX) state.picked.push(val);
-          } else {
-            state[key] = val;
-            // Choosing a type or a status is choosing a GROUP, so it clears a
-            // hand-picked set rather than fighting with it. The two filters
-            // would otherwise both be on with only one of them visible.
-            if (key !== "metric") state.picked = [];
-          }
+          const value = b.dataset.set;
           close();
-          comparison(host, spec, state);
+          onPick(value);
         });
       }
+      return { open, close };
+    }
 
-      const opt = (set, name, on, off) =>
-        '<button type="button" class="popopt' + (on ? " on" : "") + '" data-set="' + set + '"' +
-        (off ? " disabled" : "") + ">" + esc(name) + "</button>";
+    /** One option inside a popover. */
+    const popOpt = (set, name, on, off) =>
+      '<button type="button" class="popopt' + (on ? " on" : "") + '" data-set="' + set + '"' +
+      (off ? " disabled" : "") + ">" + esc(name) + "</button>";
 
-      mBtn.onclick = () => open("left",
-        spec.metrics.map((m) => opt("metric:" + m.k, m.name, m.k === state.metric)).join(""));
+    function wireComparison(host, spec, state) {
+      const wrap = host.querySelector(".cmphead");
+      const mBtn = host.querySelector("[data-metric]");
+      const fBtn = host.querySelector("[data-filter]");
+      const pop = popover(wrap, [mBtn, fBtn]);
+
+      function pick(value) {
+        const [key, val] = value.split(":");
+        if (key === "pick") {
+          const at = state.picked.indexOf(val);
+          if (at >= 0) state.picked.splice(at, 1);
+          else if (state.picked.length < CMP_MAX) state.picked.push(val);
+        } else {
+          state[key] = val;
+          // Choosing a type or a status is choosing a GROUP, so it clears a
+          // hand-picked set rather than fighting with it. The two filters
+          // would otherwise both be on with only one of them visible.
+          if (key !== "metric") state.picked = [];
+        }
+        comparison(host, spec, state);
+      }
+
+      const opt = popOpt;
+
+      mBtn.onclick = () => pop.open("left",
+        spec.metrics.map((m) => opt("metric:" + m.k, m.name, m.k === state.metric)).join(""),
+        pick);
 
       fBtn.onclick = () => {
         const all = spec.rows();
@@ -2046,7 +2128,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             }).join("") +
           "</div>",
         ];
-        open("right", groups.join(""));
+        pop.open("right", groups.join(""), pick, fBtn);
       };
     }
 
@@ -2333,53 +2415,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       return d.toLocaleDateString(undefined,
         bucketDays > 1 ? { month: "short", year: "numeric" } : { day: "numeric", month: "short" });
     }
-
-    /**
-     * Programmes, with the real one first.
-     *
-     * Tracked spend lives here rather than in the headline: it is stamps ×
-     * that programme's own average basket, so it is a fact about a programme,
-     * not about the shop. It was a fourth headline tile and the four headline
-     * slots are spoken for now.
-     */
-    function programRows() {
-      const real = S.cards.map((c) => {
-        const money = c.averageSpend > 0
-          ? (c.currency || "") + Math.round(c.metrics.stamps * c.averageSpend).toLocaleString()
-          : "";
-        return progRow({
-          href: "/manage/rewards/" + c.id,
-          name: c.shopName || c.name, kind: c.kind, status: "active",
-          customers: c.metrics.active, visits: c.metrics.stamps, rewards: c.metrics.redemptions,
-        }, money);
-      }).join("");
-      const eg = MOCK_PROGRAMS.map((m) => progRow({
-        href: "/manage/rewards/" + m.id, example: true,
-        name: m.name, kind: m.kind, status: m.status,
-        customers: m.customers, visits: m.visits, rewards: m.rewards,
-      }, "")).join("");
-      return real + eg;
-    }
-
-    /** Type names an owner would recognise, from the four the database holds. */
-    const KIND_LABEL = { stamp: "Stamps", milestones: "Stamps + milestones",
-                         membership: "Membership", points: "Points" };
-
-    function progRow(p, money) {
-      return '<a class="prow' + (p.example ? " egrow" : "") + '" href="' + ROOT + p.href +
-        '" data-nav="' + p.href + '">' +
-        '<div class="ptop"><strong>' + esc(p.name) + "</strong>" +
-          (p.example ? EG : "") +
-          '<span class="pstat' + (p.status === "ended" ? " off" : "") + '">' +
-            (p.status === "ended" ? "Ended" : "Active") + "</span></div>" +
-        '<div class="pmeta">' + (KIND_LABEL[p.kind] || "Stamps") +
-          (money ? " · " + money + " tracked" : "") + "</div>" +
-        '<div class="pnums"><span><b>' + p.customers + "</b>customers</span>" +
-          "<span><b>" + p.visits + "</b>stamps</span>" +
-          "<span><b>" + p.rewards + "</b>rewards</span></div>" +
-        "</a>";
-    }
-
 
     /**
      * Customers — who is in the shop, and what they have been doing.
@@ -2869,6 +2904,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     }
 
     /** Manage — what is running, in two lists. */
+    /** Type names an owner would recognise, from the four the database holds. */
+    const KIND_LABEL = { stamp: "Stamps", milestones: "Stamps + milestones",
+                         membership: "Membership", points: "Points" };
+
     function manageScreen(tab) {
       if (tab !== "rewards" && tab !== "campaigns") return notFoundScreen();
       const d = document.createElement("div");
@@ -2888,27 +2927,220 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // once the strip is in the document.
       setTimeout(() => moveThumb(seg), 0);
 
-      d.querySelector("[data-mlist]").innerHTML =
-        tab === "rewards" ? programRows() : campaignRows();
+      const list = d.querySelector("[data-mlist]");
+      if (tab === "rewards") rewardsPane(list);
+      else campaignsPane(list);
       return d;
     }
 
-    /** Campaigns, all example — there is no campaign table to read. */
-    function campaignRows() {
-      return MOCK_CAMPAIGNS.map((c) => {
-        return '<a class="prow egrow" href="' + ROOT + "/manage/campaigns/" + c.id +
-        '" data-nav="/manage/campaigns/' + c.id + '">' +
-        '<div class="ptop"><strong>' + esc(c.name) + "</strong>" + EG +
-          '<span class="pstat' + (c.status === "ended" ? " off" : "") + '">' +
-            (c.status === "ended" ? "Ended" : "Active") + "</span></div>" +
-        '<div class="pmeta">' + esc(c.type) + " · sent " + esc(c.sent) + "</div>" +
-        '<div class="pnums"><span><b>' + c.targeted + "</b>targeted</span>" +
-          "<span><b>" + c.returned + "</b>came back</span>" +
-          "<span><b>" + Math.round((c.returned / c.targeted) * 100) + "%</b>activation</span></div>" +
-        "</a>";
-      }).join("") +
-      '<p class="muted" style="margin-top:10px">Not your data yet — campaigns are set up ' +
-      "under Create, and this is what the list will look like once they run.</p>";
+    /**
+     * Rewards: the card itself, and the three things you came here to do.
+     *
+     * NOT a list of numbers. Home's two charts answer how a programme is doing,
+     * and a second screen computing the same figures is how a headline came to
+     * disagree with the list under it — twice. This screen is for looking at a
+     * card and changing it.
+     */
+    function rewardsPane(host) {
+      // Newest first, the same order the Home charts use, so the two agree
+      // about which programme is "the current one".
+      const real = S.cards.slice().sort((a, b) => daysSince(a.createdAt) - daysSince(b.createdAt));
+      const tiles = real.map((c) => ({ card: c }))
+        .concat(MOCK_PROGRAMS.map((m) => ({ eg: m })));
+
+      host.innerHTML =
+        '<div class="cardhead">' +
+          '<button type="button" class="cmpmetric" data-face><span>Apple</span>' + ICON_CARET + "</button>" +
+        "</div>" +
+        '<div class="carousel" data-car></div>' +
+        '<div data-cardbody></div>';
+
+      const car = host.querySelector("[data-car]");
+      const body = host.querySelector("[data-cardbody]");
+      const faceBtn = host.querySelector("[data-face]");
+      const pop = popover(host.querySelector(".cardhead"), [faceBtn]);
+      // One surface for the whole carousel, not one each: an owner asking "how
+      // does this look on Android" means all of them, and two tiles disagreeing
+      // about which phone you are looking at is unreadable.
+      let face = "apple";
+      const panels = [];
+
+      real.forEach((c) => {
+        const slide = document.createElement("div");
+        slide.className = "slide";
+        const panel = designerFor(c, { previewOnly: true, customersPath: null, titled: false });
+        slide.appendChild(panel);
+        panels.push(panel);
+        car.appendChild(slide);
+      });
+
+      // An example has no card behind it — no colours, no logo, no designer —
+      // so it is a flat tile that says so rather than a pass preview of nothing.
+      MOCK_PROGRAMS.forEach((m) => {
+        const slide = document.createElement("div");
+        slide.className = "slide";
+        slide.innerHTML = '<div class="egtile"><span class="egt-n">' + esc(m.name) + EG + "</span>" +
+          '<span class="egt-t">' + esc(KIND_LABEL[m.kind] || "Stamps") + "</span></div>";
+        car.appendChild(slide);
+      });
+
+      // The last tile, and the only one that is a link: there is nothing to
+      // preview yet, so the whole tile is the action.
+      const add = document.createElement("div");
+      add.className = "slide";
+      add.innerHTML = '<a class="addtile" href="' + ROOT + '/create/reward" data-nav="/create/reward">' +
+        "<span>+</span><span>Create reward</span></a>";
+      car.appendChild(add);
+
+      faceBtn.onclick = () => pop.open("left",
+        popOpt("face:apple", "Apple", face === "apple") +
+        popOpt("face:google", "Android", face === "google"),
+        (v) => {
+          face = v.split(":")[1];
+          faceBtn.querySelector("span").textContent = face === "apple" ? "Apple" : "Android";
+          // Through the panel's own switcher, so "show the Android face" has
+          // one implementation rather than a copy that toggles hidden.
+          panels.forEach((p) => p.setSurface && p.setSurface(face));
+        }, faceBtn);
+
+      /** Whichever tile is under the middle of the strip right now. */
+      function current() {
+        const mid = car.scrollLeft + car.clientWidth / 2;
+        const slides = [...car.children];
+        let at = 0;
+        slides.forEach((sl, i) => { if (sl.offsetLeft <= mid) at = i; });
+        return tiles[at] || null;
+      }
+
+      function paint() {
+        const t = current();
+        body.innerHTML = t ? cardBody(t) : "";
+        if (!t || !t.card) return;
+        const c = t.card;
+        body.querySelector("[data-poster]").onclick = () =>
+          window.open("/c/" + encodeURIComponent(c.id) + "/poster", "_blank", "noopener");
+        body.querySelector("[data-share]").onclick = () => shareSheet(c);
+        body.querySelector("[data-edit]").onclick = () => navigate("/manage/rewards/" + c.id);
+      }
+      // Repainted on scroll rather than on a snap event: scrollend is not on
+      // every phone this has to work on, and a rAF-throttled scroll is.
+      let queued = false;
+      car.addEventListener("scroll", () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => { queued = false; paint(); });
+      });
+      paint();
+    }
+
+    /** The three actions and the setup, under whichever card is showing. */
+    function cardBody(t) {
+      if (!t.card) {
+        return '<div class="cardacts">' +
+            actBtn("", ICON_POSTER, "Poster", true) +
+            actBtn("", ICON_SHARE, "Share", true) +
+            actBtn("", ICON_EDIT, "Edit", true) +
+          "</div>" +
+          '<h2 class="sec">Info' + EG + "</h2>" +
+          '<div class="drow"><span>Type</span><b>' + esc(KIND_LABEL[t.eg.kind] || "Stamps") + "</b></div>" +
+          '<div class="drow"><span>The deal</span><b>' + esc(t.eg.setup) + "</b></div>" +
+          '<div class="drow"><span>Status</span><b>' +
+            (t.eg.status === "ended" ? "Ended" : "Active") + "</b></div>";
+      }
+      const c = t.card;
+      return '<div class="cardacts">' +
+          actBtn("poster", ICON_POSTER, "Poster") +
+          actBtn("share", ICON_SHARE, "Share") +
+          actBtn("edit", ICON_EDIT, "Edit") +
+        "</div>" +
+        '<h2 class="sec">Info</h2>' +
+        '<div class="drow"><span>Type</span><b>' + esc(KIND_LABEL[c.kind] || "Stamps") + "</b></div>" +
+        '<div class="drow"><span>The deal</span><b>' + esc(dealLine(c)) + "</b></div>" +
+        (c.stampsStart
+          ? '<div class="drow"><span>Welcome stamps</span><b>' + c.stampsStart + "</b></div>"
+          : "") +
+        '<div class="drow"><span>Sign-ups</span><b>' +
+          (c.endedAt ? "Closed" : "Open") + "</b></div>";
+    }
+
+    const actBtn = (key, icon, label, off) =>
+      '<button type="button" class="actbtn"' + (key ? ' data-' + key : "") +
+      (off ? " disabled" : "") + '><span class="actcirc">' + icon + "</span>" +
+      "<span>" + esc(label) + "</span></button>";
+
+    /**
+     * Share. One entry today, and a LIST rather than a confirm dialog with the
+     * action disguised as its OK button — the next entry is a line here, not a
+     * rewrite.
+     */
+    function shareSheet(card) {
+      const link = location.origin + "/j/" + S.joinRef;
+      const wrap = document.createElement("div");
+      wrap.className = "mdl";
+      wrap.innerHTML =
+        '<div class="mdlbox" role="dialog" aria-modal="true" aria-label="Share">' +
+          "<h3>Share your sign-up link</h3>" +
+          '<div class="sharelist2">' +
+            '<button type="button" class="popopt" data-copy>Copy sign-up link</button>' +
+          "</div>" +
+          '<p class="muted" style="margin-top:10px;word-break:break-all">' + esc(link) + "</p>" +
+          '<div class="mdlrow"><button type="button" class="btn btn-ghost" data-no>Close</button></div>' +
+        "</div>";
+      const close = () => { document.removeEventListener("keydown", onKey, true); wrap.remove(); };
+      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
+      wrap.querySelector("[data-no]").onclick = close;
+      wrap.onclick = (e) => { if (e.target === wrap) close(); };
+      wrap.querySelector("[data-copy]").onclick = async () => {
+        // Clipboard access is refused outside a secure context, and this app is
+        // also run on plain http locally — so there is a fallback rather than a
+        // button that silently does nothing on a developer's machine.
+        let ok = false;
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(link);
+            ok = true;
+          }
+        } catch (e) { ok = false; }
+        if (!ok) {
+          const ta = document.createElement("textarea");
+          ta.value = link;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+          ta.remove();
+        }
+        close();
+        toast(ok ? "Sign-up link copied." : "Couldn’t copy — the link is on the share sheet.");
+      };
+      document.addEventListener("keydown", onKey, true);
+      document.body.appendChild(wrap);
+      wrap.querySelector("[data-copy]").focus();
+    }
+
+    /**
+     * Campaigns: a list, active first. No carousel — a campaign has no artwork
+     * to swipe through, and a card shape round a line of text is a card shape
+     * pretending there is something to look at.
+     */
+    function campaignsPane(host) {
+      const order = { active: 0, ended: 1 };
+      const rows = MOCK_CAMPAIGNS.slice()
+        .sort((a, b) => (order[a.status] - order[b.status]) || (a.createdDaysAgo - b.createdDaysAgo));
+      host.innerHTML =
+        '<h2 class="sec first">Campaigns' + EG + "</h2>" +
+        '<div class="slist">' + rows.map((c) =>
+          '<div class="srow"><span class="sl">' +
+            '<span class="sn">' + esc(c.name) + "</span>" +
+            '<span class="st">' + esc(c.type) + " · " +
+              (c.status === "ended" ? "Ended" : "Active") + "</span></span>" +
+            '<a class="rowedit" href="' + ROOT + "/manage/campaigns/" + c.id +
+            '" data-nav="/manage/campaigns/' + c.id + '">Edit</a>' +
+          "</div>").join("") + "</div>" +
+        '<a class="addrow" href="' + ROOT + '/create/campaign" data-nav="/create/campaign">' +
+        "+ Create campaign</a>";
     }
 
     function manageDetailScreen(tab, id) {
@@ -2938,12 +3170,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
               (eg.status === "ended" ? "Ended" : "Active") + "</span></h2>" +
           '<p class="muted">This is an example programme, so you can see what running more ' +
           "than one looks like. Your shop can hold one programme today.</p>" +
-          '<h2 class="sec">Performance' + EG + "</h2>" +
-          '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
-            '<div class="metric"><b>' + eg.customers + "</b><span>customers</span></div>" +
-            '<div class="metric"><b>' + eg.visits + "</b><span>stamps</span></div>" +
-            '<div class="metric"><b>' + eg.rewards + "</b><span>rewards</span></div>" +
-          "</div>" +
           '<h2 class="sec">Setup</h2>' +
           '<div class="drow"><span>Type</span><b>' + (KIND_LABEL[eg.kind] || "Stamps") + "</b></div>" +
           '<div class="drow"><span>The deal</span><b>' + esc(eg.setup) + "</b></div>" +
@@ -2959,12 +3185,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<h2 class="sec first">' + esc(card.shopName || card.name) +
           '<span class="pstat' + (over ? " off" : "") + '">' +
           (over ? "Ended" : "Active") + "</span></h2>" +
-        '<h2 class="sec">Performance</h2>' +
-        '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
-          '<div class="metric"><b>' + (m.active || 0) + "</b><span>customers</span></div>" +
-          '<div class="metric"><b>' + (m.stamps || 0) + "</b><span>stamps</span></div>" +
-          '<div class="metric"><b>' + (m.redemptions || 0) + "</b><span>rewards</span></div>" +
-        "</div>" +
+        // No Performance block. Home's two charts answer how a programme is
+        // doing; the same figures computed on a second screen is how a headline
+        // came to disagree with the list under it, twice. This page is for
+        // changing a card, not for reading it.
         '<h2 class="sec">Setup</h2>' +
         '<div class="drow"><span>Type</span><b>' + (KIND_LABEL[card.kind] || "Stamps") + "</b></div>" +
         '<div class="drow"><span>The deal</span><b>' + esc(dealLine(card)) + "</b></div>" +
@@ -3054,13 +3278,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             (c.status === "ended" ? "Ended" : "Active") + "</span></h2>" +
         '<p class="muted">An example campaign, so you can see the shape of one. ' +
         "Campaigns are set up under Create.</p>" +
-        '<h2 class="sec">Performance' + EG + "</h2>" +
-        '<div class="totals" style="grid-template-columns:repeat(3,1fr)">' +
-          '<div class="metric"><b>' + c.targeted + "</b><span>targeted</span></div>" +
-          '<div class="metric"><b>' + c.returned + "</b><span>came back</span></div>" +
-          '<div class="metric"><b>' + Math.round((c.returned / c.targeted) * 100) +
-            "%</b><span>activation</span></div>" +
-        "</div>" +
         '<h2 class="sec">Setup' + EG + "</h2>" +
         '<div class="drow"><span>Type</span><b>' + esc(c.type) + "</b></div>" +
         '<div class="drow"><span>Sent</span><b>' + esc(c.sent) + "</b></div>";

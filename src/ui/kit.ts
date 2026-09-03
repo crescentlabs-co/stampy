@@ -1141,6 +1141,13 @@ export const DESIGN_PANEL_JS = /* js */ `
      *                      look one lived inside a collapsed section. What the
      *                      two buttons used to say separately is now the
      *                      confirmation in front of the one.
+     *   previewOnly        render the card face and nothing else: no editor, no
+     *                      save, no test-card bar, no surface tabs. The returned
+     *                      node carries setSurface("apple"|"google") so the
+     *                      caller can switch faces from its own control. Pass
+     *                      customersPath null with it — the count is the one
+     *                      request this panel makes on mount and a preview tile
+     *                      has nowhere to show it.
      *   draft              true when this panel is a PREVIEW of a programme
      *                      that does not exist yet — the Create flow. Everything
      *                      renders and previews exactly as normal; the one
@@ -3004,10 +3011,19 @@ export const DESIGN_PANEL_JS = /* js */ `
       // instrument, and searching the entire panel for data-surface is what let
       // it reach the tab buttons themselves once before.
       const pvbox = q("[data-pvbox]");
+      /**
+       * Which face is showing. Split from showSurface because a PREVIEW tile
+       * needs this half and not the other: it has no tab strip to light up, and
+       * repainting reads the editor's fields, which a preview tile no longer
+       * has. One definition of "show the Android face" either way.
+       */
+      function showFace(name) {
+        pvbox.querySelectorAll("[data-surface]").forEach((p) => { p.hidden = p.dataset.surface !== name; });
+      }
       function showSurface(name) {
         surfaceSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
         moveThumb(surfaceSeg);
-        pvbox.querySelectorAll("[data-surface]").forEach((p) => { p.hidden = p.dataset.surface !== name; });
+        showFace(name);
         renderPreview();
       }
       surfaceSeg.querySelectorAll("button").forEach((b) => {
@@ -3021,7 +3037,9 @@ export const DESIGN_PANEL_JS = /* js */ `
       // visible highlight until a later click (which runs after attaching, and
       // measures correctly) moved it for the first time. Deferring one frame
       // guarantees the caller's appendChild has already run.
-      requestAnimationFrame(() => showSurface("apple"));
+      // A preview tile has been painted already (below) and has no fields left
+      // to repaint from, so it only re-seats the face.
+      requestAnimationFrame(() => (env.previewOnly ? showFace("apple") : showSurface("apple")));
 
       /**
        * Say whether a shape is stored, and show it.
@@ -3308,6 +3326,44 @@ export const DESIGN_PANEL_JS = /* js */ `
         }, "Card");
         env.onRulesSaved();
       };
+
+      /**
+       * previewOnly: keep the card face, throw the editor away.
+       *
+       * The Manage carousel needs the REAL Apple and Android faces, and this
+       * panel is the one thing that knows how to draw them — it is shared
+       * verbatim with the admin console so the two cannot drift, and a second
+       * simpler card face built beside it would be exactly that drift.
+       *
+       * Trimmed at the END, after everything above has wired itself, rather
+       * than by not rendering the editor in the first place: the wiring reaches
+       * for its own fields by name all the way down, and a half-built panel
+       * would throw on the first one that is missing. The discarded nodes take
+       * their listeners with them. The only mount-time REQUEST is the customer
+       * count, and a caller in this mode passes customersPath null.
+       *
+       * The surface seg goes too — the carousel has its own control above the
+       * card — but showSurface stays and is handed out, so "show the Android
+       * face" has one implementation rather than a copy that toggles hidden.
+       */
+      if (env.previewOnly) {
+        // Paint BEFORE the trim, while the fields renderPreview reads are still
+        // here. Nothing can change a preview tile afterwards, so once is enough
+        // and setSurface below never needs to repaint.
+        showSurface("apple");
+        const box = q("[data-pvbox]");
+        // children + remove(), not lastChild + removeChild: those two are the
+        // pair the test harness does not implement, so a trim written with them
+        // does nothing under test and everything in a browser — which is a test
+        // that reports success about code it never ran.
+        Array.prototype.slice.call(div.children).forEach((el) => { if (el !== box) el.remove(); });
+        const acts = div.querySelector(".pvacts");
+        if (acts) acts.remove();
+        const out = div.querySelector("[data-testout]");
+        if (out) out.remove();
+        if (surfaceSeg) surfaceSeg.hidden = true;
+        div.setSurface = showFace;
+      }
       return div;
     }
 `;

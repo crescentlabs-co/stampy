@@ -48,7 +48,11 @@ function card(overrides: Record<string, unknown> = {}): Record<string, unknown> 
   };
 }
 
-let build: (c: Record<string, unknown>, h: ReturnType<typeof makeHarness>) => FakeEl;
+let build: (
+  c: Record<string, unknown>,
+  h: ReturnType<typeof makeHarness>,
+  extra?: Record<string, unknown>,
+) => FakeEl;
 
 beforeAll(() => {
   // The page inlines these three in this order; so do we.
@@ -61,7 +65,7 @@ beforeAll(() => {
   const escJs = `const esc = (s) => String(s == null ? "" : s)
       .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);`;
   const src = `${PALETTE_JS}\n${MODAL_JS}\n${SEG_JS}\n${escJs}\n${DESIGN_PANEL_JS}\nreturn designPanel;`;
-  build = (c, h) => {
+  build = (c, h, extra) => {
     const names = Object.keys(h.globals);
     const make = new Function(...names, src)(...names.map((n) => h.globals[n])) as (
       c: unknown,
@@ -86,8 +90,60 @@ beforeAll(() => {
       showDetails: true,
       rulesSaveLabel: "Save rules",
       onRulesSaved: () => {},
+      ...(extra || {}),
     });
   };
+});
+
+/**
+ * previewOnly, the flag the Manage carousel mounts this panel with.
+ *
+ * It matters that this is the SAME panel: it is the one thing that knows how to
+ * draw an Apple or an Android pass, and it is shared verbatim with the admin
+ * console so the two cannot drift. A simpler second card face built beside it
+ * would be exactly that drift.
+ *
+ * So what has to hold is a pair: the preview survives whole, and the editor is
+ * gone — no save, no uploads, nothing an owner could press by accident in a
+ * strip of cards they are only swiping through.
+ */
+describe("the panel as a preview tile", () => {
+  it("keeps the card faces and drops the editor", () => {
+    const h = makeHarness();
+    const div = build(card(), h, { previewOnly: true, customersPath: null });
+    // Both faces are there, which is the whole reason to reuse this panel.
+    expect(div.querySelector("[data-pv]")).not.toBeNull();
+    expect(div.querySelector("[data-pvg]")).not.toBeNull();
+    // ...and nothing that changes anything is.
+    for (const gone of ["[data-save]", "[data-f=reward]", "[data-a=emoji]", "[data-stampimg]"]) {
+      expect(div.querySelector(gone), gone + " survived into a preview tile").toBeNull();
+    }
+    // The test-card bar goes too — this tile has its own three actions.
+    expect(div.querySelector("[data-a=test]")).toBeNull();
+    // The surface tabs go, because the carousel drives the face from outside...
+    expect((div.querySelector("[data-surfaces]") as { hidden?: boolean } | null)?.hidden).toBe(true);
+    // ...through the panel's own switcher, handed out rather than copied.
+    expect(typeof (div as unknown as { setSurface?: unknown }).setSurface).toBe("function");
+  });
+
+  /** The console and the programme page pass no flag and must be untouched. */
+  it("leaves the full panel alone", () => {
+    const h = makeHarness();
+    const div = build(card(), h);
+    expect(div.querySelector("[data-stampimg]")).not.toBeNull();
+    expect(div.querySelector("[data-a=test]")).not.toBeNull();
+    expect((div.querySelector("[data-surfaces]") as { hidden?: boolean } | null)?.hidden).toBeFalsy();
+    expect((div as unknown as { setSurface?: unknown }).setSurface).toBeUndefined();
+  });
+
+  /** Switching the face is the panel's own showSurface, not a copy. */
+  it("switches every face through the panel's own switcher", () => {
+    const h = makeHarness();
+    const div = build(card(), h, { previewOnly: true, customersPath: null });
+    (div as unknown as { setSurface: (n: string) => void }).setSurface("google");
+    expect((div.querySelector("[data-pv]") as { hidden?: boolean }).hidden).toBe(true);
+    expect((div.querySelector("[data-pvg]") as { hidden?: boolean }).hidden).toBe(false);
+  });
 });
 
 describe("the design panel, mounted", () => {

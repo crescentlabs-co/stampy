@@ -2867,15 +2867,13 @@ describe("Home", () => {
     expect(html).toContain(".metric span:not(.mlabel):not(.mnote)");
   });
 
-  /** Programmes: the real one, then the examples, each row marked. */
-  it("lists the real programme before the examples, and marks the examples", () => {
-    const rows = html.slice(html.indexOf("function programRows()"), html.indexOf("const KIND_LABEL"));
-    expect(rows.indexOf("S.cards.map")).toBeLessThan(rows.indexOf("MOCK_PROGRAMS.map"));
-    expect(rows).toContain("example: true");
-    expect(html).toContain('p.example ? EG : ""');
-    // Tracked spend survived the rebuild — it is a fact about one programme's
-    // basket, not about the shop.
-    expect(rows).toContain("c.averageSpend > 0");
+  /** Real programmes first, then the examples, in the chart's own rows. */
+  it("puts the real programmes ahead of the examples", () => {
+    expect(cmp.indexOf("S.cards.map")).toBeLessThan(cmp.indexOf("MOCK_PROGRAMS.map"));
+    // The old row builders went with the lists they drew; nothing calls them.
+    expect(html).not.toContain("function programRows()");
+    expect(html).not.toContain("function progRow(");
+    expect(html).not.toContain("function campaignRows()");
   });
 });
 
@@ -3412,25 +3410,106 @@ describe("the manage screens", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
   const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"), html.indexOf("function dealLine(card)"));
 
-  it("has two lists behind one switch", () => {
+  it("has two panes behind one switch", () => {
     expect(html).toContain('data-mt="rewards"');
     expect(html).toContain('data-mt="campaigns"');
-    expect(html).toContain("function campaignRows()");
+    expect(html).toContain("function rewardsPane(host)");
+    expect(html).toContain("function campaignsPane(host)");
     // Both tabs are addresses, so a refresh lands back on the one you were on.
     expect(html).toContain('navigate("/manage/" + b.dataset.mt)');
   });
 
-  it("shows type, performance, status and a way in, on every row", () => {
-    const row = html.slice(html.indexOf("function progRow(p, money)"), html.indexOf("function campaignBlock"));
-    expect(row).toContain("KIND_LABEL[p.kind]");
-    expect(row).toContain("p.customers");
-    expect(row).toContain("Ended");
-    expect(row).toContain("data-nav=");
-    // The four types are the four the database already holds, so wiring them
-    // up later is a rename and not a migration.
-    for (const k of ["stamp", "milestones", "membership", "points"]) {
-      expect(html).toContain(k + ":");
-    }
+  /**
+   * The whole point of this screen: it stopped reporting.
+   *
+   * Home's two charts answer how a programme is doing. The same figures worked
+   * out on a second screen is how a headline came to disagree with the list
+   * under it, twice — so Manage and the pages behind it carry no metric grid at
+   * all, and that is held here rather than left as an intention.
+   */
+  it("shows no performance figures anywhere in Manage", () => {
+    const manage = html.slice(html.indexOf("function manageScreen(tab)"),
+                              html.indexOf("function designerFor(card, extra)"));
+    expect(manage).not.toContain('class="metric"');
+    // The HEADING, not the word: the comment where the block used to be says
+    // why it went, and that sentence is worth more than the grep is.
+    expect(manage).not.toContain('>Performance');
+    expect(manage).not.toContain("metrics.active");
+    expect(manage).not.toContain("metrics.stamps");
+    // The one figure that stays is the lock note, which is a warning about
+    // EDITING — the deal is frozen for whoever already holds the card — not a
+    // report on how the programme is doing.
+    expect(manage).toContain("lockNote(m.active)");
+  });
+
+  /**
+   * The tile is the REAL card face. designPanel is the one thing that knows how
+   * to draw an Apple or an Android pass, and it is shared verbatim with the
+   * admin console so the two cannot drift; a simpler second card face built
+   * beside it would be exactly that drift.
+   */
+  it("previews the real card and lets one control switch every face", () => {
+    const pane = html.slice(html.indexOf("function rewardsPane(host)"),
+                            html.indexOf("function cardBody(t)"));
+    expect(pane).toContain("previewOnly: true");
+    // The count is the only request the panel makes on mount, and a tile has
+    // nowhere to show it.
+    expect(pane).toContain("customersPath: null");
+    // Through the panel's own switcher, not a copy that toggles hidden.
+    expect(pane).toContain("p.setSurface(face)");
+    // ONE surface for the whole strip: two tiles disagreeing about which phone
+    // you are looking at is unreadable.
+    expect(pane).toContain("panels.forEach");
+    // The last tile is the way to make the next programme.
+    expect(pane).toContain('data-nav="/create/reward"');
+    // Examples are flat tiles carrying the chip — there is no card behind them.
+    expect(pane).toContain('class="egtile"');
+    expect(pane).toContain("MOCK_PROGRAMS.forEach");
+  });
+
+  /** Poster, Share, Edit — and nothing on an example, which has none of them. */
+  it("offers three actions under the card, and none on an example", () => {
+    const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
+    for (const a of ["Poster", "Share", "Edit"]) expect(body).toContain(a);
+    // The example branch passes the disabled flag on all three.
+    const eg = body.slice(0, body.indexOf("const c = t.card;"));
+    expect((eg.match(/, true\)/g) || []).length).toBe(3);
+    // Info is SETUP, not numbers.
+    expect(body).toContain("dealLine(c)");
+    expect(body).toContain("Welcome stamps");
+    expect(body).not.toContain("customers");
+  });
+
+  /**
+   * A list of options, not a confirm dialog with the one action disguised as
+   * its OK button — the founder asked for it to be shaped for more entries, and
+   * the next one has to be a line rather than a rewrite.
+   */
+  it("shares through a list that a second option could join", () => {
+    const sheet = html.slice(html.indexOf("function shareSheet(card)"),
+                             html.indexOf("function campaignsPane(host)"));
+    expect(sheet).toContain('class="sharelist2"');
+    expect(sheet).toContain("Copy sign-up link");
+    // Clipboard access is refused outside a secure context, so there is a
+    // fallback rather than a button that silently does nothing.
+    expect(sheet).toContain("navigator.clipboard");
+    expect(sheet).toContain("window.isSecureContext");
+    expect(sheet).toContain('document.execCommand("copy")');
+    // It says whether it worked either way.
+    expect(sheet).toContain("Sign-up link copied.");
+  });
+
+  it("lists campaigns active-first, with an edit and a way to add one", () => {
+    const pane = html.slice(html.indexOf("function campaignsPane(host)"),
+                            html.indexOf("function manageDetailScreen"));
+    expect(pane).toContain("const order = { active: 0, ended: 1 }");
+    expect(pane).toContain('class="rowedit"');
+    expect(pane).toContain('data-nav="/create/campaign"');
+    // No carousel: a campaign has no artwork to swipe through.
+    expect(pane).not.toContain("carousel");
+    // Entirely invented, so the section says so once.
+    expect(pane).toContain("MOCK_CAMPAIGNS");
+    expect(pane).toContain("+ EG +");
   });
 
   /**
@@ -3691,54 +3770,13 @@ describe("the screen builders, actually run", () => {
       cut("const EG =", "/**\n   * Other loyalty programmes") +
       cut("const MOCK_PROGRAMS", "/** Campaigns. None of this exists yet") +
       cut("const MOCK_CAMPAIGNS", "// MOCK_ACCOUNT was here") +
-      cut("const KIND_LABEL =", "function progRow(p, money)") +
-      cut("function progRow(p, money)", "/**\n     * Customers — who is in the shop") +
-      cut("function campaignRows()", "function manageDetailScreen") +
+      cut("const KIND_LABEL =", "function manageScreen(tab)") +
       cut("function custCard(x)", "/**\n     * What happened at the counter today.") +
       cut("function dealLine(card)", "function endedNote()") +
-      "return { progRow, campaignRows, custCard, dealLine, segLabel," +
+      "return { custCard, dealLine, segLabel," +
       " MOCK_CAMPAIGNS, KIND_LABEL };",
   )();
 
-  it("renders a programme row for every type the card supports", () => {
-    for (const kind of ["stamp", "milestones", "membership", "points"]) {
-      const row = B.progRow({ href: "/manage/rewards/x", name: "Kopi Corner", kind,
-                              status: "active", customers: 3, visits: 9, rewards: 1 }, "");
-      expect(row).toContain(B.KIND_LABEL[kind]);
-      expect(row).not.toContain("undefined");
-      expect(row).not.toContain("NaN");
-    }
-  });
-
-  /** A brand-new shop: every number is zero and nothing may read as broken. */
-  it("renders a programme with no customers at all", () => {
-    const row = B.progRow({ href: "/manage/rewards/x", name: "New Shop", kind: "stamp",
-                            status: "active", customers: 0, visits: 0, rewards: 0 }, "");
-    expect(row).toContain(">0<");
-    expect(row).not.toContain("NaN");
-    expect(row).not.toContain("Infinity");
-  });
-
-  it("escapes a shop name rather than letting it into the markup", () => {
-    const row = B.progRow({ href: "/manage/rewards/x", name: '<script>x</script>', kind: "stamp",
-                            status: "active", customers: 1, visits: 1, rewards: 0 }, "");
-    expect(row).not.toContain("<script>x");
-    expect(row).toContain("&lt;script&gt;");
-  });
-
-  it("marks an ended programme without calling it a failure", () => {
-    const row = B.progRow({ href: "/x", name: "Winter", kind: "stamp", status: "ended",
-                            customers: 5, visits: 5, rewards: 5 }, "");
-    expect(row).toContain("Ended");
-    expect(row).toContain("pstat off");
-  });
-
-  /** Every campaign percentage is a division, and every division can be by zero. */
-  it("renders every campaign row without dividing by zero", () => {
-    const rows = B.campaignRows();
-    expect(rows).not.toContain("NaN");
-    expect(rows).not.toContain("Infinity");
-  });
 
   it("renders a customer row for each segment, and for someone in today", () => {
     for (const health of ["regular", "returning", "new", "lost"]) {
