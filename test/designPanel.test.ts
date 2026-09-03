@@ -120,8 +120,15 @@ describe("the panel as a preview tile", () => {
     }
     // The test-card bar goes too — this tile has its own three actions.
     expect(div.querySelector("[data-a=test]")).toBeNull();
-    // The surface tabs go, because the carousel drives the face from outside...
-    expect((div.querySelector("[data-surfaces]") as { hidden?: boolean } | null)?.hidden).toBe(true);
+    // The surface tabs go, because the carousel drives the face from outside.
+    // DISPLAY, not the hidden attribute: .seg sets display:flex, and an
+    // element's own display beats [hidden] every time — so the strip stayed on
+    // screen above every tile, three of them saying iPhone / Android / Sign-up
+    // poster next to a control that already switches the face.
+    const tabs = div.querySelector("[data-surfaces]") as
+      { hidden?: boolean; style?: { display?: string } } | null;
+    expect(tabs?.hidden).toBe(true);
+    expect(tabs?.style?.display).toBe("none");
     // ...through the panel's own switcher, handed out rather than copied.
     expect(typeof (div as unknown as { setSurface?: unknown }).setSurface).toBe("function");
   });

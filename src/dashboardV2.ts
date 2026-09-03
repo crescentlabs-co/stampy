@@ -290,21 +290,32 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        This screen stopped reporting. Home's charts answer how a programme is
        doing; here you look at the card and change it, so there is not a single
        figure on it. */
-    .cardhead { position: relative; display: flex; margin: var(--s3) 0 var(--s2); }
+    .cardhead { position: relative; display: flex; justify-content: center;
+                margin: var(--s3) 0 var(--s2); }
+    /* Centred over the card it describes, so it does not stretch across the row
+       the way the chart's metric toggle does. */
+    .cardhead .cmpmetric { flex: none; }
     /* The strip scrolls and snaps, and it starts flush LEFT rather than
        centring — the founder asked for the first card to have nothing beside
        it, and a centred snap would open with a gap where a previous card would
        be. The next tile peeks so it is obvious there is one. */
-    .carousel { display: flex; gap: var(--s3); overflow-x: auto; scroll-snap-type: x mandatory;
+    /* Padding of (100% - slide) / 2 either side, so a snapped card sits in the
+       MIDDLE of the screen and the first one still has empty space to its left
+       rather than a neighbour. scroll-snap-align: center alone would not do it:
+       the first card cannot scroll left past zero, so without the padding it
+       stays pinned to the edge and reads as off-centre. */
+    .carousel { --slide: 82%;
+                display: flex; gap: var(--s3); overflow-x: auto; scroll-snap-type: x mandatory;
                 -webkit-overflow-scrolling: touch; scrollbar-width: none;
-                margin: 0 calc(-1 * var(--s3)); padding: 0 var(--s3) var(--s2); }
+                margin: 0 calc(-1 * var(--s3));
+                padding: 0 calc((100% - var(--slide)) / 2) var(--s2); }
     .carousel::-webkit-scrollbar { display: none; }
-    .slide { flex: 0 0 86%; scroll-snap-align: start; min-width: 0; }
+    .slide { flex: 0 0 var(--slide); scroll-snap-align: center; min-width: 0; }
     /* An example has no card behind it — no colours, no logo, no designer — so
        it is a flat tile that says so rather than a pass preview of nothing. */
     .egtile, .addtile { display: flex; flex-direction: column; align-items: center;
                         justify-content: center; gap: var(--s2); min-height: 190px;
-                        border-radius: var(--r); background: var(--surface); padding: var(--s4);
+                        border-radius: var(--r); background: var(--bg); padding: var(--s4);
                         text-align: center; }
     .egt-n { font-size: var(--t-md); font-weight: 600; color: var(--ink); }
     .egt-t { font-size: var(--t-sm); color: var(--muted); }
@@ -320,11 +331,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .actbtn { display: flex; flex-direction: column; align-items: center; gap: var(--s2);
               background: none; border: 0; padding: 0; font: inherit; font-size: var(--t-sm);
               color: var(--ink); cursor: pointer; }
-    .actcirc { display: flex; align-items: center; justify-content: center;
-               width: 52px; height: 52px; border-radius: 999px; background: var(--surface); }
+    /* --bg, not --surface: the sheet these sit on IS --surface, so a --surface
+       disc is the page colour and the circle simply is not there. Rule 9 — a box
+       on the tint goes back to --bg — and it is why they did not look round. */
+    .actcirc { display: flex; flex: none; align-items: center; justify-content: center;
+               width: 56px; height: 56px; border-radius: 999px; background: var(--bg); }
     .actcirc svg { width: 22px; height: 22px; fill: none; stroke: currentColor;
                    stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .actbtn:active .actcirc { background: var(--ghost-bg); }
+    .actbtn:disabled .actcirc { background: var(--ghost-bg); }
     .actbtn:disabled { color: var(--muted); cursor: default; }
     .actbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
     /* --- Manage: campaigns, a list rather than a carousel -----------------
@@ -340,7 +355,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .srow .st { display: block; margin-top: var(--s1); font-size: var(--t-sm); color: var(--muted); }
     .rowedit { flex: none; font-size: var(--t-sm); font-weight: 600; color: var(--ink);
                text-decoration: none; padding: var(--s2) var(--s3); border-radius: 999px;
-               background: var(--surface); }
+               background: var(--ghost-bg); }
     .addrow { display: block; margin-top: var(--s3); padding: var(--s3); text-align: center;
               border: 1px dashed var(--field-border); border-radius: var(--r);
               font-size: var(--t-sm); font-weight: 600; color: var(--muted); text-decoration: none; }
@@ -358,6 +373,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
            max-width: calc(100% - var(--s2)); max-height: 60vh; overflow-y: auto; }
     .pop.right { right: 0; }
     .pop.left { left: 0; }
+    .pop.center { left: 50%; transform: translateX(-50%); }
     .popgrp + .popgrp { margin-top: var(--s3); border-top: 1px solid var(--line);
                         padding-top: var(--s3); }
     .popgrp > span { display: block; font-size: var(--t-sm); color: var(--muted);
@@ -2992,7 +3008,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "<span>+</span><span>Create reward</span></a>";
       car.appendChild(add);
 
-      faceBtn.onclick = () => pop.open("left",
+      faceBtn.onclick = () => pop.open("center",
         popOpt("face:apple", "Apple", face === "apple") +
         popOpt("face:google", "Android", face === "google"),
         (v) => {

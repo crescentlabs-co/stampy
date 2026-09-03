@@ -3361,7 +3361,12 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (acts) acts.remove();
         const out = div.querySelector("[data-testout]");
         if (out) out.remove();
-        if (surfaceSeg) surfaceSeg.hidden = true;
+        // display, not the hidden ATTRIBUTE: .seg sets display:flex, and an
+        // element's own display beats [hidden] every time. The strip stayed on
+        // screen above every tile in the carousel — three tab strips saying
+        // iPhone / Android / Sign-up poster, next to a control that already
+        // switches the face.
+        if (surfaceSeg) { surfaceSeg.hidden = true; surfaceSeg.style.display = "none"; }
         div.setSurface = showFace;
       }
       return div;
