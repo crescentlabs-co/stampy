@@ -15,6 +15,8 @@ import {
   HEALTH_JS,
   MODAL_CSS,
   MODAL_JS,
+  POPOVER_CSS,
+  POPOVER_JS,
   page,
   PALETTE_JS,
   SEG_CSS,
@@ -374,29 +376,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        Anchored to the HEADER ROW, not to the card. It hung off .cmpwrap, whose
        100% is the bottom of everything — bars, footnote and all — so the panel
        opened a chart's height below the button that opened it. */
-    .pop { position: absolute; z-index: 30; top: calc(100% + var(--s2));
-           background: var(--bg); border: 1px solid var(--line); border-radius: var(--r);
-           box-shadow: var(--shadow); padding: var(--s3); min-width: 200px;
-           max-width: calc(100% - var(--s2)); max-height: 60vh; overflow-y: auto; }
-    .pop.right { right: 0; }
-    .pop.left { left: 0; }
-    .pop.center { left: 50%; transform: translateX(-50%); }
-    .popgrp + .popgrp { margin-top: var(--s3); border-top: 1px solid var(--line);
-                        padding-top: var(--s3); }
-    .popgrp > span { display: block; font-size: var(--t-sm); color: var(--muted);
-                     margin-bottom: var(--s2); }
-    .popopt { display: flex; align-items: center; gap: var(--s2); width: 100%;
-              background: none; border: 0; padding: var(--s2); border-radius: var(--r-sm);
-              font: inherit; font-size: var(--t-md); color: var(--ink); text-align: left;
-              cursor: pointer; }
-    .popopt:hover { background: var(--surface); }
-    .popopt.on { font-weight: 600; }
-    /* A tick, not a fill: the neon marks the next thing to press and a chosen
-       option is not that. */
-    .popopt::before { content: ""; width: 16px; flex: none; }
-    .popopt.on::before { content: "✓"; }
-    .popopt:disabled { color: var(--muted); cursor: default; }
-    .popopt:disabled:hover { background: none; }
     .card { border: 1px solid var(--line); border-radius: var(--r);
             padding: var(--s3); margin-top: var(--s3); }
     .links { display: flex; gap: var(--s3); margin-top: var(--s2); flex-wrap: wrap; font-size: var(--t-sm); }
@@ -409,6 +388,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                          font: inherit; font-weight: 600; background: var(--surface); color: var(--ink); }
     .cardselect .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); white-space: nowrap; }
     ${SEG_CSS}
+    ${POPOVER_CSS}
     /* --- the app chrome ------------------------------------------------------
        A shaped neon block at the top that says whose shop this is, and a
        floating pill at the bottom that is the whole of the navigation.
@@ -925,6 +905,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
   const js = /* js */ `
     ${PALETTE_JS}
     ${MODAL_JS}
+    ${POPOVER_JS}
     const $ = (s, el=document) => el.querySelector(s);
     // Decided by the server from whether an email service is configured.
     const RESET_BY_EMAIL = ${canEmail ? "true" : "false"};
@@ -2148,50 +2129,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * Returns a controller with open(html), close() and isOpen(). Tapping the
      * same button again closes it, which is what a caret expects to do.
      */
-    function popover(host, buttons) {
-      let pop = null, openSide = "";
-      function away(e) {
-        if (!pop) return;
-        if (pop.contains(e.target)) return;
-        if (buttons.some((b) => b && b.contains(e.target))) return;
-        close();
-      }
-      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
-      function close() {
-        if (pop) { pop.remove(); pop = null; }
-        openSide = "";
-        buttons.forEach((b) => b && b.classList.remove("on"));
-        document.removeEventListener("pointerdown", away, true);
-        document.removeEventListener("keydown", onKey, true);
-      }
-      function open(side, html, onPick, mark) {
-        const was = openSide;
-        close();
-        if (was === side) return;
-        pop = document.createElement("div");
-        pop.className = "pop " + side;
-        openSide = side;
-        pop.innerHTML = html;
-        host.appendChild(pop);
-        if (mark) mark.classList.add("on");
-        document.addEventListener("pointerdown", away, true);
-        document.addEventListener("keydown", onKey, true);
-        pop.addEventListener("click", (e) => {
-          const b = e.target.closest("[data-set]");
-          if (!b || b.disabled) return;
-          const value = b.dataset.set;
-          close();
-          onPick(value);
-        });
-      }
-      return { open, close };
-    }
-
-    /** One option inside a popover. */
-    const popOpt = (set, name, on, off) =>
-      '<button type="button" class="popopt' + (on ? " on" : "") + '" data-set="' + set + '"' +
-      (off ? " disabled" : "") + ">" + esc(name) + "</button>";
-
     function wireComparison(host, spec, state) {
       const wrap = host.querySelector(".cmphead");
       const mBtn = host.querySelector("[data-metric]");

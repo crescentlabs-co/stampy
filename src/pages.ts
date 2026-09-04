@@ -20,6 +20,8 @@ import {
   HEALTH_JS,
   MODAL_CSS,
   MODAL_JS,
+  POPOVER_CSS,
+  POPOVER_JS,
   page,
   PALETTE_JS,
   POWERED_BY,
@@ -41,6 +43,8 @@ export {
   HEALTH_JS,
   MODAL_CSS,
   MODAL_JS,
+  POPOVER_CSS,
+  POPOVER_JS,
   page,
   PALETTE_JS,
   POWERED_BY,
@@ -2402,12 +2406,14 @@ export function adminPage(): string {
     .rlink { border: none; background: none; font: inherit; color: var(--accent-dark); font-weight: 700;
              cursor: pointer; padding: 2px 4px; text-decoration: underline; }
     ${SEG_CSS}
+    ${POPOVER_CSS}
     ${MODAL_CSS}
     ${DESIGN_PANEL_CSS}
   `;
   const js = /* js */ `
     ${PALETTE_JS}
     ${SEG_JS}
+    ${POPOVER_JS}
     ${MODAL_JS}
     ${DESIGN_PANEL_JS}
     const $ = (s, el=document) => el.querySelector(s);

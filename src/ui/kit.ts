@@ -615,6 +615,90 @@ export const MODAL_JS = /* js */ `
  *
  * Pair it with SEG_JS, which is what actually slides the thumb.
  */
+/**
+ * A small menu hung off a button — the app's dropdown.
+ *
+ * Lives here rather than in the dashboard because two pages render it now: the
+ * Manage screens, and the card designer's surface switcher, which the admin
+ * console mounts too. That is the rule this file exists for — a second copy is
+ * how the console ends up with a control that behaves differently.
+ *
+ * Closes on a tap outside, on Escape, and on a second tap of the same button.
+ * Needs `esc` from the page around it, like the rest of this file.
+ */
+export const POPOVER_CSS = /* css */ `
+    .pop { position: absolute; z-index: 30; top: calc(100% + var(--s2));
+           background: var(--bg); border: 1px solid var(--line); border-radius: var(--r);
+           box-shadow: var(--shadow); padding: var(--s3); min-width: 200px;
+           max-width: calc(100% - var(--s2)); max-height: 60vh; overflow-y: auto; }
+    .pop.right { right: 0; }
+    .pop.left { left: 0; }
+    .pop.center { left: 50%; transform: translateX(-50%); }
+    .popgrp + .popgrp { margin-top: var(--s3); border-top: 1px solid var(--line);
+                        padding-top: var(--s3); }
+    .popgrp > span { display: block; font-size: var(--t-sm); color: var(--muted);
+                     margin-bottom: var(--s2); }
+    .popopt { display: flex; align-items: center; gap: var(--s2); width: 100%;
+              background: none; border: 0; padding: var(--s2); border-radius: var(--r-sm);
+              font: inherit; font-size: var(--t-md); color: var(--ink); text-align: left;
+              cursor: pointer; }
+    .popopt:hover { background: var(--surface); }
+    .popopt.on { font-weight: 600; }
+    /* A tick, not a fill: the neon marks the next thing to press and a chosen
+       option is not that. */
+    .popopt::before { content: ""; width: 16px; flex: none; }
+    .popopt.on::before { content: "✓"; }
+    .popopt:disabled { color: var(--muted); cursor: default; }
+    .popopt:disabled:hover { background: none; }
+`;
+
+export const POPOVER_JS = /* js */ `
+    function popover(host, buttons) {
+      let pop = null, openSide = "";
+      function away(e) {
+        if (!pop) return;
+        if (pop.contains(e.target)) return;
+        if (buttons.some((b) => b && b.contains(e.target))) return;
+        close();
+      }
+      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
+      function close() {
+        if (pop) { pop.remove(); pop = null; }
+        openSide = "";
+        buttons.forEach((b) => b && b.classList.remove("on"));
+        document.removeEventListener("pointerdown", away, true);
+        document.removeEventListener("keydown", onKey, true);
+      }
+      function open(side, html, onPick, mark) {
+        const was = openSide;
+        close();
+        if (was === side) return;
+        pop = document.createElement("div");
+        pop.className = "pop " + side;
+        openSide = side;
+        pop.innerHTML = html;
+        host.appendChild(pop);
+        if (mark) mark.classList.add("on");
+        document.addEventListener("pointerdown", away, true);
+        document.addEventListener("keydown", onKey, true);
+        pop.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-set]");
+          if (!b || b.disabled) return;
+          const value = b.dataset.set;
+          close();
+          onPick(value);
+        });
+      }
+      return { open, close };
+    }
+
+    /** One option inside a popover. */
+    const popOpt = (set, name, on, off) =>
+      '<button type="button" class="popopt' + (on ? " on" : "") + '" data-set="' + set + '"' +
+      (off ? " disabled" : "") + ">" + esc(name) + "</button>";
+
+`;
+
 export const SEG_CSS = /* css */ `
     .seg { position: relative; display: flex; background: var(--ghost-bg); border-radius: 999px; padding: 5px; gap: 2px; }
     .seg button { position: relative; z-index: 1; flex: 1; border: none; background: none; font: inherit;
@@ -656,6 +740,12 @@ export const DESIGN_PANEL_CSS = /* css */ `
        every control below it stretch, and the two stop looking alike. A
        no-op on the dashboard, which already sits inside a 480px .card. */
     .designhost { max-width: 480px; }
+    .dsurf { position: relative; display: flex; justify-content: center; margin-bottom: var(--s2); }
+    /* The card is a reference while you edit, not the subject of the screen.
+       At full width it pushed every field below the fold on a phone, which is
+       where this is used. Capped rather than scaled so the type inside stays
+       the size it will really be. */
+    .pvbox { max-width: 320px; margin-inline: auto; }
     /* The fold the designer sits in. Declared HERE, not in the dashboard's
        stylesheet, for the same reason the markup is shared: the panel emits
        this class and the console renders the panel, so a copy kept in one
@@ -738,7 +828,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pv-qr { background: #fff; color: #1d1d1f; width: 74px; height: 74px; border-radius: 8px;
              margin: 14px auto 2px; display: flex; align-items: center; justify-content: center;
              font-weight: 700; font-size: .8rem; letter-spacing: 1px; }
-    .pv-note { text-align: center; font-size: .72rem; margin-top: 6px; opacity: .75; }
 
     /* --- the Google card --- */
     /* Laid out against a photograph of a real Android card, not from the API
@@ -1113,6 +1202,13 @@ const GOOGLE_GLYPH =
   "</svg>";
 
 export const DESIGN_PANEL_JS = /* js */ `
+    // The dashboard has its own caret constant; the console does not, and this
+    // panel is inlined into both — so it carries its own. Deliberately NOT
+    // named with the dashboard's constant as a prefix: a test anchors a slice
+    // on that exact string, and a longer name containing it is found first.
+    const CARET_SVG =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+
     /**
      * The card designer, shared VERBATIM by the owner dashboard and the admin
      * console. Parity between the two is guaranteed by them being the same code
@@ -1177,11 +1273,15 @@ export const DESIGN_PANEL_JS = /* js */ `
                merchant has one brand and one programme that happen to appear in
                three places, so the editor is organised that way instead and
                these three are purely a way of looking. -->
-          <div class="seg dseg" data-surfaces role="tablist">
-            <button data-tab="apple" class="on">iPhone</button>
-            <button data-tab="google">Android</button>
-            <button data-tab="signup">Sign-up poster</button>
-            <span class="thumb"></span>
+          <!-- A dropdown, not a strip of three. Three tabs and the card
+               beneath them were two rows of chrome above the thing being
+               looked at, and DESIGN.md allows one filled pill per screen —
+               which the dashboard's nav already spends. Same control the
+               Manage screens use. -->
+          <div class="dsurf" data-surfaces>
+            <button type="button" class="cmpmetric" data-surfbtn>
+              <span data-surfname>iPhone</span>\${CARET_SVG}
+            </button>
           </div>
 
           <div class="pv" data-pv data-surface="apple">
@@ -1197,7 +1297,6 @@ export const DESIGN_PANEL_JS = /* js */ `
               <div><div class="pv-lbl" data-pv-clbl>PROGRESS</div><div class="pv-reward" data-pv-tally></div></div>
             </div>
             <div class="pv-qr">QR</div>
-            <div class="pv-note">Code ABC123 · updates by itself</div>
           </div>
 
           <!-- Google. Deliberately NOT the Apple card in another colour: Android
@@ -1922,7 +2021,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-pv-reward]").textContent = member
           ? "ABC123"
           : (nextRung ? nextRung.reward : (f("reward").value || "Your reward"));
-        for (const el of div.querySelectorAll(".pv-lbl, .pv-note")) el.style.color = f("label").value;
+        for (const el of div.querySelectorAll(".pv-lbl")) el.style.color = f("label").value;
         // When a rich stamp style is active, show the rendered grid in the strip
         // (it shares the slot with the banner — stamps win, matching the card).
         // Set both states explicitly every time. This used to only ever ADD the
@@ -3029,15 +3128,30 @@ export const DESIGN_PANEL_JS = /* js */ `
       function showFace(name) {
         pvbox.querySelectorAll("[data-surface]").forEach((p) => { p.hidden = p.dataset.surface !== name; });
       }
+      const SURFACES = [
+        { k: "apple", name: "iPhone" },
+        { k: "google", name: "Android" },
+        { k: "signup", name: "Sign-up poster" },
+      ];
+      const surfBtn = surfaceSeg && surfaceSeg.querySelector("[data-surfbtn]");
       function showSurface(name) {
-        surfaceSeg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
-        moveThumb(surfaceSeg);
-        showFace(name);
+        const pick = SURFACES.find((x) => x.k === name) || SURFACES[0];
+        if (surfBtn) surfBtn.querySelector("[data-surfname]").textContent = pick.name;
+        showFace(pick.k);
         renderPreview();
       }
-      surfaceSeg.querySelectorAll("button").forEach((b) => {
-        b.onclick = () => showSurface(b.dataset.tab);
-      });
+      if (surfBtn) {
+        // popover lives in the kit alongside this, so the admin console gets
+        // the same control rather than a second one that behaves differently.
+        const surfPop = popover(surfaceSeg, [surfBtn]);
+        let showing = "apple";
+        surfBtn.onclick = () => surfPop.open(
+          "center",
+          SURFACES.map((x) => popOpt("surf:" + x.k, x.name, x.k === showing)).join(""),
+          (v) => { showing = v.split(":")[1]; showSurface(showing); },
+          surfBtn,
+        );
+      }
       // The panel this builds is still a detached node when this runs — its
       // caller appends the RETURN VALUE of this function, after everything in
       // it has already executed. A detached node has no layout box, so

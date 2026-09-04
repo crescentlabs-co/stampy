@@ -570,8 +570,14 @@ describe("one designer, two pages", () => {
       expect(panelOf(html)).not.toMatch(/data-pane="(apple|google|signup)"/);
       expect(html).toContain("function showSurface(name)");
       expect(html).toContain('showSurface("apple")');
-      // A hidden .seg measures zero, so the thumb is seated after the pane shows.
-      expect(html).toMatch(/showSurface[\s\S]{0,400}moveThumb\(surfaceSeg\)/);
+      // The switch is a dropdown now, not a strip of three tabs, so there is
+      // no sliding thumb left to seat — which also removes the whole class of
+      // bug that assertion existed for (a hidden .seg measures zero, so the
+      // thumb sat at nothing until the first click). The button carries the
+      // name of the face on show instead.
+      expect(html).not.toContain("moveThumb(surfaceSeg)");
+      expect(html).toContain("data-surfname");
+      expect(html).toContain("popover(surfaceSeg, [surfBtn])");
       expect(html).toContain('<div class="colorpark" data-park>');
     }
   });
@@ -2833,9 +2839,12 @@ describe("Home", () => {
     // The cap is visible: past five, the unticked options go disabled rather
     // than accepting a tap that silently does nothing.
     expect(cmp).toContain("!on && state.picked.length >= CMP_MAX");
-    // One popover, opened by either control, and the neon is not in it: a
-    // chosen option is marked with a tick, not a fill.
-    expect((cmp.match(/document\.createElement\("div"\)/g) || []).length).toBe(1);
+    // One popover, opened by EITHER control — two would let both menus be open
+    // at once, over each other. It counted the div this used to build inline;
+    // popover now lives in the kit (the designer's surface switcher needs it
+    // too), so the thing to hold is that both buttons share one instance.
+    expect(cmp).toContain("popover(wrap, [mBtn, fBtn])");
+    expect((cmp.match(/popover\(/g) || []).length).toBe(1);
     const pop = html.slice(html.indexOf(".popopt.on::before"), html.indexOf(".popopt:disabled"));
     expect(pop).not.toContain("--accent");
     // Both figures ignore the window selector, and the card says so out loud.

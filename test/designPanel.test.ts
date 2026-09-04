@@ -14,7 +14,7 @@
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { buildLoyaltyPatch } from "../src/googleModel.js";
-import { DESIGN_PANEL_JS, MODAL_JS, PALETTE_JS, SEG_JS } from "../src/pages.js";
+import { DESIGN_PANEL_JS, MODAL_JS, PALETTE_JS, POPOVER_JS, SEG_JS } from "../src/pages.js";
 import { makeHarness, type FakeEl } from "./domHarness.js";
 
 /** A card as the designer receives it, mid-life: colours set, nothing uploaded. */
@@ -64,7 +64,7 @@ beforeAll(() => {
   // stubbed, because a lenient stand-in would let a real escaping bug through.
   const escJs = `const esc = (s) => String(s == null ? "" : s)
       .replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);`;
-  const src = `${PALETTE_JS}\n${MODAL_JS}\n${SEG_JS}\n${escJs}\n${DESIGN_PANEL_JS}\nreturn designPanel;`;
+  const src = `${PALETTE_JS}\n${MODAL_JS}\n${SEG_JS}\n${POPOVER_JS}\n${escJs}\n${DESIGN_PANEL_JS}\nreturn designPanel;`;
   build = (c, h, extra) => {
     const names = Object.keys(h.globals);
     const make = new Function(...names, src)(...names.map((n) => h.globals[n])) as (
@@ -309,49 +309,95 @@ describe("the design panel, mounted", () => {
       expect(at("[data-surfaces]")).toBeLessThan(at("[data-logo]"));
     });
 
+    /**
+     * Open the menu and pick one — the same two taps a merchant makes.
+     *
+     * It was a strip of three tabs. Three tabs and the card under them were two
+     * rows of chrome above the thing being looked at, and the dashboard already
+     * spends its one filled pill on the nav.
+     */
+    const pickSurface = (div: FakeEl, name: string) => {
+      div.querySelector("[data-surfbtn]")!.onclick!();
+      const opt = div.querySelectorAll("[data-set]").find((b) => b.dataset.set === "surf:" + name)!;
+      expect(opt, "no option for " + name).not.toBeUndefined();
+      // The menu delegates one click handler rather than binding each option,
+      // so this is the event that really reaches it.
+      opt.closest(".pop")!.onclick!({ target: opt } as never);
+    };
+
     it("switches the preview and leaves the editor alone", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
-      const tab = (name: string) =>
-        div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.tab === name)!;
-      // Nothing in the editor is per-surface any more, so there is nothing for a
-      // tab to hide — and a stray [data-pane] would mean the split crept back.
+      // Nothing in the editor is per-surface any more, so there is nothing for
+      // the switch to hide — a stray [data-pane] would mean the split crept back.
       expect(div.querySelectorAll("[data-pane]")).toEqual([]);
 
-      tab("google").onclick!();
+      pickSurface(div, "google");
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(false);
       expect(div.querySelector('[data-surface="apple"]')!.hidden).toBe(true);
       // The editor is untouched by the switch.
       expect(div.querySelector("[data-logo]")).not.toBeNull();
       expect(div.querySelector("[data-stampimg]")).not.toBeNull();
 
-      tab("signup").onclick!();
+      pickSurface(div, "signup");
       expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(false);
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(true);
     });
 
     /**
-     * The strip must still HAVE three tabs after you use it.
+     * All three stay reachable, and the button says which one you are on.
      *
-     * The buttons carried data-surface, the same attribute that marks a preview
-     * pane — and showSurface hides every pane that is not current. So picking
-     * iPhone hid the Android and Sign-up buttons, and the strip collapsed to a
-     * single tab sitting under "Design" that appeared to do nothing at all. The
-     * grep-and-compile tests could not see it, and neither could an assertion
-     * written as querySelector('[data-surface="google"]'): the preview pane
-     * comes first in document order, so it answered for the button.
+     * The strip this replaced had a bug worth remembering: its buttons carried
+     * data-surface, the same attribute that marks a preview pane, and switching
+     * hid every pane that was not current — so picking iPhone hid the other two
+     * BUTTONS and the strip collapsed to one tab that appeared to do nothing.
+     * A menu built fresh on each open cannot rot that way, and the button's
+     * label is now the thing that has to keep up.
      */
-    it("keeps all three tabs on screen through every switch", async () => {
+    /**
+     * Closing is the half a dropdown gets wrong.
+     *
+     * Both of these are registered on the DOCUMENT, not on the menu, so neither
+     * is reachable from the element under test — which is why the harness grew
+     * a way to fire them. A menu that stays open over the card it is meant to
+     * be switching is the bug worth holding shut.
+     */
+    it("closes on a tap outside, and on Escape", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
-      const tabs = () => div.querySelectorAll("[data-surfaces] button");
-      for (const name of ["apple", "google", "signup", "apple"]) {
-        tabs().find((b) => b.dataset.tab === name)!.onclick!();
-        expect(tabs().length).toBe(3);
-        expect(tabs().filter((b) => b.hidden).map((b) => b.dataset.tab)).toEqual([]);
-        expect(tabs().filter((b) => b.classList.contains("on")).map((b) => b.dataset.tab)).toEqual([name]);
+      const open = () => div.querySelector("[data-surfbtn]")!.onclick!();
+      const options = () => div.querySelectorAll("[data-set]").length;
+
+      open();
+      expect(options()).toBe(3);
+      h.fireDoc("pointerdown", { target: div.querySelector("[data-pv]") });
+      expect(options(), "a tap on the card left the menu open").toBe(0);
+
+      open();
+      expect(options()).toBe(3);
+      h.fireDoc("keydown", { key: "Escape", preventDefault: () => {} });
+      expect(options(), "Escape left the menu open").toBe(0);
+    });
+
+    it("keeps all three reachable, and names the one showing", async () => {
+      const h = makeHarness();
+      const div = build(card(), h);
+      await h.settle();
+      const label = () => div.querySelector("[data-surfname]")!.textContent;
+      expect(label()).toBe("iPhone");
+      for (const [key, name] of [["google", "Android"], ["signup", "Sign-up poster"], ["apple", "iPhone"]]) {
+        pickSurface(div, key!);
+        expect(label(), key).toBe(name);
+        // Re-opening still offers all three, whichever one is showing. The
+        // button TOGGLES, so it has to be closed again before the next pass or
+        // the next open would shut it instead.
+        const btn = div.querySelector("[data-surfbtn]")!;
+        btn.onclick!();
+        expect(div.querySelectorAll("[data-set]").length, key).toBe(3);
+        btn.onclick!();
+        expect(div.querySelectorAll("[data-set]").length, "menu left open").toBe(0);
       }
     });
 
@@ -373,7 +419,7 @@ describe("the design panel, mounted", () => {
       box.remove();
       aside.appendChild(box);
 
-      div.querySelectorAll("[data-surfaces] button").find((b) => b.dataset.tab === "google")!.onclick!();
+      pickSurface(div, "google");
       expect(box.querySelector('[data-surface="google"]')!.hidden).toBe(false);
       expect(box.querySelector('[data-surface="apple"]')!.hidden).toBe(true);
     });

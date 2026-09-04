@@ -118,6 +118,18 @@ export class FakeEl {
   }
   toDataURL(): string { return "data:image/png;base64,SEFSTkVTUw=="; }
 
+  /**
+   * Is this node the given one, or an ancestor of it?
+   *
+   * What "did the tap land inside me?" is really asking, and the whole of how
+   * a popover decides to close. It was missing, so that path had never run
+   * under test in either direction.
+   */
+  contains(node: unknown): boolean {
+    for (let n = node as FakeEl | null; n; n = n.parent) if (n === this) return true;
+    return false;
+  }
+
   /** Every descendant, self included, in document order. */
   all(): FakeEl[] {
     return [this, ...this.children.flatMap((c) => c.all())];
@@ -287,6 +299,8 @@ export interface Harness {
   drawn: () => DrawCall[];
   /** Resolves once every Image the panel created has fired onload. */
   settle: () => Promise<void>;
+  /** Fire a document-level listener — what a tap outside, or Escape, really is. */
+  fireDoc: (type: string, event: unknown) => void;
   globals: Record<string, unknown>;
   /** The stand-in for window.location — `href` is what the panel navigated to. */
   navigated: { href: string };
@@ -358,6 +372,7 @@ export function makeHarness(
     return el;
   };
 
+  const docListeners: Record<string, ((e: unknown) => void)[]> = {};
   const document = {
     createElement: newEl,
     // A text node is an element with only text as far as this harness is
@@ -370,6 +385,20 @@ export function makeHarness(
     },
     querySelector: (sel: string) => root.querySelector(sel),
     querySelectorAll: (sel: string) => root.querySelectorAll(sel),
+    /**
+     * Document-level listeners, kept so a test can actually fire one.
+     *
+     * The popover closes on a tap anywhere outside it and on Escape, and both
+     * are registered here rather than on an element — without these it threw
+     * the moment it opened. Stored rather than swallowed so a test can dispatch
+     * a click outside and check the menu really closes.
+     */
+    addEventListener: (type: string, fn: (e: unknown) => void) => {
+      (docListeners[type] ||= []).push(fn);
+    },
+    removeEventListener: (type: string, fn: (e: unknown) => void) => {
+      docListeners[type] = (docListeners[type] || []).filter((f) => f !== fn);
+    },
     body: root,
   };
 
@@ -418,6 +447,10 @@ export function makeHarness(
   };
 
   const drawn = (): DrawCall[] => canvases.flatMap((cv) => cv.calls);
+  /** Fire a document-level listener — what a tap outside, or Escape, really is. */
+  const fireDoc = (type: string, event: unknown): void => {
+    for (const fn of [...(docListeners[type] || [])]) fn(event);
+  };
 
-  return { root, requests, canvases, images, drawn, settle, globals, navigated };
+  return { root, requests, canvases, images, drawn, settle, globals, navigated, fireDoc };
 }
