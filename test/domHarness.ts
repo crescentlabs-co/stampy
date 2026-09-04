@@ -65,6 +65,10 @@ export class FakeEl {
   hidden = false;
   /** Set from markup and read back by the panel — the sign-up field's hint. */
   placeholder = "";
+  /** A button that cannot be pressed. The wizard's footer writes this every
+   *  time its step re-answers "is this finished?", and it is the only visible
+   *  sign that a step is refusing to go on. */
+  disabled = false;
   width = 0;
   height = 0;
   /** Layout geometry. Always 0: nothing here is laid out, and a tab thumb

@@ -94,5 +94,10 @@ describe("the dashboard script", () => {
       expect(src.indexOf("const " + icon), icon + " is declared after it is used")
         .toBeLessThan(src.indexOf("const REWARD_TYPES"));
     }
+    // The same trap, one array further down: how a points card earns.
+    for (const icon of ["ICON_VISIT", "ICON_SPEND", "ICON_MANUAL"]) {
+      expect(src.indexOf("const " + icon), icon + " is declared after it is used")
+        .toBeLessThan(src.indexOf("const EARN_MODES"));
+    }
   });
 });

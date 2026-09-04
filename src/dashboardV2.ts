@@ -566,6 +566,33 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
              margin-top: var(--s1); }
     .eqrow select { width: auto; min-width: 72px; margin: 0; }
     .eqrow span { font-size: var(--t-sm); font-weight: 600; }
+    /* "RM 1 = 1 Points" on one line, both halves exactly the same width.
+       The two numbers are ONE setting, so a form that made either half wider
+       would be saying one of them mattered more than the other. The unit sits
+       INSIDE the box in grey, which is what makes the box read as the thing
+       being typed rather than a bare number with a label floating beside it. */
+    .rate { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+            gap: var(--s2); margin-top: var(--s1); }
+    .rate-eq { color: var(--muted); font-weight: 700; font-size: var(--t-md); }
+    .unit { position: relative; display: block; }
+    .unit input { margin: 0; width: 100%; }
+    /* pointer-events off so a tap anywhere on the box, unit included, lands in
+       the field. Otherwise the greyed word is a dead spot in the middle of the
+       one thing on the row you are meant to touch. */
+    .unit i { position: absolute; top: 50%; transform: translateY(-50%);
+              color: var(--muted); font-style: normal; font-size: var(--t-sm);
+              pointer-events: none; }
+    .unit-pre i { left: 14px; }
+    .unit-pre input { padding-left: 44px; }
+    .unit-post i { right: 14px; }
+    .unit-post input { padding-right: 58px; }
+    /* The fixed half of a visit rate. Not a box: nothing about it is being set,
+       and a box that cannot be typed in is a box that gets tapped anyway. Same
+       height as the field beside it so the equals sign sits on their line. */
+    .unit-fixed { display: flex; align-items: center; justify-content: center;
+                  min-height: 47px; padding: 0 var(--s3); border-radius: var(--r-sm);
+                  background: var(--surface); color: var(--muted);
+                  font-size: var(--t-sm); font-weight: 600; }
     /* A section header that opens. One is open at a time, so the step reads as
        two questions rather than one long form. */
     .wfold { display: flex; align-items: center; justify-content: space-between;
@@ -765,17 +792,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pick strong { font-size: var(--t-md); }
     .pick .sub2 { grid-column: 1; color: var(--muted); font-size: var(--t-sm); line-height: var(--lh-read); }
     .pick .arr { grid-row: 1 / span 2; color: var(--muted); }
-    /* The wizard's version is a BUTTON, so it has to say which one is chosen —
+    /* The wizard's chooser row, on both screens that have one: which kind of
+       card this is, and how a points card earns. It is a BUTTON, so it has
+       to say which one is chosen —
        and say it three ways at once, because one of them is easy to miss on a
        phone: a tinted panel, an accent border, and a filled radio.
 
        The tint is mixed FROM the accent rather than being a new colour, so the
        palette does not grow one. Neon stays a fill and a border here, never
        text (DESIGN.md 1). */
-    .pick[data-kind] { grid-template-columns: auto 1fr auto; text-align: left; width: 100%;
+    .pick.opt { grid-template-columns: auto 1fr auto; text-align: left; width: 100%;
                        border: 1px solid var(--line); cursor: pointer; font: inherit;
                        align-items: start; }
-    .pick[data-kind][aria-pressed="true"] {
+    .pick.opt[aria-pressed="true"] {
       border-color: var(--accent);
       background: color-mix(in srgb, var(--accent) 14%, var(--bg));
     }
@@ -784,26 +813,26 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        row 1, and grid never walks backwards to fill the one free cell left in
        row 2 — so the card carried an empty band the icon and radio were
        holding open. */
-    .pick[data-kind] > strong { grid-column: 2; grid-row: 1; align-self: end; }
-    .pick[data-kind] > .sub2 { grid-column: 2; grid-row: 2; align-self: start; }
-    .pick[data-kind] > .pickicon { grid-column: 1; }
-    .pick[data-kind] > .pickdot { grid-column: 3; }
+    .pick.opt > strong { grid-column: 2; grid-row: 1; align-self: end; }
+    .pick.opt > .sub2 { grid-column: 2; grid-row: 2; align-self: start; }
+    .pick.opt > .pickicon { grid-column: 1; }
+    .pick.opt > .pickdot { grid-column: 3; }
     .pick .pickicon { grid-row: 1 / span 2; display: flex; align-items: center;
                       justify-content: center; width: 40px; height: 40px; flex: none;
                       border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
-    .pick[data-kind][aria-pressed="true"] .pickicon { background: var(--bg); }
+    .pick.opt[aria-pressed="true"] .pickicon { background: var(--bg); }
     /* The radio is the part that reads at a glance on a small screen — the tint
        and the border both disappear in bright sun. */
     .pickdot { grid-row: 1 / span 2; align-self: center; width: 22px; height: 22px;
                flex: none; border-radius: 999px; border: 2px solid var(--field-border);
                display: flex; align-items: center; justify-content: center; }
-    .pick[data-kind][aria-pressed="true"] .pickdot { border-color: var(--accent-2); }
-    .pick[data-kind][aria-pressed="true"] .pickdot::after {
+    .pick.opt[aria-pressed="true"] .pickdot { border-color: var(--accent-2); }
+    .pick.opt[aria-pressed="true"] .pickdot::after {
       content: ""; width: 12px; height: 12px; border-radius: 999px; background: var(--accent);
     }
     .pick .pickicon svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
                           stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-    .pick[data-kind] .sub2 { grid-column: 2; }
+    .pick.opt .sub2 { grid-column: 2; }
     /* A label, not a badge: it says which one most shops pick, and a filled
        pill here would compete with the selected state right beside it. */
     .picktag { display: inline-block; margin-left: var(--s2); color: var(--muted);
@@ -2972,6 +3001,35 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         blurb: "Sell or manage memberships with perks for members" },
     ];
 
+    // Declared ABOVE the array that reads them, which is not a style choice:
+    // a const read before its own declaration throws at load, the whole script
+    // stops, and the page sits on "Loading" forever. That shipped once.
+    const ICON_VISIT =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l8-5 8 5v11"/>' +
+      '<path d="M9 20v-6h6v6"/></svg>';
+    const ICON_SPEND =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/>' +
+      '<path d="M2.5 10h19"/></svg>';
+    const ICON_MANUAL =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 12h7M4 17h5"/>' +
+      '<path d="M15.5 19.5l5-5-2-2-5 5-.7 2.7z"/></svg>';
+
+    /**
+     * How a points card decides what a visit is worth.
+     *
+     * Mirrors EarnMode in src/db.ts, and the counter reads the same three
+     * strings — they are what decides whether staff get one tap, a box asking
+     * for ringgit, or a box asking for points.
+     */
+    const EARN_MODES = [
+      { k: "visit", name: "Visit", icon: ICON_VISIT,
+        blurb: "A flat number of points for each visit" },
+      { k: "spend", name: "Spend", icon: ICON_SPEND,
+        blurb: "Customers earn automatically from what they pay" },
+      { k: "manual", name: "Manual", icon: ICON_MANUAL,
+        blurb: "Your staff decide how many points to award using your own rules at the counter" },
+    ];
+
     /**
      * The four campaign types. All four run the same three steps and the same
      * sender; the first three arrive with the audience and the wording already
@@ -3125,7 +3183,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<h2 class="sec first">Choose your loyalty card</h2>' +
         '<p class="muted">This decides what customers collect. You can change how it looks next.</p>' +
         '<div class="picks">' + REWARD_TYPES.map((t) =>
-          '<button type="button" class="pick" data-kind="' + t.k + '"' +
+          '<button type="button" class="pick opt" data-kind="' + t.k + '"' +
           (t.k === picked ? ' aria-pressed="true"' : "") + ">" +
           '<span class="pickicon">' + t.icon + "</span>" +
           "<strong>" + esc(t.name) +
@@ -3163,10 +3221,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       });
     }
 
-    /** Step 2 — the rules. Two parts: how they earn, then what they get. */
+    /**
+     * Step 2 — the rules. Two parts: how they earn, then what they get.
+     *
+     * All four kinds of card come through here, and they genuinely ask
+     * different questions. A membership card counts nothing, so it has no
+     * earning half, no reward half and nothing to work a discount out of; a
+     * points card earns three different ways and its target is a price rather
+     * than a number of circles. One screen with a branch, rather than three
+     * screens, because everything ABOVE the branch — the card name, the shop
+     * name, the footer, the gate, the save — is identical on all of them.
+     */
     function createRulesScreen(id) {
       const card = S.cards.find((c) => c.id === id);
       if (!card) return notFoundScreen();
+      const kind = card.kind || "stamp";
+      const member = kind === "membership";
+      const points = kind === "points";
       // Everything the two parts write into. Seeded from the card, so leaving
       // and coming back shows what was left behind rather than a blank form.
       const r = {
@@ -3187,6 +3258,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         value: card.rewardValue || "",
         percent: card.rewardPercent || 20,
         cap: card.rewardCap || "",
+        // ---- points ----
+        earnMode: card.earnMode || "visit",
+        // A visit is worth one point and a ringgit buys one, until the shop
+        // says otherwise. Both are the identity, which is the setting that
+        // needs the least explaining to somebody who has never run a points
+        // card.
+        earnPoints: card.earnPoints || 1,
+        earnSpend: card.earnSpend || 1,
+        pointsTarget: card.pointsTarget || 100,
+        // ---- membership ----
+        // "Member" is the column's DEFAULT — what a card holds before anyone
+        // chose — so it means "not answered yet" and the box offers the
+        // suggestion instead. The same trick as the card name above, and for
+        // the same reason: a box that arrives full reads as answered.
+        memberLabel: card.memberLabel && card.memberLabel !== "Member"
+          ? card.memberLabel : "VIP",
+        benefits: card.benefits || "",
       };
       let open = "earn";
       // The second part has to be OPENED before Next is offered — pressing
@@ -3194,7 +3282,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // already saved once is past that: its owner has answered, and making
       // them press Continue again to get back to a screen they have seen would
       // be a gate on nothing.
-      let reached = Boolean(card.publishedAt) || card.rewardType !== "item" ||
+      let reached = member || Boolean(card.publishedAt) || card.rewardType !== "item" ||
         Boolean((card.reward || "").trim());
       const body = document.createElement("div");
       let frame = null;
@@ -3207,9 +3295,30 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        * cannot disagree.
        */
       const blocked = () => {
-        const at = (k) => body.querySelector("[data-r=" + k + "]") ||
-          body.querySelector("[data-open=reward]");
+        // A field inside a fold that is shut cannot be pointed at, so the fold's
+        // own header stands in for it. Which header depends on which half the
+        // field lives in, or the arrow points at the wrong question.
+        const at = (k, fold) => body.querySelector("[data-r=" + k + "]") ||
+          body.querySelector("[data-open=" + (fold || "reward") + "]");
         if (!String(r.name).trim()) return body.querySelector("[data-r=name]");
+        if (!String(r.shopName).trim()) return body.querySelector("[data-r=shopName]");
+        // A membership card counts nothing, so it has neither half. What it
+        // does have is a promise: a members-only card with nothing on the back
+        // of it is a card that offers nothing, and there is no later screen
+        // where that gets noticed.
+        if (member) {
+          if (!String(r.memberLabel).trim()) return body.querySelector("[data-r=memberLabel]");
+          if (!String(r.benefits).trim()) return body.querySelector("[data-r=benefits]");
+          return null;
+        }
+        // The earning half, on a points card. Every one of these divides the
+        // guidance figure, so a blank walks a shop past a percentage built on
+        // nothing — the same bug the reward value had.
+        if (points) {
+          if (r.earnMode !== "manual" && !(Number(r.earnPoints) > 0)) return at("earnPoints", "earn");
+          if (r.earnMode === "spend" && !(Number(r.earnSpend) > 0)) return at("earnSpend", "earn");
+          if (!(Number(r.pointsTarget) > 0)) return at("pointsTarget", "earn");
+        }
         if (!reached) return body.querySelector("[data-cont]");
         // An item needs BOTH its name and what it is worth. The value was
         // missing from this list, so a reward with a name and no value walked
@@ -3221,6 +3330,50 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         if (r.rewardType === "amount" && !(Number(r.value) > 0)) return at("value");
         if (r.rewardType === "percent" && !(Number(r.percent) > 0)) return at("percent");
         return null;
+      };
+
+      /**
+       * What the guidance box is worked out FROM, which is a different question
+       * on each kind of card.
+       *
+       * Two of these deliberately return no number at all. Inventing one would
+       * be worse than admitting we do not have it: a made-up figure looks
+       * precise, gets believed, and is wrong.
+       */
+      const guideInput = () => {
+        if (!points) return r;
+        if (r.earnMode === "manual") {
+          return {
+            blockedHeadline: "Your staff decide each amount.",
+            blockedReason: "Points are keyed in at the counter under your own rules, " +
+              "so there is no rate for us to divide a reward into.",
+            blockedAdvice: "Worth looking at what you have actually handed out after a " +
+              "few weeks. If it settles into a rule, set it here as a visit or a spend " +
+              "rate and we will do the sum for you.",
+          };
+        }
+        if (r.earnMode === "visit") {
+          // The same shape a stamp card takes: a target, a head start, and what
+          // one visit is worth. Only the units differ.
+          return { target: r.pointsTarget, welcome: r.welcome, perVisit: r.earnPoints,
+            rewardType: r.rewardType, percent: r.percent };
+        }
+        if (r.rewardType === "percent") {
+          return {
+            blockedHeadline: "We cannot put a figure on a percentage here.",
+            blockedReason: "A percentage comes off whatever the bill happens to be, and " +
+              "we never ask you to guess a typical bill \u2014 a made-up basket would make " +
+              "this number look exact and be wrong.",
+            blockedAdvice: "Set the reward as a money amount instead and we will show you " +
+              "what the card costs you.",
+          };
+        }
+        const need = Math.max(0, Number(r.pointsTarget) - (Number(r.welcome) || 0));
+        return {
+          spendRm: need / Math.max(1, Number(r.earnPoints) || 1) * (Number(r.earnSpend) || 0),
+          rewardRm: Number(r.value) || 0,
+          welcome: r.welcome,
+        };
       };
       const relock = () => { if (frame && frame.lockNext) frame.lockNext(blocked); };
 
@@ -3238,10 +3391,67 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const repaintGuide = () => {
         const wrap = body.querySelector("[data-guidewrap]");
         if (!wrap) return;
-        wrap.innerHTML = guideHtml(guidance(r), guideOpen);
+        wrap.innerHTML = guideHtml(guidance(guideInput()), guideOpen);
         const box = wrap.querySelector("details");
         if (box) box.addEventListener("toggle", () => { guideOpen = box.open; });
       };
+
+      /** A stamp card's earning half: what a visit is worth, how many, head start. */
+      const stampEarn = (targets) =>
+        // A sentence with the box in the middle, because "1 visit = 2 stamps"
+        // is the thing being set and a lone number box above a label is not
+        // that sentence.
+        '<div class="eqrow"><span>1 visit =</span>' +
+          '<select data-r="perVisit">' + oneOrTwo(r.perVisit) + "</select>" +
+          "<span>stamps" + info("Almost always one. Set it to two and a single tap on your counter is worth two stamps.") + "</span></div>" +
+        "<label>Stamps to reward" + info("Number of stamps a customer needs to earn their reward.") +
+          '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
+        '<select data-r="target">' + targets.join("") + "</select>" +
+        "<label>Welcome stamps" + info("Number of stamps a customer starts with. Given once, on a new card \u2014 after a reward the card starts again from zero.") + "</label>" +
+        // A choice of two, not a number box. Anything above two is a giveaway
+        // nobody meant to type, and zero makes a card that lands in a wallet
+        // reading empty, which looks like the scan did not work.
+        '<select data-r="welcome">' + oneOrTwo(r.welcome) + "</select>";
+
+      /**
+       * A points card's earning half.
+       *
+       * Three ways to earn, and the rate row changes shape with the answer: on
+       * Spend the left half is a ringgit box, on Visit it is a fixed word
+       * because nothing about it is being set, and Manual has no rate at all —
+       * the number is decided at the counter, which is the whole meaning of it.
+       *
+       * The two halves are the same width on purpose. They are ONE setting, and
+       * a row that made either side wider would say one of them mattered more.
+       */
+      const pointsEarn = () =>
+        '<div class="picks">' + EARN_MODES.map((t) =>
+          '<button type="button" class="pick opt" data-earn="' + t.k + '" aria-pressed="' +
+            (t.k === r.earnMode) + '">' +
+          '<span class="pickicon">' + t.icon + "</span>" +
+          "<strong>" + esc(t.name) + "</strong>" +
+          '<span class="pickdot" aria-hidden="true"></span>' +
+          '<span class="sub2">' + esc(t.blurb) + "</span></button>").join("") + "</div>" +
+        (r.earnMode === "manual"
+          ? ""
+          : "<label>How do your customers earn points?</label>" +
+            '<div class="rate">' +
+              (r.earnMode === "spend"
+                ? '<span class="unit unit-pre"><i>RM</i>' +
+                  '<input data-r="earnSpend" type="number" min="0" step="0.10" value="' +
+                    r.earnSpend + '"></span>'
+                : '<span class="unit-fixed">1 visit</span>') +
+              '<span class="rate-eq">=</span>' +
+              '<span class="unit unit-post">' +
+                '<input data-r="earnPoints" type="number" min="1" step="1" value="' +
+                  r.earnPoints + '">' +
+                "<i>Points</i></span>" +
+            "</div>") +
+        "<label>Points to reward" + info("How many points one reward costs. A customer can save past it \u2014 the price comes off their balance and whatever is left over stays on the card.") +
+          '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
+        '<input data-r="pointsTarget" type="number" min="1" step="1" value="' + r.pointsTarget + '">' +
+        "<label>Welcome points" + info("Points a NEW card starts with, as a welcome. Given once \u2014 a card that has just paid out keeps whatever was left over instead.") + "</label>" +
+        '<input data-r="welcome" type="number" min="0" step="1" value="' + r.welcome + '">';
 
       const paint = () => {
         const sug = suggestedTarget(S.cycleDays);
@@ -3259,6 +3469,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<input data-r="shopName" maxlength="60" value="' +
             esc(r.shopName).replace(/"/g, "&quot;") + '">' +
           '<p class="dhint">This will be what your card displays.</p>' +
+          // A membership card counts nothing, so it has neither half. Two
+          // questions and no folds: what this shop calls its regulars, and what
+          // being one actually gets you.
+          (member
+            ? '<label class="dlbl">Member name' + info("What you call your regulars \u2014 VIP, Member, Regular, whatever fits your shop. It is printed on the front of the card, where a stamp card shows how far along somebody is.") + "</label>" +
+              '<input data-r="memberLabel" maxlength="20" placeholder="VIP" value="' +
+                esc(r.memberLabel).replace(/"/g, "&quot;") + '">' +
+              '<p class="dhint">What you call your regulars.</p>' +
+              '<label class="dlbl">Member benefits' + info("These print on the back of the card, and editing them updates every member\u2019s card \u2014 unlike a stamp target, which stays as promised until the customer claims their reward.") + "</label>" +
+              '<textarea data-r="benefits" rows="4" maxlength="800" placeholder="10% off every order&#10;Free birthday drink&#10;Early access to new beans">' +
+                esc(r.benefits) + "</textarea>" +
+              '<p class="dhint">One per line. These go on the back of the card.</p>'
+            : "") +
+          (member ? "" :
           '<button type="button" class="wfold" data-open="earn" aria-expanded="' +
             (open === "earn") + '">How customers earn</button>' +
           // In the order the questions actually arrive in: what a visit is worth,
@@ -3266,22 +3490,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           // Welcome stamps used to come first, which put the smallest decision on
           // the card in front of the two that shape it.
           (open === "earn"
-            ? '<div class="wbody">' +
-              // A sentence with the box in the middle, because "1 visit = 2
-              // stamps" is the thing being set and a lone number box above a
-              // label is not that sentence.
-              '<div class="eqrow"><span>1 visit =</span>' +
-                '<select data-r="perVisit">' + oneOrTwo(r.perVisit) + "</select>" +
-                "<span>stamps" + info("Almost always one. Set it to two and a single tap on your counter is worth two stamps.") + "</span></div>" +
-              "<label>Stamps to reward" + info("Number of stamps a customer needs to earn their reward.") +
-                '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
-              '<select data-r="target">' + targets.join("") + "</select>" +
-              "<label>Welcome stamps" + info("Number of stamps a customer starts with. Given once, on a new card \u2014 after a reward the card starts again from zero.") + "</label>" +
-              // A choice of two, not a number box. Anything above two is a
-              // giveaway nobody meant to type, and zero makes a card that
-              // lands in a wallet reading empty, which looks like the scan
-              // did not work.
-              '<select data-r="welcome">' + oneOrTwo(r.welcome) + "</select>" +
+            ? '<div class="wbody">' + (points ? pointsEarn(targets) : stampEarn(targets)) +
               '<button class="btn btn-dark" data-cont style="margin-top:14px">Continue</button>' +
               "</div>"
             : "") +
@@ -3313,7 +3522,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                   '<input data-r="cap" type="number" min="0" step="0.10" value="' + r.cap + '">') +
               '<div data-guidewrap></div>' +
               "</div>"
-            : "");
+            : ""));
 
         for (const el of body.querySelectorAll("[data-r]")) {
           el.addEventListener("input", () => {
@@ -3325,6 +3534,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         }
         for (const b of body.querySelectorAll("[data-open]")) {
           b.onclick = () => { open = b.getAttribute("data-open"); paint(); relock(); };
+        }
+        // A full repaint, because the rate row underneath changes SHAPE with
+        // this answer rather than just its numbers.
+        for (const b of body.querySelectorAll("[data-earn]")) {
+          b.onclick = () => { r.earnMode = b.getAttribute("data-earn"); paint(); relock(); };
         }
         const cont = body.querySelector("[data-cont]");
         if (cont) cont.onclick = () => { reached = true; open = "reward"; paint(); relock(); };
@@ -3339,20 +3553,42 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       };
       paint();
 
-      const save = () => api("/card/" + id, {
-        method: "POST",
-        body: JSON.stringify({
-          name: r.name, shopName: r.shopName,
-          stampsStart: Number(r.welcome) || 0,
-          stampsPerVisit: Number(r.perVisit) || 1,
-          stampsTarget: Number(r.target) || 8,
-          rewardType: r.rewardType,
-          reward: r.rewardName,
-          rewardValue: Number(r.value) || 0,
-          rewardPercent: Number(r.percent) || 0,
-          rewardCap: Number(r.cap) || 0,
-        }),
-      });
+      /**
+       * One save for all three kinds, sending only what this kind can set.
+       *
+       * A membership card sends no reward at all: cardFieldsFromBody writes the
+       * reward SENTENCE whenever rewardType arrives, and a membership card has
+       * no reward to write one from — sending it anyway would stamp "Free
+       * coffee" onto a card that counts nothing.
+       *
+       * pointsTarget is one number and the server turns it into a one-entry
+       * price list, because the sentence it needs is written there too. The card
+       * editor can add more rungs later and writes the same column.
+       */
+      const save = () => {
+        const b = { name: r.name, shopName: r.shopName };
+        if (member) {
+          b.memberLabel = r.memberLabel;
+          b.benefits = r.benefits;
+        } else {
+          b.rewardType = r.rewardType;
+          b.reward = r.rewardName;
+          b.rewardValue = Number(r.value) || 0;
+          b.rewardPercent = Number(r.percent) || 0;
+          b.rewardCap = Number(r.cap) || 0;
+          b.stampsStart = Number(r.welcome) || 0;
+          if (points) {
+            b.earnMode = r.earnMode;
+            b.earnSpend = Number(r.earnSpend) || 0;
+            b.earnPoints = Number(r.earnPoints) || 0;
+            b.pointsTarget = Number(r.pointsTarget) || 100;
+          } else {
+            b.stampsPerVisit = Number(r.perVisit) || 1;
+            b.stampsTarget = Number(r.target) || 8;
+          }
+        }
+        return api("/card/" + id, { method: "POST", body: JSON.stringify(b) });
+      };
 
       frame = wizardFrame(1, body, {
         blocked,
@@ -3499,6 +3735,27 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         return { pct: null, band: null, headline: r.blockedHeadline,
           detail: r.blockedReason, advice: r.blockedAdvice };
       }
+      // A card that earns from SPENDING is priced in money at both ends, so it
+      // is worked out in money: what a customer has to spend to reach a reward,
+      // against what the reward is worth. No visit count comes into it, because
+      // two tills of the same size are the same to this card whether they were
+      // one visit or five.
+      if (r.spendRm != null) {
+        const spend = Number(r.spendRm) || 0;
+        const worth = Number(r.rewardRm) || 0;
+        const spct = spend > 0 ? (worth / spend) * 100 : 0;
+        return {
+          pct: spct,
+          band: discountBand(spct),
+          headline: "Customers earn the equivalent of <b>" + spct.toFixed(1) + "%</b> back.",
+          detail: "They spend " + rm(spend) + " to earn " + rm(worth) + "." +
+            (Number(r.welcome) > 0
+              ? " That is their first card \u2014 welcome points are given once, so " +
+                "every card after it takes a little more."
+              : ""),
+          advice: null,
+        };
+      }
       const pct = effectiveDiscount(r);
       const visits = visitsPerReward(r.target, r.welcome, r.perVisit);
       return {
@@ -3519,6 +3776,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             : ""),
         advice: null,
       };
+    }
+
+    /**
+     * Ringgit, written the way a shop writes it: whole when it is whole, two
+     * places when it is not. "RM100" and "RM12.50", never "RM100.00".
+     */
+    function rm(major) {
+      const n = Number(major) || 0;
+      return "RM" + (Number.isInteger(n) ? String(n) : n.toFixed(2));
     }
 
     /**

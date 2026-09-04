@@ -34,12 +34,14 @@ import {
   targetsInUse,
   updateCard,
   asCardKind,
+  asEarnMode,
   asMilestones,
   asRewardType,
   moneyLabel,
   type RewardType,
   asPointPresets,
   MAX_POINTS_COST,
+  type CardKind,
   type CardRow,
 } from "./db.js";
 
@@ -93,7 +95,23 @@ export function rewardSentence(
   return name.trim().slice(0, 60);
 }
 
-export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<typeof updateCard>[1] {
+/** Ringgit off the wire ("4.50") into the cents this file stores. */
+function moneyCents(v: unknown): number {
+  const major = Number(v);
+  return Number.isFinite(major) ? Math.max(0, Math.min(1_000_000, Math.round(major * 100))) : 0;
+}
+
+export function cardFieldsFromBody(
+  body: Record<string, unknown>,
+  /**
+   * What kind of card this ALREADY is, for a body that does not say.
+   *
+   * Two clamps below need it, and getting it wrong is not cosmetic: 29 is a
+   * sane ceiling for welcome stamps on a card with at most 20 circles and a
+   * nonsense one for welcome POINTS on a card counting to 500.
+   */
+  existingKind: CardKind = "stamp",
+): Parameters<typeof updateCard>[1] {
   const fields: Parameters<typeof updateCard>[1] = {};
   if (typeof body.name === "string" && body.name.trim()) fields.name = body.name.trim().slice(0, 60);
   if (typeof body.reward === "string" && body.reward.trim()) fields.reward = body.reward.trim().slice(0, 60);
@@ -102,6 +120,25 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   // direction: an unknown kind reaching the pass builders would render a card
   // with no progress and no reward on it.
   if (body.kind !== undefined) fields.kind = asCardKind(body.kind);
+  // What this card is by the time the save lands: what the body says, or what
+  // it already was. Everything below that behaves differently per kind reads
+  // this rather than fields.kind, which is undefined on a save that only
+  // touched colours.
+  const kind: CardKind = fields.kind ?? existingKind;
+  // What the shop calls its regulars, on the front of a membership card. Blank
+  // falls back to the word the card printed before this field existed, so
+  // clearing the box cannot leave the card with an empty slot where a label
+  // belongs.
+  if (typeof body.memberLabel === "string") {
+    fields.member_label = body.memberLabel.trim().slice(0, 20) || "Member";
+  }
+  // How a points card earns. See EarnMode in src/db.ts for why the rate lives
+  // on the card and is not frozen onto each pass.
+  if (body.earnMode !== undefined) fields.earn_mode = asEarnMode(body.earnMode);
+  if (body.earnSpend !== undefined) fields.earn_spend_cents = moneyCents(body.earnSpend);
+  if (body.earnPoints !== undefined) {
+    fields.earn_points = clampInt(body.earnPoints, 0, MAX_POINTS_COST, 0);
+  }
   // Perks, one per line. Blank is a real choice (a membership card with no list
   // yet), so this is deliberately not guarded on being non-empty. Capped at ten
   // lines because both wallets render them as one block of text on the back of
@@ -124,12 +161,8 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   // no longer say.
   if (body.rewardType !== undefined) {
     const rType = asRewardType(body.rewardType);
-    const money = (v: unknown) => {
-      const major = Number(v);
-      return Number.isFinite(major) ? Math.max(0, Math.min(1_000_000, Math.round(major * 100))) : 0;
-    };
-    const value = money(body.rewardValue);
-    const cap = money(body.rewardCap);
+    const value = moneyCents(body.rewardValue);
+    const cap = moneyCents(body.rewardCap);
     const pct = clampInt(body.rewardPercent, 1, 100, 10);
     fields.reward_type = rType;
     fields.reward_value_cents = value;
@@ -165,14 +198,16 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   // Capped at 20: the strip image is always a two-row grid, so a higher target
   // would render stamps too small to read on a 375pt-wide strip.
   if (body.stampsTarget !== undefined) fields.stamps_target = clampInt(body.stampsTarget, 1, 20, 10);
-  if (body.stampsStart !== undefined) fields.stamps_start = clampInt(body.stampsStart, 0, 29, 2);
-  // Average spend crosses the API in major units ("4.50") and is stored in cents.
-  if (body.averageSpend !== undefined) {
-    const major = Number(body.averageSpend);
-    fields.average_spend_cents = Number.isFinite(major)
-      ? Math.max(0, Math.min(1_000_000, Math.round(major * 100)))
-      : 0;
+  // Welcome POINTS are not welcome stamps. 29 is a sane ceiling on a card with
+  // at most 20 circles and a nonsense one on a card counting to 500, so the
+  // ceiling follows the kind rather than the column.
+  if (body.stampsStart !== undefined) {
+    fields.stamps_start = kind === "points"
+      ? clampInt(body.stampsStart, 0, MAX_POINTS_COST, 0)
+      : clampInt(body.stampsStart, 0, 29, 2);
   }
+  // Average spend crosses the API in major units ("4.50") and is stored in cents.
+  if (body.averageSpend !== undefined) fields.average_spend_cents = moneyCents(body.averageSpend);
   // Currency is no longer an owner-facing choice — everything is RM. The column
   // stays for the day that changes; nothing in the UI writes it.
 
@@ -211,6 +246,22 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
   // "My logo already includes my business name" — drops the pass's logoText so
   // a brand lockup does not print the name a second time beside itself.
   if (typeof body.logoHasName === "boolean") fields.logo_has_name = body.logoHasName;
+  // "Points to reward" IS a one-entry price list.
+  //
+  // The Create flow asks for one number and one reward; the card editor can add
+  // more rungs later. Both write the same column, so neither has to know the
+  // other exists — and a customer who has saved past the price keeps the
+  // difference, because redeemPass subtracts a price rather than restarting.
+  //
+  // Built HERE and not in the browser because the reward SENTENCE is built
+  // here. rewardSentence is the one boundary where a reward becomes words, and
+  // a ladder assembled in the browser would quietly be a second one.
+  if (kind === "points" && body.pointsTarget !== undefined && fields.reward) {
+    fields.milestones = [{
+      at: clampInt(body.pointsTarget, 1, MAX_POINTS_COST, 100),
+      reward: fields.reward,
+    }];
+  }
   // A milestones card's target IS its top rung. Keeping the two in step is what
   // lets the stamp grid, the pre-rendered strip images and every query that
   // reads stamps_target keep working without knowing milestones exist — and it
@@ -338,6 +389,22 @@ export interface DesignerCard {
    * lowering the target blanks the grid on every card issued under the old one.
    */
   targetsInUse: number[];
+  /** What this shop calls its regulars. Membership cards only. */
+  memberLabel: string;
+  /** How a points card earns: 'visit', 'spend' or 'manual'. */
+  earnMode: string;
+  /** The ringgit side of the spend rate, in major units, like every other price here. */
+  earnSpend: number;
+  earnPoints: number;
+  /**
+   * What one reward costs on a points card.
+   *
+   * Derived from the price list rather than stored twice: the Create flow asks
+   * for one number, the card editor can hold several, and the cheapest one is
+   * what "points to reward" means to somebody who set exactly one. 0 means the
+   * card has no price list yet.
+   */
+  pointsTarget: number;
   winbackMessage: string;
   signupMessage: string;
   /** The BUSINESS name — what the pass prints as logoText. Lives on the
@@ -390,6 +457,11 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     stampIconVersion,
     stampsVersion,
     targetsInUse: inUse,
+    memberLabel: card.member_label,
+    earnMode: card.earn_mode,
+    earnSpend: card.earn_spend_cents / 100,
+    earnPoints: card.earn_points,
+    pointsTarget: (card.milestones ?? []).length ? card.milestones[0]!.at : 0,
     winbackMessage: card.auto_winback_message,
     signupMessage: card.signup_message,
     shopName: shopName || card.name,

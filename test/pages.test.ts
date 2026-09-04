@@ -3678,12 +3678,12 @@ describe("the manage screens", () => {
    * a third row, under an empty band the icon and radio were holding open.
    * Placing all four explicitly is what stops that.
    */
-  it("places every part of a card-type row explicitly", () => {
+  it("places every part of a chooser row explicitly", () => {
     const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
-    expect(css).toContain(".pick[data-kind] > strong { grid-column: 2; grid-row: 1;");
-    expect(css).toContain(".pick[data-kind] > .sub2 { grid-column: 2; grid-row: 2;");
-    expect(css).toContain(".pick[data-kind] > .pickicon { grid-column: 1; }");
-    expect(css).toContain(".pick[data-kind] > .pickdot { grid-column: 3; }");
+    expect(css).toContain(".pick.opt > strong { grid-column: 2; grid-row: 1;");
+    expect(css).toContain(".pick.opt > .sub2 { grid-column: 2; grid-row: 2;");
+    expect(css).toContain(".pick.opt > .pickicon { grid-column: 1; }");
+    expect(css).toContain(".pick.opt > .pickdot { grid-column: 3; }");
   });
 
   it("marks a draft and offers the way back into the flow", () => {
@@ -3911,15 +3911,83 @@ describe("the create screens", () => {
   it("offers one or two for the welcome stamps and the rate, and nothing else", () => {
     const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
                              html.indexOf("function createDesignScreen(id)"));
-    expect(rules).toContain('<select data-r="welcome">');
-    expect(rules).toContain('<select data-r="perVisit">');
-    expect(rules).not.toContain('data-r="welcome" type="number"');
-    expect(rules).not.toContain('data-r="perVisit" type="number"');
+    const stamp = rules.slice(rules.indexOf("const stampEarn ="),
+                              rules.indexOf("const pointsEarn ="));
+    expect(stamp).toContain('<select data-r="welcome">');
+    expect(stamp).toContain('<select data-r="perVisit">');
+    expect(stamp).not.toContain('data-r="welcome" type="number"');
+    expect(stamp).not.toContain('data-r="perVisit" type="number"');
     // "1 visit = [2] stamps" reads as the sentence it is.
-    expect(rules).toContain("1 visit =");
+    expect(stamp).toContain("1 visit =");
     const helper = html.slice(html.indexOf("function oneOrTwo(value)"),
                               html.indexOf("How many visits one reward costs"));
     expect(helper).toContain("[1, 2].map");
+  });
+
+  /**
+   * And POINTS are typed, which is the same rule read the other way.
+   *
+   * Two is a sane ceiling for welcome STAMPS on a card with at most twenty
+   * circles. On a card counting to 500 it is not a modest head start, it is
+   * nothing at all — so the ceiling follows what is being counted rather than
+   * the column the two of them share.
+   */
+  it("types welcome points and the rate on a points card, rather than offering two", () => {
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    const pts = rules.slice(rules.indexOf("const pointsEarn ="), rules.indexOf("const paint ="));
+    expect(pts).toContain('data-r="welcome" type="number"');
+    expect(pts).toContain('data-r="earnPoints" type="number"');
+    expect(pts).toContain('data-r="pointsTarget" type="number"');
+    expect(pts).not.toContain('<select data-r="welcome">');
+  });
+
+  /**
+   * The rate row is one setting in two boxes, so both boxes are the same width
+   * and the unit sits inside them. Manual has neither: the amount is decided at
+   * the counter, which is the whole meaning of the word.
+   */
+  it("shows a rate on visit and spend, and none at all on manual", () => {
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    const pts = rules.slice(rules.indexOf("const pointsEarn ="), rules.indexOf("const paint ="));
+    expect(pts).toContain('r.earnMode === "manual"');
+    expect(pts).toContain('r.earnMode === "spend"');
+    expect(pts).toContain('<span class="unit-fixed">1 visit</span>');
+    expect(pts).toContain("<i>RM</i>");
+    expect(pts).toContain("<i>Points</i>");
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(css).toContain(".rate { display: grid; grid-template-columns: 1fr auto 1fr;");
+  });
+
+  /** The three earn modes, worded the way the founder asked for them. */
+  it("names the three ways a points card can earn", () => {
+    const modes = html.slice(html.indexOf("const EARN_MODES = ["),
+                             html.indexOf("The four campaign types"));
+    expect(modes).toContain("A flat number of points for each visit");
+    expect(modes).toContain("Customers earn automatically from what they pay");
+    expect(modes).toContain(
+      "Your staff decide how many points to award using your own rules at the counter");
+  });
+
+  /**
+   * A membership card counts nothing, so it has neither half — and it must not
+   * send a reward. cardFieldsFromBody writes the reward SENTENCE whenever
+   * rewardType arrives, so sending one would stamp a reward onto a card that
+   * has no counter to earn it on.
+   */
+  it("asks a membership card for a member name and perks, and saves no reward", () => {
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    expect(rules).toContain('data-r="memberLabel"');
+    expect(rules).toContain('data-r="benefits"');
+    expect(rules).toContain('placeholder="VIP"');
+    expect(rules).toContain("What you call your regulars.");
+    const save = rules.slice(rules.indexOf("const save = ()"), rules.indexOf("frame = wizardFrame(1"));
+    expect(save).toContain("b.memberLabel = r.memberLabel");
+    expect(save).toContain("b.benefits = r.benefits");
+    // The reward fields sit in the OTHER branch of the same if.
+    expect(save.indexOf("b.rewardType")).toBeGreaterThan(save.indexOf("b.benefits"));
   });
 
   /** Every step says how to go back, including the first. */

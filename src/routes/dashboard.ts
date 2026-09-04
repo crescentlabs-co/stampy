@@ -469,7 +469,10 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   // deliberately does no authorisation of its own, because the console calls it
   // after a completely different check (requireAdmin).
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const fields = cardFieldsFromBody(body);
+  // The card's CURRENT kind goes in, because two of the clamps depend on it and
+  // a save that only touched colours does not say what kind of card this is.
+  const before = await getCard(cardId);
+  const fields = cardFieldsFromBody(body, before?.kind);
   const card = await updateCard(cardId, fields, `owner:${req.owner!.id}`);
   if (!card) return void res.status(404).json({ error: "no-such-card" });
   // The shop name belongs to the merchant, not the card — it is what the pass

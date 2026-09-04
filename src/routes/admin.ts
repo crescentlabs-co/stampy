@@ -578,7 +578,15 @@ adminRouter.get("/api/card/:id/counts", requireAdmin, async (req, res) => {
 
 adminRouter.post("/api/card/:id/design", requireAdmin, async (req, res) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const card = await updateCard(req.params.id!, cardFieldsFromBody(body), `admin:${(req as AdminRequest).admin!.id}`);
+  // The card's CURRENT kind, for the same reason the dashboard's save passes
+  // it: two clamps read it, and the panel does not resend the kind on a save
+  // that only touched colours.
+  const before = await getCard(req.params.id!);
+  const card = await updateCard(
+    req.params.id!,
+    cardFieldsFromBody(body, before?.kind),
+    `admin:${(req as AdminRequest).admin!.id}`,
+  );
   if (!card) return void res.status(404).json({ error: "no-such-card" });
   // The shop name belongs to the merchant, not the card. Renaming keeps every
   // previous slug resolving, so a printed poster can never be killed by it.

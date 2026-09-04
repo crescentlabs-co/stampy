@@ -2483,6 +2483,10 @@ export async function updateCard(
     reward_cap_cents: number;
     stamps_per_visit: number;
     point_presets: string;
+    member_label: string;
+    earn_mode: EarnMode;
+    earn_spend_cents: number;
+    earn_points: number;
     reward: string;
     stamps_target: number;
     stamps_start: number;
