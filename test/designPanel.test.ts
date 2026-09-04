@@ -1180,3 +1180,107 @@ describe("switching the card type", () => {
     expect(body.milestones).toEqual([{ at: 4, reward: "Cookie" }]);
   });
 });
+
+/**
+ * The cropper, driven.
+ *
+ * Every upload before this was fitted automatically — centred, and either
+ * capped, letterboxed or cropped — with no way to say "not there, there". The
+ * maths that replaces it decides what a shop's logo actually looks like on a
+ * card, and it lives inside a template string where nothing type-checks it, so
+ * it is dragged and zoomed here rather than grepped.
+ */
+describe("positioning an upload", () => {
+  /** A modal that really renders, so the dialog's canvas exists to drive. */
+  const withModal = (h: ReturnType<typeof makeHarness>) => {
+    const doc = h.globals.document as { createElement: (t: string) => FakeEl };
+    return async (_title: string, html: string) => {
+      const box = doc.createElement("div");
+      box.classList.add("mdl");
+      box.innerHTML = html;
+      h.root.appendChild(box);
+      return true;
+    };
+  };
+
+  const upload = async (h: ReturnType<typeof makeHarness>, div: FakeEl, sel: string) => {
+    const input = div.querySelector(sel)!;
+    input.files = [{ name: "logo.png", type: "image/png" }] as never;
+    input.onchange!();
+    await h.settle();
+    // The Image the panel made for the file resolves through settle(); the
+    // dialog is built synchronously after that.
+    await Promise.resolve();
+  };
+
+  it("opens a frame with a zoom control when a logo is chosen", async () => {
+    const h = makeHarness();
+    const div = build(card(), h, { modal: withModal(h) });
+    await h.settle();
+    await upload(h, div, "[data-logo]");
+    expect(h.root.querySelector("[data-crop]"), "no crop frame opened").not.toBeNull();
+    expect(h.root.querySelector("[data-cropzoom]")).not.toBeNull();
+  });
+
+  /**
+   * The stamp shape is a silhouette we trim and refill, so there is nothing to
+   * position inside it — and a dialog asking would be a step with no answer.
+   */
+  it("does not ask where to put a stamp shape", async () => {
+    const h = makeHarness();
+    const div = build(card(), h, { modal: withModal(h) });
+    await h.settle();
+    await upload(h, div, "[data-stampimg]");
+    expect(h.root.querySelector("[data-crop]")).toBeNull();
+  });
+
+  it("moves the picture when you drag it", async () => {
+    const h = makeHarness();
+    const div = build(card(), h, { modal: withModal(h) });
+    await h.settle();
+    await upload(h, div, "[data-logo]");
+    const cv = h.root.querySelector("[data-crop]")!;
+    // The frame's canvas comes from parsed markup, so it is not one of the
+    // ones h.drawn() collects — its own calls are the record.
+    const draws = () => cv.calls.filter((d) => d.op === "drawImage");
+    // Zoom in FIRST. At 100% the picture exactly covers the frame, so there is
+    // no slack and the clamp correctly pins it — which is the whole point of
+    // the clamp, and means a drag at rest has nothing to move.
+    const range = h.root.querySelector("[data-cropzoom]")!;
+    range.value = "200";
+    range.oninput!();
+    const before = draws().length;
+    const firstX = draws()[draws().length - 1]!.args[1] as number;
+    cv.fire("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+    cv.fire("pointermove", { pointerId: 1, clientX: 130, clientY: 100, preventDefault() {} });
+    expect(draws().length, "a drag drew nothing").toBeGreaterThan(before);
+    // Dragged right, so the picture is drawn further right than it started.
+    expect(draws()[draws().length - 1]!.args[1] as number).toBeGreaterThan(firstX);
+
+    // And it cannot be dragged off the frame: pull far past the edge and the
+    // clamp holds it, or the saved image gets a transparent band down one side.
+    cv.fire("pointermove", { pointerId: 1, clientX: 9000, clientY: 100, preventDefault() {} });
+    const far = draws()[draws().length - 1]!.args[1] as number;
+    cv.fire("pointermove", { pointerId: 1, clientX: 99000, clientY: 100, preventDefault() {} });
+    expect(draws()[draws().length - 1]!.args[1] as number).toBeCloseTo(far, 5);
+  });
+
+  it("zooms from the slider, and never below covering the frame", async () => {
+    const h = makeHarness();
+    const div = build(card(), h, { modal: withModal(h) });
+    await h.settle();
+    await upload(h, div, "[data-logo]");
+    const range = h.root.querySelector("[data-cropzoom]")!;
+    const cv = h.root.querySelector("[data-crop]")!;
+    const widths = () => cv.calls.filter((d) => d.op === "drawImage").map((d) => d.args[3] as number);
+    const start = widths()[widths().length - 1]!;
+    range.value = "200";
+    range.oninput!();
+    expect(widths()[widths().length - 1]!, "200% did not enlarge it").toBeGreaterThan(start);
+    // Below 100% the picture would no longer cover the frame and the saved
+    // image would carry a transparent band down one side.
+    range.value = "40";
+    range.oninput!();
+    expect(widths()[widths().length - 1]!).toBeCloseTo(start, 5);
+  });
+});

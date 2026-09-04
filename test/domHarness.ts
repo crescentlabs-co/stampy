@@ -108,10 +108,24 @@ export class FakeEl {
     this.parent.children = this.parent.children.filter((c) => c !== this);
     this.parent = null;
   }
-  addEventListener(type: string, fn: () => unknown): void {
+  /** Every listener, by type, so a test can fire the ones with no on* alias. */
+  listeners: Record<string, ((e?: unknown) => unknown)[]> = {};
+  addEventListener(type: string, fn: (e?: unknown) => unknown): void {
+    (this.listeners[type] ||= []).push(fn);
+    // The three with an on* twin keep it, so the many tests that call
+    // el.onclick() directly still work.
     if (type === "click") this.onclick = fn;
     else if (type === "change") this.onchange = fn;
     else if (type === "input") this.oninput = fn;
+  }
+  /**
+   * Fire a listener that has no on* alias — pointerdown and pointermove are
+   * why this exists. Without it the cropper's drag could not be driven, and
+   * the maths deciding what a shop's logo looks like on a card was reachable
+   * only by reading it.
+   */
+  fire(type: string, event?: unknown): void {
+    for (const fn of [...(this.listeners[type] || [])]) fn(event);
   }
   /** A <canvas>. toDataURL is deterministic so callers can compare payloads. */
   getContext(kind: string): Record<string, unknown> {
@@ -265,6 +279,9 @@ function makeCtx(canvas: FakeEl): Record<string, unknown> {
     fill: () => log("fill"),
     stroke: () => log("stroke"),
     fillRect: (...a: unknown[]) => log("fillRect", ...a),
+    // The cropper wipes the frame before every repaint, so a missing clearRect
+    // threw on the first drag rather than on mount.
+    clearRect: (...a: unknown[]) => log("clearRect", ...a),
     fillText: (...a: unknown[]) => log("fillText", ...a),
     drawImage: (...a: unknown[]) => log("drawImage", ...a),
     createLinearGradient: () => gradient,

@@ -660,7 +660,9 @@ describe("one designer, two pages", () => {
       expect(html.match(/function flatBackdrop/g)!.length).toBe(1);
       // It has to run before the scale, or the size cap is spent on the padding
       // instead of the artwork — which is what made an uploaded stamp look tiny.
-      expect(html).toContain("const src = liftBackdrop(img);");
+      // Renamed when the cropper landed between the lift and the draw: the
+      // lifted image is what the cropper is handed, and src is what comes back.
+      expect(html).toContain("const lifted = liftBackdrop(img);");
       expect(html).not.toContain("drawImage(img, 0, 0, dw, dh)");
     }
   });

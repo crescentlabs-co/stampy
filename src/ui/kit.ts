@@ -1011,6 +1011,18 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .lbup { margin: 0; width: 100%; }
     .lbup input[type=file] { display: none; }
     .lbcap { font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 2px; }
+    /* The frame. Checkered so a transparent logo reads as transparent rather
+       than as white, which is what it will actually be on the card. */
+    .cropwrap { position: relative; overflow: hidden; border-radius: 10px; margin: 0 auto;
+                background-color: #fff; touch-action: none; cursor: grab;
+                background-image:
+                  linear-gradient(45deg, #eee 25%, transparent 25%),
+                  linear-gradient(-45deg, #eee 25%, transparent 25%),
+                  linear-gradient(45deg, transparent 75%, #eee 75%),
+                  linear-gradient(-45deg, transparent 75%, #eee 75%);
+                background-size: 14px 14px;
+                background-position: 0 0, 0 7px, 7px -7px, -7px 0; }
+    .cropwrap canvas { display: block; }
     .bannerbox { display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
                  margin-top: 10px; padding: 12px; border: 1px dashed var(--field-border);
                  border-radius: 14px; background: var(--bg); }
@@ -2551,7 +2563,128 @@ export const DESIGN_PANEL_JS = /* js */ `
       // fit "contain" letterboxes the whole image in; "cover" (the default) fills
       // the frame and crops the overflow. A logo MUST contain — cropping a
       // wordmark to fill a frame chops the first and last letters off.
-      function wireUpload(inputSel, kind, w, h, onDone, fit) {
+      /**
+       * Put the picture where you want it before it is saved.
+       *
+       * Every upload before this was fitted automatically — centred, and either
+       * capped, letterboxed or cropped — with no way to say "not there, there".
+       * A logo with the mark off to one side, or a banner whose subject sits
+       * left, came out wrong and no different file fixed it.
+       *
+       * The FRAME's shape is the target's, except for the logo, which keeps its
+       * own: padding a square mark into a wide frame made the wallets scale the
+       * whole frame down into their logo slot and left the mark a fraction of
+       * the space it should have had. Zooming crops within that shape, so the
+       * shape itself never changes under the owner.
+       *
+       * Returns something drawImage accepts — the original when nothing was
+       * moved, so an owner who just presses Use it loses no resolution to a
+       * needless round trip through a canvas.
+       */
+      function cropDialog(src, w, h, fit) {
+        const aspect = fit === "keep" ? src.width / src.height : w / h;
+        const VW = 264, VH = Math.max(90, Math.round(VW / aspect));
+        // Big enough to cover the frame, so there is never an empty edge.
+        const cover = Math.max(VW / src.width, VH / src.height);
+        let zoom = 1, ox = 0, oy = 0;
+
+        const asked = modal(
+          "Position your image",
+          '<p class="muted" style="margin:0 0 10px;font-size:.86rem">Drag to move it. ' +
+            "Pinch, or use the slider, to zoom.</p>" +
+            '<div class="cropwrap" style="width:' + VW + "px;height:" + VH + 'px">' +
+              '<canvas data-crop width="' + VW + '" height="' + VH + '"></canvas>' +
+            "</div>" +
+            '<input data-cropzoom type="range" min="100" max="400" value="100" ' +
+              'aria-label="Zoom" style="width:100%;margin-top:10px">',
+          "Use it",
+        );
+
+        // Grabbed synchronously, before the await — the same reason the emoji
+        // field is: once the promise resolves the dialog is already gone.
+        const cv = document.querySelector(".mdl [data-crop]");
+        const range = document.querySelector(".mdl [data-cropzoom]");
+
+        function clamp() {
+          // Never past the edges: at any zoom the picture has to cover the
+          // frame, or the saved image has a transparent band down one side.
+          const dw = src.width * cover * zoom, dh = src.height * cover * zoom;
+          const mx = Math.max(0, (dw - VW) / 2), my = Math.max(0, (dh - VH) / 2);
+          ox = Math.max(-mx, Math.min(mx, ox));
+          oy = Math.max(-my, Math.min(my, oy));
+        }
+        function paint() {
+          if (!cv || !cv.getContext) return;
+          clamp();
+          const x = cv.getContext("2d");
+          const dw = src.width * cover * zoom, dh = src.height * cover * zoom;
+          x.clearRect(0, 0, VW, VH);
+          x.drawImage(src, (VW - dw) / 2 + ox, (VH - dh) / 2 + oy, dw, dh);
+        }
+        paint();
+
+        // One map for every finger down. Two of them is a pinch; one is a drag.
+        const touches = new Map();
+        let startGap = 0, startZoom = 1;
+        const gap = () => {
+          const p = [...touches.values()];
+          return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+        };
+        if (cv) {
+          cv.addEventListener("pointerdown", (e) => {
+            touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (cv.setPointerCapture) cv.setPointerCapture(e.pointerId);
+            if (touches.size === 2) { startGap = gap(); startZoom = zoom; }
+          });
+          cv.addEventListener("pointermove", (e) => {
+            const was = touches.get(e.pointerId);
+            if (!was) return;
+            if (e.preventDefault) e.preventDefault();
+            touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (touches.size >= 2) {
+              const now = gap();
+              if (startGap > 0) {
+                zoom = Math.max(1, Math.min(4, startZoom * (now / startGap)));
+                if (range) range.value = String(Math.round(zoom * 100));
+              }
+            } else {
+              ox += e.clientX - was.x;
+              oy += e.clientY - was.y;
+            }
+            paint();
+          });
+          const up = (e) => {
+            touches.delete(e.pointerId);
+            if (touches.size < 2) startGap = 0;
+          };
+          cv.addEventListener("pointerup", up);
+          cv.addEventListener("pointercancel", up);
+        }
+        if (range) {
+          range.oninput = () => { zoom = Math.max(1, Number(range.value) / 100); paint(); };
+        }
+
+        return asked.then((ok) => {
+          if (!ok) return null;
+          // Nothing moved: hand back the original rather than losing a
+          // generation of resolution to a canvas that would only re-draw it.
+          if (zoom === 1 && ox === 0 && oy === 0) return src;
+          clamp();
+          // Rendered at the TARGET size, not the preview's, so zooming in does
+          // not cost the resolution the frame is capable of.
+          const outW = fit === "keep" ? Math.min(w, Math.round(h * aspect)) : w;
+          const outH = fit === "keep" ? Math.round(outW / aspect) : h;
+          const out = document.createElement("canvas");
+          out.width = outW; out.height = outH;
+          const k = outW / VW;
+          const dw = src.width * cover * zoom * k, dh = src.height * cover * zoom * k;
+          out.getContext("2d").drawImage(
+            src, (outW - dw) / 2 + ox * k, (outH - dh) / 2 + oy * k, dw, dh);
+          return out;
+        });
+      }
+
+      function wireUpload(inputSel, kind, w, h, onDone, fit, crop) {
         q(inputSel).onchange = () => {
           const file = q(inputSel).files[0]; if (!file) return;
           const img = new Image();
@@ -2568,7 +2701,14 @@ export const DESIGN_PANEL_JS = /* js */ `
             // Lift the backdrop and trim the padding BEFORE scaling, so the
             // artwork is measured at full resolution and the size cap is spent
             // on the artwork rather than on the empty margin around it.
-            const src = liftBackdrop(img);
+            const lifted = liftBackdrop(img);
+            // The one thing the owner gets to decide about a picture. Only for
+            // the ones worth positioning: the stamp shape is a silhouette we
+            // trim and refill, so there is nothing to place inside it.
+            const src = crop === false ? lifted : await cropDialog(lifted, w, h, fit);
+            // Cancelled. Nothing is staged and nothing drawn — and the input is
+            // cleared so choosing the SAME file again still fires a change.
+            if (!src) { q(inputSel).value = ""; return; }
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext.bind(canvas);
             if (fit === "keep") {
@@ -3362,7 +3502,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         };
         probe.onerror = () => show("Couldn't read that image.");
         probe.src = dataUrl;
-      }, "keep");
+      }, "keep", false);
       // Back to plain dots — which is still a rendered strip, not the absence of
       // one: the grid image is the only place stamps are drawn now. The stored
       // shape goes too: leaving it behind would have the next page load quietly
