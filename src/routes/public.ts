@@ -450,7 +450,11 @@ async function qrFor(path: string, res: import("express").Response): Promise<voi
  * retired — these are printed on counters and their URL is baked into the art
  * links inside every issued Google card.
  */
-const cardQr = (cardId: string, res: import("express").Response) => qrFor(`/c/${cardId}`, res);
+const cardQr = (cardId: string, res: import("express").Response, source = "") =>
+  // `?s=poster` when it is the printed sheet, so a scan from a counter is
+  // tellable from a tapped link. Both arrive as a plain page view otherwise,
+  // and sourceOf already reads the parameter.
+  qrFor(`/c/${cardId}${source ? `?s=${encodeURIComponent(source)}` : ""}`, res);
 
 /**
  * The MERCHANT's QR — what goes on a poster from now on.
@@ -657,7 +661,8 @@ publicRouter.get("/c/:cardId/enroll/google", (req, res) =>
   enrollGoogle(req.params.cardId!, req, res),
 );
 publicRouter.get("/qr", (_req, res) => cardQr(DEFAULT_CARD_ID, res));
-publicRouter.get("/c/:cardId/qr", (req, res) => cardQr(req.params.cardId!, res));
+publicRouter.get("/c/:cardId/qr", (req, res) =>
+  cardQr(req.params.cardId!, res, String(req.query.s ?? "").slice(0, 20)));
 
 /**
  * The printable sign-up poster, in the card's own colours.

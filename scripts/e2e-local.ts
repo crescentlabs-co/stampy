@@ -289,7 +289,8 @@ async function main() {
   // Create two passes directly (enroll route would 503 without Apple certs)
   // A pass, as the join flow would mint it: belonging to a customer of the card's
   // merchant. Each call is a different browser unless a customer is passed in.
-  const { createCustomer: mkCustomer, merchantForCard: merchantOf } = await import("../src/db.js");
+  const { createCustomer: mkCustomer, merchantForCard: merchantOf,
+          updateMerchant: updateMerchantName } = await import("../src/db.js");
   const mk = async (platform: "apple" | "google" = "apple", customerId?: string, cardId = "default") => {
     const merchant = await merchantOf(cardId);
     const cust = customerId ?? (merchant ? (await mkCustomer(merchant.id)).id : null);
@@ -736,12 +737,23 @@ async function main() {
   expect(poster.body.includes("Free kopi on your 10th visit"), "the poster headlines the owner's own sign-up line");
   expect(poster.body.includes("no app to download"), "...and answers the one objection a poster has to answer");
   expect(poster.body.includes("Powered by PunchMe"), "the poster carries the product footer");
-  // A poster on a counter has to outlive a rename or a second card, which is
-  // what /j/ is for and what a card link is not.
-  expect(/src="\/j\/[^"]+\/qr"/.test(poster.body), "the poster's QR is the merchant join link, not a card link");
-  expect(!poster.body.includes('src="/c/default/qr"'), "...and never the card QR");
-  const posterQrUrl = /src="(\/j\/[^"]+\/qr)"/.exec(poster.body)![1]!;
+  // One poster, one card. This asserted the opposite while a shop could hold
+  // only one card — the shop link then outlived a rename, and whichever card
+  // the shop had was the card it meant. With several cards it cannot say WHICH
+  // card a printed sheet is for, and /c/:cardId is just as permanent.
+  expect(/src="\/c\/[^"]+\/qr\?s=poster"/.test(poster.body),
+    "the poster's QR is this card's own link");
+  expect(!/src="\/j\/[^"]+\/qr"/.test(poster.body), "...and no longer the shop's");
+  const posterQrUrl = /src="(\/c\/[^"]+\/qr\?s=poster)"/.exec(poster.body)![1]!;
   expect((await get(posterQrUrl)).status === 200, "the link inside the poster actually resolves");
+  // The shop's link is not retired, and must never be: posters are printed
+  // with it and a dead address kills every one of them.
+  {
+    const shop = await ownerMerchant((await getOwnerByEmail("owner@test.my"))!.id);
+    const shopRef = await currentSlug(shop!.id);
+    expect((await get("/j/" + shopRef + "/qr")).status === 200,
+      "the shop's own QR still resolves, for posters already printed with it");
+  }
   expect((await get("/c/no-such-card/poster")).status === 404, "a poster for a card that isn't there 404s");
   await updateCard("default", { signup_message: "" });
 
@@ -1949,10 +1961,13 @@ async function main() {
     }),
   });
   expect((await getCard("default"))!.stamp_style === "🧑‍🍳", "a multi-code-point emoji survives as the stamp style");
-  // The poster is now the only printable. It is public (the merchant prints it
-  // themselves) and its QR is the MERCHANT link, not this card's — which is the
-  // whole reason the admin-only counter sheet was retired: /c/:cardId strands a
-  // printed sheet the moment a shop renames or adds a second card.
+  // The poster is now the only printable, and its QR is THIS CARD's link.
+  //
+  // It used to be the shop's, on the reasoning that a card link strands a
+  // printed sheet when a shop renames. That is not so: a card's id can never
+  // change (CLAUDE.md — it is baked into the Google class id and the art URLs
+  // of every Android card ever issued), which is exactly why /c/:cardId is a
+  // permanent route. The rename below proves it rather than asserting it.
   const posterCard = (await getCard(dfyOut.cardId))!;
   const dfyPoster = await get("/c/" + dfyOut.cardId + "/poster");
   expect(
@@ -1963,9 +1978,20 @@ async function main() {
     `the printable poster names the reward (${posterCard.reward})`,
   );
   expect(
-    dfyPoster.body.includes("/j/") && !dfyPoster.body.includes("/c/" + dfyOut.cardId + "/qr"),
-    "the poster's QR is the merchant link, so a rename can never strand it",
+    dfyPoster.body.includes("/c/" + dfyOut.cardId + "/qr"),
+    "the poster's QR is this card's own link",
   );
+  // Rename the shop, then scan the sheet that is already on the counter.
+  {
+    const before = /src="(\/c\/[^"]+\/qr[^"]*)"/.exec(dfyPoster.body)![1]!;
+    await updateCard(dfyOut.cardId, { name: "Renamed Kitchen" });
+    const merch = await merchantOf(dfyOut.cardId);
+    if (merch) await updateMerchantName(merch.id, { name: "Completely Different Name" });
+    expect((await get(before)).status === 200,
+      "a printed poster still resolves after the shop renames");
+    expect((await get("/c/" + dfyOut.cardId)).status === 200,
+      "...and still lands on a sign-up page");
+  }
   expect((await get("/c/" + dfyOut.cardId)).status === 200, "and the sign-up link still works");
   expect(
     (await get("/admin/card/" + dfyOut.cardId + "/sheet", { headers: { cookie: cookieNow } })).status === 404,

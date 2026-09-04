@@ -3243,7 +3243,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         (enrolled ? lockNote(m.active) : "") +
         '<h2 class="sec">Share it</h2>' +
         '<div class="sharelist">' +
-          '<a href="/j/' + esc(S.joinRef) + '?s=link" target="_blank">' +
+          // THIS card's own sign-up page, not the shop's. With more than one
+          // card the shop link cannot say which card it means, and the owner
+          // is standing on the screen for one of them.
+          '<a href="/c/' + esc(card.id) + '?s=link" target="_blank">' +
             '<span>Sign-up page<span class="sub2">The link and the QR customers scan</span></span>' +
             '<span class="arr">open →</span></a>' +
           '<a href="/c/' + esc(card.id) + '/poster" target="_blank">' +
@@ -3253,8 +3256,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             '<span>Customer page<span class="sub2">What a customer sees when they open their card</span></span>' +
             '<span class="arr">open →</span></a>' +
         "</div>" +
-        '<div class="qrbox"><img alt="Sign-up QR code" src="/j/' + esc(S.joinRef) + '/qr">' +
-        '<p class="muted">Every programme has its own QR. This one is yours.</p></div>' +
+        '<div class="qrbox"><img alt="Sign-up QR code" src="/c/' + esc(card.id) + '/qr">' +
+        // It says this because it is now true. The same line sat over the
+        // SHOP's QR before, which handed out whichever card the shop had.
+        '<p class="muted">Every card has its own QR. This one belongs to this card ' +
+        'and always will — print it, and it keeps working.</p></div>' +
         '<h2 class="sec">Status</h2>' +
         '<p class="muted">' + (over
           ? "This programme has ended, so nobody new can sign up. Everyone who already " +

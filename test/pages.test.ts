@@ -186,9 +186,25 @@ describe("the printable sign-up poster", () => {
 
   // A poster on a counter has to outlive a rename or a second card, which is
   // exactly what /j/ is for and what a card link is not.
-  it("encodes the merchant join link, never the card link", () => {
-    expect(html).toContain('src="/j/kopi-corner/qr"');
-    expect(html).not.toContain('src="/c/default/qr"');
+  /**
+   * One poster, one card.
+   *
+   * This used to assert the opposite, and that was right while a shop could
+   * hold only one card: the shop link then outlived a rename or a change of
+   * ownership, and whichever card the shop had was the card it meant. With
+   * several cards it stops being an answer — one link cannot say which of them
+   * a printed sheet is for, so every poster in the shop handed out the same
+   * one. /c/:cardId is just as permanent and does say.
+   */
+  it("encodes this card's own link, not the shop's", () => {
+    expect(html).toContain('src="/c/default/qr?s=poster"');
+    expect(html).not.toContain('src="/j/kopi-corner/qr"');
+  });
+
+  // A scan from a counter has to stay tellable from a tapped link — both are
+  // otherwise an identical page view.
+  it("marks a scan as coming from the printed sheet", () => {
+    expect(html).toContain("?s=poster");
   });
 
   it("uses the card's own colours and prints them", () => {
@@ -3530,12 +3546,16 @@ describe("the manage screens", () => {
    * "Multiple programmes means multiple QRs" is a claim best made by showing
    * one QR per programme rather than by writing the sentence down.
    */
-  it("gives a programme its own QR, poster and customer page", () => {
+  it("gives a card its own QR, poster and customer page", () => {
     expect(detail).toContain("/qr");
-    expect(detail).toContain("S.joinRef");
     expect(detail).toContain("/poster");
     expect(detail).toContain("/me");
-    expect(detail).toContain("Every programme has its own QR");
+    expect(detail).toContain("Every card has its own QR");
+    // Built from the card on screen, never from the shop. The shop's link
+    // cannot say WHICH card an owner is standing on, and with more than one
+    // card that is the whole question.
+    expect(detail).toContain(`src="/c/' + esc(card.id) + '/qr`);
+    expect(detail).not.toContain("S.joinRef");
   });
 
   /**

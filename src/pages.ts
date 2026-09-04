@@ -1993,10 +1993,19 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
  * with no shop name, no offer, and nothing telling a customer they don't need to
  * download anything — which is the single objection a poster has to answer.
  *
- * The QR encodes the MERCHANT join link, not a card link. That is the whole
- * point of `/j/:ref`: a poster on a counter outlives a rename, a second card and
- * a change of ownership (see CLAUDE.md). Retired slugs redirect forever, so a
- * printed poster can never be killed by an edit in the dashboard.
+ * The QR encodes THIS CARD's link, and one poster belongs to one card.
+ *
+ * It used to encode the shop's join link, which was right while a shop could
+ * only hold one card: the poster then outlived a rename or a change of
+ * ownership, and any card the shop had was the card it meant. With several
+ * cards that link stops being an answer — it has no way to say WHICH card the
+ * sheet in somebody's hand is for, and every poster in the shop would hand out
+ * the same one.
+ *
+ * /c/:cardId is just as permanent. It is printed on counters, baked into the
+ * Google class id of every Android card issued from it, and sits inside those
+ * cards' art URLs, so it can never be retired either. The shop's /j/ link stays
+ * alive for every poster already printed with it.
  */
 export function posterPage(
   card: Pick<CardRow, "id" | "reward" | "stamps_target" | "signup_message" | "kind" | "benefits" | "milestones"> & {
@@ -2006,7 +2015,11 @@ export function posterPage(
   },
   /** The shop's name — the merchant's, not the card's. */
   business: string,
-  /** Merchant id or current slug: whatever `/j/:ref` should carry. */
+  /**
+   * Kept for the shop's own link, which the on-screen version of this page
+   * still offers below the sheet — it is the address an owner sends in a
+   * message, where a card id means nothing to the reader.
+   */
   joinRef: string,
   /** 0 = no uploaded logo, so the header runs on type alone. */
   logoVersion = 0,
@@ -2080,7 +2093,7 @@ export function posterPage(
       <div class="pbody">
         <p class="poffer">${signupLine(card)}</p>
         <p class="pno">Scan to get your card — no app to download.</p>
-        <div class="pqr"><img src="/j/${ref}/qr" alt="Scan to add your loyalty card"></div>
+        <div class="pqr"><img src="/c/${encodeURIComponent(card.id)}/qr?s=poster" alt="Scan to add your loyalty card"></div>
         <div class="psteps">
           1. Point your camera at the code<br>
           2. Tap <strong>Add to Apple Wallet</strong> or <strong>Google Wallet</strong><br>
