@@ -2604,6 +2604,18 @@ describe("the visit-cycle setting", () => {
    * A dropdown, not a row of buttons. Three ranges as buttons wrapped to three
    * lines on a phone and read as three actions rather than one choice.
    */
+  /**
+   * A screen's title is the FIRST heading on it, and reads at the size Home's
+   * do. Headings further down — Info, Status, Share it — stay a rank below:
+   * making every one a title flattens the hierarchy rather than fixing it.
+   */
+  it("sets every screen's title at the size Home's headings are", () => {
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(css).toContain(".sec.first { margin-top: 0; font-size: var(--t-xl); }");
+    // A section heading further down a screen is still the smaller one.
+    expect(css).toMatch(/\.sec \{ font-size: var\(--t-lg\)/);
+  });
+
   it("is one dropdown holding the three ranges", () => {
     expect(html).toContain("<select data-cycle");
     expect(html).toContain('<option value="7">1–2 times a week</option>');
@@ -3575,6 +3587,23 @@ describe("the manage screens", () => {
    * printed or handed out — so it offers none of those, and offers the only
    * thing that helps instead.
    */
+  /**
+   * The card-type rows were three grid rows tall, not two.
+   *
+   * The icon and the radio both span rows 1-2 and the name takes row 1, so the
+   * one free cell in row 2 sits BEHIND the placement cursor by the time the
+   * subtext is reached — and grid never walks backwards. The subtext landed in
+   * a third row, under an empty band the icon and radio were holding open.
+   * Placing all four explicitly is what stops that.
+   */
+  it("places every part of a card-type row explicitly", () => {
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(css).toContain(".pick[data-kind] > strong { grid-column: 2; grid-row: 1;");
+    expect(css).toContain(".pick[data-kind] > .sub2 { grid-column: 2; grid-row: 2;");
+    expect(css).toContain(".pick[data-kind] > .pickicon { grid-column: 1; }");
+    expect(css).toContain(".pick[data-kind] > .pickdot { grid-column: 3; }");
+  });
+
   it("marks a draft and offers the way back into the flow", () => {
     const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
     expect(body).toContain("const draft = !c.publishedAt");
@@ -3728,7 +3757,12 @@ describe("the create screens", () => {
     // one value and cannot disagree.
     expect(rules).toContain("const blocked = () =>");
     expect(rules).toContain('body.querySelector("[data-cont]")');
-    expect(rules).toContain('body.querySelector("[data-r=rewardName]")');
+    // Every required field is named, including the reward's VALUE — which was
+    // missing, so a reward with a name and no value walked straight past, and
+    // the effective discount underneath was computed from a blank.
+    expect(rules).toContain('at("rewardName")');
+    expect(rules).toContain('at("value")');
+    expect(rules).toContain('at("percent")');
     // Re-checked on every edit, on Continue, and on opening either part.
     expect((rules.match(/relock\(\)/g) || []).length).toBeGreaterThan(3);
 
@@ -3737,6 +3771,52 @@ describe("the create screens", () => {
     expect(frame).toContain("next.disabled = Boolean(why)");
     expect(frame).toContain("wshake");
     expect(frame).toContain('foot.addEventListener("pointerdown"');
+  });
+
+  /**
+   * The card name arrives EMPTY.
+   *
+   * Step 1 has to create the card with something, so it uses the shop's name —
+   * but that is a placeholder nobody chose, and a box that arrives full reads
+   * as answered. It is the owner's only once it differs from the auto one.
+   */
+  it("does not pre-fill the card name with the shop's", () => {
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    expect(rules).toContain('name: (card.name && card.name !== card.shopName) ? card.name : ""');
+    expect(rules).toContain('placeholder="e.g. Coffee card"');
+    // And the gate refuses an empty one, so it cannot simply be skipped.
+    expect(rules).toContain('if (!String(r.name).trim()) return body.querySelector("[data-r=name]")');
+  });
+
+  /** The shop name is a rule, not a colour, so it is asked here now. */
+  it("asks for the shop name on Rules, under the card name", () => {
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    expect(rules).toContain('data-r="shopName"');
+    expect(rules).toContain("This will be what your card displays.");
+    expect(rules.indexOf('data-r="name"')).toBeLessThan(rules.indexOf('data-r="shopName"'));
+    // It is what gets SAVED as the shop name — it used to send the card's.
+    expect(rules).toContain("shopName: r.shopName");
+  });
+
+  /**
+   * Two options, not a number box. Above two is a giveaway nobody meant to
+   * type, and zero welcome stamps makes a card that lands in a wallet reading
+   * empty, which looks like the scan did not work.
+   */
+  it("offers one or two for the welcome stamps and the rate, and nothing else", () => {
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    expect(rules).toContain('<select data-r="welcome">');
+    expect(rules).toContain('<select data-r="perVisit">');
+    expect(rules).not.toContain('data-r="welcome" type="number"');
+    expect(rules).not.toContain('data-r="perVisit" type="number"');
+    // "1 visit = [2] stamps" reads as the sentence it is.
+    expect(rules).toContain("1 visit =");
+    const helper = html.slice(html.indexOf("function oneOrTwo(value)"),
+                              html.indexOf("How many visits one reward costs"));
+    expect(helper).toContain("[1, 2].map");
   });
 
   /** Every step says how to go back, including the first. */

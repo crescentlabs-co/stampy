@@ -548,6 +548,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 cursor: pointer; text-decoration: underline; }
     /* Room for the footer, on top of what the sheet already reserves. */
     .haswiz { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+    /* "1 visit = [2] stamps" on one line. The box is in the middle of the
+       sentence because that is where the thing being set actually is. */
+    .eqrow { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+             margin-top: var(--s1); }
+    .eqrow select { width: auto; min-width: 72px; margin: 0; }
+    .eqrow span { font-size: var(--t-sm); font-weight: 600; }
     /* A section header that opens. One is open at a time, so the step reads as
        two questions rather than one long form. */
     .wfold { display: flex; align-items: center; justify-content: space-between;
@@ -727,6 +733,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       border-color: var(--accent);
       background: color-mix(in srgb, var(--accent) 14%, var(--bg));
     }
+    /* All four placed explicitly. Left to auto-placement the subtext landed in
+       a THIRD row: the icon and the radio both span rows 1-2, the name takes
+       row 1, and grid never walks backwards to fill the one free cell left in
+       row 2 — so the card carried an empty band the icon and radio were
+       holding open. */
+    .pick[data-kind] > strong { grid-column: 2; grid-row: 1; align-self: end; }
+    .pick[data-kind] > .sub2 { grid-column: 2; grid-row: 2; align-self: start; }
+    .pick[data-kind] > .pickicon { grid-column: 1; }
+    .pick[data-kind] > .pickdot { grid-column: 3; }
     .pick .pickicon { grid-row: 1 / span 2; display: flex; align-items: center;
                       justify-content: center; width: 40px; height: 40px; flex: none;
                       border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
@@ -931,7 +946,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .clist td { padding: var(--s2) var(--s2) var(--s2) 0; vertical-align: top; }
     .clist tr + tr td { box-shadow: inset 0 1px 0 var(--line); }
     .clist td.mono { font-family: ui-monospace, Menlo, monospace; font-size: var(--t-sm); }
-    .sec.first { margin-top: 0; }
+    /* The FIRST heading on a screen is its title, so it is set at the size
+       Home's are. Headings further down — Info, Status, Share it — stay a rank
+       below on purpose: making every one of them a title flattens the
+       hierarchy rather than fixing it. */
+    .sec.first { margin-top: 0; font-size: var(--t-xl); }
     /* Design is a set-it-once job, so it folds away (.fold lives in
        DESIGN_PANEL_CSS, with the panel that emits it). Rules — the reward, the
        stamp count, the win-back — is what owners come back to, and stays open. */
@@ -3023,7 +3042,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // Everything the two parts write into. Seeded from the card, so leaving
       // and coming back shows what was left behind rather than a blank form.
       const r = {
-        name: card.shopName || card.name || "",
+        // NOT pre-filled with the shop's name, even though the row holds it.
+        // Step 1 has to create the card with something, so it uses the shop's
+        // name — but that is a placeholder the owner never chose, and a box
+        // that arrives full reads as answered. It is theirs only once it
+        // differs from the auto one, which is the test below.
+        name: (card.name && card.name !== card.shopName) ? card.name : "",
+        // The name on the CARD, which is a different question and now asked
+        // here rather than buried in the design panel.
+        shopName: card.shopName || "",
         welcome: card.stampsStart != null ? card.stampsStart : 1,
         perVisit: card.stampsPerVisit || 1,
         target: card.stampsTarget || suggestedTarget(S.cycleDays),
@@ -3052,15 +3079,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        * cannot disagree.
        */
       const blocked = () => {
+        const at = (k) => body.querySelector("[data-r=" + k + "]") ||
+          body.querySelector("[data-open=reward]");
         if (!String(r.name).trim()) return body.querySelector("[data-r=name]");
         if (!reached) return body.querySelector("[data-cont]");
-        if (r.rewardType === "item" && !String(r.rewardName).trim()) {
-          return body.querySelector("[data-r=rewardName]") || body.querySelector("[data-open=reward]");
-        }
-        if (r.rewardType !== "item" && !(Number(r.rewardType === "percent" ? r.percent : r.value) > 0)) {
-          return body.querySelector("[data-r=" + (r.rewardType === "percent" ? "percent" : "value") + "]") ||
-            body.querySelector("[data-open=reward]");
-        }
+        // An item needs BOTH its name and what it is worth. The value was
+        // missing from this list, so a reward with a name and no value walked
+        // straight past — and the effective discount underneath is computed
+        // from that value, so the number the shop decided on was built on a
+        // blank.
+        if (r.rewardType === "item" && !String(r.rewardName).trim()) return at("rewardName");
+        if (r.rewardType === "item" && !(Number(r.value) > 0)) return at("value");
+        if (r.rewardType === "amount" && !(Number(r.value) > 0)) return at("value");
+        if (r.rewardType === "percent" && !(Number(r.percent) > 0)) return at("percent");
         return null;
       };
       const relock = () => { if (frame && frame.lockNext) frame.lockNext(blocked); };
@@ -3091,15 +3122,28 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         body.innerHTML =
           '<h2 class="sec first">Rules</h2>' +
           '<label class="dlbl">Card name</label>' +
-          '<input data-r="name" maxlength="60" value="' + esc(r.name).replace(/"/g, "&quot;") + '">' +
+          '<input data-r="name" maxlength="60" placeholder="e.g. Coffee card" value="' +
+            esc(r.name).replace(/"/g, "&quot;") + '">' +
+          '<label class="dlbl">Shop name</label>' +
+          '<input data-r="shopName" maxlength="60" value="' +
+            esc(r.shopName).replace(/"/g, "&quot;") + '">' +
+          '<p class="dhint">This will be what your card displays.</p>' +
           '<button type="button" class="wfold" data-open="earn" aria-expanded="' +
             (open === "earn") + '">How customers earn</button>' +
           (open === "earn"
             ? '<div class="wbody">' +
               "<label>Welcome stamps" + info("Number of stamps a customer starts with. Given once, on a new card \u2014 after a reward the card starts again from zero.") + "</label>" +
-              '<input data-r="welcome" type="number" min="0" max="9" value="' + Number(r.welcome) + '">' +
-              "<label>1 visit = how many stamps?" + info("Almost always one. Set it to two and a single tap on your counter is worth two stamps.") + "</label>" +
-              '<input data-r="perVisit" type="number" min="1" max="10" value="' + Number(r.perVisit) + '">' +
+              // A choice of two, not a number box. Anything above two is a
+              // giveaway nobody meant to type, and zero makes a card that
+              // lands in a wallet reading empty, which looks like the scan
+              // did not work.
+              '<select data-r="welcome">' + oneOrTwo(r.welcome) + "</select>" +
+              // A sentence with the box in the middle, because "1 visit = 2
+              // stamps" is the thing being set and a lone number box above a
+              // label is not that sentence.
+              '<div class="eqrow"><span>1 visit =</span>' +
+                '<select data-r="perVisit">' + oneOrTwo(r.perVisit) + "</select>" +
+                "<span>stamps" + info("Almost always one. Set it to two and a single tap on your counter is worth two stamps.") + "</span></div>" +
               "<label>Stamps to reward" + info("Number of stamps a customer needs to earn their reward.") +
                 '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
               '<select data-r="target">' + targets.join("") + "</select>" +
@@ -3123,7 +3167,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 ? "<label>Reward name</label>" +
                   '<input data-r="rewardName" maxlength="60" placeholder="Free coffee" value="' +
                     esc(r.rewardName).replace(/"/g, "&quot;") + '">' +
-                  "<label>What it is worth (RM)" + info("What the item would normally cost. It is also what turns visits into a money figure on Home.") + "</label>" +
+                  "<label>Reward value (RM)" + info("What the item would normally cost. It is also what turns visits into a money figure on Home.") + "</label>" +
                   '<input data-r="value" type="number" min="0" step="0.10" value="' + r.value + '">'
                 : r.rewardType === "amount"
                 ? "<label>Amount off (RM)</label>" +
@@ -3164,7 +3208,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const save = () => api("/card/" + id, {
         method: "POST",
         body: JSON.stringify({
-          name: r.name, shopName: r.name,
+          name: r.name, shopName: r.shopName,
           stampsStart: Number(r.welcome) || 0,
           stampsPerVisit: Number(r.perVisit) || 1,
           stampsTarget: Number(r.target) || 8,
@@ -3224,6 +3268,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           navigate("/manage/rewards");
         },
       });
+    }
+
+    /** Two options and no more — see where it is used for why. */
+    function oneOrTwo(value) {
+      return [1, 2].map((n) =>
+        '<option value="' + n + '"' + (n === Number(value) ? " selected" : "") + ">" + n + "</option>",
+      ).join("");
     }
 
     /**
