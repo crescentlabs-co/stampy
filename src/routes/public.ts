@@ -158,7 +158,13 @@ async function shopOpen(
     cafeLogoVersion(card.id).catch(() => 0),
   ]);
   const claimed = !merchant || (Boolean(merchant.owner_id) && !merchant.archived_at);
-  const why: ClosedReason = !claimed ? "not-ready" : card.ended_at ? "ended" : "";
+  // An unfinished card reads as "not ready yet", which is exactly what it is —
+  // the owner is still in the Create flow. Deliberately the same reason as an
+  // unclaimed shop rather than a fourth one: the customer's situation is
+  // identical, and the page already says the right thing for it.
+  const draft = !card.published_at;
+  const why: ClosedReason =
+    !claimed || draft ? "not-ready" : card.ended_at ? "ended" : "";
   return { open: why === "", why, business, logoVersion };
 }
 

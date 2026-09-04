@@ -227,6 +227,8 @@ export interface DesignerCard {
   benefits: string;
   /** The reward ladder on a milestones card, ascending. Empty otherwise. */
   milestones: { at: number; reward: string }[];
+  /** null while the Create flow is still being walked through. */
+  publishedAt: string | null;
   /** One-tap amounts on a points counter, as typed ("10,20,50"). */
   pointPresets: string;
   reward: string;
@@ -290,6 +292,7 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     kind: card.kind,
     benefits: card.benefits,
     milestones: card.milestones ?? [],
+    publishedAt: card.published_at ? card.published_at.toISOString() : null,
     pointPresets: card.point_presets ?? "",
     reward: card.reward,
     stampsTarget: card.stamps_target,

@@ -51,6 +51,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     logo_has_name: false,
     signup_message: "",
     archived_at: null,
+    published_at: new Date(),
     ended_at: null,
     ...overrides,
   };

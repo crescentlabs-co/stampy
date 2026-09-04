@@ -32,6 +32,7 @@ import {
   cafeLogoVersion,
   cardMetrics,
   cardsForMerchant,
+  publishCard,
   cardsForOwner,
   counterActivity,
   ensureMerchantForOwner,
@@ -392,38 +393,46 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
 });
 
 /**
- * Add a card — capped at ONE per merchant for V1.
+ * Add a card. A shop may now have several.
  *
- * The cap is here rather than in the schema on purpose: merchants, owner_cards
- * and merchants.default_card_id are all already shaped for several cards, and a
- * CHECK constraint would only have to be migrated away again. What is missing
- * for multi-card is the dashboard UI to choose which card a /j/ link issues —
- * without it a second card silently turns every printed poster into a card
- * picker, which is how this cap came to be needed.
+ * The one-per-merchant cap is gone. It existed because the shop's /j/ QR had no
+ * way to say WHICH card it handed out, so a second card silently turned every
+ * printed poster into a card picker. That is fixed at the source instead: every
+ * card now carries its own poster and its own QR (/c/<cardId>), so two cards
+ * are two posters and nothing is ambiguous. The shop's /j/ link stays alive for
+ * posters already printed with it — it issues the shop's chosen card, or falls
+ * through to the picker, exactly as it did.
+ *
+ * `draft: true` makes an UNFINISHED card: it exists so the Create flow can be
+ * left and resumed on any device, and nothing hands it to a customer until
+ * publishCard is called on the last step.
  */
 dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) => {
-  const { name, reward, stampsTarget, stampsStart, kind } = (req.body ?? {}) as {
+  const { name, reward, stampsTarget, stampsStart, kind, draft } = (req.body ?? {}) as {
     name?: string;
     reward?: string;
     stampsTarget?: number;
     stampsStart?: number;
     kind?: string;
+    draft?: boolean;
   };
   if (!name?.trim()) return void res.status(400).json({ error: "missing-name" });
   const merchant = await ensureMerchantForOwner(req.owner!.id, name.trim());
-  // Only cards still TAKING SIGN-UPS count against the cap. A finished
-  // programme frees the slot, which is the whole point of being able to finish
-  // one: a shop replacing last season's card would otherwise have to delete it,
-  // and deleting it takes the history of everyone who held it.
-  if ((await liveCardsForMerchant(merchant.id)).length > 0) {
-    return void res.status(409).json({ error: "one-card-per-merchant" });
+  // A ceiling rather than a cap of one: nothing here is expensive, but a runaway
+  // client that posted in a loop would fill a shop's dashboard with drafts.
+  if ((await cardsForMerchant(merchant.id)).length >= MAX_CARDS_PER_MERCHANT) {
+    return void res.status(409).json({ error: "too-many-cards", max: MAX_CARDS_PER_MERCHANT });
   }
   const card = await createCard({
     merchantId: merchant.id,
     name: name.trim().slice(0, 60),
     reward: (reward ?? "Free coffee").trim().slice(0, 60),
     stampsTarget: clampInt(stampsTarget, 1, 20, 10),
-    stampsStart: clampInt(stampsStart, 0, 19, 2),
+    // One welcome stamp by default. A brand-new card that starts at zero looks
+    // like nothing happened when it lands in the wallet; the head start is what
+    // makes the first scan feel like it worked.
+    stampsStart: clampInt(stampsStart, 0, 19, 1),
+    draft: draft === true,
     // Anything unrecognised becomes a stamp card, which is what every card was
     // before card kinds existed. The type is editable in the designer either
     // way, so a wrong guess here is one dropdown to fix, not a stuck card.
@@ -518,6 +527,24 @@ dashboardRouter.post("/api/card/:id/ended", requireOwner, async (req: OwnerReque
   if (ended) await endCard(cardId);
   else await reopenCard(cardId);
   res.json({ ok: true, ended });
+});
+
+/**
+ * Finish making a card — the last step of the Create flow.
+ *
+ * Until this is called the card exists but is invisible to customers: it is not
+ * counted, the shop's /j/ link skips it, and shopOpen turns a scan away. This
+ * is the moment it becomes real, and it is one-way — a published card comes off
+ * the shelf through /ended, which keeps every issued pass working.
+ */
+dashboardRouter.post("/api/card/:id/publish", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(404).json({ error: "not-your-card" });
+  }
+  const card = await publishCard(cardId);
+  if (!card) return void res.status(404).json({ error: "no-such-card" });
+  res.json({ ok: true, id: card.id, publishedAt: card.published_at });
 });
 
 dashboardRouter.get("/api/card/:id/test-link", requireOwner, async (req: OwnerRequest, res) => {
@@ -726,6 +753,14 @@ function bucketOf(nudges7d: number, removed: boolean, optedOut: boolean): Bucket
  * Both are computed over the same onePerCustomer() array, so they can never
  * disagree about who exists — the failure that has bitten this codebase twice.
  */
+/**
+ * How many cards one shop may hold.
+ *
+ * Not a product limit anybody should hit — it is a stop on a client that posts
+ * in a loop, which would otherwise fill a dashboard with unfinished cards.
+ */
+export const MAX_CARDS_PER_MERCHANT = 20;
+
 export const RETURN_CYCLES = [14, 21, 28] as const;
 export type ReturnCycle = (typeof RETURN_CYCLES)[number];
 

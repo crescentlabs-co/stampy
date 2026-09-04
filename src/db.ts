@@ -202,6 +202,12 @@ export interface CardRow {
   /** Retired: hidden from the owner and off the join link. Issued passes still work. */
   archived_at: Date | null;
   /**
+   * When the owner finished making this card. NULL means they are still in the
+   * Create flow and have not finished — the card exists so it can be resumed on
+   * any device, but nothing may hand it to a customer until this is set.
+   */
+  published_at: Date | null;
+  /**
    * Finished: no NEW sign-ups, and nothing else changes.
    *
    * NOT archived_at, which means gone — cardsForMerchant filters those rows out
@@ -974,6 +980,18 @@ export async function migrate(): Promise<void> {
     ALTER TABLE passes ADD COLUMN IF NOT EXISTS rewards_claimed integer NOT NULL DEFAULT 0;
     -- The one-tap amounts a points counter offers, e.g. "10,20,50".
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS point_presets text NOT NULL DEFAULT '';
+    -- v2.8: when the owner FINISHED making this card. NULL means they are still
+    -- in the Create flow — the row exists so the flow can be left and picked up
+    -- on another device, and nothing hands the card to a customer until this is
+    -- set (liveCardsForMerchant, joinTargetCard, and shopOpen in public.ts).
+    --
+    -- DEFAULT now() on purpose, and it is the whole safety of this column.
+    -- Adding it stamps every card that already exists, so nobody's live card
+    -- turns into a draft on deploy; and every OTHER insert path — the seeded
+    -- default card, the admin console, a future one nobody has written yet —
+    -- keeps producing a live card without knowing this column exists. Only an
+    -- explicit NULL is a draft, and only createCard({draft:true}) writes one.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS published_at timestamptz DEFAULT now();
     -- How much this event MOVED.
     --
     -- Every metric in this file counts events: one stamp row is one stamp. On a
@@ -1899,9 +1917,13 @@ export async function updateMerchant(
 }
 
 /**
- * A merchant's live cards. Archived ones are excluded, which is what makes the
- * /j/ join link skip a retired card and what lets a shop that archived its
- * spare create a fresh one under the one-card-per-merchant cap.
+ * Every card the merchant owns, archived ones aside.
+ *
+ * This one DOES include unfinished cards (published_at IS NULL), on purpose:
+ * the dashboard has to list a half-made card or the owner can never get back to
+ * it. Everything that hands a card to a CUSTOMER filters them out instead —
+ * liveCardsForMerchant and joinTargetCard below, and shopOpen in
+ * src/routes/public.ts, which is the door both wallets knock on.
  */
 export async function cardsForMerchant(merchantId: string): Promise<CardRow[]> {
   const res = await getPool().query<CardRow>(
@@ -1927,9 +1949,32 @@ export async function reopenCard(cardId: string): Promise<void> {
   await getPool().query(`UPDATE cards SET ended_at = NULL WHERE id = $1`, [cardId]);
 }
 
-/** The merchant's cards that are still taking sign-ups. */
+/**
+ * The last step of the Create flow: this card is finished and may be handed out.
+ *
+ * Only ever sets the stamp, never clears it — re-running the wizard on a live
+ * card must not take it off the shelf and strand a poster mid-print. Once
+ * published, a card comes off through `ended_at`, which is a decision the owner
+ * makes on purpose and which keeps every issued pass working.
+ */
+export async function publishCard(cardId: string): Promise<CardRow | null> {
+  const res = await getPool().query<CardRow>(
+    `UPDATE cards SET published_at = COALESCE(published_at, now())
+      WHERE id = $1 RETURNING *`,
+    [cardId],
+  );
+  return res.rows[0] ?? null;
+}
+
+/**
+ * The merchant's cards that are actually taking sign-ups.
+ *
+ * Unfinished ones are not: a card still being made has no reward worth
+ * promising and no design, and counting it would let a half-built card fill the
+ * shop's slot and block the one they meant to make.
+ */
 export async function liveCardsForMerchant(merchantId: string): Promise<CardRow[]> {
-  return (await cardsForMerchant(merchantId)).filter((c) => !c.ended_at);
+  return (await cardsForMerchant(merchantId)).filter((c) => !c.ended_at && c.published_at);
 }
 
 /**
@@ -1944,7 +1989,9 @@ export async function liveCardsForMerchant(merchantId: string): Promise<CardRow[
  * replacing last season's card expects to happen without touching a setting.
  */
 export async function joinTargetCard(merchant: MerchantRow): Promise<CardRow | null> {
-  const cards = (await cardsForMerchant(merchant.id)).filter((c) => !c.ended_at);
+  // Unfinished cards are invisible here for the same reason ended ones are: a
+  // scan must never mint a card whose reward the owner has not settled on.
+  const cards = (await cardsForMerchant(merchant.id)).filter((c) => !c.ended_at && c.published_at);
   if (merchant.default_card_id) {
     const chosen = cards.find((c) => c.id === merchant.default_card_id);
     if (chosen) return chosen;
@@ -2039,16 +2086,29 @@ export async function createCard(row: {
   kind?: CardKind;
   /** The reward ladder, on a milestones card. */
   milestones?: Milestone[];
+  /**
+   * True while the Create flow is still being walked through.
+   *
+   * Defaults to FALSE — published — so every existing call site (signup, the
+   * admin console) keeps making a live card exactly as it did. Only the wizard
+   * asks for a draft, and only the wizard's last step publishes one.
+   */
+  draft?: boolean;
 }): Promise<CardRow> {
   // The id is generated here and then never changes: it is printed on posters,
   // baked into every issued Android card's Google class id, and used in the art
   // URLs inside live Google classes. See renameCafesToCards.
   const id = generateShortCode(8).toLowerCase();
   const res = await getPool().query<CardRow>(
-    `INSERT INTO cards (id, merchant_id, name, reward, stamps_target, stamps_start, kind, milestones, staff_pin, staff_pin_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '', '') RETURNING *`,
+    `INSERT INTO cards (id, merchant_id, name, reward, stamps_target, stamps_start, kind, milestones,
+                        published_at, staff_pin, staff_pin_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '', '') RETURNING *`,
     [id, row.merchantId, row.name, row.reward, row.stampsTarget, row.stampsStart, row.kind ?? "stamp",
-     JSON.stringify(row.milestones ?? [])],
+     JSON.stringify(row.milestones ?? []),
+     // Passed straight through, never COALESCEd: a draft's null IS the value,
+     // and folding it into now() here would publish every draft on creation.
+     // The column's own default covers the insert paths that never name it.
+     row.draft === true ? null : new Date()],
   );
   return res.rows[0]!;
 }

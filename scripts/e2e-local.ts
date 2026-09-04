@@ -30,7 +30,7 @@ async function main() {
   // it again where the closed behaviour is what is being asserted.
   process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
-  const { migrate, ensureEnvStamp, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, ensureEnvStamp, liveCardsForMerchant, cardsForMerchant, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -467,19 +467,73 @@ async function main() {
   expect(srAnon.status === 401 || srAnon.status === 302,
     `series: refuses a caller with no session (got ${srAnon.status})`);
 
-  // V1 is one card per merchant: the dashboard's add-card endpoint refuses a
-  // second one outright. (The button is gone too, but the server is the limit.)
+  // A shop may hold several cards now. The one-per-merchant cap is gone: it
+  // existed only because the shop's QR could not say WHICH card it handed out,
+  // and every card carries its own poster and QR instead.
   const secondViaApi = await fetch(base + "/dashboard/api/cards", {
     method: "POST", headers: { "Content-Type": "application/json", cookie },
     body: JSON.stringify({ name: "Second Café" }),
   });
-  expect(secondViaApi.status === 409, "a merchant cannot add a second card");
-  expect(
-    JSON.parse(await secondViaApi.text()).error === "one-card-per-merchant",
-    "...and is told why, not just refused",
-  );
-  const stillOne = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
-  expect(stillOne.cards.length === 1, "the refused card was not created anyway");
+  expect(secondViaApi.status === 200, `a merchant can add a second card (got ${secondViaApi.status})`);
+  const secondId = JSON.parse(await secondViaApi.text()).id as string;
+
+  // ---- unfinished cards ----
+  //
+  // A draft exists so the Create flow can be left and picked up on another
+  // device. Until it is published NOTHING may hand it to a customer, and each
+  // of these is a separate door — a draft that slipped through any one of them
+  // would start issuing cards whose reward the owner had not settled on.
+  {
+    const draftRes = await fetch(base + "/dashboard/api/cards", {
+      method: "POST", headers: { "Content-Type": "application/json", cookie },
+      body: JSON.stringify({ name: "Half-made card", draft: true }),
+    });
+    expect(draftRes.status === 200, "an unfinished card can be created");
+    const draftId = JSON.parse(await draftRes.text()).id as string;
+
+    const draftCard = (await getCard(draftId))!;
+    expect(draftCard.published_at === null, "an unfinished card carries no published date");
+    expect(
+      (await liveCardsForMerchant(draftCard.merchant_id!)).every((c) => c.id !== draftId),
+      "an unfinished card is not one of the shop's live cards",
+    );
+    expect(
+      (await cardsForMerchant(draftCard.merchant_id!)).some((c) => c.id === draftId),
+      "...but the owner can still see it, or they could never finish it",
+    );
+
+    // The door both wallets and the landing page knock on.
+    const draftLanding = await get(`/c/${draftId}`);
+    expect(draftLanding.status === 200, "a scan of an unfinished card still answers");
+    expect(
+      !draftLanding.body.includes("Add to Apple Wallet"),
+      "...but offers no way to be issued the card",
+    );
+    const draftApple = await get(`/c/${draftId}/enroll`);
+    expect(draftApple.status === 403, `an unfinished card refuses Apple enrolment (got ${draftApple.status})`);
+    const draftGoogle = await get(`/c/${draftId}/enroll/google`);
+    expect(draftGoogle.status === 403, `...and Google too (got ${draftGoogle.status})`);
+
+    // Publishing is what makes it real, and it is one-way.
+    const pub = await fetch(base + `/dashboard/api/card/${draftId}/publish`, {
+      method: "POST", headers: { "Content-Type": "application/json", cookie },
+    });
+    expect(pub.status === 200, "the last step of the flow publishes it");
+    const nowLive = (await getCard(draftId))!;
+    expect(nowLive.published_at !== null, "...and it now carries a published date");
+    const liveApple = await get(`/c/${draftId}/enroll`);
+    expect(liveApple.status !== 403, `a published card issues again (got ${liveApple.status})`);
+
+    // Publishing twice must not move the date — the flow can be re-walked.
+    await fetch(base + `/dashboard/api/card/${draftId}/publish`, {
+      method: "POST", headers: { "Content-Type": "application/json", cookie },
+    });
+    const again = (await getCard(draftId))!;
+    expect(
+      String(again.published_at) === String(nowLive.published_at),
+      "publishing an already-published card leaves its date alone",
+    );
+  }
 
   // The merchants that DO hold two cards got them before that cap. Everything
   // below checks that state still works — one PIN, one session, both cards.
@@ -1993,13 +2047,17 @@ async function main() {
   expect(backOv.cards.some((c: any) => c.id === busy), "...and returns to the owner's dashboard");
   await archive(busy, cookieNow); // leave it archived
 
-  // The cap counts LIVE cards, so archiving the spare puts this shop back to
-  // exactly one — still capped, and still not able to reach zero.
+  // A shop may hold several cards now, so making another is simply allowed.
+  // What has NOT changed is the floor: archiving can never take a shop to no
+  // card at all, which is the check below and the one that matters.
   const reMade = await fetch(base + "/dashboard/api/cards", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: spareCookie },
     body: JSON.stringify({ name: "Replacement card" }),
   });
-  expect(reMade.status === 409, "one live card is still one card — the cap holds");
+  expect(reMade.status === 200, `a shop can add another card (got ${reMade.status})`);
+  // Put the shop back to exactly one card, so the floor below is tested against
+  // the state it is about: a shop with a single card, trying to remove it.
+  await archive(JSON.parse(await reMade.text()).id, cookieNow);
   const toZero = await archive(spareCards[0].id, cookieNow);
   expect(
     toZero.status === 409 && toZero.body.error === "last-card",
