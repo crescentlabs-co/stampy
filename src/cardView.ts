@@ -35,6 +35,9 @@ import {
   updateCard,
   asCardKind,
   asMilestones,
+  asRewardType,
+  moneyLabel,
+  type RewardType,
   asPointPresets,
   MAX_POINTS_COST,
   type CardRow,
@@ -62,6 +65,34 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
  * The staff PIN is not a card field — it belongs to the owner and lives at
  * POST /api/staff-pin. Anything sent here is ignored on purpose.
  */
+/**
+ * The one line the customer reads, built from the shape the owner picked.
+ *
+ * This is the whole trick that keeps reward types cheap. `cards.reward` stays a
+ * plain sentence, and it is still the only thing the Apple card, the Google
+ * card, the staff phone, the poster and the pass snapshot ever read — so none
+ * of them has to learn that a reward can be a percentage. Only this function
+ * knows, and it runs once, on save.
+ *
+ * An ITEM keeps the owner's own words: "Free coffee" is better than anything
+ * generated, and it is what every card written before today already holds.
+ */
+export function rewardSentence(
+  type: RewardType,
+  name: string,
+  valueCents: number,
+  percent: number,
+  capCents: number,
+): string {
+  if (type === "amount") return `${moneyLabel(valueCents)} off`;
+  if (type === "percent") {
+    // The cap is optional: a shop offering a flat 20% off with no ceiling
+    // should not have "up to RM0" printed on its card.
+    return capCents > 0 ? `${percent}% off up to ${moneyLabel(capCents)}` : `${percent}% off`;
+  }
+  return name.trim().slice(0, 60);
+}
+
 export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<typeof updateCard>[1] {
   const fields: Parameters<typeof updateCard>[1] = {};
   if (typeof body.name === "string" && body.name.trim()) fields.name = body.name.trim().slice(0, 60);
@@ -79,6 +110,41 @@ export function cardFieldsFromBody(body: Record<string, unknown>): Parameters<ty
     fields.benefits = body.benefits
       .split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 10)
       .map((l) => l.slice(0, 80)).join("\n");
+  }
+  // How many stamps a visit is worth. Capped low on purpose: this multiplies
+  // every tap, so a stray 50 would fill a card in one visit.
+  if (body.stampsPerVisit !== undefined) {
+    fields.stamps_per_visit = clampInt(body.stampsPerVisit, 1, 10, 1);
+  }
+  // The reward's shape and its numbers, then the sentence built from them.
+  //
+  // Written together and never apart: the sentence is what a customer reads and
+  // the numbers are what the Create flow reloads, so a save that moved one
+  // without the other would leave a card promising something its own settings
+  // no longer say.
+  if (body.rewardType !== undefined) {
+    const rType = asRewardType(body.rewardType);
+    const money = (v: unknown) => {
+      const major = Number(v);
+      return Number.isFinite(major) ? Math.max(0, Math.min(1_000_000, Math.round(major * 100))) : 0;
+    };
+    const value = money(body.rewardValue);
+    const cap = money(body.rewardCap);
+    const pct = clampInt(body.rewardPercent, 1, 100, 10);
+    fields.reward_type = rType;
+    fields.reward_value_cents = value;
+    fields.reward_percent = pct;
+    fields.reward_cap_cents = cap;
+    // The name only matters for an item; for the other two the sentence is
+    // generated, and a stale name left in `reward` would contradict it.
+    const name = typeof body.reward === "string" ? body.reward : "";
+    const sentence = rewardSentence(rType, name, value, pct, cap);
+    if (sentence) fields.reward = sentence;
+    // What a customer spends in a visit, which is what turns stamps into a
+    // money figure on Home. The Create flow no longer asks for it separately:
+    // for a free item, what the item is worth IS the basket. For a discount it
+    // is not, so it stays where it was rather than being guessed at.
+    if (rType === "item" && value > 0) fields.average_spend_cents = value;
   }
   // The reward ladder. asMilestones sorts it and drops anything malformed —
   // `rewards_claimed` is an index into this list, so an unsorted one would hand
@@ -229,6 +295,12 @@ export interface DesignerCard {
   milestones: { at: number; reward: string }[];
   /** null while the Create flow is still being walked through. */
   publishedAt: string | null;
+  /** The reward's shape and numbers, so the Create flow can reload the answers. */
+  rewardType: string;
+  rewardValue: number;
+  rewardPercent: number;
+  rewardCap: number;
+  stampsPerVisit: number;
   /** One-tap amounts on a points counter, as typed ("10,20,50"). */
   pointPresets: string;
   reward: string;
@@ -293,6 +365,11 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     benefits: card.benefits,
     milestones: card.milestones ?? [],
     publishedAt: card.published_at ? card.published_at.toISOString() : null,
+    rewardType: card.reward_type,
+    rewardValue: card.reward_value_cents / 100,
+    rewardPercent: card.reward_percent,
+    rewardCap: card.reward_cap_cents / 100,
+    stampsPerVisit: card.stamps_per_visit,
     pointPresets: card.point_presets ?? "",
     reward: card.reward,
     stampsTarget: card.stamps_target,

@@ -377,7 +377,10 @@ async function updateAndPush(
  */
 async function stampAmount(serial: string, body: { amount?: unknown }): Promise<number> {
   const row = await getPass(serial);
-  if (row?.kind !== "points") return 1;
+  // Off the PASS, never the card: the rate is frozen at issue like the target
+  // and the reward, so a shop halving it cannot double what somebody part-way
+  // through still owes.
+  if (row?.kind !== "points") return Math.max(1, row?.stamps_per_visit ?? 1);
   const n = Math.trunc(Number(body.amount));
   return Number.isFinite(n) && n >= 1 && n <= MAX_POINTS_COST ? n : 1;
 }

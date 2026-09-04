@@ -222,6 +222,9 @@ async function newPass(
     stampCount: Math.min(card.stamps_start, card.stamps_target), // endowed progress
     stampsTarget: card.stamps_target,
     reward: card.reward,
+    kind: card.kind,
+    milestones: card.milestones,
+    stampsPerVisit: card.stamps_per_visit,
     isTest,
   });
   // logEvent reads is_test off the pass, so this row is already marked as a

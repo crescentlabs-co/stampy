@@ -66,6 +66,37 @@ export function asCardKind(v: unknown): CardKind {
 }
 
 /**
+ * What SHAPE a reward is, so the card can say it in the customer's words.
+ *
+ * `reward` itself stays a plain sentence and is what every wallet, the staff
+ * phone and the poster read — these columns exist so the Create flow can load
+ * the owner's answers back and re-word that sentence, never so anything
+ * downstream has to branch on them.
+ *
+ * 'item'    something they hand over. The owner types the words.
+ * 'amount'  money off, in cents  ->  "RM5 off"
+ * 'percent' a share off, with a ceiling  ->  "20% off up to RM10"
+ */
+export type RewardType = "item" | "amount" | "percent";
+
+const REWARD_TYPES: readonly RewardType[] = ["item", "amount", "percent"];
+
+export function asRewardType(v: unknown): RewardType {
+  return REWARD_TYPES.includes(v as RewardType) ? (v as RewardType) : "item";
+}
+
+/**
+ * Money as a shop would write it: "RM5", "RM5.50".
+ *
+ * Whole ringgit lose the ".00" — a card reading "RM5.00 off" at arm's length is
+ * two characters of noise on the line with least room on it.
+ */
+export function moneyLabel(cents: number): string {
+  const n = Math.max(0, Math.round(cents));
+  return n % 100 === 0 ? `RM${n / 100}` : `RM${(n / 100).toFixed(2)}`;
+}
+
+/**
  * One rung of a milestone card: a count, and what the customer gets for
  * reaching it.
  *
@@ -148,6 +179,24 @@ export interface CardRow {
    * strip images and every query that reads a target keep working unchanged.
    */
   milestones: Milestone[];
+  /**
+   * The reward's shape, and the numbers behind it. `reward` above is the
+   * sentence built FROM these — see rewardSentence in src/cardView.ts. Nothing
+   * that renders a card reads these; they exist so the Create flow can load the
+   * owner's answers back and re-word the sentence.
+   */
+  reward_type: RewardType;
+  reward_value_cents: number;
+  reward_percent: number;
+  reward_cap_cents: number;
+  /**
+   * How many stamps one visit is worth. Almost always 1.
+   *
+   * Snapshotted onto the pass at issue like stamps_target and reward, because
+   * it is half of the promise: a shop dropping this from 2 to 1 would otherwise
+   * double the visits somebody part-way through still owes.
+   */
+  stamps_per_visit: number;
   /**
    * One-tap amounts on a points counter, stored the way the owner typed them
    * ("10,20,50"). Text like `benefits`, for the same reason: it is a short list
@@ -262,6 +311,8 @@ export interface PassRow {
    * blanking targets people are part-way towards.
    */
   kind: CardKind;
+  /** How many stamps a visit earns, frozen at issue with the rest of the deal. */
+  stamps_per_visit: number;
   /**
    * The reward ladder this pass was ISSUED with, frozen like reward and
    * stamps_target. A shop that drops the 5-stamp prize must not un-give it to
@@ -992,6 +1043,19 @@ export async function migrate(): Promise<void> {
     -- keeps producing a live card without knowing this column exists. Only an
     -- explicit NULL is a draft, and only createCard({draft:true}) writes one.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS published_at timestamptz DEFAULT now();
+    -- v2.8: the reward's shape and its numbers. The reward column stays the
+    -- sentence every wallet reads; these are what the Create flow asks for and
+    -- re-words it from, so nothing downstream learns a reward can be a percent.
+    -- 'item' is the default because that is what every existing reward is: a
+    -- line of the owner's own words.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS reward_type        text    NOT NULL DEFAULT 'item';
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS reward_value_cents integer NOT NULL DEFAULT 0;
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS reward_percent     integer NOT NULL DEFAULT 0;
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS reward_cap_cents   integer NOT NULL DEFAULT 0;
+    -- How many stamps one visit earns. On the PASS as well, frozen at issue:
+    -- halving the rate must not double what somebody part-way through owes.
+    ALTER TABLE cards  ADD COLUMN IF NOT EXISTS stamps_per_visit integer NOT NULL DEFAULT 1;
+    ALTER TABLE passes ADD COLUMN IF NOT EXISTS stamps_per_visit integer NOT NULL DEFAULT 1;
     -- How much this event MOVED.
     --
     -- Every metric in this file counts events: one stamp row is one stamp. On a
@@ -2345,6 +2409,11 @@ export async function updateCard(
     kind: CardKind;
     benefits: string;
     milestones: Milestone[];
+    reward_type: RewardType;
+    reward_value_cents: number;
+    reward_percent: number;
+    reward_cap_cents: number;
+    stamps_per_visit: number;
     point_presets: string;
     reward: string;
     stamps_target: number;
@@ -4013,15 +4082,17 @@ export async function createPass(row: {
   kind?: CardKind;
   /** The reward ladder, frozen at issue alongside reward and stamps_target. */
   milestones?: Milestone[];
+  /** How many stamps a visit earns, frozen at issue. Defaults to one. */
+  stampsPerVisit?: number;
   /** The owner or the operator looking at their own card — never a customer. */
   isTest?: boolean;
 }): Promise<PassRow> {
   const res = await getPool().query<PassRow>(
-    `INSERT INTO passes (serial, card_id, customer_id, platform, short_code, auth_token, stamp_count, stamps_target, reward, kind, milestones, is_test)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+    `INSERT INTO passes (serial, card_id, customer_id, platform, short_code, auth_token, stamp_count, stamps_target, reward, kind, milestones, stamps_per_visit, is_test)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
     [row.serial, row.cardId, row.customerId ?? null, row.platform, row.shortCode, row.authToken,
      row.stampCount, row.stampsTarget, row.reward, row.kind ?? "stamp",
-     JSON.stringify(row.milestones ?? []), row.isTest === true],
+     JSON.stringify(row.milestones ?? []), row.stampsPerVisit ?? 1, row.isTest === true],
   );
   return res.rows[0]!;
 }
@@ -4186,6 +4257,8 @@ export async function redeemPass(serial: string, cost = 0): Promise<PassRow | nu
             reward          = CASE WHEN cur.more THEN p.reward         ELSE c.reward END,
             kind            = CASE WHEN cur.more THEN p.kind           ELSE c.kind END,
             milestones      = CASE WHEN cur.more THEN p.milestones     ELSE c.milestones END,
+            stamps_per_visit = CASE WHEN cur.more THEN p.stamps_per_visit
+                                    ELSE c.stamps_per_visit END,
             updated_at      = now()
        FROM cards c, cur
       WHERE p.serial = $1 AND c.id = p.card_id AND cur.serial = p.serial
@@ -4216,6 +4289,7 @@ export async function reissuePass(serial: string): Promise<PassRow | null> {
             reward        = c.reward,
             kind          = c.kind,
             milestones    = c.milestones,
+            stamps_per_visit = c.stamps_per_visit,
             -- Re-enrolling is the customer asking for today's card, so the
             -- ladder starts again from the bottom rung along with everything
             -- else. Their stamps are kept either way.

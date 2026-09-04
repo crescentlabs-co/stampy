@@ -535,6 +535,56 @@ async function main() {
     );
   }
 
+  // ---- the reward's shape, and the sentence built from it ----
+  //
+  // The point of these columns is that NOTHING downstream learns about them:
+  // `reward` stays one plain sentence and is still what every wallet reads. So
+  // what has to hold is that saving the shape rewrites the sentence.
+  {
+    const saveShape = (body: Record<string, unknown>) =>
+      fetch(base + `/dashboard/api/card/${secondId}`, {
+        method: "POST", headers: { "Content-Type": "application/json", cookie },
+        body: JSON.stringify(body),
+      });
+
+    await saveShape({ rewardType: "amount", rewardValue: 5 });
+    expect((await getCard(secondId))!.reward === "RM5 off",
+      `money off reads as money (got ${(await getCard(secondId))!.reward})`);
+
+    await saveShape({ rewardType: "percent", rewardPercent: 20, rewardCap: 10 });
+    expect((await getCard(secondId))!.reward === "20% off up to RM10",
+      `a percentage carries its ceiling (got ${(await getCard(secondId))!.reward})`);
+
+    await saveShape({ rewardType: "item", reward: "Free croissant", rewardValue: 12 });
+    const asItem = (await getCard(secondId))!;
+    expect(asItem.reward === "Free croissant", "an item keeps the owner's own words");
+    // What a customer spends in a visit is no longer its own question: for a
+    // free item, what the item is worth IS the basket.
+    expect(asItem.average_spend_cents === 1200,
+      `an item's value becomes the basket (got ${asItem.average_spend_cents})`);
+  }
+
+  // ---- one visit can be worth more than one stamp ----
+  //
+  // Read off the PASS, never the card: the rate is frozen at issue with the
+  // target and the reward, so halving it must not double what somebody
+  // part-way through still owes.
+  {
+    const rated = await mk();
+    await getPool().query(`UPDATE passes SET stamps_per_visit = 2, stamp_count = 0 WHERE serial = $1`,
+      [rated.serial]);
+    const before = (await getPass(rated.serial))!.stamp_count;
+    await fetch(base + "/staff/api/stamp", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: rated.serial, force: true }),
+    });
+    const after = (await getPass(rated.serial))!.stamp_count;
+    expect(after - before === 2, `one tap on a 2-a-visit card is worth two (got ${after - before})`);
+
+    // And the card it belongs to still says one, proving the pass was asked.
+    const ownCard = (await getCard(rated.card_id))!;
+    expect(ownCard.stamps_per_visit === 1, "...read from the pass, not from the card");
+  }
+
   // The merchants that DO hold two cards got them before that cap. Everything
   // below checks that state still works — one PIN, one session, both cards.
   const newCafeOut = { id: await addLegacyCard("owner@test.my", "Second Café") };
