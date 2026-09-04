@@ -741,6 +741,31 @@ export const DESIGN_PANEL_CSS = /* css */ `
        no-op on the dashboard, which already sits inside a 480px .card. */
     .designhost { max-width: 480px; }
     .dsurf { position: relative; display: flex; justify-content: center; margin-bottom: var(--s2); }
+    /* Its own, rather than borrowing the dashboard's .cmpmetric: that one is
+       flex:1 and left-aligned (it shares a row with a filter button), so it
+       stretched and sat off-centre here — and it is styled in the dashboard,
+       which the admin console mounting this panel does not load at all. */
+    .dsurfbtn { display: inline-flex; align-items: center; justify-content: center;
+                gap: 6px; background: none; border: 0; padding: 4px 8px; font: inherit;
+                font-weight: 600; color: var(--ink); cursor: pointer; }
+    .dsurfbtn svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
+                    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .dsurfbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 8px; }
+
+    /* The lock screen. Dark whatever the card is, because a lock screen is. */
+    .pvn { background: #1c1c1e; border-radius: 18px; padding: 22px 14px 16px; color: #fff;
+           text-align: center; }
+    .pvn-time { font-size: 2.6rem; font-weight: 300; line-height: 1; letter-spacing: -.02em; }
+    .pvn-date { font-size: .8rem; opacity: .7; margin-top: 4px; }
+    .pvn-card { display: flex; align-items: center; gap: 10px; text-align: left;
+                margin-top: 20px; padding: 10px 12px; border-radius: 14px;
+                background: rgba(255,255,255,.16); backdrop-filter: blur(6px); }
+    .pvn-logo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; flex: none; }
+    .pvn-txt { flex: 1; min-width: 0; }
+    .pvn-app { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; opacity: .75; }
+    .pvn-body { font-size: .84rem; line-height: 1.35; margin-top: 2px; overflow-wrap: anywhere; }
+    .pvn-ago { font-size: .68rem; opacity: .6; flex: none; align-self: flex-start; }
+    .pvn-note { font-size: .72rem; opacity: .55; margin: 14px 0 0; line-height: 1.4; }
     /* The card is a reference while you edit, not the subject of the screen.
        At full width it pushed every field below the fold on a phone, which is
        where this is used. Capped rather than scaled so the type inside stays
@@ -884,25 +909,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
 
     /* --- the printed sheet --- */
     /* White, because paper is. Only the head band and the QR frame are brand. */
-    .pvp { background: #fff; color: #111; border-radius: 12px; overflow: hidden;
-           margin: 10px 0 4px; box-shadow: 0 10px 30px -8px rgba(43,29,21,.35); }
-    .pvp-head { padding: 16px 14px 14px; text-align: center; }
-    .pvp-logo { height: 34px; width: auto; max-width: 65%; object-fit: contain; margin-bottom: 6px; }
-    .pvp-name { font-family: var(--display); font-weight: 800; font-size: 1.05rem;
-                letter-spacing: -.01em; overflow-wrap: anywhere; }
-    .pvp-body { padding: 14px 14px 16px; text-align: center; }
-    .pvp-offer { font-weight: 700; font-size: .92rem; line-height: 1.3; overflow-wrap: anywhere; }
-    .pvp-no { color: #6b6b66; font-size: .72rem; margin: 6px 0 12px; }
-    .pvp-qr { border: 4px solid var(--line); border-radius: 10px; width: 96px; height: 96px;
-              margin: 0 auto; display: flex; align-items: center; justify-content: center;
-              font-weight: 700; font-size: .72rem; color: #111; letter-spacing: 1px; }
-    /* Centred, and centred the same way posterPage's .psteps is — the offer,
-       the line above the code and the code itself are all centred, so a
-       left-flush block of steps was the one thing on the sheet hanging off the
-       edge. Changed in BOTH places in the same commit: this preview exists to
-       be trusted, and a fix applied to only one of them is how it stops being. */
-    .pvp-steps { color: #6b6b66; font-size: .68rem; line-height: 1.7; margin-top: 12px;
-                 text-align: center; }
 
     /* The surface switch. Smaller than the page-level tabs it borrows from —
        it is a control inside a panel, not the panel's own navigation. Mini on
@@ -1279,7 +1285,7 @@ export const DESIGN_PANEL_JS = /* js */ `
                which the dashboard's nav already spends. Same control the
                Manage screens use. -->
           <div class="dsurf" data-surfaces>
-            <button type="button" class="cmpmetric" data-surfbtn>
+            <button type="button" class="dsurfbtn" data-surfbtn>
               <span data-surfname>iPhone</span>\${CARET_SVG}
             </button>
           </div>
@@ -1341,17 +1347,27 @@ export const DESIGN_PANEL_JS = /* js */ `
                real page: that is a round trip per keystroke, and the poster is
                a server-rendered document. Same order and same rules as
                posterPage, including hiding the name when the logo carries it. -->
-          <div class="pvp" data-pvp data-surface="signup" hidden>
-            <div class="pvp-head" data-pvp-head>
-              <img class="pvp-logo" data-pvp-logo alt="" style="\${c.logoVersion ? "" : "display:none"}">
-              <div class="pvp-name" data-pvp-name></div>
+          <!-- The lock screen, which is where this card does its real work.
+               A wallet card is not something anybody opens; it is something
+               that taps them on the shoulder after a stamp. This is the one
+               surface an owner never otherwise sees, and the wording in it is
+               generated from their own reward and target — so it is worth more
+               than a mock of a poster they can simply print and look at.
+
+               The banner text is passModel's changeMessage with %@ already
+               substituted, which is exactly what iOS shows. -->
+          <div class="pvn" data-pvn data-surface="notify" hidden>
+            <div class="pvn-time" data-pvn-time>9:41</div>
+            <div class="pvn-date">Monday, 8 September</div>
+            <div class="pvn-card">
+              <img class="pvn-logo" data-pvn-logo alt="" style="\${c.logoVersion ? "" : "display:none"}">
+              <div class="pvn-txt">
+                <div class="pvn-app" data-pvn-app></div>
+                <div class="pvn-body" data-pvn-body></div>
+              </div>
+              <div class="pvn-ago">now</div>
             </div>
-            <div class="pvp-body">
-              <div class="pvp-offer" data-pvp-offer></div>
-              <div class="pvp-no">Scan to get your card — no app to download.</div>
-              <div class="pvp-qr" data-pvp-qr><span>QR</span></div>
-              <div class="pvp-steps">1. Point your camera at the code<br>2. Tap Add to Wallet<br>3. Show it when you order</div>
-            </div>
+            <p class="pvn-note">What a customer sees after a stamp, without opening anything.</p>
           </div>
 
           <!-- The palette for whichever part of the card was tapped. It lives
@@ -2050,7 +2066,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           dots.textContent = "●".repeat(start) + "○".repeat(total - start);
         }
         renderGoogle(start, target, nextRung, total, points);
-        renderPoster();
+        renderNotify();
       }
 
       /**
@@ -2173,20 +2189,17 @@ export const DESIGN_PANEL_JS = /* js */ `
       updateMark();
 
       /** The printed sheet. Same order and the same rules as posterPage. */
-      function renderPoster() {
-        const pp = q("[data-pvp]");
-        if (!pp) return;
-        const bg = f("bg").value;
-        const head = q("[data-pvp-head]");
-        head.style.background = bg;
-        head.style.color = pickTextColor(bg);
-        const nm = q("[data-pvp-name]");
-        nm.textContent = f("shopName").value || "Your shop";
-        // The poster hides the name under the same condition the card does.
-        nm.style.display = c.logoHasName && c.logoVersion ? "none" : "";
-        const im = q("[data-pvp-logo]");
-        if (c.logoVersion) { im.src = env.artUrl("logo", c.logoVersion); im.style.display = ""; }
-        else im.style.display = "none";
+      /**
+       * The sign-up line, and the lock-screen banner.
+       *
+       * This was renderPoster, and the poster mock it drew is gone — an owner
+       * can print the real sheet and hold it, while the notification is the one
+       * surface they never otherwise see. What survived is the sentence: it is
+       * the sign-up page's headline AND the placeholder under the field, and
+       * both have to be derived on every repaint or a target change leaves the
+       * suggestion underneath offering the old number.
+       */
+      function renderNotify() {
         const reward = f("reward").value || "your reward";
         const target = Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
         // Mirrors signupLine() in src/pages.ts. A membership card has no target
@@ -2207,19 +2220,36 @@ export const DESIGN_PANEL_JS = /* js */ `
         } else {
           suggested = "Collect " + target + " stamps, get a " + reward.toLowerCase() + ".";
         }
-        q("[data-pvp-offer]").textContent = f("signupMessage").value || suggested;
-        // The FIELD's placeholder is the same sentence, and it used to be baked
-        // in once at mount — so raising the target to 10 and saving left the
-        // suggestion underneath still offering the old number, disagreeing with
-        // the poster beside it until the whole page was reloaded. It is derived
-        // from the same two values here, on every repaint, so it cannot drift.
         f("signupMessage").placeholder = suggested;
-        // The QR frame is the accent on white paper, and a pale accent prints as
-        // no frame at all — the same fallback posterPage makes server-side.
-        const accent = f("accent").value;
-        q("[data-pvp-qr]").style.borderColor =
-          contrastRatio(accent, "#ffffff") >= 1.6 ? accent
-            : (contrastRatio(bg, "#ffffff") >= 1.6 ? bg : "#111111");
+
+        const nb = q("[data-pvn-body]");
+        if (!nb) return;
+        const shop = f("shopName").value || "Your shop";
+        q("[data-pvn-app]").textContent = shop;
+        const im = q("[data-pvn-logo]");
+        if (c.logoVersion) { im.src = env.artUrl("logo", c.logoVersion); im.style.display = ""; }
+        else im.style.display = "none";
+        // What iOS actually shows: the header field's changeMessage with %@
+        // already substituted. Mirrors buildPassJson in src/passModel.ts — if
+        // that wording changes, this has to move with it or an owner is shown
+        // a banner their customers never get.
+        const start = Math.max(0, Math.min(target, Number(f("stampsStart").value) || 0));
+        const rungs = kindNow() === "milestones" || kindNow() === "points" ? ladderClean() : [];
+        const nextRung = rungs.find((m) => m.at > start) || rungs[rungs.length - 1] || null;
+        const to = nextRung ? nextRung.at : target;
+        const prize = nextRung ? nextRung.reward : reward;
+        let line;
+        if (isMember()) line = "Member at " + shop;
+        else if (kindNow() === "points") {
+          line = start + " points — " + prize.toLowerCase() + " at " + to;
+        } else if (start >= to) {
+          line = "Reward ready — your " + prize.toLowerCase() + " is waiting 🎉";
+        } else {
+          const left = to - start;
+          line = (left <= start ? left + " left" : start + " earned") +
+            " — " + prize.toLowerCase() + " at " + to;
+        }
+        nb.textContent = line;
       }
 
       for (const el of div.querySelectorAll("[data-f]")) el.addEventListener("input", renderPreview);
@@ -3131,7 +3161,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       const SURFACES = [
         { k: "apple", name: "iPhone" },
         { k: "google", name: "Android" },
-        { k: "signup", name: "Sign-up poster" },
+        { k: "notify", name: "Notification" },
       ];
       const surfBtn = surfaceSeg && surfaceSeg.querySelector("[data-surfbtn]");
       function showSurface(name) {

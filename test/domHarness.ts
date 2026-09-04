@@ -63,6 +63,8 @@ export class FakeEl {
   /** Mirrors the HTML attribute, so markup that ships hidden reports hidden
    *  before any script has touched it. */
   hidden = false;
+  /** Set from markup and read back by the panel — the sign-up field's hint. */
+  placeholder = "";
   width = 0;
   height = 0;
   /** Layout geometry. Always 0: nothing here is laid out, and a tab thumb
@@ -222,6 +224,7 @@ function parseHtml(html: string, parent: FakeEl): FakeEl[] {
         const key = a[1]!;
         el.attrs[key] = a[2] ?? a[3] ?? a[4] ?? "";
         if (key === "hidden") el.hidden = true;
+        if (key === "placeholder") el.placeholder = el.attrs[key]!;
         if (key.startsWith("data-")) {
           const camel = key.slice(5).replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase());
           el.dataset[camel] = el.attrs[key]!;

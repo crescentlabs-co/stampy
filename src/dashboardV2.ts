@@ -512,8 +512,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                  padding-top: var(--s2); letter-spacing: var(--tr-code);
                  text-transform: uppercase; }
     .wsteps li::before { content: counter(w) ". "; }
-    .wsteps li.on { color: var(--ink); border-top-color: var(--ink); }
-    .wsteps li.done { color: var(--ink2); border-top-color: var(--ink2); cursor: pointer; }
+    /* The bar, not the words: neon is a FILL here, never text (DESIGN.md 1).
+       A fourth fenced use of the accent, and the founder's call — it marks
+       where you are in a flow that has no other way to say so. */
+    .wsteps li.on { color: var(--ink); border-top-color: var(--accent); border-top-width: 3px; }
+    .wsteps li.done { color: var(--ink2); border-top-color: var(--accent);
+                      border-top-width: 3px; cursor: pointer; }
     /* Sits ABOVE the floating nav rather than over it — the nav is fixed and
        would otherwise cover the one button the step exists to offer. The sheet
        already reserves 96px at the bottom; this needs the nav's height on top,
@@ -526,6 +530,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                border: 1px solid var(--line); border-radius: var(--r-lg);
                box-shadow: 0 10px 30px -10px rgba(12,14,13,.28), 0 2px 8px rgba(12,14,13,.06); }
     .wizfoot .btn { width: 100%; }
+    /* Not hidden and not silent: a Next that vanished would leave the step
+       looking finished, and one that did nothing would look broken. It is
+       visibly out of reach, and pressing it points at what is missing. */
+    .wizfoot .btn[disabled] { opacity: .45; cursor: not-allowed; }
+    @keyframes wshake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-5px); }
+      40%, 80% { transform: translateX(5px); }
+    }
+    .wshake { animation: wshake .32s; }
+    @media (prefers-reduced-motion: reduce) { .wshake { animation: none; } }
     /* Not a button: it is the quiet way out, and a second filled control beside
        Next would make the step ask which one you meant. */
     .wizlater { background: none; border: 0; padding: var(--s2) 0 0; width: 100%;
@@ -698,16 +713,33 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pick strong { font-size: var(--t-md); }
     .pick .sub2 { grid-column: 1; color: var(--muted); font-size: var(--t-sm); line-height: var(--lh-read); }
     .pick .arr { grid-row: 1 / span 2; color: var(--muted); }
-    /* The wizard's version is a BUTTON, so it has to say which one is chosen.
-       Ink border rather than a neon fill: the neon on this screen belongs to
-       Next, and two filled things would leave the eye nowhere to go. */
-    .pick[data-kind] { grid-template-columns: auto 1fr; text-align: left; width: 100%;
-                       border: 1px solid var(--line); cursor: pointer; font: inherit; }
-    .pick[data-kind][aria-pressed="true"] { border-color: var(--ink); background: var(--surface); }
+    /* The wizard's version is a BUTTON, so it has to say which one is chosen —
+       and say it three ways at once, because one of them is easy to miss on a
+       phone: a tinted panel, an accent border, and a filled radio.
+
+       The tint is mixed FROM the accent rather than being a new colour, so the
+       palette does not grow one. Neon stays a fill and a border here, never
+       text (DESIGN.md 1). */
+    .pick[data-kind] { grid-template-columns: auto 1fr auto; text-align: left; width: 100%;
+                       border: 1px solid var(--line); cursor: pointer; font: inherit;
+                       align-items: start; }
+    .pick[data-kind][aria-pressed="true"] {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+    }
     .pick .pickicon { grid-row: 1 / span 2; display: flex; align-items: center;
                       justify-content: center; width: 40px; height: 40px; flex: none;
                       border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
     .pick[data-kind][aria-pressed="true"] .pickicon { background: var(--bg); }
+    /* The radio is the part that reads at a glance on a small screen — the tint
+       and the border both disappear in bright sun. */
+    .pickdot { grid-row: 1 / span 2; align-self: center; width: 22px; height: 22px;
+               flex: none; border-radius: 999px; border: 2px solid var(--field-border);
+               display: flex; align-items: center; justify-content: center; }
+    .pick[data-kind][aria-pressed="true"] .pickdot { border-color: var(--accent-2); }
+    .pick[data-kind][aria-pressed="true"] .pickdot::after {
+      content: ""; width: 12px; height: 12px; border-radius: 999px; background: var(--accent);
+    }
     .pick .pickicon svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
                           stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
     .pick[data-kind] .sub2 { grid-column: 2; }
@@ -715,6 +747,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        pill here would compete with the selected state right beside it. */
     .picktag { display: inline-block; margin-left: var(--s2); color: var(--muted);
                font-size: var(--t-sm); font-weight: 600; }
+    /* An unfinished card, where the three actions would otherwise be. */
+    .draftbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2);
+                padding: var(--s3); margin-top: var(--s3);
+                background: var(--surface); border-radius: var(--r);
+                font-size: var(--t-sm); color: var(--muted); }
+    .draftbar span:not(.pill) { flex: 1; min-width: 140px; }
+    .draftbar .btn { width: auto; flex: none; }
     /* Says the quiet part out loud: nothing on this screen is saved. Amber like
        the setup banner — nothing is broken, something is outstanding. */
     .draftnote { background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
@@ -2871,7 +2910,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const steps = WIZ_STEPS.map((name, i) =>
         '<li class="' + (i === stepIndex ? "on" : i < stepIndex ? "done" : "") + '"' +
         (i < stepIndex ? ' data-wstep="' + i + '"' : "") + ">" + esc(name) + "</li>").join("");
-      d.innerHTML = '<ol class="wsteps">' + steps + "</ol>";
+      // A back link as well as the numbered steps. The steps say where you are;
+      // this says how to leave, and on step 1 that is out of the flow entirely
+      // rather than nowhere.
+      d.innerHTML =
+        '<p class="muted" data-wback style="margin:0 0 6px;cursor:pointer">← ' +
+        esc(stepIndex === 0 ? "Create" : WIZ_STEPS[stepIndex - 1]) + "</p>" +
+        '<ol class="wsteps">' + steps + "</ol>";
       d.appendChild(bodyEl);
       const foot = document.createElement("div");
       foot.className = "wizfoot";
@@ -2879,16 +2924,47 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<button class="btn btn-neon" data-wnext>' + esc(opts.nextLabel || "Next") + "</button>" +
         (opts.onLater ? '<button class="wizlater" data-wlater>Save and finish later</button>' : "");
       d.appendChild(foot);
+      d.querySelector("[data-wback]").onclick = () =>
+        stepIndex === 0 ? navigate("/create") : opts.onStep(stepIndex - 1);
       // Only backwards. A step ahead has nothing to show yet — its screen is
       // built from answers this one has not been given.
       for (const li of d.querySelectorAll("[data-wstep]")) {
         li.onclick = () => opts.onStep(Number(li.getAttribute("data-wstep")));
       }
       const next = d.querySelector("[data-wnext]");
-      next.onclick = async () => {
-        next.disabled = true;
-        try { await opts.onNext(); } finally { next.disabled = false; }
+      /**
+       * Lock Next, and say where to look when it is pressed anyway.
+       *
+       * The step calls this whenever its own answer to "is this finished?"
+       * changes. The callback returns the element to shake, or nothing when the
+       * step is ready.
+       */
+      d.lockNext = (blocked) => {
+        const why = blocked();
+        next.disabled = Boolean(why);
+        next.onclick = async () => {
+          const stop = blocked();
+          if (stop) {
+            // The button is disabled, so a real click never lands here — this
+            // is the pointerdown path below, which fires either way.
+            stop.classList.remove("wshake");
+            void stop.offsetWidth;
+            stop.classList.add("wshake");
+            return;
+          }
+          next.disabled = true;
+          try { await opts.onNext(); } finally { next.disabled = false; }
+        };
       };
+      // A disabled button swallows click, so the shake hangs off the wrapper —
+      // otherwise pressing a greyed-out Next does nothing at all and reads as
+      // the page being broken.
+      foot.addEventListener("pointerdown", (e) => {
+        if (!next.disabled || !next.contains(e.target)) return;
+        next.onclick();
+      });
+      d.lockNext(() => null);
+      if (opts.blocked) d.lockNext(opts.blocked);
       const later = d.querySelector("[data-wlater]");
       if (later) later.onclick = () => opts.onLater();
       return d;
@@ -2907,6 +2983,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<span class="pickicon">' + t.icon + "</span>" +
           "<strong>" + esc(t.name) +
           (t.tag ? '<span class="picktag">' + esc(t.tag) + "</span>" : "") + "</strong>" +
+          '<span class="pickdot" aria-hidden="true"></span>' +
           '<span class="sub2">' + esc(t.blurb) + "</span></button>",
         ).join("") + "</div>";
       const paint = () => {
@@ -2957,7 +3034,36 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         cap: card.rewardCap || "",
       };
       let open = "earn";
+      // The second part has to be OPENED before Next is offered — pressing
+      // Continue is what says the earning rules are settled. A card that was
+      // already saved once is past that: its owner has answered, and making
+      // them press Continue again to get back to a screen they have seen would
+      // be a gate on nothing.
+      let reached = Boolean(card.publishedAt) || card.rewardType !== "item" ||
+        Boolean((card.reward || "").trim());
       const body = document.createElement("div");
+      let frame = null;
+
+      /**
+       * What is stopping this step, as the element to point at.
+       *
+       * Null means Next is live. Anything else is both the reason and the
+       * thing that gets shaken, so the answer and the arrow are one value and
+       * cannot disagree.
+       */
+      const blocked = () => {
+        if (!String(r.name).trim()) return body.querySelector("[data-r=name]");
+        if (!reached) return body.querySelector("[data-cont]");
+        if (r.rewardType === "item" && !String(r.rewardName).trim()) {
+          return body.querySelector("[data-r=rewardName]") || body.querySelector("[data-open=reward]");
+        }
+        if (r.rewardType !== "item" && !(Number(r.rewardType === "percent" ? r.percent : r.value) > 0)) {
+          return body.querySelector("[data-r=" + (r.rewardType === "percent" ? "percent" : "value") + "]") ||
+            body.querySelector("[data-open=reward]");
+        }
+        return null;
+      };
+      const relock = () => { if (frame && frame.lockNext) frame.lockNext(blocked); };
 
       // Only the number and its pill, so typing does not rebuild the form and
       // take the focus out of the box being typed in.
@@ -3037,13 +3143,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             r[el.getAttribute("data-r")] = el.value;
             if (el.getAttribute("data-r") === "rewardType") paint();
             else repaintEffect();
+            relock();
           });
         }
         for (const b of body.querySelectorAll("[data-open]")) {
-          b.onclick = () => { open = b.getAttribute("data-open"); paint(); };
+          b.onclick = () => { open = b.getAttribute("data-open"); paint(); relock(); };
         }
         const cont = body.querySelector("[data-cont]");
-        if (cont) cont.onclick = () => { open = "reward"; paint(); };
+        if (cont) cont.onclick = () => { reached = true; open = "reward"; paint(); relock(); };
         const bulb = body.querySelector("[data-bulb]");
         if (bulb) {
           bulb.onclick = () => modal("Why this number",
@@ -3069,14 +3176,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         }),
       });
 
-      return wizardFrame(1, body, {
+      frame = wizardFrame(1, body, {
+        blocked,
         onStep: () => navigate("/create/card"),
         onNext: async () => {
-          if (r.rewardType === "item" && !String(r.rewardName).trim()) {
-            open = "reward"; paint();
-            toast("Give the reward a name first");
-            return;
-          }
           await save();
           await refreshCards();
           navigate("/create/" + id + "/design");
@@ -3088,6 +3191,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           navigate("/manage/rewards");
         },
       });
+      relock();
+      return frame;
     }
 
     /** Step 3 — the look. The existing designer, then publish. */
@@ -3398,6 +3503,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         body.innerHTML = t ? cardBody(t) : "";
         if (!t || t.eg) return;
         const c = t.card;
+        // A draft shows one button instead of three, so the other three are
+        // not there to wire.
+        const resume = body.querySelector("[data-resume]");
+        if (resume) {
+          // Back to Rules, not to Choose: the type is the one answer they
+          // definitely gave — it is what created the card.
+          resume.onclick = () => navigate("/create/" + c.id + "/rules");
+          return;
+        }
         body.querySelector("[data-poster]").onclick = () =>
           window.open("/c/" + encodeURIComponent(c.id) + "/poster", "_blank", "noopener");
         body.querySelector("[data-share]").onclick = () => shareSheet(c);
@@ -3433,11 +3547,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             (t.eg.status === "ended" ? "Ended" : "Active") + "</b></div>";
       }
       const c = t.card;
-      return '<div class="cardacts">' +
-          actBtn("poster", ICON_POSTER, "Poster") +
-          actBtn("share", ICON_SHARE, "Share") +
-          actBtn("edit", ICON_EDIT, "Edit") +
-        "</div>" +
+      // An unfinished card has no poster to print and no link worth sharing —
+      // nothing hands it to a customer until it is published. So it says what
+      // it is and offers the one thing that helps: the way back into the flow.
+      const draft = !c.publishedAt;
+      return (draft
+        ? '<div class="draftbar"><span class="pill pill-warn">Draft</span>' +
+          "<span>Not finished yet, so nobody can be given this card.</span>" +
+          '<button type="button" class="btn btn-neon" data-resume>Continue editing</button></div>'
+        : '<div class="cardacts">' +
+            actBtn("poster", ICON_POSTER, "Poster") +
+            actBtn("share", ICON_SHARE, "Share") +
+            actBtn("edit", ICON_EDIT, "Edit") +
+          "</div>") +
         '<h2 class="sec">Info</h2>' +
         '<div class="drow"><span>Type</span><b>' + esc(KIND_LABEL[c.kind] || "Stamps") + "</b></div>" +
         '<div class="drow"><span>The deal</span><b>' + esc(dealLine(c)) + "</b></div>" +
@@ -3445,7 +3567,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           ? '<div class="drow"><span>Welcome stamps</span><b>' + c.stampsStart + "</b></div>"
           : "") +
         '<div class="drow"><span>Sign-ups</span><b>' +
-          (c.endedAt ? "Closed" : "Open") + "</b></div>";
+          (draft ? "Not started" : c.endedAt ? "Closed" : "Open") + "</b></div>";
     }
 
     const actBtn = (key, icon, label, off) =>

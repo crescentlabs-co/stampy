@@ -553,7 +553,7 @@ describe("one designer, two pages", () => {
    */
   it("organises the editor by brand and programme, not by wallet", () => {
     for (const html of [dash, admin]) {
-      for (const name of ["apple", "google", "signup"]) {
+      for (const name of ["apple", "google", "notify"]) {
         expect(html).toContain(`data-surface="${name}"`);
       }
       // The design controls now live behind a CLOSED fold, so the words are on
@@ -588,9 +588,13 @@ describe("one designer, two pages", () => {
   it("previews all three surfaces, and Google as Google", () => {
     for (const html of [dash, admin]) {
       expect(html).toContain("data-pvg");   // the Android card
-      expect(html).toContain("data-pvp");   // the printed sheet
+      // The lock screen, which replaced a mock of the printed sheet: an owner
+      // can print the real poster and hold it, while the banner after a stamp
+      // is the one surface they never otherwise see.
+      expect(html).toContain("data-pvn");
       expect(html).toContain("function renderGoogle");
-      expect(html).toContain("function renderPoster");
+      expect(html).toContain("function renderNotify");
+      expect(html).not.toContain("data-pvp");
       // No band and no strip on the Android mock.
       expect(html).not.toContain("data-pvg-banner");
     }
@@ -3566,6 +3570,24 @@ describe("the manage screens", () => {
    * "Multiple programmes means multiple QRs" is a claim best made by showing
    * one QR per programme rather than by writing the sentence down.
    */
+  /**
+   * An unfinished card is the one thing on this screen that cannot be shared,
+   * printed or handed out — so it offers none of those, and offers the only
+   * thing that helps instead.
+   */
+  it("marks a draft and offers the way back into the flow", () => {
+    const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
+    expect(body).toContain("const draft = !c.publishedAt");
+    expect(body).toContain("Continue editing");
+    expect(body).toContain("data-resume");
+    // Sign-ups on a draft have not been closed; they have not begun.
+    expect(body).toContain('draft ? "Not started"');
+    // Back to Rules, not Choose: the type is the answer that made the card.
+    const paint = html.slice(html.indexOf("const resume = body.querySelector"),
+                             html.indexOf('body.querySelector("[data-poster]")'));
+    expect(paint).toContain('navigate("/create/" + c.id + "/rules")');
+  });
+
   it("gives a card its own QR, poster and customer page", () => {
     expect(detail).toContain("/qr");
     expect(detail).toContain("/poster");
@@ -3689,6 +3711,41 @@ describe("the create screens", () => {
     // And it goes to step 2 with the id it just got back, which is also the
     // address somebody returns to.
     expect(choose).toContain('navigate("/create/" + made.id + "/rules")');
+  });
+
+  /**
+   * Next is out of reach until the step is actually answered.
+   *
+   * Disabled and visible, never hidden: a Next that vanished would leave the
+   * step looking finished. And because a disabled button swallows clicks, the
+   * shake hangs off the footer instead — pressing a greyed-out Next has to
+   * point at what is missing, or it reads as the page being broken.
+   */
+  it("locks Next until the step is finished, and points at what is missing", () => {
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    // Every gate returns the ELEMENT to shake, so the reason and the arrow are
+    // one value and cannot disagree.
+    expect(rules).toContain("const blocked = () =>");
+    expect(rules).toContain('body.querySelector("[data-cont]")');
+    expect(rules).toContain('body.querySelector("[data-r=rewardName]")');
+    // Re-checked on every edit, on Continue, and on opening either part.
+    expect((rules.match(/relock\(\)/g) || []).length).toBeGreaterThan(3);
+
+    const frame = html.slice(html.indexOf("function wizardFrame(stepIndex"),
+                             html.indexOf("/** Step 1 —"));
+    expect(frame).toContain("next.disabled = Boolean(why)");
+    expect(frame).toContain("wshake");
+    expect(frame).toContain('foot.addEventListener("pointerdown"');
+  });
+
+  /** Every step says how to go back, including the first. */
+  it("offers a back link on every step", () => {
+    const frame = html.slice(html.indexOf("function wizardFrame(stepIndex"),
+                             html.indexOf("/** Step 1 —"));
+    expect(frame).toContain("data-wback");
+    // Step 1 leaves the flow; the others go to the step before.
+    expect(frame).toContain('stepIndex === 0 ? navigate("/create") : opts.onStep(stepIndex - 1)');
   });
 
   it("publishes only on the last step", () => {

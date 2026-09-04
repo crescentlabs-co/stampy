@@ -284,7 +284,7 @@ describe("the design panel, mounted", () => {
       await h.settle();
       expect(div.querySelector('[data-surface="apple"]')!.hidden).toBe(false);
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(true);
-      expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(true);
+      expect(div.querySelector('[data-surface="notify"]')!.hidden).toBe(true);
     });
 
     /**
@@ -340,8 +340,8 @@ describe("the design panel, mounted", () => {
       expect(div.querySelector("[data-logo]")).not.toBeNull();
       expect(div.querySelector("[data-stampimg]")).not.toBeNull();
 
-      pickSurface(div, "signup");
-      expect(div.querySelector('[data-surface="signup"]')!.hidden).toBe(false);
+      pickSurface(div, "notify");
+      expect(div.querySelector('[data-surface="notify"]')!.hidden).toBe(false);
       expect(div.querySelector('[data-surface="google"]')!.hidden).toBe(true);
     });
 
@@ -387,7 +387,7 @@ describe("the design panel, mounted", () => {
       await h.settle();
       const label = () => div.querySelector("[data-surfname]")!.textContent;
       expect(label()).toBe("iPhone");
-      for (const [key, name] of [["google", "Android"], ["signup", "Sign-up poster"], ["apple", "iPhone"]]) {
+      for (const [key, name] of [["google", "Android"], ["notify", "Notification"], ["apple", "iPhone"]]) {
         pickSurface(div, key!);
         expect(label(), key).toBe(name);
         // Re-opening still offers all three, whichever one is showing. The
@@ -545,18 +545,35 @@ describe("the design panel, mounted", () => {
       // The shop's name once, on the issuer line; the title says what it is.
       expect(div.querySelector("[data-pvg-issuer]")!.textContent).toBe("Kopi Corner");
       expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Loyalty card");
-      // The poster headline falls back to the generated line, as posterPage does.
-      expect(div.querySelector("[data-pvp-offer]")!.textContent)
+      // The lock screen shows what iOS actually shows: the header field's
+      // changeMessage with %@ substituted. The poster mock this replaced was a
+      // drawing of a sheet the owner can simply print and hold; the banner is
+      // the one surface they never otherwise see.
+      expect(div.querySelector("[data-pvn-body]")!.textContent)
+        .toBe("2 earned — free coffee at 10");
+      expect(div.querySelector("[data-pvn-app]")!.textContent).toBe("Kopi Corner");
+      // And the sentence the poster used to headline is still derived — it is
+      // the placeholder under the sign-up field, which drifted once before.
+      expect(div.querySelector("[data-f=signupMessage]")!.placeholder)
         .toBe("Collect 10 stamps, get a free coffee.");
     });
 
-    // The frame is printed on white paper, so a near-white accent prints as no
-    // frame at all — the same fallback posterPage makes server-side.
-    it("keeps the poster's QR frame visible when the accent is nearly white", async () => {
+    /** A card at its target says so, in the words iOS will use. */
+    it("shows the reward-ready banner once the card is full", async () => {
       const h = makeHarness();
-      const div = build(card({ accent: "#fcfcfa" }), h);
+      const div = build(card({ stampsStart: 10, stampsTarget: 10, reward: "Free coffee" }), h);
       await h.settle();
-      expect(div.querySelector("[data-pvp-qr]")!.style.borderColor).toBe("#3b2016");
+      expect(div.querySelector("[data-pvn-body]")!.textContent)
+        .toBe("Reward ready — your free coffee is waiting 🎉");
+    });
+
+    /** Counting DOWN once past halfway, which is what the pass does. */
+    it("counts down when the reward is close", async () => {
+      const h = makeHarness();
+      const div = build(card({ stampsStart: 8, stampsTarget: 10, reward: "Free coffee" }), h);
+      await h.settle();
+      expect(div.querySelector("[data-pvn-body]")!.textContent)
+        .toBe("2 left — free coffee at 10");
     });
   });
 
