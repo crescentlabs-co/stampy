@@ -138,7 +138,6 @@ describe("the panel as a preview tile", () => {
     for (const gone of ["[data-save]", "[data-f=reward]", "[data-a=emoji]", "[data-stampimg]"]) {
       expect(div.querySelector(gone), gone + " survived into a preview tile").toBeNull();
     }
-    // The test-card bar goes too — this tile has its own three actions.
     expect(div.querySelector("[data-a=test]")).toBeNull();
     // The surface tabs go, because the carousel drives the face from outside.
     // DISPLAY, not the hidden attribute: .seg sets display:flex, and an
@@ -158,7 +157,9 @@ describe("the panel as a preview tile", () => {
     const h = makeHarness();
     const div = build(card(), h);
     expect(div.querySelector("[data-stampimg]")).not.toBeNull();
-    expect(div.querySelector("[data-a=test]")).not.toBeNull();
+    // The test-card buttons moved to Manage — they are a thing you do to a
+    // finished card, not a step in designing one.
+    expect(div.querySelector("[data-a=test]")).toBeNull();
     expect((div.querySelector("[data-surfaces]") as { hidden?: boolean } | null)?.hidden).toBeFalsy();
     expect((div as unknown as { setSurface?: unknown }).setSurface).toBeUndefined();
   });
@@ -579,56 +580,6 @@ describe("the design panel, mounted", () => {
    * cannot open. So the owner pressed twice to reach a button that appeared
    * broken.
    */
-  describe("the test-card buttons", () => {
-    const links = { ok: true, apple: "https://x.test/apple", google: "https://x.test/google" };
-
-    it("offers all three at rest, with nothing to press first", async () => {
-      const h = makeHarness();
-      const div = build(card(), h);
-      await h.settle();
-      const wallets = div.querySelectorAll("[data-a=test]").map((b) => b.dataset.w);
-      expect(wallets).toEqual(["apple", "google"]);
-      // Icon-only, so the name has to come from somewhere both a screen reader
-      // and a hover can reach — a button announced as "button" is not a control.
-      for (const b of div.querySelectorAll("[data-a=test]")) {
-        expect(b.attrs["aria-label"], b.dataset.w).toBeTruthy();
-        expect(b.attrs.title, b.dataset.w).toBe(b.attrs["aria-label"]);
-      }
-      // The poster is a public page, so it is a plain link — pressing it mints
-      // nothing and needs no round trip to become pressable.
-      const poster = div.querySelectorAll("a").find((a) => (a.attrs.href ?? "").endsWith("/poster"));
-      expect(poster, "a link to the printed poster").not.toBeUndefined();
-      // "Sign-up poster" — the same words the surface tab and the Shop tab use
-      // for it, because it is the same sheet in all three places.
-      expect(poster!.textContent).toBe("Sign-up poster");
-      // Nothing revealed yet, and no stale QR sitting in the markup.
-      expect(div.querySelector(".testqr")).toBeNull();
-    });
-
-    it("shows a QR on a laptop instead of a link that cannot open", async () => {
-      const h = makeHarness({ fetchJson: links });
-      const div = build(card(), h);
-      await h.settle();
-      await div.querySelector('[data-a=test][data-w="google"]')!.onclick!();
-
-      expect(h.navigated.href).toBe("");
-      const qr = div.querySelector(".testqr")!;
-      // Per wallet: one QR for both would send an Android phone to Apple's pass.
-      expect(qr.src).toContain("wallet=google");
-      expect(qr.src).toContain("/dashboard/api/card/default/test-qr.png");
-      expect(div.querySelector("[data-testout]")!.hidden).toBe(false);
-    });
-
-    it("sends a phone straight to the wallet, since it can actually open it", async () => {
-      const h = makeHarness({ fetchJson: links, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)" });
-      const div = build(card(), h);
-      await h.settle();
-      await div.querySelector('[data-a=test][data-w="apple"]')!.onclick!();
-
-      expect(h.navigated.href).toBe(links.apple);
-      expect(div.querySelector(".testqr")).toBeNull();
-    });
-  });
 
   /**
    * Everything about the logo, in the Logo section.

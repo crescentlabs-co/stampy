@@ -1877,7 +1877,11 @@ describe("dashboard information architecture", () => {
     // From the end of the preview box to the save button: the editor exactly.
     // Slicing from ">Design<" would start AFTER that heading's own class
     // attribute and quietly count one heading instead of two.
-    const editor = html.slice(html.indexOf("data-testout"), html.indexOf('data-a="save"'));
+    // From the preview box's close to the save button: the editor exactly.
+    // It used to slice from data-testout, which was the test-card block — that
+    // has moved to Manage, so the anchor moved to the fold that opens the
+    // editor itself.
+    const editor = html.slice(html.indexOf("Customise the design"), html.indexOf('data-a="save"'));
     expect(editor).toContain("Customise the design");
     // FOUR named sections now, plus the rules heading below them. The design
     // half was one long scroll of unrelated controls under a single heading —
@@ -2872,12 +2876,29 @@ describe("Home", () => {
     expect(cmp).not.toMatch(/types: REWARD_TYPES/);
     // The cap is visible: past five, the unticked options go disabled rather
     // than accepting a tap that silently does nothing.
-    expect(cmp).toContain("!on && state.picked.length >= CMP_MAX");
+    expect(cmp).toContain("!on && chosen >= CMP_MAX");
+    /**
+     * Hand-picking is its OWN control now, and it stays open.
+     *
+     * It was a third group inside the funnel, and the popover closes on every
+     * tap — so choosing three cards was open-tap, open-tap, open-tap. Worse,
+     * the two fought: picking cards made type and status do nothing, choosing a
+     * type silently wiped the picks, and the ticks stayed on screen either way
+     * showing a state that was not applied.
+     */
+    expect(cmp).toContain("data-picks");
+    expect(cmp).toContain("function openPicks()");
+    // The funnel stands down visibly while picks are on, rather than pretending.
+    expect(cmp).toContain('(state.picked.length ? " disabled" : "")');
+    expect(cmp).toContain("Clear, and use the filter");
+    // ...and the funnel no longer lists the rows at all.
+    const funnel = cmp.slice(cmp.indexOf("fBtn.onclick"), cmp.indexOf("pop.open(\"right\", groups"));
+    expect(funnel).not.toContain("pick:");
     // One popover, opened by EITHER control — two would let both menus be open
     // at once, over each other. It counted the div this used to build inline;
     // popover now lives in the kit (the designer's surface switcher needs it
     // too), so the thing to hold is that both buttons share one instance.
-    expect(cmp).toContain("popover(wrap, [mBtn, fBtn])");
+    expect(cmp).toContain("popover(wrap, [mBtn, fBtn, pBtn])");
     expect((cmp.match(/popover\(/g) || []).length).toBe(1);
     const pop = html.slice(html.indexOf(".popopt.on::before"), html.indexOf(".popopt:disabled"));
     expect(pop).not.toContain("--accent");
@@ -3633,6 +3654,27 @@ describe("the manage screens", () => {
     const paint = html.slice(html.indexOf("const resume = body.querySelector"),
                              html.indexOf('body.querySelector("[data-poster]")'));
     expect(paint).toContain('navigate("/create/" + c.id + "/rules")');
+  });
+
+  /**
+   * A test card is a thing you do TO a finished card, not a step in designing
+   * one. It lived in the design panel — and the Manage carousel mounts that
+   * panel in preview-only mode, which strips it, so the one screen actually
+   * about a card had no way to get one.
+   */
+  it("offers a test card from Manage, not from the designer", () => {
+    const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
+    expect(body).toContain('actBtn("testadd", ICON_ADD, "Add")');
+    const sheet = html.slice(html.indexOf("function testCardSheet(card)"),
+                             html.indexOf("const actBtn ="));
+    expect(sheet).toContain("Add to Apple Wallet");
+    expect(sheet).toContain("Add to Google Wallet");
+    expect(sheet).toContain("/test-link");
+    // A laptop cannot open either wallet link — Apple hands it a .pkpass it
+    // downloads and cannot read, and Google wants the signed-in phone — so a
+    // desktop gets the QR, which is the only thing that reaches the phone.
+    expect(sheet).toContain("onPhone");
+    expect(sheet).toContain("test-qr.png");
   });
 
   it("gives a card its own QR, poster and customer page", () => {

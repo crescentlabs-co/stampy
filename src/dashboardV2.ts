@@ -371,6 +371,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .addrow:active { background: var(--surface); }
     /* The share sheet's options. A LIST, not a confirm dialog with the action
        disguised as its OK button — the next entry is a line, not a rewrite. */
+    .testqr { display: block; width: 180px; height: 180px; margin: 0 auto;
+              image-rendering: pixelated; border-radius: var(--r-sm); }
     .sharelist2 { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s3); }
     /* --- one popover, opened by either control ---------------------------
        Anchored to the HEADER ROW, not to the card. It hung off .cmpwrap, whose
@@ -2074,6 +2076,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     /** The icons, in the style of the nav's single paths. */
     const ICON_CARET = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+    const ICON_COLUMNS =
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M5 20V10M12 20V4M19 20v-7"/></svg>';
     const ICON_FUNNEL = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>';
     const ICON_POSTER = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
@@ -2121,7 +2126,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<button type="button" class="cmpmetric" data-metric>' +
             "<span>" + esc(metric.name) + "</span>" + ICON_CARET +
           "</button>" +
-          '<button type="button" class="cmpfilter" data-filter aria-label="Filter">' +
+          // Its own control, because it is its own question. Hand-picking used
+          // to be a third group inside the funnel, where it fought the two
+          // above it: picking cards made type and status do nothing, choosing
+          // a type silently wiped the picks, and the ticks stayed on screen
+          // either way showing a state that was not being applied.
+          '<button type="button" class="cmpfilter' + (state.picked.length ? " on" : "") +
+            '" data-picks aria-label="Choose which to compare">' + ICON_COLUMNS +
+          "</button>" +
+          '<button type="button" class="cmpfilter" data-filter aria-label="Filter"' +
+            (state.picked.length ? " disabled" : "") + ">" +
             ICON_FUNNEL +
           "</button>" +
         "</div>";
@@ -2191,7 +2205,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const wrap = host.querySelector(".cmphead");
       const mBtn = host.querySelector("[data-metric]");
       const fBtn = host.querySelector("[data-filter]");
-      const pop = popover(wrap, [mBtn, fBtn]);
+      const pBtn = host.querySelector("[data-picks]");
+      const pop = popover(wrap, [mBtn, fBtn, pBtn]);
 
       function pick(value) {
         const [key, val] = value.split(":");
@@ -2202,12 +2217,49 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         } else {
           state[key] = val;
           // Choosing a type or a status is choosing a GROUP, so it clears a
-          // hand-picked set rather than fighting with it. The two filters
-          // would otherwise both be on with only one of them visible.
+          // hand-picked set rather than fighting with it. The two would
+          // otherwise both be on with only one of them visible.
           if (key !== "metric") state.picked = [];
         }
         comparison(host, spec, state);
       }
+
+      /**
+       * The hand-picked list, which STAYS OPEN while you choose.
+       *
+       * It was a third group inside the funnel, and the popover closes on every
+       * tap — so choosing three cards was open-tap, open-tap, open-tap. This
+       * one rebuilds itself in place instead, so a tap is a tap.
+       */
+      function openPicks() {
+        const all = spec.rows();
+        const draw = () => {
+          const chosen = state.picked.length;
+          return '<div class="popgrp"><span>Compare up to ' + CMP_MAX +
+              (chosen ? " \u00b7 " + chosen + " chosen" : "") + "</span>" +
+            all.map((r) => {
+              const on = state.picked.indexOf(r.id) >= 0;
+              return popOpt("pick:" + r.id, r.name, on, !on && chosen >= CMP_MAX);
+            }).join("") +
+            (chosen
+              ? '<button type="button" class="popopt" data-set="clear:1">Clear, and use the filter</button>'
+              : "") +
+            "</div>";
+        };
+        pop.open("right", draw(), (value) => {
+          if (value === "clear:1") { state.picked = []; comparison(host, spec, state); return; }
+          const [, val] = value.split(":");
+          const at = state.picked.indexOf(val);
+          if (at >= 0) state.picked.splice(at, 1);
+          else if (state.picked.length < CMP_MAX) state.picked.push(val);
+          // Redraw the chart underneath, then put the list straight back up so
+          // the next tap does not need a second trip to the button.
+          comparison(host, spec, state);
+          const again = host.querySelector("[data-picks]");
+          if (again) again.onclick();
+        }, pBtn);
+      }
+      if (pBtn) pBtn.onclick = openPicks;
 
       const opt = popOpt;
 
@@ -2216,7 +2268,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         pick);
 
       fBtn.onclick = () => {
-        const all = spec.rows();
         const groups = [
           '<div class="popgrp"><span>' + esc(spec.typeLabel) + "</span>" +
             opt("type:all", "All", state.type === "all") +
@@ -2226,15 +2277,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             opt("status:active", "Active", state.status === "active") +
             opt("status:ended", "Inactive", state.status === "ended") +
             opt("status:all", "All", state.status === "all") +
-          "</div>",
-          // Hand-picked, capped at five. Anything not already ticked is
-          // disabled once five are, so the cap is visible rather than a tap
-          // that silently does nothing.
-          '<div class="popgrp"><span>Or compare up to ' + CMP_MAX + "</span>" +
-            all.map((r) => {
-              const on = state.picked.indexOf(r.id) >= 0;
-              return opt("pick:" + r.id, r.name, on, !on && state.picked.length >= CMP_MAX);
-            }).join("") +
           "</div>",
         ];
         pop.open("right", groups.join(""), pick, fBtn);
@@ -3566,6 +3608,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         body.querySelector("[data-poster]").onclick = () =>
           window.open("/c/" + encodeURIComponent(c.id) + "/poster", "_blank", "noopener");
         body.querySelector("[data-share]").onclick = () => shareSheet(c);
+        body.querySelector("[data-testadd]").onclick = () => testCardSheet(c);
         body.querySelector("[data-edit]").onclick = () => navigate("/manage/rewards/" + c.id);
       }
       // Repainted on scroll rather than on a snap event: scrollend is not on
@@ -3609,6 +3652,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         : '<div class="cardacts">' +
             actBtn("poster", ICON_POSTER, "Poster") +
             actBtn("share", ICON_SHARE, "Share") +
+            actBtn("testadd", ICON_ADD, "Add") +
             actBtn("edit", ICON_EDIT, "Edit") +
           "</div>") +
         '<h2 class="sec">Info</h2>' +
@@ -3619,6 +3663,62 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           : "") +
         '<div class="drow"><span>Sign-ups</span><b>' +
           (draft ? "Not started" : c.endedAt ? "Closed" : "Open") + "</b></div>";
+    }
+
+    const ICON_ADD =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+
+    /**
+     * Put a REAL card on your own phone, to look at it.
+     *
+     * This used to live inside the design panel, which is where it was written
+     * and not where it belongs — it is a thing you do to a finished card, not a
+     * step in designing one. In the Manage carousel the panel is mounted in
+     * preview-only mode, which strips it, so the one screen that is actually
+     * about a card had no way to get one.
+     *
+     * On a phone the wallet link opens straight away. On a laptop it cannot:
+     * the Apple link hands the browser a .pkpass it downloads and cannot open,
+     * and Google's save link wants the phone that is signed in — so a desktop
+     * gets a QR, which is the only one of the two that can reach the phone the
+     * wallet is on.
+     */
+    function testCardSheet(card) {
+      const onPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+      const wrap = document.createElement("div");
+      wrap.className = "mdl";
+      wrap.innerHTML =
+        '<div class="mdlbox" role="dialog" aria-modal="true" aria-label="Add a test card">' +
+          "<h3>Add a test card</h3>" +
+          '<p class="muted" style="margin:0 0 10px">A real card, on your own phone. It never ' +
+            "counts as a customer and never shows in your numbers. Each link lasts 30 minutes.</p>" +
+          '<div class="sharelist2">' +
+            '<button type="button" class="popopt" data-w="apple">Add to Apple Wallet</button>' +
+            '<button type="button" class="popopt" data-w="google">Add to Google Wallet</button>' +
+          "</div>" +
+          '<div data-testout></div>' +
+          '<div class="mdlrow"><button type="button" class="btn btn-ghost" data-no>Close</button></div>' +
+        "</div>";
+      const close = () => { document.removeEventListener("keydown", onKey, true); wrap.remove(); };
+      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
+      document.addEventListener("keydown", onKey, true);
+      wrap.querySelector("[data-no]").onclick = close;
+      wrap.onclick = (e) => { if (e.target === wrap) close(); };
+      for (const b of wrap.querySelectorAll("[data-w]")) {
+        b.onclick = async () => {
+          const wallet = b.getAttribute("data-w");
+          const { body } = await api("/card/" + card.id + "/test-link");
+          if (!body.ok) { toast(body.error || "Couldn't make a link"); return; }
+          if (onPhone) { location.href = wallet === "google" ? body.google : body.apple; return; }
+          // Cache-busted per press: the token inside expires, and a stale QR
+          // that still renders is worse than one that visibly reloads.
+          wrap.querySelector("[data-testout]").innerHTML =
+            '<p class="muted" style="margin:12px 0 6px">Scan this with the phone you want the card on.</p>' +
+            '<img class="testqr" alt="" src="/dashboard/api/card/' + encodeURIComponent(card.id) +
+              "/test-qr.png?wallet=" + encodeURIComponent(wallet) + "&v=" + Date.now() + '">';
+        };
+      }
+      document.body.appendChild(wrap);
     }
 
     const actBtn = (key, icon, label, off) =>

@@ -958,9 +958,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
        to be a .sec heading, which draws a rule and 28px of air, and that read as
        a new section beginning rather than as something you do to the card
        directly above. wrap so a narrow phone breaks after the title. */
-    .pvacts { margin-top: 10px; }
-    .pvacts-t { font-size: .82rem; font-weight: 600; color: var(--muted);
-                display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
     /* Square, so the two marks read as a pair rather than as two buttons that
        happen to have pictures in them. */
     .pvicon { padding: 8px; line-height: 0; min-width: 38px; display: inline-flex;
@@ -1079,8 +1076,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
        at, so the answer is the picture rather than a sentence about it. */
     .stampnow { display: flex; align-items: center; gap: 8px; margin: 8px 0 0;
                 font-size: .84rem; color: var(--muted); }
-    .testqr { width: 150px; height: 150px; margin-top: 10px; border-radius: 10px;
-              background: #fff; padding: 6px; box-shadow: inset 0 0 0 1px var(--line); }
     .stampnow img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px;
                     background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); padding: 3px; }
     /* --- designer controls --- */
@@ -1436,22 +1431,6 @@ export const DESIGN_PANEL_JS = /* js */ `
                node into its right-hand rail (mountDesigner), and a palette left
                behind in the editor column would open 400px away from the thing
                it recolours. Empty and hidden until something is tapped. -->
-          <!-- The real thing, on a real phone. Deliberately NOT a .sec heading:
-               that class draws a rule and 28px of air above itself, which pushed
-               this away from the card and made it read as the start of a new
-               section rather than as something you do TO the card above it. The
-               rule it used to draw now belongs to the Design fold below. -->
-          <div class="pvacts">
-            <span class="pvacts-t">Add a test card\${info("A real card for testing — it never counts as a customer and never shows in your numbers. Each link lasts 30 minutes.")}</span>
-            <div class="actbar">
-              <button class="btn btn-ghost pvicon" data-a="test" data-w="apple" title="Add to Apple Wallet" aria-label="Add to Apple Wallet">${APPLE_GLYPH}</button>
-              <button class="btn btn-ghost pvicon" data-a="test" data-w="google" title="Add to Google Wallet" aria-label="Add to Google Wallet">${GOOGLE_GLYPH}</button>
-              <!-- A word, not a mark: there is no logo that means "your printed
-                   poster", and inventing one would be a symbol nobody can read. -->
-              <a class="btn btn-ghost" target="_blank" rel="noopener" href="/c/\${encodeURIComponent(c.id)}/poster">Sign-up poster</a>
-            </div>
-          </div>
-          <div data-testout hidden></div>
         </div>
 
         <!-- ================= DESIGN =================
@@ -3213,41 +3192,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (!quiet) toast("Stamp style saved ✓");
       }
 
-      /**
-       * Put this card in the owner's own wallet.
-       *
-       * Both wallets, because only the person holding the phone knows which one
-       * they need. Minted on press rather than rendered with the panel: the
-       * links last 30 minutes, so one made at page load would be stale by the
-       * time anybody read it.
-       *
-       * On a laptop these did nothing you could see. The iPhone link hands the
-       * browser a .pkpass, which a desktop downloads silently and cannot open,
-       * and Google's save link wants the phone that is signed in — so pressing
-       * either one looked broken. A desktop gets the QR instead: it is the only
-       * one of the three that can actually reach the phone the wallet is on.
-       * The sign-up page is a plain link, on any device — it is a public page,
-       * nothing is minted by looking at it.
-       */
-      const onPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
-      div.querySelectorAll("[data-a=test]").forEach((b) => {
-        b.onclick = async () => {
-          const wallet = b.dataset.w;
-          const out = q("[data-testout]");
-          const { body } = await api(P("/test-link"));
-          if (!body.ok) return toast(body.error || "Couldn't make a link");
-          if (onPhone) { location.href = wallet === "google" ? body.google : body.apple; return; }
-          out.hidden = false;
-          // The QR is behind the same authorisation the link is, so it is built
-          // from this page's own api base rather than a public URL. Cache-busted
-          // per press: the token inside it expires, and a stale QR that still
-          // renders is worse than one that visibly reloads.
-          out.innerHTML =
-            '<p class="muted" style="margin:12px 0 0;font-size:.84rem">Scan this with the phone you want the card on.</p>' +
-            '<img class="testqr" alt="" src="' + esc(env.apiBase + env.path("/test-qr.png")) +
-              "?wallet=" + wallet + "&v=" + Date.now() + '">';
-        };
-      });
 
       /**
        * The tab switches which preview you are looking at. Nothing else.
@@ -3622,10 +3566,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         // does nothing under test and everything in a browser — which is a test
         // that reports success about code it never ran.
         Array.prototype.slice.call(div.children).forEach((el) => { if (el !== box) el.remove(); });
-        const acts = div.querySelector(".pvacts");
-        if (acts) acts.remove();
-        const out = div.querySelector("[data-testout]");
-        if (out) out.remove();
         // display, not the hidden ATTRIBUTE: .seg sets display:flex, and an
         // element's own display beats [hidden] every time. The strip stayed on
         // screen above every tile in the carousel — three tab strips saying
