@@ -34,15 +34,25 @@ describe("the return cycle", () => {
    * section cannot be blank on day one, and the setup banner is what asks.
    */
   it("falls back for null, and for anything that is not on the list", () => {
-    for (const junk of [null, undefined, 0, 7, 30, 999, Number.NaN]) {
+    for (const junk of [null, undefined, 0, 30, 999, Number.NaN]) {
       expect(returnCycleOf(junk as never)).toBe(RETURN_CYCLE_FALLBACK);
     }
+    // 7 used to be junk. It is a real answer now — "1-2 times a week" — and
+    // must resolve to itself rather than being quietly rounded to a fortnight.
+    expect(returnCycleOf(7)).toBe(7);
   });
 
-  /** The two thresholds a shop is judged on, at every cycle it can pick. */
-  it("has a regular gap and a lost window for each of the three", () => {
-    expect(REGULAR_GAP).toEqual({ 14: 11, 21: 18, 28: 25 });
-    expect(LOST_AFTER).toEqual({ 14: 21, 21: 35, 28: 49 });
+  /**
+   * The two thresholds a shop is judged on, at every cycle it can hold.
+   *
+   * 21 is still here although the dashboard no longer OFFERS it. Removing a
+   * value does not remove it from the shops that picked it, and returnCycleOf
+   * falls back to a fortnight for anything it does not recognise — so dropping
+   * it would silently re-sort every one of those shops' customers.
+   */
+  it("has a regular gap and a lost window for each cycle a shop can hold", () => {
+    expect(REGULAR_GAP).toEqual({ 7: 6, 14: 11, 21: 18, 28: 25 });
+    expect(LOST_AFTER).toEqual({ 7: 11, 14: 21, 21: 35, 28: 49 });
     expect(REGULAR_STAMPS).toBe(3);
   });
 });

@@ -761,7 +761,11 @@ function bucketOf(nudges7d: number, removed: boolean, optedOut: boolean): Bucket
  */
 export const MAX_CARDS_PER_MERCHANT = 20;
 
-export const RETURN_CYCLES = [14, 21, 28] as const;
+// 7 is new; 21 stays even though the dashboard no longer OFFERS it. Dropping a
+// value would not remove it from the shops that picked it — returnCycleOf falls
+// back to 14 for anything it does not recognise, so every one of those shops
+// would have its Regulars and its Lost quietly recalculated on deploy.
+export const RETURN_CYCLES = [7, 14, 21, 28] as const;
 export type ReturnCycle = (typeof RETURN_CYCLES)[number];
 
 /**
@@ -791,7 +795,7 @@ export function returnCycleOf(days: number | null | undefined): ReturnCycle {
  * 1-2 weeks allows 11 days, 2-3 allows 18, 3-4 allows 25. Someone who is a day
  * or two late every time is still a regular, and everybody knows it.
  */
-export const REGULAR_GAP: Record<ReturnCycle, number> = { 14: 11, 21: 18, 28: 25 };
+export const REGULAR_GAP: Record<ReturnCycle, number> = { 7: 6, 14: 11, 21: 18, 28: 25 };
 
 /**
  * Stamps from the counter — NOT visits — before anyone is a Regular. The
@@ -805,7 +809,7 @@ export const REGULAR_STAMPS = 3;
  * says "every 1-2 weeks" writes somebody off after three weeks rather than
  * after two or after four.
  */
-export const LOST_AFTER: Record<ReturnCycle, number> = { 14: 21, 21: 35, 28: 49 };
+export const LOST_AFTER: Record<ReturnCycle, number> = { 7: 11, 14: 21, 21: 35, 28: 49 };
 
 /**
  * What each cycle is CALLED, once. The Shop buttons, the Customer health hint
@@ -814,6 +818,7 @@ export const LOST_AFTER: Record<ReturnCycle, number> = { 14: 21, 21: 35, 28: 49 
  * applies.
  */
 export const CYCLE_LABEL: Record<ReturnCycle, string> = {
+  7: "1\u20132 times a week",
   14: "1\u20132 weeks",
   21: "2\u20133 weeks",
   28: "3\u20134 weeks",

@@ -522,6 +522,66 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        It has a real border and a real shadow because it now sits ON the page
        rather than below it: content passes underneath, and without a lifted
        edge the two would read as one surface. */
+    /* ---- the Create wizard ---- */
+    /* Three steps, left to right, and the one you are on is ink. Tappable
+       backwards only: a step you have not reached has nothing to show yet. */
+    .wsteps { display: flex; gap: var(--s2); margin: 0 0 var(--s4); list-style: none;
+              padding: 0; counter-reset: w; }
+    .wsteps li { flex: 1; counter-increment: w; font-size: var(--t-xs); font-weight: 600;
+                 color: var(--muted); border-top: 2px solid var(--line);
+                 padding-top: var(--s2); letter-spacing: var(--tr-code);
+                 text-transform: uppercase; }
+    .wsteps li::before { content: counter(w) ". "; }
+    .wsteps li.on { color: var(--ink); border-top-color: var(--ink); }
+    .wsteps li.done { color: var(--ink2); border-top-color: var(--ink2); cursor: pointer; }
+    /* Sits ABOVE the floating nav rather than over it — the nav is fixed and
+       would otherwise cover the one button the step exists to offer. The sheet
+       already reserves 96px at the bottom; this needs the nav's height on top,
+       which is what --wizfoot-h is for. */
+    .wizfoot { position: fixed; left: 50%; transform: translateX(-50%);
+               bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+               width: calc(100% - 28px); max-width: 420px; z-index: 41;
+               display: flex; flex-direction: column; gap: var(--s2);
+               padding: var(--s3); background: var(--bg);
+               border: 1px solid var(--line); border-radius: var(--r-lg);
+               box-shadow: 0 10px 30px -10px rgba(12,14,13,.28), 0 2px 8px rgba(12,14,13,.06); }
+    .wizfoot .btn { width: 100%; }
+    /* Not a button: it is the quiet way out, and a second filled control beside
+       Next would make the step ask which one you meant. */
+    .wizlater { background: none; border: 0; padding: var(--s2) 0 0; width: 100%;
+                color: var(--muted); font-size: var(--t-sm); font-weight: 600;
+                cursor: pointer; text-decoration: underline; }
+    /* Room for the footer, on top of what the sheet already reserves. */
+    .haswiz { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+    /* A section header that opens. One is open at a time, so the step reads as
+       two questions rather than one long form. */
+    .wfold { display: flex; align-items: center; justify-content: space-between;
+             width: 100%; margin-top: var(--s4); padding: var(--s3) 0;
+             background: none; border: 0; border-top: 1px solid var(--line);
+             color: var(--ink); font: inherit; font-size: var(--t-md); font-weight: 700;
+             text-align: left; cursor: pointer; }
+    .wfold::after { content: "＋"; color: var(--muted); font-weight: 400; }
+    .wfold[aria-expanded="true"]::after { content: "－"; }
+    .wbody { display: flex; flex-direction: column; gap: var(--s1); }
+    .wbody label { margin-top: var(--s3); font-size: var(--t-sm); font-weight: 600; }
+    /* The one neon thing that is not a button. It marks the tip as worth a tap
+       and it is a fill, never text — DESIGN.md rule 1. */
+    .bulb { background: var(--accent); border: 0; border-radius: 999px; cursor: pointer;
+            width: 22px; height: 22px; line-height: 1; font-size: var(--t-sm); padding: 0;
+            margin-left: var(--s2); vertical-align: middle; }
+    .effrow { display: flex; align-items: center; justify-content: space-between;
+              gap: var(--s2); flex-wrap: wrap; margin-top: var(--s4);
+              padding: var(--s3); background: var(--surface); border-radius: var(--r);
+              font-size: var(--t-sm); }
+    /* Semantic colour, which DESIGN.md keeps separate from the accent — so this
+       may be coloured while Next stays the only neon on the screen. */
+    .pill { padding: var(--s1) var(--s2); border-radius: 999px; font-size: var(--t-xs);
+            font-weight: 700; white-space: nowrap; text-transform: uppercase;
+            letter-spacing: var(--tr-code); }
+    .pill-good { background: #e6f3ea; color: #2e7d4f; }
+    .pill-warn { background: #fbf0d9; color: #8a6100; }
+    .pill-bad  { background: #f8e7e5; color: #a33028; }
+
     .botnav { position: fixed; left: 50%; transform: translateX(-50%);
               bottom: calc(12px + env(safe-area-inset-bottom, 0px));
               width: calc(100% - 28px); max-width: 420px; z-index: 40;
@@ -658,6 +718,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pick strong { font-size: var(--t-md); }
     .pick .sub2 { grid-column: 1; color: var(--muted); font-size: var(--t-sm); line-height: var(--lh-read); }
     .pick .arr { grid-row: 1 / span 2; color: var(--muted); }
+    /* The wizard's version is a BUTTON, so it has to say which one is chosen.
+       Ink border rather than a neon fill: the neon on this screen belongs to
+       Next, and two filled things would leave the eye nowhere to go. */
+    .pick[data-kind] { grid-template-columns: auto 1fr; text-align: left; width: 100%;
+                       border: 1px solid var(--line); cursor: pointer; font: inherit; }
+    .pick[data-kind][aria-pressed="true"] { border-color: var(--ink); background: var(--surface); }
+    .pick .pickicon { grid-row: 1 / span 2; display: flex; align-items: center;
+                      justify-content: center; width: 40px; height: 40px; flex: none;
+                      border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
+    .pick[data-kind][aria-pressed="true"] .pickicon { background: var(--bg); }
+    .pick .pickicon svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
+                          stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .pick[data-kind] .sub2 { grid-column: 2; }
+    /* A label, not a badge: it says which one most shops pick, and a filled
+       pill here would compete with the selected state right beside it. */
+    .picktag { display: inline-block; margin-left: var(--s2); color: var(--muted);
+               font-size: var(--t-sm); font-weight: 600; }
     /* Says the quiet part out loud: nothing on this screen is saved. Amber like
        the setup banner — nothing is broken, something is outstanding. */
     .draftnote { background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
@@ -1341,9 +1418,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <p class="muted">How often should a customer come back?\${info("How often you'd expect a regular to come in. It only sorts your customers into New, Returning, Regular and Lost on the Customers screen. It changes nothing about your card, your stamps or your reward.")}</p>
         <select data-cycle style="margin-top:8px">
           <option value="">Choose one…</option>
+          <option value="7">1–2 times a week</option>
           <option value="14">Once every 1–2 weeks</option>
-          <option value="21">Once every 2–3 weeks</option>
           <option value="28">Once every 3–4 weeks</option>
+          <!-- No longer offered, but a shop that picked it is still ON it: the
+               server still honours 21, so hiding the option outright would show
+               that shop an empty box and make its own answer look unset.
+               paintCycle reveals this one only for the shops it belongs to. -->
+          <option value="21" hidden>Once every 2–3 weeks</option>
         </select>
         <p class="muted" data-cycleout style="margin:6px 0 0;font-size:.84rem"></p>
 
@@ -1431,6 +1513,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const cycles = div.querySelector("[data-cycle]");
       const cycleOut = div.querySelector("[data-cycleout]");
       const paintCycle = () => {
+        // Reveal the retired option for the shops still on it, so the box shows
+        // their real answer rather than looking unanswered.
+        const legacy = cycles.querySelector('option[value="21"]');
+        if (legacy) legacy.hidden = S.cycleDays !== 21;
         cycles.value = S.cycleDays ? String(S.cycleDays) : "";
         cycleOut.textContent = S.cycleDays
           ? "Used to group your customers."
@@ -1723,6 +1809,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       ["/", () => homeScreen()],
       ["/customers/:code", (p) => customerScreen(p.code)],
       ["/customers", () => customersScreen()],
+      // First match wins, so the wizard's own addresses come before the
+      // general /create/:kind pair that campaigns still use.
+      ["/create/card", () => createChooseScreen()],
+      ["/create/:id/rules", (p) => createRulesScreen(p.id)],
+      ["/create/:id/design", (p) => createDesignScreen(p.id)],
       ["/create/:kind/:type", (p) => createStepScreen(p.kind, p.type)],
       ["/create/:kind", (p) => createPickScreen(p.kind)],
       ["/create", () => createScreen()],
@@ -2708,7 +2799,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       d.innerHTML = '<h2 class="sec first">Create</h2>' +
         '<p class="muted">Start a new loyalty card, or a campaign to bring customers back.</p>' +
         '<div class="sharelist" style="margin-top:14px">' +
-          '<a href="' + ROOT + '/create/reward" data-nav="/create/reward">' +
+          '<a href="' + ROOT + '/create/card" data-nav="/create/card">' +
             '<span>Loyalty card<span class="sub2">Stamps, points or membership</span></span>' +
             '<span class="arr">→</span></a>' +
           // Shown either way, and greyed rather than hidden when the trial has
@@ -2734,11 +2825,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * the same four means wiring this up later is a rename, not a migration.
      */
     const REWARD_TYPES = [
-      { k: "stamp", name: "Stamps", blurb: "Collect a stamp a visit. Fill the card, get the reward. The one most shops want." },
-      { k: "milestones", name: "Stamps + milestones", blurb: "The same card, with a smaller reward on the way — something at 4, the big one at 10." },
-      { k: "membership", name: "Membership", blurb: "A card that is the perk itself: a members' price, a members' menu, a members' door." },
-      { k: "points", name: "Points", blurb: "Points for what they spend, traded in for rewards. Best where baskets differ a lot." },
+      { k: "stamp", name: "Stamps", tag: "Reward (most popular)", icon: ICON_STAMP,
+        blurb: "Customers collect stamps and earn a reward when they reach the goal" },
+      { k: "points", name: "Points", icon: ICON_POINTS,
+        blurb: "Customers earn points they can redeem for rewards you choose" },
+      { k: "membership", name: "Membership", icon: ICON_MEMBER,
+        blurb: "Sell or manage memberships with perks for members" },
     ];
+
+    // Line art, matching the bottom nav's: 20px, stroked, never filled.
+    const ICON_STAMP =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/>' +
+      '<path d="M9 12l2 2 4-4"/></svg>';
+    const ICON_POINTS =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6.4.7-4.7 4.3 1.3 6.4L12 17l-5.6 3 1.3-6.4L3 9.3l6.4-.7z"/></svg>';
+    const ICON_MEMBER =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/>' +
+      '<circle cx="9" cy="11" r="2"/><path d="M5.5 16.5c.8-1.6 2-2.4 3.5-2.4s2.7.8 3.5 2.4M15 10h4M15 13.5h4"/></svg>';
 
     /**
      * The four campaign types. All four run the same three steps and the same
@@ -2770,8 +2873,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           "hold has changed. The Shop tab shows where your account stands.",
         );
       }
-      const reward = kind === "reward";
-      const types = reward ? REWARD_TYPES : CAMPAIGN_TYPES;
+      // The old reward picker lived here. It is the wizard's first step now, so
+      // this address forwards rather than 404ing — it was linked from the
+      // Create menu for months and is in browser histories.
+      if (kind === "reward") { navigate("/create/card", { replace: true }); return document.createElement("div"); }
+      const reward = false;
+      const types = CAMPAIGN_TYPES;
       const d = document.createElement("div");
       d.innerHTML =
         '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Create</p>' +
@@ -2795,50 +2902,339 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     }
 
     function createStepScreen(kind, type) {
-      if (kind === "reward") return createRewardScreen(type);
       if (kind === "campaign") return createCampaignScreen(type);
       return notFoundScreen();
     }
 
+    // ---------------------------------------------------------- the wizard ----
+    //
+    // Three steps, one screen each, and the card EXISTS from the end of step 1.
+    // That is what makes "save and finish later" work at all: the thing is
+    // already there, so leaving is just leaving and the address is the resume
+    // link. Until the last step publishes it, nothing hands it to a customer —
+    // see published_at in src/db.ts and the three doors that filter on it.
+    const WIZ_STEPS = ["Choose", "Rules", "Design"];
+
     /**
-     * Design a new programme — for real, on screen, saving nothing.
+     * The frame every step is drawn in: the progress row, the body, and a
+     * footer pinned above the nav.
      *
-     * This is the actual card designer, in draft mode. A shop can only hold one
-     * programme today (the server refuses a second), so its Save says what it
-     * cannot do rather than sending a request that 409s and looks broken. What
-     * an owner gets out of it is the honest thing: they can see precisely what
-     * each type produces before deciding they want it.
+     * onNext is what a step does when Next is pressed; it decides whether the
+     * flow moves on, so a step can refuse on a field nobody filled in.
      */
-    function createRewardScreen(type) {
-      const t = REWARD_TYPES.find((x) => x.k === type);
-      if (!t) return notFoundScreen();
-      const base = S.cards[0];
+    function wizardFrame(stepIndex, bodyEl, opts) {
       const d = document.createElement("div");
-      d.innerHTML =
-        '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Reward types</p>' +
-        '<h2 class="sec first">' + esc(t.name) + "</h2>" +
-        '<p class="muted">' + esc(t.blurb) + "</p>" +
-        '<div class="draftnote"><strong>This is a preview.</strong> Change anything and watch the ' +
-        "card change with it. Nothing here is saved, and your live card is not touched.</div>" +
-        '<div data-design></div>';
-      d.querySelector("[data-back]").onclick = () => navigate("/create/reward");
-      if (!base) {
-        d.querySelector("[data-design]").innerHTML =
-          '<p class="muted">There is no card to preview from yet.</p>';
-        return d;
+      d.className = "haswiz";
+      const steps = WIZ_STEPS.map((name, i) =>
+        '<li class="' + (i === stepIndex ? "on" : i < stepIndex ? "done" : "") + '"' +
+        (i < stepIndex ? ' data-wstep="' + i + '"' : "") + ">" + esc(name) + "</li>").join("");
+      d.innerHTML = '<ol class="wsteps">' + steps + "</ol>";
+      d.appendChild(bodyEl);
+      const foot = document.createElement("div");
+      foot.className = "wizfoot";
+      foot.innerHTML =
+        '<button class="btn btn-neon" data-wnext>' + esc(opts.nextLabel || "Next") + "</button>" +
+        (opts.onLater ? '<button class="wizlater" data-wlater>Save and finish later</button>' : "");
+      d.appendChild(foot);
+      // Only backwards. A step ahead has nothing to show yet — its screen is
+      // built from answers this one has not been given.
+      for (const li of d.querySelectorAll("[data-wstep]")) {
+        li.onclick = () => opts.onStep(Number(li.getAttribute("data-wstep")));
       }
-      // A COPY of the real card, with the chosen type applied, so nothing the
-      // designer does in draft can reach into S and change the live programme's
-      // fields under the programme page.
-      const draft = Object.assign({}, base, { kind: t.k });
-      d.querySelector("[data-design]").appendChild(designerFor(draft, {
-        draft: true,
-        saveLabel: "Save card",
-        // No live count to offer: this programme has no customers because it
-        // does not exist. The panel drops to its "no customers" wording.
+      const next = d.querySelector("[data-wnext]");
+      next.onclick = async () => {
+        next.disabled = true;
+        try { await opts.onNext(); } finally { next.disabled = false; }
+      };
+      const later = d.querySelector("[data-wlater]");
+      if (later) later.onclick = () => opts.onLater();
+      return d;
+    }
+
+    /** Step 1 — which kind of card this is going to be. */
+    function createChooseScreen() {
+      let picked = "stamp";
+      const body = document.createElement("div");
+      body.innerHTML =
+        '<h2 class="sec first">Choose your loyalty card</h2>' +
+        '<p class="muted">This decides what customers collect. You can change how it looks next.</p>' +
+        '<div class="picks">' + REWARD_TYPES.map((t) =>
+          '<button type="button" class="pick" data-kind="' + t.k + '"' +
+          (t.k === picked ? ' aria-pressed="true"' : "") + ">" +
+          '<span class="pickicon">' + t.icon + "</span>" +
+          "<strong>" + esc(t.name) +
+          (t.tag ? '<span class="picktag">' + esc(t.tag) + "</span>" : "") + "</strong>" +
+          '<span class="sub2">' + esc(t.blurb) + "</span></button>",
+        ).join("") + "</div>";
+      const paint = () => {
+        for (const b of body.querySelectorAll("[data-kind]")) {
+          b.setAttribute("aria-pressed", b.getAttribute("data-kind") === picked ? "true" : "false");
+        }
+      };
+      for (const b of body.querySelectorAll("[data-kind]")) {
+        b.onclick = () => { picked = b.getAttribute("data-kind"); paint(); };
+      }
+      paint();
+      return wizardFrame(0, body, {
+        onStep: () => {},
+        onNext: async () => {
+          // The card is made HERE, unfinished. Everything after this point is
+          // editing something that exists, which is what lets the owner leave.
+          const { body: made, status } = await api("/cards", {
+            method: "POST",
+            body: JSON.stringify({ name: shopName(), kind: picked, draft: true }),
+          });
+          if (status !== 200 || !made.id) {
+            toast(made.error === "too-many-cards"
+              ? "You have a lot of cards already — finish or remove one first."
+              : "Could not start a card just now.");
+            return;
+          }
+          await refreshCards();
+          navigate("/create/" + made.id + "/rules");
+        },
+      });
+    }
+
+    /** Step 2 — the rules. Two parts: how they earn, then what they get. */
+    function createRulesScreen(id) {
+      const card = S.cards.find((c) => c.id === id);
+      if (!card) return notFoundScreen();
+      // Everything the two parts write into. Seeded from the card, so leaving
+      // and coming back shows what was left behind rather than a blank form.
+      const r = {
+        name: card.shopName || card.name || "",
+        welcome: card.stampsStart != null ? card.stampsStart : 1,
+        perVisit: card.stampsPerVisit || 1,
+        target: card.stampsTarget || suggestedTarget(S.cycleDays),
+        rewardName: card.rewardType === "item" ? (card.reward || "") : "",
+        rewardType: card.rewardType || "item",
+        value: card.rewardValue || "",
+        percent: card.rewardPercent || 20,
+        cap: card.rewardCap || "",
+      };
+      let open = "earn";
+      const body = document.createElement("div");
+
+      // Only the number and its pill, so typing does not rebuild the form and
+      // take the focus out of the box being typed in.
+      const repaintEffect = () => {
+        const row = body.querySelector(".effrow");
+        if (!row) return;
+        const pct = effectiveDiscount(r);
+        const band = discountBand(pct);
+        row.querySelector("b").textContent = pct.toFixed(1) + "%";
+        const pill = row.querySelector(".pill");
+        pill.className = "pill pill-" + band.key;
+        pill.textContent = band.label;
+      };
+
+      const paint = () => {
+        const sug = suggestedTarget(S.cycleDays);
+        const targets = [];
+        for (let n = 1; n <= 10; n++) {
+          targets.push('<option value="' + n + '"' + (n === Number(r.target) ? " selected" : "") +
+            ">" + n + (n === sug ? " (recommended)" : "") + "</option>");
+        }
+        const pct = effectiveDiscount(r);
+        const band = discountBand(pct);
+        const visits = visitsPerReward(r.target, r.welcome, r.perVisit);
+        body.innerHTML =
+          '<h2 class="sec first">Rules</h2>' +
+          '<label class="dlbl">Card name</label>' +
+          '<input data-r="name" maxlength="60" value="' + esc(r.name).replace(/"/g, "&quot;") + '">' +
+          '<button type="button" class="wfold" data-open="earn" aria-expanded="' +
+            (open === "earn") + '">How customers earn</button>' +
+          (open === "earn"
+            ? '<div class="wbody">' +
+              "<label>Welcome stamps" + info("Number of stamps a customer starts with. Given once, on a new card \u2014 after a reward the card starts again from zero.") + "</label>" +
+              '<input data-r="welcome" type="number" min="0" max="9" value="' + Number(r.welcome) + '">' +
+              "<label>1 visit = how many stamps?" + info("Almost always one. Set it to two and a single tap on your counter is worth two stamps.") + "</label>" +
+              '<input data-r="perVisit" type="number" min="1" max="10" value="' + Number(r.perVisit) + '">' +
+              "<label>Stamps to reward" + info("Number of stamps a customer needs to earn their reward.") +
+                '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
+              '<select data-r="target">' + targets.join("") + "</select>" +
+              '<button class="btn btn-dark" data-cont style="margin-top:14px">Continue</button>' +
+              "</div>"
+            : "") +
+          '<button type="button" class="wfold" data-open="reward" aria-expanded="' +
+            (open === "reward") + '">How do you want to reward your customers?</button>' +
+          (open === "reward"
+            ? '<div class="wbody">' +
+              "<label>Reward type</label>" +
+              '<select data-r="rewardType">' +
+                '<option value="item"' + (r.rewardType === "item" ? " selected" : "") + ">Item or service</option>" +
+                '<option value="amount"' + (r.rewardType === "amount" ? " selected" : "") + ">Amount off (RM)</option>" +
+                '<option value="percent"' + (r.rewardType === "percent" ? " selected" : "") + ">Percentage off (%)</option>" +
+              "</select>" +
+              // The name is asked for only when the owner's own words are what
+              // the card will say. For the other two the sentence is generated,
+              // and a name box beside it would look like it mattered.
+              (r.rewardType === "item"
+                ? "<label>Reward name</label>" +
+                  '<input data-r="rewardName" maxlength="60" placeholder="Free coffee" value="' +
+                    esc(r.rewardName).replace(/"/g, "&quot;") + '">' +
+                  "<label>What it is worth (RM)" + info("What the item would normally cost. It is also what turns visits into a money figure on Home.") + "</label>" +
+                  '<input data-r="value" type="number" min="0" step="0.10" value="' + r.value + '">'
+                : r.rewardType === "amount"
+                ? "<label>Amount off (RM)</label>" +
+                  '<input data-r="value" type="number" min="0" step="0.10" value="' + r.value + '">'
+                : "<label>Percentage off (%)</label>" +
+                  '<input data-r="percent" type="number" min="1" max="100" value="' + Number(r.percent) + '">' +
+                  "<label>Most it can take off (RM)" + info("Leave blank for no ceiling. With one, the card reads: 20% off up to RM10.") + "</label>" +
+                  '<input data-r="cap" type="number" min="0" step="0.10" value="' + r.cap + '">') +
+              '<div class="effrow"><span>Your effective discount is <b>' + pct.toFixed(1) + "%</b>" +
+                info("One reward every " + visits + " visits on a customer's FIRST card, divided into what the reward is worth. Welcome stamps are given once, so later cards take a little longer and the real figure settles slightly lower. An item or an amount off is counted as one visit's worth.") +
+              '</span><span class="pill pill-' + band.key + '">' + esc(band.label) + "</span></div>" +
+              "</div>"
+            : "");
+
+        for (const el of body.querySelectorAll("[data-r]")) {
+          el.addEventListener("input", () => {
+            r[el.getAttribute("data-r")] = el.value;
+            if (el.getAttribute("data-r") === "rewardType") paint();
+            else repaintEffect();
+          });
+        }
+        for (const b of body.querySelectorAll("[data-open]")) {
+          b.onclick = () => { open = b.getAttribute("data-open"); paint(); };
+        }
+        const cont = body.querySelector("[data-cont]");
+        if (cont) cont.onclick = () => { open = "reward"; paint(); };
+        const bulb = body.querySelector("[data-bulb]");
+        if (bulb) {
+          bulb.onclick = () => modal("Why this number",
+            "<p>We suggest setting rewards at 1\u20131.5 months for each customer. " +
+            "Customers visit MORE when close to a reward. They\u2019ll pick YOU over competitors.</p>",
+            "Got it");
+        }
+      };
+      paint();
+
+      const save = () => api("/card/" + id, {
+        method: "POST",
+        body: JSON.stringify({
+          name: r.name, shopName: r.name,
+          stampsStart: Number(r.welcome) || 0,
+          stampsPerVisit: Number(r.perVisit) || 1,
+          stampsTarget: Number(r.target) || 8,
+          rewardType: r.rewardType,
+          reward: r.rewardName,
+          rewardValue: Number(r.value) || 0,
+          rewardPercent: Number(r.percent) || 0,
+          rewardCap: Number(r.cap) || 0,
+        }),
+      });
+
+      return wizardFrame(1, body, {
+        onStep: () => navigate("/create/card"),
+        onNext: async () => {
+          if (r.rewardType === "item" && !String(r.rewardName).trim()) {
+            open = "reward"; paint();
+            toast("Give the reward a name first");
+            return;
+          }
+          await save();
+          await refreshCards();
+          navigate("/create/" + id + "/design");
+        },
+        onLater: async () => {
+          await save();
+          await refreshCards();
+          toast("Saved \u2014 finish it from Manage whenever you like");
+          navigate("/manage/rewards");
+        },
+      });
+    }
+
+    /** Step 3 — the look. The existing designer, then publish. */
+    function createDesignScreen(id) {
+      const card = S.cards.find((c) => c.id === id);
+      if (!card) return notFoundScreen();
+      const body = document.createElement("div");
+      body.innerHTML = '<h2 class="sec first">Design</h2>' +
+        '<p class="muted">Change anything and watch the card change with it.</p>' +
+        "<div data-design></div>";
+      // The rules live in step 2 now, so the designer shows its look half only.
+      body.querySelector("[data-design]").appendChild(designerFor(card, {
+        showDetails: false,
+        saveLabel: "Save design",
         customersPath: null,
       }));
-      return d;
+      return wizardFrame(2, body, {
+        nextLabel: "Finish and publish",
+        onStep: (i) => navigate(i === 0 ? "/create/card" : "/create/" + id + "/rules"),
+        onNext: async () => {
+          const { status } = await api("/card/" + id + "/publish", { method: "POST" });
+          if (status !== 200) { toast("Could not publish just yet"); return; }
+          await refreshCards();
+          toast("Your card is live \u2014 print the poster and you are open");
+          navigate("/manage/rewards/" + id);
+        },
+        onLater: () => {
+          toast("Saved \u2014 finish it from Manage whenever you like");
+          navigate("/manage/rewards");
+        },
+      });
+    }
+
+    /**
+     * How many visits one reward costs a customer.
+     *
+     * Welcome stamps come off the top, whatever is left is divided by what a
+     * visit earns, and one more visit is added for the one they walk in and
+     * claim it on.
+     *
+     * It describes a customer's FIRST card. Welcome stamps are given once — a
+     * card restarts at zero after a reward — so every card after this one takes
+     * slightly longer. The bubble beside the figure says so; quietly reporting
+     * the friendlier number would flatter the offer.
+     */
+    function visitsPerReward(target, welcome, perVisit) {
+      const need = Math.max(0, (Number(target) || 1) - (Number(welcome) || 0));
+      return Math.ceil(need / Math.max(1, Number(perVisit) || 1)) + 1;
+    }
+
+    /**
+     * What one reward is worth as a share of one visit.
+     *
+     * An item and money off both count as the whole visit. That is a choice,
+     * not an oversight: the alternative is asking every shop what a customer
+     * usually spends, and one more money box buys a number that is still a
+     * guess. The bubble says the figure assumes the reward is about one
+     * visit's worth.
+     */
+    function rewardShare(type, percent) {
+      return type === "percent" ? Math.max(0, Math.min(100, Number(percent) || 0)) : 100;
+    }
+
+    /** The headline: what this card gives away per visit, as a percentage. */
+    function effectiveDiscount(rules) {
+      const visits = visitsPerReward(rules.target, rules.welcome, rules.perVisit);
+      return rewardShare(rules.rewardType, rules.percent) / Math.max(1, visits);
+    }
+
+    /**
+     * Three bands, in the app's SEMANTIC colours rather than the accent —
+     * DESIGN.md keeps those apart, which is what lets this be coloured while
+     * Next stays the only neon thing on the screen.
+     */
+    function discountBand(pct) {
+      if (pct >= 15) return { key: "good", label: "Generous discount" };
+      if (pct >= 10) return { key: "warn", label: "Good discount" };
+      return { key: "bad", label: "Low discount" };
+    }
+
+    /**
+     * How many stamps to suggest, from how often the shop says customers come.
+     *
+     * Aimed at a reward roughly every month to six weeks: often enough to be
+     * worth chasing, far enough apart to be worth giving.
+     */
+    function suggestedTarget(cycleDays) {
+      if (cycleDays === 7) return 8;
+      if (cycleDays === 28) return 4;
+      return 6;
     }
 
     /**

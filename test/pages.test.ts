@@ -2596,12 +2596,23 @@ describe("the visit-cycle setting", () => {
    */
   it("is one dropdown holding the three ranges", () => {
     expect(html).toContain("<select data-cycle");
+    expect(html).toContain('<option value="7">1–2 times a week</option>');
     expect(html).toContain('<option value="14">Once every 1–2 weeks</option>');
-    expect(html).toContain('<option value="21">Once every 2–3 weeks</option>');
     expect(html).toContain('<option value="28">Once every 3–4 weeks</option>');
     // The old button row, and the CSS that only it used, are gone.
     expect(html).not.toContain("data-cycles");
     expect(html).not.toContain("cyclerow");
+  });
+
+  /**
+   * "2-3 weeks" is not offered any more, but the shops that picked it are
+   * still on it — the server still honours 21. Hiding the option outright
+   * would show those shops an empty box and make their own answer look
+   * unanswered, so it is present and hidden, and revealed for them alone.
+   */
+  it("keeps the retired range for the shops still on it", () => {
+    expect(html).toContain('<option value="21" hidden>Once every 2–3 weeks</option>');
+    expect(html).toContain("legacy.hidden = S.cycleDays !== 21");
   });
 
   /** Nothing is preselected until the shop has actually answered. */
@@ -3616,8 +3627,6 @@ describe("the manage screens", () => {
 
 describe("the create screens", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
-  const reward = html.slice(html.indexOf("function createRewardScreen(type)"),
-                            html.indexOf("function createCampaignScreen(type)"));
   const campaign = html.slice(html.indexOf("function createCampaignScreen(type)"),
                               html.indexOf("function manageScreen(tab)"));
 
@@ -3625,15 +3634,23 @@ describe("the create screens", () => {
    * The four reward types are the four the database already holds, so wiring
    * this up later is a rename rather than a migration.
    */
-  it("offers the four reward types the card already supports", () => {
-    for (const k of ["stamp", "milestones", "membership", "points"]) {
+  /**
+   * Three, not four. Milestones is a stamp card with more than one reward on
+   * it, so it belongs inside Stamps rather than beside it — a first screen
+   * asking somebody to tell those two apart is asking the wrong question. The
+   * database still holds all four kinds; this is what the flow OFFERS.
+   */
+  it("offers the three card types a shop chooses between", () => {
+    for (const k of ["stamp", "points", "membership"]) {
       expect(html).toContain(`k: "${k}"`);
     }
-    for (const n of ["Stamps", "Stamps + milestones", "Membership", "Points"]) {
+    for (const n of ["Stamps", "Points", "Membership"]) {
       expect(html).toContain(`name: "${n}"`);
     }
     // A sentence each — the whole reason these are cards and not a dropdown.
     expect(html).toContain("blurb:");
+    // And the one most shops want is said to be.
+    expect(html).toContain("Reward (most popular)");
   });
 
   it("offers the four campaign types, each saying what it is for", () => {
@@ -3644,38 +3661,55 @@ describe("the create screens", () => {
   });
 
   /**
-   * THE ONE THAT MATTERS. A shop can hold one programme, and POST /api/cards
-   * refuses a second with 409 one-card-per-merchant. A Create flow that tried
-   * to save would look broken to the one person it is meant to impress.
+   * THE ONE THAT MATTERS, inverted.
+   *
+   * This used to assert that Create never posted anything, because a shop
+   * could hold one card and the server refused a second — a flow that tried to
+   * save would have looked broken to the one person it exists to impress. Both
+   * halves of that are gone: a shop may hold several, and the card is made at
+   * the end of step 1 so the rest of the flow is editing something real.
+   *
+   * What replaces it is the rule that makes creating-early safe: the card is
+   * made as a DRAFT, and nothing hands a draft to a customer.
    */
-  it("never tries to create a card", () => {
-    const create = html.slice(html.indexOf("function createScreen()"),
-                              html.indexOf("function manageScreen(tab)"));
-    expect(create).not.toContain('"/cards"');
-    expect(create).not.toContain("one-card-per-merchant");
-    // It is the REAL designer, in draft mode — the preview is honest even
-    // though the save is not possible.
-    expect(reward).toContain("draft: true");
-    expect(reward).toContain("designerFor(draft");
-    expect(reward).toContain("This is a preview.");
+  it("creates the card as a draft, at the end of step one", () => {
+    const choose = html.slice(html.indexOf("function createChooseScreen()"),
+                              html.indexOf("function createRulesScreen(id)"));
+    expect(choose).toContain('"/cards"');
+    expect(choose).toContain("draft: true");
+    // And it goes to step 2 with the id it just got back, which is also the
+    // address somebody returns to.
+    expect(choose).toContain('navigate("/create/" + made.id + "/rules")');
+  });
+
+  it("publishes only on the last step", () => {
+    const design = html.slice(html.indexOf("function createDesignScreen(id)"),
+                              html.indexOf("function visitsPerReward(target"));
+    expect(design).toContain("/publish");
+    // Step 2 saves the rules but must never publish — leaving half-way has to
+    // leave a draft, not a live card.
+    const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
+                             html.indexOf("function createDesignScreen(id)"));
+    expect(rules).not.toContain("/publish");
+    expect(rules).toContain("Save and finish later".slice(0, 4));
   });
 
   /**
-   * The draft must not reach into the live programme. designPanel writes the
-   * saved fields back onto the card object it was handed, and handing it
-   * S.cards[0] would edit the running programme from a screen that promises
-   * it changes nothing.
+   * The preview-only screen these two tested is gone: the flow makes a real
+   * card now, so there is no copy to keep away from the live one. The guard in
+   * the designer stays — it is what stops any future caller mounting the panel
+   * in draft mode and writing through it — and this is what still holds it.
    */
-  it("previews from a copy, never from the live card", () => {
-    expect(reward).toContain("Object.assign({}, base, { kind: t.k })");
-    expect(reward).not.toContain("designerFor(base");
+  it("keeps the designer's draft guard, with nothing relying on it", () => {
+    expect(html).toContain("if (env.draft)");
   });
 
-  it("says nothing was written when a draft is saved", () => {
-    // In the designer itself, so both the message and the guard live with the
-    // code that would otherwise have made the request.
-    expect(html).toContain("if (env.draft)");
-    expect(html).toContain("Saving a new card arrives with the Create flow — nothing was written.");
+  /**
+   * The address the old reward picker lived at was linked from the Create menu
+   * for months. It forwards to the step that replaced it rather than 404ing.
+   */
+  it("forwards the old reward address into the wizard", () => {
+    expect(html).toContain('navigate("/create/card", { replace: true })');
   });
 
   /** Configure, preview, send — and the send is real. */
