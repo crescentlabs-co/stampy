@@ -53,6 +53,7 @@ import {
   type PassRow,
   lastStampAmount,
   MAX_POINTS_COST,
+  asEarnMode,
   asPointPresets,
 } from "../db.js";
 import {
@@ -301,12 +302,25 @@ function passView(row: PassRow) {
   };
 }
 
+/**
+ * How this CARD is keyed in at the counter.
+ *
+ * Off the card and not the pass, all of it: how staff enter an amount is an
+ * operational setting the shop can change today, not part of the promise a
+ * customer is holding. The promise on a points card is the PRICE, and that is
+ * frozen on the pass, in its own catalogue.
+ */
+function counterRules(card: CardRow) {
+  return {
+    presets: asPointPresets(card.point_presets),
+    earnMode: asEarnMode(card.earn_mode),
+    earnPoints: Math.max(1, card.earn_points || 1),
+  };
+}
+
 staffRouter.get("/api/passes", requireStaff, async (req: StaffRequest, res) => {
   const rows = await listRecentPasses(req.card!.id, 20);
-  // Presets come from the CARD, not the pass: how staff key an amount in is an
-  // operational setting the shop can change today, not part of the promise a
-  // customer is holding.
-  res.json({ passes: rows.map(passView), presets: asPointPresets(req.card!.point_presets) });
+  res.json({ passes: rows.map(passView), ...counterRules(req.card!) });
 });
 
 /** Look a card up by its printed 6-char code, without stamping it. The staff
@@ -363,7 +377,7 @@ async function updateAndPush(
     card: {
       id: result.card.id,
       name: result.card.name,
-      presets: asPointPresets(result.card.point_presets),
+      ...counterRules(result.card),
     },
   });
 }
@@ -374,13 +388,44 @@ async function updateAndPush(
  * One on every other kind, whatever the body said: a stamp card that honoured
  * an `amount` would let a mistyped field hand somebody nine stamps, and there
  * is no counter UI that would ever send one.
+ *
+ * On a points card it depends on how the shop says its card earns:
+ *
+ *   visit   a flat number every time. The counter sends nothing.
+ *   spend   the counter sends RINGGIT and this does the sum. That direction is
+ *           the point of it — a crafted request cannot mint points at its own
+ *           rate, the same reason redeem prices a reward off the card's own
+ *           list rather than trusting what it was told.
+ *   manual  staff key the number in, which is what the word means. This is the
+ *           only mode that reads `amount`, and it is the behaviour every points
+ *           card had before earn modes existed.
  */
-async function stampAmount(serial: string, body: { amount?: unknown }): Promise<number> {
+async function stampAmount(
+  serial: string,
+  body: { amount?: unknown; spend?: unknown },
+): Promise<number> {
   const row = await getPass(serial);
-  // Off the PASS, never the card: the rate is frozen at issue like the target
-  // and the reward, so a shop halving it cannot double what somebody part-way
-  // through still owes.
+  // Off the PASS, never the card: how much a STAMP is worth is frozen at issue
+  // like the target and the reward, so a shop halving it cannot double what
+  // somebody part-way through still owes.
   if (row?.kind !== "points") return Math.max(1, row?.stamps_per_visit ?? 1);
+  // The rate, unlike that one, comes off the card — see EarnMode in src/db.ts
+  // for why. Off the card THIS PASS belongs to, never whichever card the phone
+  // happens to be showing: a customer hands over the card they have.
+  const card = await getCard(row.card_id);
+  const mode = asEarnMode(card?.earn_mode);
+  const per = Math.max(0, card?.earn_points ?? 0);
+  const cap = (n: number) => Math.max(1, Math.min(MAX_POINTS_COST, Math.floor(n)));
+  if (mode === "visit") return cap(per || 1);
+  if (mode === "spend") {
+    const rate = Math.max(0, card?.earn_spend_cents ?? 0);
+    const major = Number(body.spend);
+    if (!rate || !per || !Number.isFinite(major) || major <= 0) return 1;
+    // Rounded DOWN, and never below one. Down because a shop should not be
+    // surprised by what it handed out; never below one because a scan that
+    // banks nothing reads at the counter as the scan having failed.
+    return cap(Math.round(major * 100) / rate * per);
+  }
   const n = Math.trunc(Number(body.amount));
   return Number.isFinite(n) && n >= 1 && n <= MAX_POINTS_COST ? n : 1;
 }
@@ -392,7 +437,7 @@ staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
     const secondsLeft = await stampCooldownLeft(serial, req.merchant?.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
-  const n = await stampAmount(serial, (req.body ?? {}) as { amount?: unknown });
+  const n = await stampAmount(serial, (req.body ?? {}) as { amount?: unknown; spend?: unknown });
   await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, n), force === true, n);
 });
 
@@ -406,7 +451,8 @@ staffRouter.post("/api/stamp-by-code", requireStaff, async (req: StaffRequest, r
     const secondsLeft = await stampCooldownLeft(row.serial, req.merchant?.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
-  const byCode = await stampAmount(row.serial, (req.body ?? {}) as { amount?: unknown });
+  const byCode = await stampAmount(
+    row.serial, (req.body ?? {}) as { amount?: unknown; spend?: unknown });
   await updateAndPush(req, res, row.serial, "stamp",
     () => addStamps(row.serial, byCode), force === true, byCode);
 });

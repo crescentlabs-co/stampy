@@ -592,6 +592,32 @@ describe("membership cards on Google", () => {
     expect(front("earned").body).toBe(a.storeCard.secondaryFields[1].value);
   });
 
+  /**
+   * The slot under the banner says WHO, or failing that WHICH card.
+   *
+   * Both platforms have to move together or the same customer's two cards
+   * disagree about what is printed on them — which is exactly the drift the
+   * mock-vs-payload pair above exists to prevent.
+   */
+  it("names the member once there is a name, on both platforms at once", () => {
+    const r = memberRow({ short_code: "ZZ9K2Q" });
+    const g = buildLoyaltyPatch(r, memberCard(), "Kopi Corner", "Sarah") as any;
+    const a = buildPassJson(r, memberCard(), "Kopi Corner", "Sarah") as any;
+    const front = g.textModulesData.find((m: any) => m.id === "reward");
+    expect(front.header).toBe("MEMBER");
+    expect(front.body).toBe("Sarah");
+    expect(front.body).toBe(a.storeCard.secondaryFields[0].value);
+    expect(a.storeCard.secondaryFields[0].label).toBe("Member");
+  });
+
+  /** Nothing collects a name yet, so this is what every member sees today. */
+  it("falls back to the member number, headed as one", () => {
+    const g = buildLoyaltyPatch(memberRow({ short_code: "ZZ9K2Q" }), memberCard()) as any;
+    const front = g.textModulesData.find((m: any) => m.id === "reward");
+    expect(front.header).toBe("MEMBER NO.");
+    expect(front.body).toBe("ZZ9K2Q");
+  });
+
   it("puts the perks on the CLASS, so adding one reaches every member", () => {
     // On the class rather than the object for the same reason the terms are:
     // class data renders on every object already issued, so a shop adding a

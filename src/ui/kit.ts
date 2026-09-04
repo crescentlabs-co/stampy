@@ -1625,6 +1625,8 @@ export const DESIGN_PANEL_JS = /* js */ `
         </div>
 
         <div data-rules="membership" hidden>
+          <label class="dlbl">Member name\${info("What you call your regulars \u2014 VIP, Member, Regular, whatever fits your shop. It is printed on the front of the card, where a stamp card shows how far along somebody is.")}</label>
+          <input data-f="memberLabel" maxlength="20" placeholder="Member" value="\${(c.memberLabel || "").replace(/"/g, "&quot;")}">
           <label class="dlbl">What members get\${info("One perk per line. These print on the back of the card, and editing them updates every member's card — unlike a stamp target, which stays as promised until the customer claims their reward.")}</label>
           <textarea data-f="benefits" rows="4" maxlength="800" placeholder="10% off every order&#10;Free birthday drink&#10;Early access to new beans">\${(c.benefits || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")}</textarea>
         </div>
@@ -1876,6 +1878,34 @@ export const DESIGN_PANEL_JS = /* js */ `
       }
 
       /**
+       * The same rule in points, and the same reason: count up while that is
+       * the encouraging number, count down once the reward is the shorter road.
+       * Past the dearest thing on the list it goes back to the plain balance,
+       * which is the one number still moving.
+       */
+      function pointsHeader(earned, total) {
+        const pts = (n) => n + (n === 1 ? " point" : " points");
+        if (earned >= total) return pts(earned);
+        const e = Math.max(0, Math.min(earned, total));
+        const left = total - e;
+        return left <= e ? pts(left) + " to reward" : pts(e) + " earned";
+      }
+
+      /**
+       * What this shop calls its regulars. "Member" until they say otherwise.
+       *
+       * Read from the CONTROL and not from the card it was loaded with, so the
+       * preview changes as the word is typed — the same rule the shop name and
+       * the card type already follow. previewOnly strips the editor, so the
+       * card it was loaded with is the fallback there.
+       */
+      function memberLabel() {
+        const box = f("memberLabel");
+        const v = (box ? box.value : c.memberLabel) || "Member";
+        return v.trim() || "Member";
+      }
+
+      /**
        * Is the designer editing a membership card right now?
        *
        * Read from the control rather than from the card it was loaded with, so
@@ -2045,8 +2075,8 @@ export const DESIGN_PANEL_JS = /* js */ `
         // Every one of these mirrors buildPassJson in src/passModel.ts. A
         // membership card shows who the holder is instead of how far along they
         // are, because it has no target to be along the way to.
-        q("[data-pv-progress]").textContent = member ? "Member"
-          : points ? (start === 1 ? "1 point" : start + " points")
+        q("[data-pv-progress]").textContent = member ? memberLabel()
+          : points ? pointsHeader(start, target)
           : headerValue(start, target);
         q("[data-pv-clbl]").textContent = member ? "MEMBER SINCE" : points ? "BALANCE" : "PROGRESS";
         q("[data-pv-tally]").textContent = member ? thisMonth() : start + "/" + target;
@@ -3665,6 +3695,7 @@ export const DESIGN_PANEL_JS = /* js */ `
           name: f("shopName").value,
           kind: kindNow(),
           benefits: f("benefits") ? f("benefits").value : "",
+          memberLabel: f("memberLabel") ? f("memberLabel").value : "",
           milestones: ladderClean(),
           pointPresets: f("pointPresets") ? f("pointPresets").value : "",
           reward: f("reward").value,

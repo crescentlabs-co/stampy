@@ -95,6 +95,26 @@ a target from 10 to 12 in the morning and this afternoon's redeemer restarts at
 card, and the visit that earned the reward is the stamp a head start would
 otherwise hand over.
 
+**A POINTS card's EARN RATE is the one thing deliberately NOT frozen on the
+pass, and that is not an oversight.** `cards.earn_mode` (`visit` / `spend` /
+`manual`), `cards.earn_spend_cents` and `cards.earn_points` live on the card
+only. A stamp card's promise is "ten stamps and the eleventh is free", so
+halving `stamps_per_visit` mid-card moves the finish line under somebody already
+running at it — which is why THAT one is frozen. A points card's promise is the
+PRICE, and the price already is frozen, in the pass's own `milestones`. How fast
+you earn towards it is today's rate, and points already banked are untouched by
+a change to it. Every real points scheme works this way. Do not "fix" this by
+copying the rate onto `passes`.
+
+**The ringgit→points sum happens on the SERVER and only there** (`stampAmount`,
+src/routes/staff.ts). On a spend card the counter sends `spend` in ringgit and
+never `amount`; a request sending points to a spend card is ignored. Same reason
+`/staff/api/redeem` prices a reward off the card's own catalogue instead of
+trusting the `at` it was handed — a browser that can name its own rate can mint
+whatever it likes. `earn_mode` also decides what staff SEE after a scan: one tap
+on visit, a ringgit box on spend, a points box on manual. `point_presets` are
+manual-only; the other two work the amount out themselves.
+
 Because of that, **`card_stamp_strips` is keyed `(card_id, target, filled)`**.
 It was keyed without the target, and saving a card replaced the whole set at
 whatever the number now was — so lowering 8 → 6 made a customer at 7 of 8

@@ -195,17 +195,35 @@ export function progressText(earned: number, total: number): string {
  * value actually changed. A test enforces that distinctness — if you edit this,
  * keep it true or stamps go silent.
  */
-export function getHeaderFieldValue(earned: number, total: number, kind: CardKind = "stamp"): string {
-  // The BALANCE, not a countdown. It is the number the customer is tracking, it
-  // changes on every visit, and a distinct value per change is exactly what
-  // makes the lock-screen banner fire.
-  if (kind === "points") return earned === 1 ? "1 point" : `${earned} points`;
+export function getHeaderFieldValue(
+  earned: number,
+  total: number,
+  kind: CardKind = "stamp",
+  /** What the shop calls its regulars. Membership cards only. */
+  memberLabel = "Member",
+): string {
   // A membership card has nothing to count towards, so the header is a status,
-  // not a number. It therefore never changes, and this card never fires a
-  // lock-screen banner of its own — which is correct: there is no event to
-  // announce. A nudge still banners through the `message` field below.
-  if (kind === "membership") return "Member";
+  // not a number — the shop's own word for a regular. It therefore never
+  // changes, and this card never fires a lock-screen banner of its own, which
+  // is correct: there is no event to announce. A nudge still banners through
+  // the `message` field below.
+  if (kind === "membership") return memberLabel.trim() || "Member";
   const filled = Math.max(0, Math.min(earned, total));
+  // Points count the same way stamps do, in the same words, for the same
+  // reason: the number that pulls hardest is whichever road is shorter. It read
+  // "340 points" before — true, and it never once told anybody how far they
+  // still had to go.
+  if (kind === "points") {
+    // Past the dearest thing on the list it goes back to the plain balance,
+    // which is the one number still MOVING. A points balance is not capped, so
+    // "Reward ready" would freeze the header at the top of the catalogue and
+    // every stamp after that would be silent — iOS only banners when the value
+    // actually changed.
+    const pts = (n: number) => `${n} ${n === 1 ? "point" : "points"}`;
+    if (earned >= total) return pts(earned);
+    const left = total - filled;
+    return left <= filled ? `${pts(left)} to reward` : `${pts(filled)} earned`;
+  }
   if (filled >= total) return "Reward ready";
   const remaining = total - filled;
   return remaining <= filled ? `${remaining} left` : `${filled} earned`;
@@ -451,6 +469,16 @@ export function buildPassJson(
   card: CardRow,
   /** The shop's name. Defaults to the card's, which is right until a merchant runs two. */
   business = card.name,
+  /**
+   * The member's own name, on a membership card.
+   *
+   * NOTHING PASSES THIS YET, and the default is what every card printed before
+   * the slot existed. The sign-up page asks for no name, email or phone and the
+   * privacy page promises exactly that — so until that promise is rewritten,
+   * this stays empty and the card shows the member NUMBER instead. The slot is
+   * here so that turning it on later is one argument rather than a redesign.
+   */
+  memberName = "",
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
   const member = row.kind === "membership";
@@ -507,7 +535,7 @@ export function buildPassJson(
           // as "progress" keeps Apple diffing it against the same field on cards
           // already issued, and keeps the documented changeMessage pair intact.
           key: "progress",
-          value: getHeaderFieldValue(row.stamp_count, target, row.kind),
+          value: getHeaderFieldValue(row.stamp_count, target, row.kind, card.member_label),
           // A membership card's value never changes, so this never fires — but
           // the field keeps its changeMessage so the pass still carries exactly
           // the documented pair (progress + message) whatever kind it is.
@@ -532,7 +560,13 @@ export function buildPassJson(
       // leaving two dead slots behind.
       secondaryFields: member
         ? [
-            { key: "reward", label: "Member no.", value: row.short_code },
+            // WHO this is, or failing that WHICH card it is. A shop that knows
+            // its member's name should print it; one that does not has the
+            // number, which is what staff look them up by anyway. Same key
+            // either way, so a card that gains a name updates in place.
+            memberName.trim()
+              ? { key: "reward", label: "Member", value: memberName.trim().slice(0, 40) }
+              : { key: "reward", label: "Member no.", value: row.short_code },
             { key: "tally", label: "Member since", value: memberSince(row.created_at) },
           ]
         : [

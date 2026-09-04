@@ -1662,10 +1662,9 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
                 ? " — " + out.pass.stamps + (out.pass.stamps === 1 ? " point" : " points")
                 : " — " + out.pass.stamps + " of " + out.pass.target;
           // A points card the phone was not already showing carries its own
-          // preset amounts, so the buttons match the card in hand.
-          if (out.card && Array.isArray(out.card.presets) && out.card.presets.length) {
-            presets = out.card.presets;
-          }
+          // rules, so the buttons match the card in hand rather than the card
+          // the phone happened to be on.
+          if (out.card) applyCounterRules(out.card);
           toast(doneMsg + other + count);
         }
         // Redraw from the response rather than waiting on a second round trip.
@@ -1743,8 +1742,14 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
     // --------------------------------------------------------------- views ----
     let allPasses = [];
     // The shop's own one-tap amounts, refreshed with the pass list. Empty on
-    // every card that is not a points card.
+    // every card that is not a points card, and only ever used in MANUAL mode:
+    // the other two work the amount out themselves, so a row of guesses beside
+    // them would be three ways to answer one question.
     let presets = [];
+    // How this card earns — 'visit', 'spend' or 'manual'. It decides what staff
+    // are asked for after a scan, and nothing else on this page.
+    let earnMode = "visit";
+    let earnPoints = 1;
 
     /**
      * An amount typed at the counter, for the odd bill the presets do not cover.
@@ -1756,29 +1761,70 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
      * dialogs, and it reads the comments too, so do not name one here.
      */
     function askAmount(host, p) {
+      ask(host, p, {
+        placeholder: "Points",
+        step: "1",
+        nag: "Type how many points",
+        send: (n) => ({ serial: p.serial, amount: Math.trunc(n) }),
+      });
+    }
+
+    /**
+     * What the customer just spent, in ringgit.
+     *
+     * The SUM is not done here. This sends the money and the server turns it
+     * into points, which is the whole point of a spend card: the rate lives on
+     * the card, and a browser that could send points instead could send any
+     * number it liked.
+     */
+    function askSpend(host, p) {
+      ask(host, p, {
+        placeholder: "RM spent",
+        step: "0.01",
+        nag: "Type what they spent",
+        send: (n) => ({ serial: p.serial, spend: n }),
+      });
+    }
+
+    /** The one row both of those are. */
+    function ask(host, p, o) {
       if (host.querySelector(".amtrow")) return;
       const row = document.createElement("div");
       row.className = "row amtrow";
       row.innerHTML =
-        '<input class="amtin" type="number" min="1" step="1" inputmode="numeric" placeholder="Points">' +
+        '<input class="amtin" type="number" min="0" step="' + o.step +
+          '" inputmode="decimal" placeholder="' + o.placeholder + '">' +
         '<button class="btn btn-stamp" data-a="amtok">Add</button>' +
         '<button class="btn btn-ghost" data-a="amtno">Cancel</button>';
       const input = row.querySelector(".amtin");
       row.querySelector('[data-a=amtno]').onclick = () => row.remove();
       row.querySelector('[data-a=amtok]').onclick = () => {
-        const n = Math.trunc(Number(input.value));
-        if (!(n >= 1)) { toast("Type how many points"); return; }
+        const n = Number(input.value);
+        if (!(n > 0)) { toast(o.nag); return; }
         row.remove();
-        act("/stamp", { serial: p.serial, amount: n }, "Points added");
+        act("/stamp", o.send(n), "Points added");
       };
       host.appendChild(row);
       input.focus();
+    }
+    /**
+     * Take the counter's rules off whatever the server just said.
+     *
+     * Guarded field by field rather than assigned wholesale: a stamp response
+     * carries no presets and no earn mode, and blanking them would take the
+     * buttons off a points card that is simply not the one being stamped.
+     */
+    function applyCounterRules(o) {
+      if (!o) return;
+      if (Array.isArray(o.presets) && o.presets.length) presets = o.presets;
+      if (o.earnMode) earnMode = o.earnMode;
+      if (o.earnPoints > 0) earnPoints = o.earnPoints;
     }
     let found = []; // server-side search hits (cards outside the recent 20)
     async function load() {
       const out = await api("/passes");
       allPasses = out.passes;
-      if (Array.isArray(out.presets)) presets = out.presets;
+      applyCounterRules(out);
       renderReady();
       renderList();
     }
@@ -1792,10 +1838,13 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
       // and the counter log alongside everybody else's.
       const member = p.kind === "membership";
       const points = p.kind === "points";
-      // A points counter offers the shop's own amounts as one-tap buttons.
-      // Typing a number on a busy counter is how 500 lands where 50 was meant,
-      // so the free entry sits behind a second tap and these carry the traffic.
-      const amounts = points ? (presets.length ? presets : [1, 5, 10]) : [];
+      // A MANUAL points counter offers the shop's own amounts as one-tap
+      // buttons. Typing a number on a busy counter is how 500 lands where 50
+      // was meant, so the free entry sits behind a second tap and these carry
+      // the traffic. The other two modes work the amount out themselves, so
+      // they get one button and no guessing.
+      const amounts = points && earnMode === "manual"
+        ? (presets.length ? presets : [1, 5, 10]) : [];
       div.innerHTML = \`
         <strong>\${p.code}</strong>
         \${p.rewardReady ? '<span class="ready"> — ' + (points ? "ENOUGH TO SPEND 🎉" : "REWARD READY 🎉") + '</span>' : ""}
@@ -1806,7 +1855,12 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
           : '<div class="dots">' + p.dots + ' <span class="muted">' + p.stamps + '/' + p.target +
             (p.total && p.total !== p.target ? ' (of ' + p.total + ')' : '') + '</span></div>'}
         <div class="row">
-          \${points
+          \${points && earnMode === "spend"
+            ? '<button class="btn btn-stamp" data-a="spent">What did they spend?</button>'
+            : points && earnMode === "visit"
+            ? '<button class="btn btn-stamp" data-a="stamp">+' + earnPoints +
+              (earnPoints === 1 ? " point" : " points") + '</button>'
+            : points
             ? amounts.map((n) => '<button class="btn btn-stamp" data-a="add" data-n="' + n + '">+' + n + '</button>').join("") +
               '<button class="btn btn-ghost" data-a="custom">Other amount</button>'
             : '<button class="btn btn-stamp" data-a="stamp">' + (member ? "Check in ✓" : "+1 Stamp") + '</button>'}
@@ -1818,7 +1872,13 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
         </div>\`;
       const stampBtn = div.querySelector('[data-a=stamp]');
       if (stampBtn) stampBtn.onclick = () =>
-        act("/stamp", { serial: p.serial }, member ? "Checked in" : "Stamp added");
+        act("/stamp", { serial: p.serial },
+          member ? "Checked in" : points ? "Points added" : "Stamp added");
+      // Asking for money is not destructive, so it is not behind arm() the way
+      // "Other amount" is: that one guards a number staff INVENT, and this one
+      // opens a box for a figure that is already on the till.
+      const spentBtn = div.querySelector('[data-a=spent]');
+      if (spentBtn) spentBtn.onclick = () => askSpend(div, p);
       for (const b of div.querySelectorAll('[data-a=add]')) {
         b.onclick = () => act("/stamp", { serial: p.serial, amount: Number(b.getAttribute("data-n")) }, "Points added");
       }

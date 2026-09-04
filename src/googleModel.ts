@@ -293,9 +293,16 @@ export function buildLoyaltyPatch(
   row: PassRow,
   card: CardRow,
   business = card.name,
+  /**
+   * The member's own name. Nothing passes it yet — see buildPassJson, which
+   * carries the same argument and the same reason. The card shows the member
+   * NUMBER until it arrives, which is what it has always shown.
+   */
+  memberName = "",
 ): Record<string, unknown> {
   const ready = isRewardReady(row);
   const member = row.kind === "membership";
+  const named = memberName.trim().slice(0, 40);
   const points = row.kind === "points";
   // The NEXT rung on a milestones card, the pass's own snapshot on any other —
   // the same two helpers the iPhone card reads, so the platforms cannot start
@@ -345,10 +352,13 @@ export function buildLoyaltyPatch(
       // to be a stamp card was worth less than the space it took.
       {
         id: FRONT_REWARD_MODULE,
-        header: member ? "MEMBER NO."
+        // WHO this is, or failing that WHICH card it is — the same pair the
+        // iPhone card shows in the same slot, so the two never disagree about
+        // what is printed under the banner.
+        header: member ? (named ? "MEMBER" : "MEMBER NO.")
           : row.kind === "milestones" || points ? "NEXT REWARD" : "REWARD",
         body: member
-          ? row.short_code
+          ? (named || row.short_code)
           : ready ? `${reward} — show this to staff!` : reward,
       },
       ...(row.message ? [{ id: "message", header: business, body: row.message }] : []),

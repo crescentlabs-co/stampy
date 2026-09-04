@@ -3358,6 +3358,72 @@ async function main() {
       });
     }
 
+    // How a points card EARNS, over HTTP, because the sum has to happen on this
+    // side of the wire. The counter sends RINGGIT and never points: if it could
+    // send points, a crafted request could mint them at whatever rate it liked,
+    // which is the same reason redeem prices a reward off the card's own list.
+    {
+      const asIssued = await getCard("default");
+      const SHOP = [{ at: 100, reward: "Free coffee" }];
+      const earner = await mk();
+      const asPoints = async (
+        mode: "visit" | "spend" | "manual", spendCents: number, per: number,
+      ) => {
+        await updateCard("default", {
+          kind: "points", milestones: SHOP,
+          earn_mode: mode, earn_spend_cents: spendCents, earn_points: per,
+        });
+        await getPool().query(
+          `UPDATE passes SET kind = 'points', milestones = $2, stamp_count = 0
+            WHERE serial = $1`,
+          [earner.serial, JSON.stringify(SHOP)],
+        );
+      };
+      // force, because these are deliberate repeat stamps inside the anti-spam
+      // window — the same flag the counter's "add another" sends.
+      const stamp = async (body: Record<string, unknown>) => {
+        const r = await fetch(base + "/staff/api/stamp", {
+          method: "POST",
+          headers: staffHeaders,
+          body: JSON.stringify({ serial: earner.serial, force: true, ...body }),
+        });
+        return JSON.parse(await r.text());
+      };
+
+      await asPoints("visit", 0, 5);
+      expect((await stamp({})).pass.stamps === 5, "a visit is worth the card's own rate");
+      expect((await stamp({ amount: 900 })).pass.stamps === 10,
+        "...and a browser asking for 900 on a visit card still gets the rate");
+
+      await asPoints("spend", 100, 1);
+      expect((await stamp({ spend: 25.5 })).pass.stamps === 25,
+        "RM25.50 at a point per ringgit is 25 points, rounded down");
+      expect((await stamp({ amount: 5000 })).pass.stamps === 26,
+        "...and points sent instead of money buy nothing");
+
+      await asPoints("spend", 500, 1);
+      expect((await stamp({ spend: 12 })).pass.stamps === 2,
+        "RM12 at a point per five ringgit is 2 points");
+      expect((await stamp({ spend: 0.5 })).pass.stamps === 3,
+        "...and a bill too small to earn one still banks one, so the scan looks like it worked");
+
+      await asPoints("manual", 0, 0);
+      expect((await stamp({ amount: 40 })).pass.stamps === 40,
+        "manual takes the number staff typed");
+      expect((await stamp({})).pass.stamps === 41,
+        "...and nothing typed at all is worth one");
+
+      await updateCard("default", {
+        kind: asIssued!.kind,
+        milestones: [],
+        earn_mode: "visit",
+        earn_spend_cents: 0,
+        earn_points: 0,
+        stamps_target: asIssued!.stamps_target,
+        reward: asIssued!.reward,
+      });
+    }
+
     // "Stamps given" counts HOW MUCH, not how many rows. A shop handing out
     // fifty points in one scan used to read as having handed out one.
     {

@@ -1124,12 +1124,32 @@ describe("switching the card type", () => {
     expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Membership");
   });
 
+  /**
+   * Read from the CONTROL, not the card it was loaded with, so the card face
+   * changes as the word is typed rather than after a save and a reload.
+   */
+  it("prints the shop's own word for a regular, live as it is typed", async () => {
+    const h = makeHarness();
+    const div = build(card({ kind: "membership", memberLabel: "VIP" }), h);
+    await h.settle();
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("VIP");
+    const box = div.querySelector('[data-f="memberLabel"]')!;
+    box.value = "Regular";
+    box.fire("input");
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("Regular");
+    box.value = "  ";
+    box.fire("input");
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("Member");
+  });
+
   it("redraws both previews as a points card, showing a balance", async () => {
     const h = makeHarness();
     const div = build(card({ kind: "points", milestones: [{ at: 200, reward: "Free coffee" }] }), h);
     await h.settle();
     // Previewed at half the cheapest reward: what somebody part-way there sees.
-    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("100 points");
+    // The header counts the shorter road, exactly as a stamp card's does — and
+    // at exactly halfway that is the road ahead.
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("100 points to reward");
     expect(div.querySelector("[data-pv-clbl]")!.textContent).toBe("BALANCE");
     expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Points card");
     expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("100 points");

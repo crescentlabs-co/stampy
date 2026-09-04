@@ -524,6 +524,47 @@ describe("benefitLines / benefitsText", () => {
   });
 });
 
+/**
+ * What a shop calls its regulars, and who is holding the card.
+ *
+ * Both go in slots the card already had. The header was the fixed word
+ * "Member"; the slot under the banner was the member NUMBER, and it still is —
+ * nothing collects a name yet, and the privacy page promises we never ask for
+ * one. The argument exists so that turning it on later is one line rather than
+ * a redesign.
+ */
+describe("a membership card's own words", () => {
+  const memberCard = (o = {}) => card({ kind: "membership", ...o });
+  const memberRow = (o = {}) => row({ kind: "membership", ...o });
+
+  it("prints the shop's word for a regular in the header", () => {
+    const p = buildPassJson(memberRow(), memberCard({ member_label: "VIP" })) as any;
+    expect(p.storeCard.headerFields[0].value).toBe("VIP");
+  });
+
+  it("falls back to Member when the shop has not said", () => {
+    expect(getHeaderFieldValue(0, 0, "membership")).toBe("Member");
+    expect(getHeaderFieldValue(0, 0, "membership", "   ")).toBe("Member");
+    expect(getHeaderFieldValue(0, 0, "membership", "Friend")).toBe("Friend");
+  });
+
+  it("shows the member number while nothing has a name", () => {
+    const p = buildPassJson(memberRow({ short_code: "4KJ9PT" }), memberCard()) as any;
+    expect(p.storeCard.secondaryFields[0]).toMatchObject({
+      key: "reward", label: "Member no.", value: "4KJ9PT",
+    });
+  });
+
+  /** Same KEY either way, so a card that gains a name updates in place. */
+  it("shows the name instead once there is one", () => {
+    const p = buildPassJson(memberRow(), memberCard(), "Kopi Corner", "Sarah") as any;
+    expect(p.storeCard.secondaryFields[0]).toMatchObject({
+      key: "reward", label: "Member", value: "Sarah",
+    });
+    expect(p.storeCard.secondaryFields[1].label).toBe("Member since");
+  });
+});
+
 describe("memberSince", () => {
   it("reads as a month and a year", () => {
     expect(memberSince(new Date("2026-08-14T09:00:00Z"))).toBe("Aug 2026");
@@ -712,21 +753,42 @@ describe("points cards", () => {
     expect(isFinalReward(pRow({ stamp_count: 900 }))).toBe(false);
   });
 
-  it("shows the balance as the headline, and it changes on every visit", () => {
+  /**
+   * The headline counts the shorter road, exactly as a stamp card's does.
+   *
+   * It read "340 points" before: true, and it never once told anybody how far
+   * they still had to go. Same rule as stamps now — count up while that is the
+   * encouraging number, count down once the reward is closer than the start.
+   */
+  it("counts up, then down, and changes on every visit", () => {
+    expect(getHeaderFieldValue(0, 200, "points")).toBe("0 points earned");
+    expect(getHeaderFieldValue(1, 200, "points")).toBe("1 point earned");
+    expect(getHeaderFieldValue(199, 200, "points")).toBe("1 point to reward");
+    expect(getHeaderFieldValue(340, 500, "points")).toBe("160 points to reward");
     // Both platforms notify off a value CHANGE, so a distinct string per
     // balance is what makes an Android and an iPhone card buzz at all.
-    expect(getHeaderFieldValue(0, 200, "points")).toBe("0 points");
-    expect(getHeaderFieldValue(1, 200, "points")).toBe("1 point");
-    expect(getHeaderFieldValue(340, 500, "points")).toBe("340 points");
     const seen = new Set(
       Array.from({ length: 60 }, (_, i) => getHeaderFieldValue(i, 500, "points")),
     );
     expect(seen.size).toBe(60);
   });
 
+  /**
+   * Past the dearest thing on the list, back to the plain balance.
+   *
+   * A points balance has no ceiling. "Reward ready" would freeze the header at
+   * the top of the catalogue and every stamp after that would be silent, which
+   * is the one thing this field exists to prevent.
+   */
+  it("keeps moving once everything on the list is affordable", () => {
+    expect(getHeaderFieldValue(500, 500, "points")).toBe("500 points");
+    expect(getHeaderFieldValue(650, 500, "points")).toBe("650 points");
+    expect(getHeaderFieldValue(651, 500, "points")).toBe("651 points");
+  });
+
   it("puts the balance on the front and the next thing beside it", () => {
     const p = buildPassJson(pRow({ stamp_count: 340 }), pCard()) as any;
-    expect(p.storeCard.headerFields[0].value).toBe("340 points");
+    expect(p.storeCard.headerFields[0].value).toBe("160 points to reward");
     expect(p.storeCard.secondaryFields[0]).toMatchObject({
       label: "Next reward", value: "Free coffee — show this to staff!",
     });
