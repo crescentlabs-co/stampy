@@ -1873,12 +1873,18 @@ describe("dashboard information architecture", () => {
     // Slicing from ">Design<" would start AFTER that heading's own class
     // attribute and quietly count one heading instead of two.
     const editor = html.slice(html.indexOf("data-testout"), html.indexOf('data-a="save"'));
-    // ONE heading now, not two: the design half is a fold, and its summary is
-    // its title. "Loyalty programme" below it is the only .sec left.
-    expect((editor.match(/class="sec/g) ?? []).length).toBe(1);
     expect(editor).toContain("Customise the design");
-    for (const name of ["Apple logo", "Android logo", "Colours", "Stamp logo"]) {
+    // FOUR named sections now, plus the rules heading below them. The design
+    // half was one long scroll of unrelated controls under a single heading —
+    // a logo, a band, a stamp and five colours all reading as one list.
+    for (const name of ["Personalize", "Stamps", "Banner", "Colours"]) {
       expect(editor).toContain(`>${name}`);
+    }
+    // The old row names are gone with the rows: the two logos are a pair of
+    // boxes wearing their platform's mark, and the band is now the Banner
+    // section rather than the third thing in a list about logos.
+    for (const gone of ["Apple logo<", "Android logo<", "Stamp logo", "Band artwork"]) {
+      expect(editor).not.toContain(gone);
     }
     expect(html).not.toContain("Band texture");
     expect(html).not.toContain("Stamp icon");
@@ -1954,13 +1960,20 @@ describe("dashboard information architecture", () => {
 
   // Six preset tiles did what the emoji field does, and every card starts on
   // dots anyway. Three routes remain, each a different kind of answer.
-  it("offers dots, any emoji or your own shape — no preset tiles", () => {
+  /**
+   * One list, not a row of buttons — and still not a grid of preset tiles,
+   * which is the mistake this control has already made once.
+   */
+  it("sets the stamp from one list, with your own picture at the end of it", () => {
     expect(html).not.toContain("data-stamptpl");
     expect(html).not.toContain("STAMP_ICONS");
+    expect(html).toContain("data-stamppick");
+    expect(html).toContain("STAMP_PRESETS");
+    // The emoji field still exists — the list opens it — but the three-button
+    // bar it used to sit beside is gone.
     expect(html).toContain("data-emoji");
-    // All three on one row now, so the labels are short.
-    expect(html).toContain('data-a="rmstamp"');
-    expect(html).toContain('data-stampimg');
+    expect(html).not.toContain('data-a="rmstamp"');
+    expect(html).toContain("data-stampimg");
   });
 
   // A hint that pushes the form down is a paragraph with extra steps.

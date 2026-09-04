@@ -189,15 +189,38 @@ describe("the design panel, mounted", () => {
    * three — and the field read as something you had to fill in before anything
    * would work. It moved into a dialog, where a field is obviously a field.
    */
-  it("offers exactly three ways to set the stamp, and no field", () => {
+  /**
+   * One list, not three buttons.
+   *
+   * They answered a single question — dots, a ready-made shape, or your own
+   * picture — and a row of buttons made them read as three separate things you
+   * could do, with the current answer written underneath in a fourth place. A
+   * list says what it is set to by being set to it.
+   */
+  it("sets the stamp from one list, and says which is chosen", () => {
     const h = makeHarness();
     const div = build(card(), h);
-    expect(div.querySelector("[data-emoji]")).toBeNull();
-    expect(div.querySelector("[data-a=emoji]")).not.toBeNull();
+    const sel = div.querySelector("[data-stamppick]")!;
+    expect(sel).not.toBeNull();
+    // The old three-button bar is gone.
+    expect(div.querySelector("[data-a=emoji]")).toBeNull();
+    expect(div.querySelector("[data-a=rmstamp]")).toBeNull();
+    // The file input survives — the list opens it — but is not a visible third
+    // control any more.
     expect(div.querySelector("[data-stampimg]")).not.toBeNull();
-    // The way back, always present: a control that appears only once you no
-    // longer need it is no control at all.
-    expect(div.querySelector("[data-a=rmstamp]")!.textContent).toBe("Dots");
+    const values = sel.children.map((o) => o.getAttribute("value"));
+    expect(values).toContain("dot");
+    expect(values).toContain("emoji");
+    expect(values).toContain("custom");
+    // Dots is what a new card is on, so that is what the list shows.
+    expect(sel.children.find((o) => "selected" in o.attrs)!.getAttribute("value")).toBe("dot");
+  });
+
+  it("shows the emoji a card is already using as the chosen one", () => {
+    const h = makeHarness();
+    const div = build(card({ stampStyle: "\u2605" }), h);
+    const sel = div.querySelector("[data-stamppick]")!;
+    expect(sel.children.find((o) => "selected" in o.attrs)!.getAttribute("value")).toBe("\u2605");
   });
 
   /**
@@ -656,30 +679,51 @@ describe("the design panel, mounted", () => {
      * upload directly above it and the square one as an afterthought. Each row
      * is now the same shape: a label, then its control.
      */
-    it("lays the three logo decisions out as three rows, in order", () => {
+    /**
+     * Two boxes in ONE row, not two full-width rows.
+     *
+     * They asked the same question twice and buried the Android one below the
+     * fold on a phone. As a pair they read as one decision, which is what they
+     * are — and each wears its platform's mark, so neither needs a name.
+     */
+    it("puts both logos in one row, each marked with its platform", () => {
       const h = makeHarness();
       const div = build(card(), h);
-      // Four rows now: the three logo decisions, then the band artwork, which
-      // is a fourth picture the owner supplies and sits directly above the
-      // stamps that get drawn on top of it. The three below are still one
-      // decision each, which is what this test is really about.
-      const rows = div.querySelectorAll(".lrow");
-      expect(rows.length).toBe(4);
-      expect(rows[3]!.querySelector("[data-band]")).not.toBeNull();
-      // Each owns exactly one of the three, and in this order.
-      const owns = (row: FakeEl, sel: string) => row.querySelector(sel) !== null;
-      expect(owns(rows[0]!, "[data-logo]")).toBe(true);
-      expect(owns(rows[1]!, "[data-mark]")).toBe(true);
-      expect(owns(rows[2]!, "[data-lname]")).toBe(true);
-      // ...and none of them owns two, which is what interleaving looked like.
-      expect(owns(rows[0]!, "[data-lname]")).toBe(false);
-      expect(owns(rows[0]!, "[data-mark]")).toBe(false);
-      // The two upload rows are a heading and their control. The third is a
-      // switch, whose own sentence IS its label — a "Business name" heading over
-      // "My logo already includes my business name" said it twice.
-      for (const r of [rows[0]!, rows[1]!]) expect(r.querySelector(".dlbl")).not.toBeNull();
-      expect(rows[2]!.querySelector(".dlbl")).toBeNull();
-      expect(rows[2]!.querySelector(".tgtext")).not.toBeNull();
+      const pair = div.querySelector(".logopair")!;
+      expect(pair).not.toBeNull();
+      const boxes = pair.querySelectorAll(".logobox");
+      expect(boxes.length).toBe(2);
+      expect(boxes[0]!.querySelector("[data-logo]")).not.toBeNull();
+      expect(boxes[1]!.querySelector("[data-mark]")).not.toBeNull();
+      // Neither owns the other's control.
+      expect(boxes[0]!.querySelector("[data-mark]")).toBeNull();
+      expect(boxes[1]!.querySelector("[data-logo]")).toBeNull();
+      // The mark on the frame is what says which is which.
+      for (const b of boxes) expect(b.querySelector(".lbplat")).not.toBeNull();
+      // The name switch is its own row, below the pair.
+      expect(div.querySelector("[data-lname]")).not.toBeNull();
+      expect(pair.querySelector("[data-lname]")).toBeNull();
+    });
+
+    /**
+     * Removing is an X ON the picture, and only once there is one.
+     *
+     * It used to be a permanently-visible "Remove logo" button that was
+     * disabled until there was something to remove — two controls for a thing
+     * that did not exist yet.
+     */
+    it("hides each thumbnail until its picture exists", () => {
+      const h = makeHarness();
+      const bare = build(card(), h);
+      for (const k of ["logo", "mark", "banner"]) {
+        expect(bare.querySelector('[data-lbthumb="' + k + '"]')!.hidden, k).toBe(true);
+      }
+      const withArt = build(card({ logoVersion: 2, markVersion: 3, bandTexture: "image" }), makeHarness());
+      for (const k of ["logo", "mark", "banner"]) {
+        expect(withArt.querySelector('[data-lbthumb="' + k + '"]')!.hidden, k).toBe(false);
+        expect(withArt.querySelector('[data-lbthumb="' + k + '"]')!.querySelector(".lbx"), k)
+          .not.toBeNull();
+      }
     });
 
     it("keeps the name tick beside the logo, not inside a surface", () => {
@@ -824,7 +868,14 @@ describe("the design panel, mounted", () => {
       const div = build(card(), h);
       await h.settle();
       expect(div.querySelector("[data-palette]")!.hidden).toBe(true);
-      expect(div.querySelectorAll("[data-swatches] .sw").length).toBe(5);
+      // Five BOXES, not a strip. Edge-to-edge swatches with their names on a
+      // second line meant counting along to tell which was which.
+      expect(div.querySelectorAll("[data-swatches] .swbox").length).toBe(5);
+      // Each box carries its own colour, name and value.
+      const first = div.querySelectorAll("[data-swatches] .swbox")[0]!;
+      expect(first.querySelector(".swchip")).not.toBeNull();
+      expect(first.querySelector(".swname")!.textContent).toBeTruthy();
+      expect(first.querySelector(".swval")!.textContent).toContain("#");
       // The button and the five rows it revealed are gone entirely.
       expect(div.querySelector("[data-a=customise]")).toBeNull();
       expect(div.querySelector("[data-roles]")).toBeNull();

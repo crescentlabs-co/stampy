@@ -983,6 +983,48 @@ export const DESIGN_PANEL_CSS = /* css */ `
        first label in a row loses its top margin: the row supplies the gap, and
        both would stack into a hole between every pair. */
     .lrow + .lrow { margin-top: 20px; }
+
+    /* Two logo boxes side by side. Each wears its platform's mark on the frame,
+       so neither needs a name to say which it is. */
+    .logopair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .logobox { position: relative; display: flex; flex-direction: column; align-items: center;
+               gap: 8px; padding: 12px 10px 10px; border: 1px dashed var(--field-border);
+               border-radius: 14px; background: var(--bg); }
+    .lbplat { position: absolute; top: -9px; left: 10px; display: flex; align-items: center;
+              padding: 0 5px; background: var(--bg); color: var(--muted); line-height: 1; }
+    .lbplat svg { width: 15px; height: 15px; display: block; }
+    /* The picture, with its own remove. An X ON the thumbnail rather than a
+       disabled button beside Upload — two controls for a thing that is not
+       there yet is one too many. */
+    .lbthumb { position: relative; width: 76px; height: 46px; border-radius: 8px;
+               background: var(--surface); display: flex; align-items: center;
+               justify-content: center; }
+    .lbthumb.wide { width: 100%; height: 62px; }
+    .lbthumb img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+    .lbx { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px;
+           border-radius: 999px; border: 0; padding: 0; cursor: pointer;
+           background: var(--slab); color: var(--on-slab); font-size: 11px; line-height: 1;
+           display: flex; align-items: center; justify-content: center; }
+    .lbup { margin: 0; width: 100%; }
+    .lbup input[type=file] { display: none; }
+    .lbcap { font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 2px; }
+    .bannerbox { display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+                 margin-top: 10px; padding: 12px; border: 1px dashed var(--field-border);
+                 border-radius: 14px; background: var(--bg); }
+
+    /* Five boxes, not one strip. The strip put five swatches edge to edge with
+       their names on a second line, so telling which name belonged to which
+       colour meant counting along. */
+    .swgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+              gap: 8px; margin-top: 10px; }
+    .swbox { display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+             padding: 8px; border: 1px solid var(--line); border-radius: 12px;
+             background: var(--bg); cursor: pointer; font: inherit; text-align: left; }
+    .swbox[aria-expanded="true"] { border-color: var(--ink); }
+    .swbox .swchip { width: 100%; height: 30px; border-radius: 8px; border: 1px solid var(--line); }
+    .swbox .swname { font-size: .78rem; font-weight: 600; color: var(--ink); }
+    .swbox .swval { font-size: .7rem; color: var(--muted); font-variant-numeric: tabular-nums;
+                    text-transform: uppercase; }
     .lrow .dlbl { margin-top: 0; }
     .lrow .tgrow { margin-top: 0; }
     /* The one line that is conditional, rather than the whole row: it says
@@ -1419,121 +1461,87 @@ export const DESIGN_PANEL_JS = /* js */ `
              property of the upload above it and the square one like an
              afterthought. Same shape each: a label with its ⓘ, then its
              control. -->
-        <div class="lrow">
-          <!-- Named "Apple logo" beside "Android logo" because the pair reads
-               instantly. The ⓘ has to carry what the name gives up: this image
-               is NOT Apple-only. It is on the poster, on the sign-up page, and
-               on Android too whenever no Android logo has been uploaded
-               (googleModel.ts falls back to it). A merchant who skipped it
-               because "we're not on iPhone" would lose all three. -->
-          <label class="dlbl">Apple logo\${info("Your main logo. It goes on the iPhone card, your printed poster and your sign-up page — and on Android too, unless you upload an Android logo below. Any shape; a wide one with your name in it works well. Your card colours are read from it.")}</label>
-          <div class="actbar">
-            <label class="btn btn-ghost" style="margin:0"><span data-logobtn>Upload logo</span><input data-logo type="file" accept="image/*"></label>
-            <button class="btn btn-ghost" data-a="rmlogo" \${c.logoVersion ? "" : "disabled"}>Remove logo</button>
+        <label class="sec dsec" style="display:block">Personalize</label>
+
+        <!-- TWO boxes, one row. They were two full-width rows, which asked the
+             same question twice and buried the Android one below the fold on a
+             phone. Each box wears its platform's mark on the frame, so neither
+             needs a name to say which it is — and the pair reads as one
+             decision, which is what it is.
+
+             Removing is an ✕ ON the picture rather than a button in a bar. A
+             disabled "Remove logo" sitting beside "Upload logo" is two controls
+             for a thing that is not there yet. -->
+        <div class="logopair">
+          <div class="logobox" data-lb="apple">
+            <span class="lbplat" aria-hidden="true">${APPLE_GLYPH}</span>
+            <div class="lbthumb" data-lbthumb="logo"\${c.logoVersion ? "" : " hidden"}>
+              <img data-lbimg="logo" alt="">
+              <button type="button" class="lbx" data-a="rmlogo" aria-label="Remove Apple logo">✕</button>
+            </div>
+            <label class="lbup btn btn-ghost"><span data-logobtn>Upload logo</span><input data-logo type="file" accept="image/*"></label>
+            <span class="lbcap">Apple\${info("Your main logo. It goes on the iPhone card, your printed poster and your sign-up page — and on Android too, unless you upload an Android logo beside it. Any shape; a wide one with your name in it works well. Your card colours are read from it.")}</span>
+          </div>
+          <div class="logobox" data-lb="android" data-markbox>
+            <span class="lbplat" aria-hidden="true">${GOOGLE_GLYPH}</span>
+            <div class="lbthumb" data-lbthumb="mark"\${c.markVersion ? "" : " hidden"}>
+              <img data-lbimg="mark" alt="">
+              <button type="button" class="lbx" data-a="rmmark" aria-label="Remove Android logo">✕</button>
+            </div>
+            <label class="lbup btn btn-ghost"><span data-markbtn>Upload logo</span><input data-mark type="file" accept="image/*"></label>
+            <span class="lbcap">Android\${info("Android crops your logo to a small circle, so a wide one loses both ends. A square version fixes that. Optional — without it Android uses your Apple logo.")}</span>
           </div>
         </div>
+        <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
 
-        <!-- Row two. Always here, because it is one of the three things this
-             section is about and a row that is simply absent cannot be
-             understood — on a brand-new shop there is no logo yet, so the
-             condition that used to reveal it could not be true and the row
-             looked missing rather than not-yet-needed.
-             The RELEVANCE moved into the row instead: the line below appears
-             only once there is a wide logo to be cropped, which is the one state
-             where anything is actually being lost. -->
-        <div class="lrow" data-markbox>
-          <label class="dlbl">Android logo\${info("Android crops your logo to a small circle, so a wide one loses both ends. A square version fixes that. Optional — without it Android uses your Apple logo above.")}</label>
-          <div class="actbar">
-            <label class="btn btn-ghost" style="margin:0"><span data-markbtn>Upload logo</span><input data-mark type="file" accept="image/*"></label>
-            <button class="btn btn-ghost" data-a="rmmark" \${c.markVersion ? "" : "disabled"}>Remove logo</button>
-          </div>
-          <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
-        </div>
-
-        <!-- No heading: the sentence IS the label, and "Business name" above it
-             was the same words twice in a row.
-
-             The ⓘ is OUTSIDE the <label>, and that is the bug this row had for
+        <!-- The ⓘ is OUTSIDE the <label>, and that is a bug this row carried for
              months rather than a style choice. A label binds to its FIRST
              LABELABLE DESCENDANT, and <button> is labelable — so with the ⓘ
              inside, the label's control was the info dot and never the
-             checkbox. The visible track sits on top of an opacity:0 input, so
-             every click landed on the track, fell through to label activation,
-             and toggled the info bubble. The switch simply did not work.
-             Explicit for/id as well, so the binding cannot drift again if
-             anything else is ever added to this row. -->
+             checkbox, and every click on the track toggled the bubble instead.
+             Explicit for/id as well, so it cannot drift again. -->
         <div class="lrow">
           <div class="tgrow">
-            <span class="tgtext"><label for="lname-tg">My logo already includes my business name</label>\${info("Turn this on and we stop printing the name beside your logo, so it is not said twice.")}</span>
-            <!-- A label of its own, so the switch itself is still the obvious
-                 thing to press: the track paints over the transparent input, so
-                 without this the click would land on nothing. Its ONLY labelable
-                 descendant is the checkbox, which is the whole point. -->
+            <span class="tgtext"><label for="lname-tg">Show company name next to logo</label>\${info("Prints your shop's name beside your logo on the iPhone card. Turn it off if your logo already says the name. Android always shows it — Google prints the issuer name itself and we cannot switch that off.")}</span>
             <label class="tg" for="lname-tg">
-              <input id="lname-tg" data-lname type="checkbox" \${c.logoHasName ? "checked" : ""}>
+              <input id="lname-tg" data-lname type="checkbox" \${c.logoHasName ? "" : "checked"}>
               <span class="tgtrack"><span class="tgthumb"></span></span>
             </label>
           </div>
         </div>
 
-        <!-- The band behind the stamps. Sits with the logo rows because it is the
-             same kind of decision — a picture you supply — and directly above the
-             stamps that get drawn on top of it, which is the thing worth having in
-             mind while choosing one. -->
-        <div class="lrow">
-          <label class="dlbl">Band artwork\${info("The strip behind your stamps. Leave it empty and the band is just your Band colour. Your stamps are drawn ON TOP of whatever you upload, so a busy picture will fight them — something simple, and open in the middle, works best. Cropped to fit a wide strip.")}</label>
-          <div class="actbar">
-            <label class="btn btn-ghost" style="margin:0"><span data-bandbtn>Upload image</span><input data-band type="file" accept="image/*"></label>
-            <button class="btn btn-ghost" data-a="rmband" \${c.bandTexture === "image" ? "" : "disabled"}>Remove</button>
-          </div>
-        </div>
-
-        <label class="dlbl">Stamp logo\${info("Plain dots, an emoji, or your own shape, drawn in your Stamps colour. A simple shape or symbol, not a photo — we trim it and fill it with your stamp colour. iPhone only: Android always shows dots.")}</label>
-        <!-- Three buttons, one choice. It was a text field, a Use button, an
-             upload and a Dots button: four controls for three answers, and the
-             field read as something you had to fill in before anything would
-             work. The emoji moved into a popup, where a field is obviously a
-             field. "Default" is always shown because it is the only way back,
-             and a control that appears once you no longer need it is no control
-             at all. -->
-        <!-- ONE ⓘ for this block, on the label above. There were two — a second
-             sat here beside the buttons, so the row read as though "Dots"
-             specifically needed explaining. Its sentence moved up into the
-             label's own hint, where the question is asked. -->
-        <div class="stamprow">
-          <div class="actbar">
-            <label class="btn btn-ghost" style="margin:0">Upload<input data-stampimg type="file" accept="image/png,image/svg+xml"></label>
-            <button class="btn btn-ghost" data-a="emoji">Emoji</button>
-            <button class="btn btn-ghost" data-a="rmstamp">Dots</button>
-          </div>
-        </div>
-        <!-- What is actually set. The rendered grid used to be the only signal,
-             and the grid was exactly what went wrong — so an owner whose shape
-             was safe in the database had nothing on the screen telling them so.
-             Says its piece even when the grid above is still drawing. -->
+        <label class="sec dsec" style="display:block">Stamps</label>
+        <label class="dlbl">Stamp shape\${info("Drawn in your Stamps colour. A simple shape reads best at the size a stamp actually is. iPhone only: Android always shows dots.")}</label>
+        <!-- One dropdown where there were three buttons. The three answered one
+             question — dots, an emoji, or your own picture — and a row of
+             buttons made them look like three different things you could do. -->
+        <select data-stamppick></select>
+        <input data-stampimg type="file" accept="image/png,image/svg+xml" hidden>
         <p class="stampnow" data-stampnow style="display:none">
           <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
         </p>
         <p class="err" data-stamperr style="display:none"></p>
 
-        <!-- Colours are DERIVED, so they are shown rather than offered: a strip
-             of what the logo produced, named, so you can tell which one is the
-             band. Changing one happens on the CARD — tap the part you mean in
-             the preview and its palette opens under it.
+        <label class="sec dsec" style="display:block">Banner</label>
+        <!-- This was the band-artwork row, sitting among the logo rows. It is a
+             picture you supply, like the logos, but it is the one behind the
+             stamps — so it gets its own heading rather than being the third
+             thing in a list about logos. -->
+        <div class="bannerbox">
+          <div class="lbthumb wide" data-lbthumb="banner"\${c.bandTexture === "image" ? "" : " hidden"}>
+            <img data-lbimg="banner" alt="">
+            <button type="button" class="lbx" data-a="rmband" aria-label="Remove banner">✕</button>
+          </div>
+          <label class="lbup btn btn-ghost"><span data-bandbtn>Upload image</span><input data-band type="file" accept="image/*"></label>
+          <span class="lbcap">\${info("The strip behind your stamps. Leave it empty and the band is just your Band colour. Your stamps are drawn ON TOP of it, so something simple and open in the middle works best.")}</span>
+        </div>
 
-             There used to be a Customize button here revealing five named rows.
-             It asked you to name the part you wanted before you could point at
-             it, when the part was on screen the whole time; the button was one
-             more thing to find, and the rows were a second, worse drawing of a
-             card that was already right there. -->
-        <label class="dlbl">Colours\${info("Read from your logo and used everywhere. To change one, tap that part of the card in the preview.")}</label>
-        <!-- The strip IS the control. Each swatch is a button; tapping one opens
-             its palette directly underneath, where you are already looking.
-             The palette lives HERE rather than under the preview: the console
-             mounts the preview in a right-hand rail, so opening it there would
-             put the answer in a different column from the thing you tapped. -->
-        <div class="swstrip" data-swatches></div>
-        <div class="swnames" data-swnames></div>
+        <label class="sec dsec" style="display:block">Colours</label>
+        <!-- Five boxes, not one strip. The strip put five swatches edge to edge
+             with their names on a second line underneath, so telling which name
+             belonged to which colour meant counting along. Each box now carries
+             its own swatch, name and value. -->
+        <div class="swgrid" data-swatches></div>
         <div class="crpal" data-palette hidden></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
@@ -2147,6 +2155,62 @@ export const DESIGN_PANEL_JS = /* js */ `
       }
 
       /**
+       * One dropdown where three buttons were.
+       *
+       * They answered a single question — dots, a ready-made shape, or your own
+       * picture — and a row of buttons made them read as three separate things
+       * you could do, with the current answer written underneath in a fourth
+       * place. A list says what it is set to by being set to it.
+       *
+       * The presets are drawn in the card's own Stamps colour like any other
+       * glyph, so they are emoji rather than art: nothing to store, nothing to
+       * upload, and they survive a colour change.
+       */
+      const STAMP_PRESETS = [
+        { v: "dot", name: "Dots" },
+        { v: "\u2605", name: "Star" },
+        { v: "\u2764\uFE0F", name: "Heart" },
+        { v: "\u2615\uFE0F", name: "Coffee" },
+        { v: "\u2713", name: "Tick" },
+      ];
+
+      function stampNow() {
+        if (c.stampIconVersion && stampStyle === "custom") return "custom";
+        if (!stampStyle || stampStyle === "dot") return "dot";
+        return STAMP_PRESETS.some((x) => x.v === stampStyle) ? stampStyle : "emoji";
+      }
+
+      function drawStampPick() {
+        const sel = q("[data-stamppick]");
+        if (!sel) return;
+        const now = stampNow();
+        sel.innerHTML =
+          STAMP_PRESETS.map((x) =>
+            '<option value="' + esc(x.v) + '"' + (x.v === now ? " selected" : "") + ">" +
+            esc(x.name) + "</option>").join("") +
+          '<option value="emoji"' + (now === "emoji" ? " selected" : "") + ">Another emoji\u2026</option>" +
+          '<option value="custom"' + (now === "custom" ? " selected" : "") + ">Upload your own\u2026</option>";
+      }
+
+      {
+        const sel = q("[data-stamppick]");
+        if (sel) {
+          drawStampPick();
+          sel.onchange = async () => {
+            const v = sel.value;
+            // Both of these open something and may be cancelled, so the list is
+            // put back to what is actually set rather than left showing a
+            // choice that was never made.
+            if (v === "custom") { drawStampPick(); q("[data-stampimg]").click(); return; }
+            if (v === "emoji") { await askEmoji(); drawStampPick(); return; }
+            if (v === "dot") { await backToDots(); drawStampPick(); return; }
+            await applyStamps(v);
+            drawStampPick();
+          };
+        }
+      }
+
+      /**
        * The Android square logo, offered only when the logo actually needs one.
        *
        * It used to appear whenever the Android tab was open, which made it look
@@ -2174,6 +2238,30 @@ export const DESIGN_PANEL_JS = /* js */ `
         // difference visible.
         q("[data-logobtn]").textContent = c.logoVersion ? "Replace logo" : "Upload logo";
         hint.hidden = !(c.logoVersion && logoRatio > 1.25 && !c.markVersion);
+        paintArt();
+      }
+
+      /**
+       * The three thumbnails, and whether each is there at all.
+       *
+       * A box shows its picture with an X on it, or nothing but its Upload
+       * button. Removing used to be a permanently-visible button that was
+       * disabled until there was something to remove — two controls for a thing
+       * that did not exist yet.
+       */
+      function paintArt() {
+        const one = (key, on, url) => {
+          const box = div.querySelector('[data-lbthumb="' + key + '"]');
+          if (!box) return;
+          box.hidden = !on;
+          if (on) {
+            const img = div.querySelector('[data-lbimg="' + key + '"]');
+            if (img) img.src = url;
+          }
+        };
+        one("logo", Boolean(c.logoVersion), env.artUrl("logo", c.logoVersion));
+        one("mark", Boolean(c.markVersion), env.artUrl("mark", c.markVersion));
+        one("banner", bandIsImage, env.artUrl("banner", c.bannerVersion));
       }
       // Measured off its own Image rather than the preview's: the preview logo
       // is hidden on two of the three tabs, and a hidden img still decodes but
@@ -2307,7 +2395,7 @@ export const DESIGN_PANEL_JS = /* js */ `
 
       // What each upload is called when a toast has to name it. Keyed by the
       // same string the route takes, so a new kind cannot be added without one.
-      const ART_LABEL = { logo: "Logo", banner: "Band artwork", mark: "Android logo" };
+      const ART_LABEL = { logo: "Logo", banner: "Banner", mark: "Android logo" };
 
       // ---- Make an upload usable without asking the owner to edit it ----
       //
@@ -2685,6 +2773,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       function updateBandBtn() {
         const b = q("[data-bandbtn]");
         if (b) b.textContent = bandIsImage ? "Replace image" : "Upload image";
+        paintArt();
       }
       updateBandBtn();
 
@@ -2845,34 +2934,40 @@ export const DESIGN_PANEL_JS = /* js */ `
        * rather than spans, so the strip answers a keyboard as well as a thumb.
        */
       function drawSwatches() {
-        const strip = q("[data-swatches]");
-        if (!strip) return;
-        strip.innerHTML = "";
-        const names = q("[data-swnames]");
-        if (names) names.innerHTML = "";
+        const grid = q("[data-swatches]");
+        if (!grid) return;
+        grid.innerHTML = "";
         for (const r of ROLES) {
           const sw = document.createElement("button");
           sw.type = "button";
-          sw.className = "sw" + (r.k === activeRole ? " on" : "");
-          sw.style.background = f(r.k).value;
-          sw.title = r.name;
+          sw.className = "swbox" + (r.k === activeRole ? " on" : "");
           // A real attribute, not dataset: identical in a browser, and this way
-          // the strip is addressable by selector from CSS and from the tests.
+          // it is addressable by selector from CSS and from the tests.
           sw.setAttribute("data-role", r.k);
           sw.setAttribute("aria-label", r.name);
           sw.setAttribute("aria-expanded", r.k === activeRole ? "true" : "false");
-          // Tapping the open one shuts it, so the strip is a toggle rather than
+          const chip = document.createElement("span");
+          chip.className = "swchip";
+          chip.style.background = f(r.k).value;
+          const nm = document.createElement("span");
+          nm.className = "swname";
+          nm.textContent = r.name;
+          // The value, printed. On a strip the colours sat edge to edge with
+          // their names on a second line, so telling which name belonged to
+          // which colour meant counting along — and the hex was nowhere.
+          const val = document.createElement("span");
+          val.className = "swval";
+          val.textContent = f(r.k).value;
+          sw.appendChild(chip);
+          sw.appendChild(nm);
+          sw.appendChild(val);
+          // Tapping the open one shuts it, so a box is a toggle rather than
           // something that can only ever be opened.
           sw.onclick = () => {
             activeRole = activeRole === r.k ? null : r.k;
             drawPalette();
           };
-          strip.appendChild(sw);
-          if (names) {
-            const nm = document.createElement("span");
-            nm.textContent = r.name;
-            names.appendChild(nm);
-          }
+          grid.appendChild(sw);
         }
       }
 
@@ -3231,7 +3326,7 @@ export const DESIGN_PANEL_JS = /* js */ `
        * it one — and exactly one: firstGrapheme keeps multi-code-point emoji
        * (❤️, 🧑‍🍳) whole instead of slicing them in half.
        */
-      q("[data-a=emoji]").onclick = async () => {
+      async function askEmoji() {
         const current = (c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom")
           ? c.stampStyle : "";
         const asked = modal(
@@ -3246,9 +3341,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (field && field.focus) field.focus();
         if (!(await asked)) return;
         const one = firstGrapheme(field ? field.value : "");
-        if (!one) return toast("No emoji in there — nothing changed");
+        if (!one) { toast("No emoji in there — nothing changed"); return; }
         applyStamps(one);
-      };
+      }
       // Upload your own stamp icon → check it → STORE it → re-render the grid.
       //
       // The storing step is the one that was missing. This used to pass kind
@@ -3317,7 +3412,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       // discard, and applies the instant it is pressed: an owner pressed it
       // meaning "show me the plain option" and lost artwork they had no other
       // copy of. Only asks when there is actually something to lose.
-      q("[data-a=rmstamp]").onclick = async () => {
+      async function backToDots() {
         if (c.stampIconVersion) {
           const ok = await modal(
             "Delete your stamp shape?",
@@ -3334,7 +3429,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         showStamp();
         await applyStamps("dot", true);
         toast("Back to plain dots");
-      };
+      }
 
       // Two saves, disjoint field sets. Both re-render the stamp strips, because
       // a colour change (design) and a target change (rules) each alter them.
