@@ -150,6 +150,30 @@ export function asPointPresets(v: unknown): number[] {
     .slice(0, 4);
 }
 
+/**
+ * How a POINTS card decides what a visit is worth.
+ *
+ * 'visit'  a flat number of points every time, like a stamp
+ * 'spend'  points from what the customer paid — the counter asks for ringgit
+ *          and the SERVER does the sum, so a fiddled request cannot mint points
+ *          at its own rate
+ * 'manual' staff key the number in at the counter, under the shop's own rules
+ *
+ * Meaningless on every other kind, and read only when the card is a points
+ * card, so a stamp card carrying the default costs nothing.
+ */
+export type EarnMode = "visit" | "spend" | "manual";
+
+const EARN_MODES: readonly EarnMode[] = ["visit", "spend", "manual"];
+
+/**
+ * Anything unrecognised falls back to 'visit', matching asCardKind: an unknown
+ * mode reaching the counter must not leave staff with no way to add anything.
+ */
+export function asEarnMode(v: unknown): EarnMode {
+  return EARN_MODES.includes(v as EarnMode) ? (v as EarnMode) : "visit";
+}
+
 export interface CardRow {
   /**
    * Permanent. It is printed on QR posters, forms the Google class id, and
@@ -204,6 +228,28 @@ export interface CardRow {
    * becomes numbers.
    */
   point_presets: string;
+  /**
+   * What the shop calls its regulars — "VIP", "Member", "Friend of the House".
+   * Printed on the front of a membership card where a stamp card counts, and
+   * meaningless on every other kind.
+   */
+  member_label: string;
+  /**
+   * How a points card earns. See EarnMode.
+   *
+   * On the CARD and never frozen onto a pass, which is the opposite of
+   * stamps_per_visit above and needs a reason. A stamp card's promise is "ten
+   * stamps and the eleventh is free", so halving what a visit is worth moves
+   * the finish line on somebody already running at it. A points card's promise
+   * is the PRICE — 500 points buys a coffee — and that is frozen, in the pass's
+   * own `milestones`. How fast you earn towards it is today's rate, and points
+   * already banked are untouched by a change to it.
+   */
+  earn_mode: EarnMode;
+  /** The ringgit side of "RM 1 = 1 point", in cents. Spend mode only. */
+  earn_spend_cents: number;
+  /** The points side: per visit in visit mode, per earn_spend_cents in spend. */
+  earn_points: number;
   reward: string;
   stamps_target: number;
   stamps_start: number;
@@ -1064,6 +1110,24 @@ export async function migrate(): Promise<void> {
     -- row written before today meant and still means — so nothing historical
     -- has to be rewritten, and COALESCE(amount, 1) is the rule everywhere.
     ALTER TABLE events ADD COLUMN IF NOT EXISTS amount integer;
+    -- v2.11: what a shop calls its regulars, on the front of a membership card.
+    -- Defaults to the word the card printed before this column existed, so no
+    -- membership card already in a wallet changes.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS member_label text NOT NULL DEFAULT 'Member';
+    -- v2.11: how a POINTS card earns. See EarnMode, and the note on CardRow for
+    -- why this lives on the card and is NOT frozen onto each pass.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS earn_mode        text    NOT NULL DEFAULT 'visit';
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS earn_spend_cents integer NOT NULL DEFAULT 0;
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS earn_points      integer NOT NULL DEFAULT 0;
+    -- v2.11: a member's own name, for the front of a membership card.
+    --
+    -- NOTHING WRITES THIS YET, deliberately. The sign-up page asks for no name,
+    -- email or phone and the privacy page promises exactly that, so the column
+    -- exists and the card falls back to the member number until the founder
+    -- decides to ask — at which point that promise is rewritten in the same
+    -- change, not before. On the CUSTOMER because a customer is a PERSON: one
+    -- name covers every card they hold at this shop.
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS display_name text NOT NULL DEFAULT '';
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added

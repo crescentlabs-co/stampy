@@ -582,10 +582,44 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .bulb { background: var(--accent); border: 0; border-radius: 999px; cursor: pointer;
             width: 22px; height: 22px; line-height: 1; font-size: var(--t-sm); padding: 0;
             margin-left: var(--s2); vertical-align: middle; }
-    .effrow { display: flex; align-items: center; justify-content: space-between;
-              gap: var(--s2); flex-wrap: wrap; margin-top: var(--s4);
-              padding: var(--s3); background: var(--surface); border-radius: var(--r);
-              font-size: var(--t-sm); }
+    /* What this card costs the shop, and what to do about it.
+       This replaced a single line with an info bubble on the end. The bubble
+       held three sentences of reasoning nobody ever opened, because a tooltip
+       is where text goes to be ignored — so the reasoning moved into a half
+       that opens, and the closed state carries the figure and the verdict.
+       Tinted with the SEMANTIC colours, which DESIGN.md keeps apart from the
+       accent, so this may be coloured while Next stays the only neon here. */
+    .guide { margin-top: var(--s4); border: 1px solid; border-radius: var(--r);
+             overflow: hidden; }
+    .guide summary { display: flex; align-items: flex-start; gap: var(--s2);
+                     padding: var(--s3); cursor: pointer; list-style: none; }
+    .guide summary::-webkit-details-marker { display: none; }
+    .guide-head { flex: 1; min-width: 0; font-size: var(--t-md); font-weight: 700;
+                  color: var(--ink); }
+    /* Rotates rather than swapping glyph, so the two states are the same shape
+       and the eye reads a hinge instead of a new control. */
+    .guide-caret { color: var(--muted); font-size: var(--t-md); line-height: 1;
+                   transition: transform .18s; }
+    .guide[open] .guide-caret { transform: rotate(180deg); }
+    .guide-body { padding: 0 var(--s3) var(--s3); font-size: var(--t-sm);
+                  color: var(--ink2); border-top: 1px solid; }
+    .guide-body > p { margin: var(--s3) 0 0; }
+    /* The one heading inside the box. Not --t-xs: that size is reserved for
+       uppercase tags, and this is a sentence-case heading over a paragraph. */
+    .guide-src { margin-top: var(--s3); font-size: var(--t-sm); font-weight: 700;
+                 color: var(--ink); }
+    /* Its own paragraph sits UNDER it, not a step away from it. */
+    .guide-src + p { margin-top: var(--s1); }
+    .guide-good { background: #e6f3ea; border-color: #c3e0cd; }
+    .guide-good .guide-body { border-top-color: #c3e0cd; }
+    .guide-warn { background: #fbf0d9; border-color: #eeddb4; }
+    .guide-warn .guide-body { border-top-color: #eeddb4; }
+    .guide-bad  { background: #f8e7e5; border-color: #efc9c4; }
+    .guide-bad .guide-body { border-top-color: #efc9c4; }
+    /* No band at all: nothing to colour and nothing to rank, so it falls back
+       to the ordinary panel rather than borrowing a verdict it has not made. */
+    .guide-none { background: var(--surface); border-color: var(--line); }
+    .guide-none .guide-body { border-top-color: var(--line); }
     /* Semantic colour, which DESIGN.md keeps separate from the accent — so this
        may be coloured while Next stays the only neon on the screen. */
     .pill { padding: var(--s1) var(--s2); border-radius: 999px; font-size: var(--t-xs);
@@ -3190,17 +3224,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       };
       const relock = () => { if (frame && frame.lockNext) frame.lockNext(blocked); };
 
-      // Only the number and its pill, so typing does not rebuild the form and
-      // take the focus out of the box being typed in.
-      const repaintEffect = () => {
-        const row = body.querySelector(".effrow");
-        if (!row) return;
-        const pct = effectiveDiscount(r);
-        const band = discountBand(pct);
-        row.querySelector("b").textContent = pct.toFixed(1) + "%";
-        const pill = row.querySelector(".pill");
-        pill.className = "pill pill-" + band.key;
-        pill.textContent = band.label;
+      // Whether the guidance box is open, kept out here so a repaint cannot
+      // shut it under the owner's hand.
+      let guideOpen = false;
+      /**
+       * Draw the guidance box into the empty wrapper paint() leaves for it.
+       *
+       * Replaced whole rather than patched value by value: it holds no inputs,
+       * so there is no focus to take away, and its SHAPE changes \u2014 a card we
+       * cannot put a number on has no percentage and no pill at all, which no
+       * amount of setting textContent would produce.
+       */
+      const repaintGuide = () => {
+        const wrap = body.querySelector("[data-guidewrap]");
+        if (!wrap) return;
+        wrap.innerHTML = guideHtml(guidance(r), guideOpen);
+        const box = wrap.querySelector("details");
+        if (box) box.addEventListener("toggle", () => { guideOpen = box.open; });
       };
 
       const paint = () => {
@@ -3210,9 +3250,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           targets.push('<option value="' + n + '"' + (n === Number(r.target) ? " selected" : "") +
             ">" + n + (n === sug ? " (recommended)" : "") + "</option>");
         }
-        const pct = effectiveDiscount(r);
-        const band = discountBand(pct);
-        const visits = visitsPerReward(r.target, r.welcome, r.perVisit);
         body.innerHTML =
           '<h2 class="sec first">Rules</h2>' +
           '<label class="dlbl">Card name</label>' +
@@ -3224,14 +3261,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<p class="dhint">This will be what your card displays.</p>' +
           '<button type="button" class="wfold" data-open="earn" aria-expanded="' +
             (open === "earn") + '">How customers earn</button>' +
+          // In the order the questions actually arrive in: what a visit is worth,
+          // how many of those make a reward, and only then the head start.
+          // Welcome stamps used to come first, which put the smallest decision on
+          // the card in front of the two that shape it.
           (open === "earn"
             ? '<div class="wbody">' +
-              "<label>Welcome stamps" + info("Number of stamps a customer starts with. Given once, on a new card \u2014 after a reward the card starts again from zero.") + "</label>" +
-              // A choice of two, not a number box. Anything above two is a
-              // giveaway nobody meant to type, and zero makes a card that
-              // lands in a wallet reading empty, which looks like the scan
-              // did not work.
-              '<select data-r="welcome">' + oneOrTwo(r.welcome) + "</select>" +
               // A sentence with the box in the middle, because "1 visit = 2
               // stamps" is the thing being set and a lone number box above a
               // label is not that sentence.
@@ -3241,11 +3276,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
               "<label>Stamps to reward" + info("Number of stamps a customer needs to earn their reward.") +
                 '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
               '<select data-r="target">' + targets.join("") + "</select>" +
+              "<label>Welcome stamps" + info("Number of stamps a customer starts with. Given once, on a new card \u2014 after a reward the card starts again from zero.") + "</label>" +
+              // A choice of two, not a number box. Anything above two is a
+              // giveaway nobody meant to type, and zero makes a card that
+              // lands in a wallet reading empty, which looks like the scan
+              // did not work.
+              '<select data-r="welcome">' + oneOrTwo(r.welcome) + "</select>" +
               '<button class="btn btn-dark" data-cont style="margin-top:14px">Continue</button>' +
               "</div>"
             : "") +
           '<button type="button" class="wfold" data-open="reward" aria-expanded="' +
-            (open === "reward") + '">How do you want to reward your customers?</button>' +
+            (open === "reward") + '">How you reward customers</button>' +
           (open === "reward"
             ? '<div class="wbody">' +
               "<label>Reward type</label>" +
@@ -3270,9 +3311,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                   '<input data-r="percent" type="number" min="1" max="100" value="' + Number(r.percent) + '">' +
                   "<label>Most it can take off (RM)" + info("Leave blank for no ceiling. With one, the card reads: 20% off up to RM10.") + "</label>" +
                   '<input data-r="cap" type="number" min="0" step="0.10" value="' + r.cap + '">') +
-              '<div class="effrow"><span>Your effective discount is <b>' + pct.toFixed(1) + "%</b>" +
-                info("One reward every " + visits + " visits on a customer's FIRST card, divided into what the reward is worth. Welcome stamps are given once, so later cards take a little longer and the real figure settles slightly lower. An item or an amount off is counted as one visit's worth.") +
-              '</span><span class="pill pill-' + band.key + '">' + esc(band.label) + "</span></div>" +
+              '<div data-guidewrap></div>' +
               "</div>"
             : "");
 
@@ -3280,7 +3319,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           el.addEventListener("input", () => {
             r[el.getAttribute("data-r")] = el.value;
             if (el.getAttribute("data-r") === "rewardType") paint();
-            else repaintEffect();
+            else repaintGuide();
             relock();
           });
         }
@@ -3296,6 +3335,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             "Customers visit MORE when close to a reward. They\u2019ll pick YOU over competitors.</p>",
             "Got it");
         }
+        repaintGuide();
       };
       paint();
 
@@ -3408,14 +3448,97 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     }
 
     /**
-     * Three bands, in the app's SEMANTIC colours rather than the accent —
+     * Four bands, in the app's SEMANTIC colours rather than the accent —
      * DESIGN.md keeps those apart, which is what lets this be coloured while
      * Next stays the only neon thing on the screen.
+     *
+     * BOTH ENDS ARE A WARNING, and that is the whole point of the rework. This
+     * used to run one way: the more the shop gave away, the greener it went,
+     * topping out at "Generous discount" in green above 15%. That reading is
+     * right for the customer and backwards for the person paying for it — a
+     * fifth of every sale handed back is a decision to take deliberately, not a
+     * score to max out. So red now means too much, amber means too little, and
+     * the two green bands in the middle are where a reward is worth chasing and
+     * still worth giving.
      */
     function discountBand(pct) {
-      if (pct >= 15) return { key: "good", label: "Generous discount" };
-      if (pct >= 10) return { key: "warn", label: "Good discount" };
-      return { key: "bad", label: "Low discount" };
+      if (pct >= 15) {
+        return { key: "bad", label: "Very generous reward",
+          advice: "You are handing back more than most shops can carry. Around " +
+            "4\u201310% is where a reward still pulls people in without eating the " +
+            "margin on every sale it takes to earn one." };
+      }
+      if (pct >= 10) {
+        return { key: "good", label: "Generous reward",
+          advice: "A strong offer. Worth it while you are winning people back or " +
+            "opening a new shop \u2014 expensive as the setting you leave on all year." };
+      }
+      if (pct >= 4) {
+        return { key: "good", label: "Good reward",
+          advice: "This is where most shops land. Enough to change where somebody " +
+            "shops, cheap enough to keep running." };
+      }
+      return { key: "warn", label: "Low reward",
+        advice: "Customers may not see enough value to change where they spend. If " +
+          "you can, move closer to 4\u20136% so the reward feels worth working towards." };
+    }
+
+    /**
+     * Everything the guidance box says, worked out in one place.
+     *
+     * pct is null when there is genuinely no rate to divide by, and the box
+     * then shows its reasoning with NO number and no verdict. Two things can
+     * cause that, and inventing a figure for either would be worse than saying
+     * so: a points card where staff key the amount in themselves, and a
+     * percentage reward on a card that earns from spending \u2014 that needs to
+     * know how big the discounted bill is, and we deliberately never ask a shop
+     * to guess a typical basket.
+     */
+    function guidance(r) {
+      if (r.blockedReason) {
+        return { pct: null, band: null, headline: r.blockedHeadline,
+          detail: r.blockedReason, advice: r.blockedAdvice };
+      }
+      const pct = effectiveDiscount(r);
+      const visits = visitsPerReward(r.target, r.welcome, r.perVisit);
+      return {
+        pct,
+        band: discountBand(pct),
+        headline: "Customers earn the equivalent of <b>" + pct.toFixed(1) + "%</b> back.",
+        // The figure again, in something a shop can picture. A percentage is
+        // the comparable number and a count of visits is the one they recognise
+        // from their own counter, so the box carries both rather than choosing.
+        detail: "They visit " + visits + (visits === 1 ? " time" : " times") +
+          " for one reward." +
+          // The caveat the old info bubble carried, kept because it is the one
+          // way this figure flatters the shop: the number describes a FIRST
+          // card, and welcome stamps are handed over once.
+          (Number(r.welcome) > 0
+            ? " That is their first card \u2014 welcome stamps are given once, so " +
+              "every card after it takes a little longer."
+            : ""),
+        advice: null,
+      };
+    }
+
+    /**
+     * The box itself. No inputs inside it, so a repaint can replace the whole
+     * thing \u2014 which is why the open state is carried in by the caller rather
+     * than read back off the element.
+     */
+    function guideHtml(g, open) {
+      const cls = g.band ? "guide-" + g.band.key : "guide-none";
+      return '<details class="guide ' + cls + '"' + (open ? " open" : "") + ">" +
+        "<summary>" +
+          '<span class="guide-head">' + g.headline + "</span>" +
+          (g.band ? '<span class="pill pill-' + g.band.key + '">' + esc(g.band.label) + "</span>" : "") +
+          '<span class="guide-caret" aria-hidden="true">\u2304</span>' +
+        "</summary>" +
+        '<div class="guide-body">' +
+          "<p>" + esc(g.detail) + "</p>" +
+          '<p class="guide-src">PunchMe guidance</p>' +
+          "<p>" + esc(g.advice || (g.band ? g.band.advice : "")) + "</p>" +
+        "</div></details>";
     }
 
     /**

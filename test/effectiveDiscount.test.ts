@@ -19,14 +19,28 @@ const src = html.slice(
   html.indexOf("* A campaign: choose, preview, send"),
 );
 
+// guideHtml escapes with the page's own esc(), which lives above the slice.
+// A stand-in is enough here: what is under test is which words and which band
+// come out, not how an ampersand is spelt.
+const ESC = 'const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;");\n';
+
 const run = new Function(
-  src.slice(0, src.lastIndexOf("/**")) +
-  "\nreturn { visitsPerReward, rewardShare, effectiveDiscount, discountBand, suggestedTarget };",
+  ESC + src.slice(0, src.lastIndexOf("/**")) +
+  "\nreturn { visitsPerReward, rewardShare, effectiveDiscount, discountBand," +
+  " guidance, guideHtml, suggestedTarget };",
 )() as {
   visitsPerReward: (t: number, w: number, p: number) => number;
   rewardShare: (type: string, percent: number) => number;
   effectiveDiscount: (r: Record<string, unknown>) => number;
-  discountBand: (pct: number) => { key: string; label: string };
+  discountBand: (pct: number) => { key: string; label: string; advice: string };
+  guidance: (r: Record<string, unknown>) => {
+    pct: number | null;
+    band: { key: string; label: string; advice: string } | null;
+    headline: string;
+    detail: string;
+    advice: string | null;
+  };
+  guideHtml: (g: unknown, open: boolean) => string;
   suggestedTarget: (days: number) => number;
 };
 
@@ -99,12 +113,14 @@ describe("the effective discount", () => {
 });
 
 describe("the band a shop is told it is in", () => {
-  it("names the three, at their edges", () => {
+  it("names the four, at their edges", () => {
     // The edges are what matter: a shop tuning its card sits on them.
-    expect(run.discountBand(9.99).label).toBe("Low discount");
-    expect(run.discountBand(10).label).toBe("Good discount");
-    expect(run.discountBand(14.99).label).toBe("Good discount");
-    expect(run.discountBand(15).label).toBe("Generous discount");
+    expect(run.discountBand(3.99).label).toBe("Low reward");
+    expect(run.discountBand(4).label).toBe("Good reward");
+    expect(run.discountBand(9.99).label).toBe("Good reward");
+    expect(run.discountBand(10).label).toBe("Generous reward");
+    expect(run.discountBand(14.99).label).toBe("Generous reward");
+    expect(run.discountBand(15).label).toBe("Very generous reward");
   });
 
   /**
@@ -113,9 +129,107 @@ describe("the band a shop is told it is in", () => {
    * only neon thing on the screen.
    */
   it("uses the semantic keys and never the accent", () => {
-    expect(run.discountBand(5).key).toBe("bad");
-    expect(run.discountBand(12).key).toBe("warn");
-    expect(run.discountBand(20).key).toBe("good");
+    for (const pct of [0, 4, 10, 15, 40]) {
+      expect(["good", "warn", "bad"]).toContain(run.discountBand(pct).key);
+    }
+  });
+
+  /**
+   * BOTH ENDS ARE A WARNING, and that is the whole point of the rework.
+   *
+   * This used to run one way — the more a shop gave away the greener it went,
+   * topping out in green above 15%. That reading is right for the customer and
+   * backwards for the person paying for it. Red now means too much, amber means
+   * too little, and green is only ever the middle.
+   */
+  it("warns at both ends and is green only in the middle", () => {
+    expect(run.discountBand(1).key).toBe("warn");
+    expect(run.discountBand(6).key).toBe("good");
+    expect(run.discountBand(12).key).toBe("good");
+    expect(run.discountBand(25).key).toBe("bad");
+  });
+
+  /** Every band carries its own advice, or the box has a heading and no text. */
+  it("always has something to advise", () => {
+    for (const pct of [0, 2, 5, 12, 18, 90]) {
+      expect(run.discountBand(pct).advice.length).toBeGreaterThan(20);
+    }
+  });
+});
+
+describe("the guidance box", () => {
+  const stamps = { target: 8, welcome: 1, perVisit: 1, rewardType: "item" };
+
+  it("leads with the figure and says it again in visits", () => {
+    const g = run.guidance(stamps);
+    expect(g.headline).toContain("12.5%");
+    expect(g.detail).toContain("8 times");
+  });
+
+  /**
+   * The caveat the old info bubble carried, and the one way this figure
+   * flatters the shop: it describes a FIRST card, and welcome stamps are handed
+   * over once, so every card after it takes a little longer.
+   */
+  it("keeps the first-card caveat, and drops it when there are no welcome stamps", () => {
+    expect(run.guidance(stamps).detail).toContain("first card");
+    expect(run.guidance({ ...stamps, welcome: 0 }).detail).not.toContain("first card");
+  });
+
+  it("carries the band's own advice into the open half", () => {
+    const g = run.guidance(stamps);
+    expect(g.band!.label).toBe("Generous reward");
+    expect(g.band!.advice).toBe(run.discountBand(12.5).advice);
+  });
+
+  /**
+   * A shop we cannot price gets the box with no number and no verdict.
+   * Inventing a figure would be worse than saying we do not have one — this is
+   * the shape a manual points card and a percentage-off spend card both take.
+   */
+  it("shows no percentage and no band when there is no rate to divide by", () => {
+    const g = run.guidance({
+      blockedHeadline: "Your staff decide each amount.",
+      blockedReason: "There is no rate for us to work from.",
+      blockedAdvice: "Keep an eye on what you are handing out.",
+    });
+    expect(g.pct).toBe(null);
+    expect(g.band).toBe(null);
+    expect(g.headline).toBe("Your staff decide each amount.");
+  });
+});
+
+describe("the guidance box, as markup", () => {
+  const stamps = { target: 8, welcome: 1, perVisit: 1, rewardType: "item" };
+
+  it("tints itself with the band and carries the pill", () => {
+    const html = run.guideHtml(run.guidance(stamps), false);
+    expect(html).toContain("guide-good");
+    expect(html).toContain("pill pill-good");
+    expect(html).toContain("Generous reward");
+  });
+
+  /** The heading is the product's name, spelt the way the product spells it. */
+  it("heads the advice with PunchMe guidance", () => {
+    expect(run.guideHtml(run.guidance(stamps), false)).toContain("PunchMe guidance");
+  });
+
+  it("stays open across a repaint when it was open", () => {
+    expect(run.guideHtml(run.guidance(stamps), true)).toContain("<details");
+    expect(run.guideHtml(run.guidance(stamps), true)).toContain(" open>");
+    expect(run.guideHtml(run.guidance(stamps), false)).not.toContain(" open>");
+  });
+
+  /** No verdict means no pill at all, not a grey one. */
+  it("renders no pill when there is nothing to rank", () => {
+    const html = run.guideHtml(run.guidance({
+      blockedHeadline: "Your staff decide each amount.",
+      blockedReason: "There is no rate for us to work from.",
+      blockedAdvice: "Keep an eye on what you are handing out.",
+    }), false);
+    expect(html).toContain("guide-none");
+    expect(html).not.toContain("pill pill-");
+    expect(html).toContain("Keep an eye on what you are handing out.");
   });
 });
 
