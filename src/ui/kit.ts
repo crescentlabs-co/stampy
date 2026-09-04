@@ -1602,6 +1602,15 @@ export const DESIGN_PANEL_JS = /* js */ `
        * a slow connection, then correct itself.
        */
       void Promise.all([stampIconReadyPromise, bannerReadyPromise]).then(() => {
+        // The EDITOR has to still be here, not just the card face.
+        //
+        // previewOnly paints once and then throws every field away, keeping
+        // only [data-pvbox] — so this guard passed on a carousel tile (the face
+        // is inside that box) and renderPreview then read a colour input that
+        // had been removed. One unhandled rejection per tile, every time a
+        // banner finished decoding, and the tile stopped repainting from there.
+        // Checking a field renderPreview actually reads is the real precondition.
+        if (!f("bg")) return;
         if (div.isConnected || div.querySelector("[data-pv]")) renderPreview();
       });
 

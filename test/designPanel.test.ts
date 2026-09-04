@@ -108,6 +108,26 @@ beforeAll(() => {
  * strip of cards they are only swiping through.
  */
 describe("the panel as a preview tile", () => {
+  /**
+   * The trim throws the fields away, and the artwork finishes decoding AFTER
+   * it. renderPreview reads those fields, so the late repaint used to read a
+   * colour input that was no longer there — one unhandled rejection per tile,
+   * and that tile never repainted again.
+   *
+   * It never failed a test because it happens in a promise nobody awaited: the
+   * assertions had already passed by the time it threw. Awaiting settle() is
+   * what makes it visible, so this test has to keep doing that.
+   */
+  it("survives its artwork finishing after the editor is gone", async () => {
+    const h = makeHarness();
+    const div = build(card({ bannerVersion: 3, stampIconVersion: 2 }), h,
+      { previewOnly: true, customersPath: null });
+    await h.settle();
+    // Still painted, and still holding the face it was built to show.
+    expect(div.querySelector("[data-pv]")).not.toBeNull();
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBeTruthy();
+  });
+
   it("keeps the card faces and drops the editor", () => {
     const h = makeHarness();
     const div = build(card(), h, { previewOnly: true, customersPath: null });
