@@ -339,13 +339,12 @@ describe("the design panel, mounted", () => {
      * rows of chrome above the thing being looked at, and the dashboard already
      * spends its one filled pill on the nav.
      */
+    // One tap. It was a dropdown, which hid two of the three behind a tap and
+    // named only the one you were on.
     const pickSurface = (div: FakeEl, name: string) => {
-      div.querySelector("[data-surfbtn]")!.onclick!();
-      const opt = div.querySelectorAll("[data-set]").find((b) => b.dataset.set === "surf:" + name)!;
-      expect(opt, "no option for " + name).not.toBeUndefined();
-      // The menu delegates one click handler rather than binding each option,
-      // so this is the event that really reaches it.
-      opt.closest(".pop")!.onclick!({ target: opt } as never);
+      const b = div.querySelectorAll("[data-surf]").find((x) => x.dataset.surf === name)!;
+      expect(b, "no button for " + name).not.toBeUndefined();
+      b.onclick!();
     };
 
     it("switches the preview and leaves the editor alone", async () => {
@@ -378,49 +377,20 @@ describe("the design panel, mounted", () => {
      * A menu built fresh on each open cannot rot that way, and the button's
      * label is now the thing that has to keep up.
      */
-    /**
-     * Closing is the half a dropdown gets wrong.
-     *
-     * Both of these are registered on the DOCUMENT, not on the menu, so neither
-     * is reachable from the element under test — which is why the harness grew
-     * a way to fire them. A menu that stays open over the card it is meant to
-     * be switching is the bug worth holding shut.
-     */
-    it("closes on a tap outside, and on Escape", async () => {
+    it("shows all three at rest and marks exactly the one showing", async () => {
       const h = makeHarness();
       const div = build(card(), h);
       await h.settle();
-      const open = () => div.querySelector("[data-surfbtn]")!.onclick!();
-      const options = () => div.querySelectorAll("[data-set]").length;
-
-      open();
-      expect(options()).toBe(3);
-      h.fireDoc("pointerdown", { target: div.querySelector("[data-pv]") });
-      expect(options(), "a tap on the card left the menu open").toBe(0);
-
-      open();
-      expect(options()).toBe(3);
-      h.fireDoc("keydown", { key: "Escape", preventDefault: () => {} });
-      expect(options(), "Escape left the menu open").toBe(0);
-    });
-
-    it("keeps all three reachable, and names the one showing", async () => {
-      const h = makeHarness();
-      const div = build(card(), h);
-      await h.settle();
-      const label = () => div.querySelector("[data-surfname]")!.textContent;
-      expect(label()).toBe("iPhone");
-      for (const [key, name] of [["google", "Android"], ["notify", "Notification"], ["apple", "iPhone"]]) {
-        pickSurface(div, key!);
-        expect(label(), key).toBe(name);
-        // Re-opening still offers all three, whichever one is showing. The
-        // button TOGGLES, so it has to be closed again before the next pass or
-        // the next open would shut it instead.
-        const btn = div.querySelector("[data-surfbtn]")!;
-        btn.onclick!();
-        expect(div.querySelectorAll("[data-set]").length, key).toBe(3);
-        btn.onclick!();
-        expect(div.querySelectorAll("[data-set]").length, "menu left open").toBe(0);
+      const btns = () => div.querySelectorAll("[data-surf]");
+      const marked = () => btns().filter((b) => b.getAttribute("aria-selected") === "true")
+        .map((b) => b.dataset.surf);
+      expect(btns().length).toBe(3);
+      expect(marked()).toEqual(["apple"]);
+      for (const key of ["google", "notify", "apple"]) {
+        pickSurface(div, key);
+        expect(btns().length, key).toBe(3);
+        expect(btns().filter((b) => b.hidden).length, key + " hid a button").toBe(0);
+        expect(marked(), key).toEqual([key]);
       }
     });
 

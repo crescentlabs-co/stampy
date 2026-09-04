@@ -570,14 +570,19 @@ describe("one designer, two pages", () => {
       expect(panelOf(html)).not.toMatch(/data-pane="(apple|google|signup)"/);
       expect(html).toContain("function showSurface(name)");
       expect(html).toContain('showSurface("apple")');
-      // The switch is a dropdown now, not a strip of three tabs, so there is
-      // no sliding thumb left to seat — which also removes the whole class of
-      // bug that assertion existed for (a hidden .seg measures zero, so the
-      // thumb sat at nothing until the first click). The button carries the
-      // name of the face on show instead.
+      // Three icon buttons. Not the original sliding-thumb strip — a hidden
+      // .seg measures zero, so the thumb sat at nothing until the first click
+      // — and not the dropdown that briefly replaced it, which hid two of the
+      // three behind a tap and named only the one you were on.
       expect(html).not.toContain("moveThumb(surfaceSeg)");
-      expect(html).toContain("data-surfname");
-      expect(html).toContain("popover(surfaceSeg, [surfBtn])");
+      expect(html).not.toContain("data-surfname");
+      expect(html).toContain('data-surf="apple"');
+      expect(html).toContain('data-surf="google"');
+      expect(html).toContain('data-surf="notify"');
+      // data-surf, NOT data-surface: that attribute marks a preview pane, and
+      // switching hides every pane that is not current — which is how the
+      // original strip once hid its own buttons.
+      expect(html).not.toMatch(/<button[^>]*data-surface=/);
       expect(html).toContain('<div class="colorpark" data-park>');
     }
   });

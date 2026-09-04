@@ -745,9 +745,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
        flex:1 and left-aligned (it shares a row with a filter button), so it
        stretched and sat off-centre here — and it is styled in the dashboard,
        which the admin console mounting this panel does not load at all. */
+    .dsurf { gap: 6px; }
     .dsurfbtn { display: inline-flex; align-items: center; justify-content: center;
-                gap: 6px; background: none; border: 0; padding: 4px 8px; font: inherit;
-                font-weight: 600; color: var(--ink); cursor: pointer; }
+                width: 42px; height: 34px; background: var(--bg); color: var(--muted);
+                border: 1px solid var(--line); border-radius: 10px; padding: 0;
+                font: inherit; cursor: pointer; }
+    /* INK, not neon. The wizard's Next button is the neon on this screen, and
+       DESIGN.md gives the accent exactly one job — two filled things leave the
+       eye with nowhere to go. Say the word and this one takes it instead. */
+    .dsurfbtn.on { background: var(--slab); color: var(--on-slab); border-color: var(--slab); }
     .dsurfbtn svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
                     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .dsurfbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 8px; }
@@ -1241,6 +1247,12 @@ const APPLE_GLYPH =
   '<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">' +
   '<path d="M16.36 12.78c.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.69 0-1.75-.78-2.87-.76-1.48.02-2.84.86-3.6 2.18-1.53 2.66-.39 6.6 1.1 8.76.73 1.06 1.6 2.25 2.74 2.21 1.1-.04 1.52-.71 2.85-.71 1.33 0 1.71.71 2.87.69 1.19-.02 1.94-1.08 2.66-2.14.84-1.23 1.19-2.42 1.21-2.48-.03-.01-2.32-.89-2.34-3.52zM14.2 6.4c.6-.74 1.01-1.75.9-2.77-.87.04-1.93.58-2.56 1.31-.56.65-1.06 1.7-.93 2.7.97.08 1.97-.5 2.59-1.24z"/>' +
   "</svg>";
+const BELL_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+  'stroke-linecap="round" stroke-linejoin="round" width="17" height="17" aria-hidden="true">' +
+  '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>' +
+  '<path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+
 const GOOGLE_GLYPH =
   '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' +
   '<path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.34-.18-1.96H12v3.71h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.89-1.74 2.98-4.3 2.98-7.27z"/>' +
@@ -1326,10 +1338,17 @@ export const DESIGN_PANEL_JS = /* js */ `
                looked at, and DESIGN.md allows one filled pill per screen —
                which the dashboard's nav already spends. Same control the
                Manage screens use. -->
-          <div class="dsurf" data-surfaces>
-            <button type="button" class="dsurfbtn" data-surfbtn>
-              <span data-surfname>iPhone</span>\${CARET_SVG}
-            </button>
+          <!-- Three icons, not a dropdown. A dropdown hides two of the three
+               behind a tap and names only the one you are on; these are one tap
+               each and the whole set is visible at rest. The selected one is
+               filled — the one place the panel says "you are here". -->
+          <div class="dsurf" data-surfaces role="tablist">
+            <button type="button" class="dsurfbtn on" data-surf="apple" role="tab"
+                    aria-selected="true" aria-label="iPhone">${APPLE_GLYPH}</button>
+            <button type="button" class="dsurfbtn" data-surf="google" role="tab"
+                    aria-selected="false" aria-label="Android">${GOOGLE_GLYPH}</button>
+            <button type="button" class="dsurfbtn" data-surf="notify" role="tab"
+                    aria-selected="false" aria-label="Notification">${BELL_SVG}</button>
           </div>
 
           <div class="pv" data-pv data-surface="apple">
@@ -3258,24 +3277,22 @@ export const DESIGN_PANEL_JS = /* js */ `
         { k: "google", name: "Android" },
         { k: "notify", name: "Notification" },
       ];
-      const surfBtn = surfaceSeg && surfaceSeg.querySelector("[data-surfbtn]");
       function showSurface(name) {
         const pick = SURFACES.find((x) => x.k === name) || SURFACES[0];
-        if (surfBtn) surfBtn.querySelector("[data-surfname]").textContent = pick.name;
+        if (surfaceSeg) {
+          for (const b of surfaceSeg.querySelectorAll("[data-surf]")) {
+            const on = b.getAttribute("data-surf") === pick.k;
+            b.classList.toggle("on", on);
+            b.setAttribute("aria-selected", on ? "true" : "false");
+          }
+        }
         showFace(pick.k);
         renderPreview();
       }
-      if (surfBtn) {
-        // popover lives in the kit alongside this, so the admin console gets
-        // the same control rather than a second one that behaves differently.
-        const surfPop = popover(surfaceSeg, [surfBtn]);
-        let showing = "apple";
-        surfBtn.onclick = () => surfPop.open(
-          "center",
-          SURFACES.map((x) => popOpt("surf:" + x.k, x.name, x.k === showing)).join(""),
-          (v) => { showing = v.split(":")[1]; showSurface(showing); },
-          surfBtn,
-        );
+      if (surfaceSeg) {
+        for (const b of surfaceSeg.querySelectorAll("[data-surf]")) {
+          b.onclick = () => showSurface(b.getAttribute("data-surf"));
+        }
       }
       // The panel this builds is still a detached node when this runs — its
       // caller appends the RETURN VALUE of this function, after everything in
