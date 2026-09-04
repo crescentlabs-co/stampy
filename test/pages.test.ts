@@ -564,7 +564,7 @@ describe("one designer, two pages", () => {
       // the source rather than a literal: the console cannot set the rules, and
       // heading a lone shop-name field "Loyalty programme" there would promise
       // something the page does not do.
-      expect(html).toContain('env.showDetails ? "Loyalty programme" : "Shop"');
+      expect(html).toContain('env.showDetails ? "Loyalty card" : "Shop"');
       // No per-surface editor sections left anywhere in the panel. (The console
       // page has data-pane of its own for its two tabs, hence the slice.)
       expect(panelOf(html)).not.toMatch(/data-pane="(apple|google|signup)"/);
@@ -946,9 +946,9 @@ describe("the console says things once", () => {
    * over it, sitting between Colours and Save as though it were another colour.
    */
   it("still heads the shop name, even with the rules hidden", () => {
-    expect(html).toContain('env.showDetails ? "Loyalty programme" : "Shop"');
+    expect(html).toContain('env.showDetails ? "Loyalty card" : "Shop"');
     // Never display:none'd back out: that is what left it headingless.
-    expect(html).not.toContain('">Loyalty programme</label>');
+    expect(html).not.toContain('">Loyalty card</label>');
   });
 
   /**
@@ -3586,7 +3586,7 @@ describe("the manage screens", () => {
     expect(detail).toContain('arm(d.querySelector("[data-end]")');
     expect(detail).toContain("Tap again — existing cards keep working");
     // Both states say what survives, in the section and on the button.
-    expect(detail).toContain("Ending a programme stops new sign-ups.");
+    expect(detail).toContain("Ending a card stops new sign-ups.");
     expect(detail).toContain("still collecting on it");
     // It is reversible, and the same control both ways.
     expect(detail).toContain("Start sign-ups again");
@@ -3675,7 +3675,7 @@ describe("the create screens", () => {
     // In the designer itself, so both the message and the guard live with the
     // code that would otherwise have made the request.
     expect(html).toContain("if (env.draft)");
-    expect(html).toContain("Saving a new programme arrives with V2 — nothing was written.");
+    expect(html).toContain("Saving a new card arrives with the Create flow — nothing was written.");
   });
 
   /** Configure, preview, send — and the send is real. */

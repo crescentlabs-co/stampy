@@ -1437,15 +1437,15 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         \${env.titled ? "</details>" : ""}
 
-        <!-- ================= LOYALTY PROGRAMME ================= -->
+        <!-- ================= LOYALTY CARD ================= -->
         \${env.rulesNote}
         <!-- Always headed, and named for what is actually under it. Hidden in
              the console, this left the shop's name as the one field on the panel
              with no heading over it — sitting between Colours and Save as though
              it were another colour. The console cannot set the programme's
-             rules, so calling it "Loyalty programme" there would be a promise
+             rules, so calling it "Loyalty card" there would be a promise
              the page does not keep. -->
-        <label class="sec dsec" style="display:block">\${env.showDetails ? "Loyalty programme" : "Shop"}</label>
+        <label class="sec dsec" style="display:block">\${env.showDetails ? "Loyalty card" : "Shop"}</label>
         <label class="dlbl">Shop name\${info("The name customers see on the card.")}</label>
         <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
 
@@ -3204,7 +3204,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // behaves identically right up to the write it cannot make.
         if (env.draft) {
           Object.assign(c, fields);
-          toast("Saving a new programme arrives with V2 — nothing was written.");
+          toast("Saving a new card arrives with the Create flow — nothing was written.");
           return;
         }
         const { body } = await api(P(), { method: "POST", body: JSON.stringify(fields) });

@@ -1335,7 +1335,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <div class="drow"><span>Shop name</span><b>\${esc(c.shopName || c.name || "—")}</b></div>
         <div class="drow"><span>Logo</span><b><img class="logothumb" alt="" src="\${artBase}/art/logo.png?v=\${c.logoVersion || 0}"></b></div>
         <p class="muted">The name and the logo are part of your card, so they are set where the
-          card is — <a href="#" data-golook>on your programme’s page</a>.</p>
+          card is — <a href="#" data-golook>on your card’s page</a>.</p>
 
         <label style="margin-top:18px">Visit frequency</label>
         <p class="muted">How often should a customer come back?\${info("How often you'd expect a regular to come in. It only sorts your customers into New, Returning, Regular and Lost on the Customers screen. It changes nothing about your card, your stamps or your reward.")}</p>
@@ -1853,7 +1853,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "</div>" +
         '<div class="metrics" data-totals></div>' +
         '<div data-chart></div>' +
-        '<h2 class="sec">Programmes' + EG + "</h2>" +
+        '<h2 class="sec">Loyalty cards' + EG + "</h2>" +
         '<div data-programs></div>' +
         '<h2 class="sec">Campaigns' + EG + "</h2>" +
         '<div data-campaigns></div>';
@@ -2177,7 +2177,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * 300 people is doing worse than one with 90 from 20.
      */
     const PROGRAMME_SPEC = {
-      typeLabel: "Programme type",
+      typeLabel: "Card type",
       // A FUNCTION, not an array. REWARD_TYPES is declared further down this
       // script, so evaluating it here would read a const in its temporal dead
       // zone — a ReferenceError at load, which blanks the whole dashboard. The
@@ -2632,7 +2632,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             '<div class="metric"><b>' + x.visits + "</b><span>visits</span></div>" +
             '<div class="metric"><b>' + x.stamps + "/" + x.target + "</b><span>towards their reward</span></div>" +
           "</div>" +
-          '<div class="drow"><span>Programme</span><b>' + esc(x.cardName) + "</b></div>" +
+          '<div class="drow"><span>Loyalty card</span><b>' + esc(x.cardName) + "</b></div>" +
           '<div class="drow"><span>Visit frequency</span><b>' + freq + "</b></div>" +
           '<div class="drow"><span>Joined</span><b>' + x.joinedDays + " days ago</b></div>" +
           '<div class="drow"><span>Last visit</span><b>' +
@@ -2706,10 +2706,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function createScreen() {
       const d = document.createElement("div");
       d.innerHTML = '<h2 class="sec first">Create</h2>' +
-        '<p class="muted">Start a new reward programme, or a campaign to bring customers back.</p>' +
+        '<p class="muted">Start a new loyalty card, or a campaign to bring customers back.</p>' +
         '<div class="sharelist" style="margin-top:14px">' +
           '<a href="' + ROOT + '/create/reward" data-nav="/create/reward">' +
-            '<span>Reward programme<span class="sub2">Stamps, milestones, membership or points</span></span>' +
+            '<span>Loyalty card<span class="sub2">Stamps, points or membership</span></span>' +
             '<span class="arr">→</span></a>' +
           // Shown either way, and greyed rather than hidden when the trial has
           // run out: a feature that silently disappears reads as a bug, and an
@@ -2775,7 +2775,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const d = document.createElement("div");
       d.innerHTML =
         '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Create</p>' +
-        '<h2 class="sec first">' + (reward ? "What kind of programme?" : "What kind of campaign?") + "</h2>" +
+        '<h2 class="sec first">' + (reward ? "Choose your loyalty card" : "What kind of campaign?") + "</h2>" +
         '<p class="muted">' + (reward
           ? "Pick the shape of the card. You can see exactly what it will look like before anything is made."
           : "Pick what you are trying to do. You choose who it goes to and what it says next.") + "</p>" +
@@ -2787,7 +2787,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<span class="arr">→</span></a>',
         ).join("") + "</div>" +
         (reward
-          ? '<p class="muted" style="margin-top:14px">Your shop can hold one programme today. ' +
+          ? '<p class="muted" style="margin-top:14px">You can run more than one card. ' +
             "Running more than one is coming — you can look at any of these in the meantime.</p>"
           : "");
       d.querySelector("[data-back]").onclick = () => navigate("/create");
@@ -2819,7 +2819,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<h2 class="sec first">' + esc(t.name) + "</h2>" +
         '<p class="muted">' + esc(t.blurb) + "</p>" +
         '<div class="draftnote"><strong>This is a preview.</strong> Change anything and watch the ' +
-        "card change with it. Nothing here is saved, and your live programme is not touched.</div>" +
+        "card change with it. Nothing here is saved, and your live card is not touched.</div>" +
         '<div data-design></div>';
       d.querySelector("[data-back]").onclick = () => navigate("/create/reward");
       if (!base) {
@@ -2833,7 +2833,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const draft = Object.assign({}, base, { kind: t.k });
       d.querySelector("[data-design]").appendChild(designerFor(draft, {
         draft: true,
-        saveLabel: "Save programme",
+        saveLabel: "Save card",
         // No live count to offer: this programme has no customers because it
         // does not exist. The panel drops to its "no customers" wording.
         customersPath: null,
@@ -3214,8 +3214,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<h2 class="sec first">' + esc(eg.name) + EG +
             '<span class="pstat' + (eg.status === "ended" ? " off" : "") + '">' +
               (eg.status === "ended" ? "Ended" : "Active") + "</span></h2>" +
-          '<p class="muted">This is an example programme, so you can see what running more ' +
-          "than one looks like. Your shop can hold one programme today.</p>" +
+          '<p class="muted">This is an example card, so you can see what running more ' +
+          "than one looks like.</p>" +
           '<h2 class="sec">Setup</h2>' +
           '<div class="drow"><span>Type</span><b>' + (KIND_LABEL[eg.kind] || "Stamps") + "</b></div>" +
           '<div class="drow"><span>The deal</span><b>' + esc(eg.setup) + "</b></div>" +
@@ -3263,9 +3263,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         'and always will — print it, and it keeps working.</p></div>' +
         '<h2 class="sec">Status</h2>' +
         '<p class="muted">' + (over
-          ? "This programme has ended, so nobody new can sign up. Everyone who already " +
+          ? "This card has ended, so nobody new can sign up. Everyone who already " +
             "holds a card is still collecting on it and can still claim their reward."
-          : "Ending a programme stops new sign-ups. Everyone already holding a card keeps " +
+          : "Ending a card stops new sign-ups. Everyone already holding one keeps " +
             "collecting on it, and keeps getting their reward.") + "</p>" +
         '<button class="btn btn-ghost" style="width:auto;padding:11px 18px;margin-top:10px" data-end>' +
         (over ? "Start sign-ups again" : "End sign-ups") + "</button>" +
@@ -3301,7 +3301,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     }
 
     function endedNote() {
-      return '<h2 class="sec">Status</h2><p class="muted">This programme has ended, so nobody ' +
+      return '<h2 class="sec">Status</h2><p class="muted">This card has ended, so nobody ' +
         "new can sign up. Everyone who already holds a card keeps collecting on it.</p>";
     }
 
@@ -3315,7 +3315,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     function lockNote(n) {
       return '<div class="locknote"><strong>' + n +
-        (n === 1 ? " customer is" : " customers are") + " already on this programme.</strong> " +
+        (n === 1 ? " customer is" : " customers are") + " already on this card.</strong> " +
         "You can still change it — but the deal each of them was promised stays as it was " +
         "until they claim their next reward.</div>";
     }
