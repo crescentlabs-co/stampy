@@ -1510,12 +1510,19 @@ describe("dashboard information architecture", () => {
      * Text on both is --on-accent and NEVER white: #c9f73d is a pale green, so
      * white on it lands near 1.3:1.
      */
-    it("puts neon on the header and on Create, and nowhere else", () => {
+    /**
+     * Neon is on Create alone now.
+     *
+     * The top bar carried it too, which made it one of DESIGN.md's fenced
+     * exceptions. It is a thin white bar that gets out of the way as you
+     * scroll, so the accent has one job again: the next thing to press.
+     */
+    it("puts neon on Create, and nowhere else in the chrome", () => {
       const at = html.indexOf(".topbar { flex: none;");
       const bar = html.slice(at, html.indexOf("}", at));
-      expect(bar).toContain("background: var(--accent)");
-      expect(bar).toContain("color: var(--on-accent)");
-      expect(bar).not.toContain("var(--on-slab)");
+      expect(bar).not.toContain("var(--accent)");
+      expect(bar).toContain("background: var(--bg)");
+      expect(bar).toContain("color: var(--ink)");
       expect(bar).not.toContain("#fff");
 
       const plus = html.slice(html.indexOf(".botnav .navadd .plus {"),
@@ -1553,13 +1560,21 @@ describe("dashboard information architecture", () => {
      * round because the sheet is also the only thing that scrolls — a rounded
      * bar with the page sliding behind it showed content in the corner notches.
      */
-    it("shapes the sheet, not the bar, and floats the nav", () => {
-      expect(html).toContain("border-radius: var(--r-lg) var(--r-lg) 0 0;");
+    /**
+     * The sheet runs edge to edge now.
+     *
+     * Its rounded top corners existed to sit against the neon bar, and the neon
+     * behind #app existed only so those corners had something to show through.
+     * With a white bar above a white-grounded sheet, both were describing a
+     * seam that is not there.
+     */
+    it("runs the sheet to the edges, and floats the nav", () => {
+      const sheetAt = html.indexOf(".sheet { flex: 1;");
+      const sheet = html.slice(sheetAt, html.indexOf("}", sheetAt));
+      expect(sheet).toContain("border-radius: 0");
       const at = html.indexOf(".topbar { flex: none;");
       const bar = html.slice(at, html.indexOf("}", at));
       expect(bar).not.toContain("border-radius");
-      // Neon behind the sheet, or its rounded corners have nothing to show.
-      expect(html).toContain("background: var(--accent); }\n    /* position:relative");
       const nav = html.slice(html.indexOf(".botnav { position: fixed"),
                              html.indexOf(".botnav a {"));
       expect(nav).toContain("border-radius: 999px");
@@ -3124,8 +3139,34 @@ describe("the surfaces and the edges", () => {
    * reads as content. It was a white page with grey boxes, which made every
    * card read as a hole punched in the page rather than a thing sitting on it.
    */
+  /**
+   * The bar gets out of the way as you scroll.
+   *
+   * It listens on .sheet, not the window — body.shelled sets overflow hidden
+   * and the window never scrolls at all, so a window listener would be a
+   * handler that could not fire.
+   */
+  it("tucks the bar away on scroll, and brings it back", () => {
+    const fn = html.slice(html.indexOf("function tuckOnScroll()"),
+                          html.indexOf("function shopName()"));
+    expect(fn).toContain('document.querySelector(".sheet")');
+    expect(fn).not.toContain("window.addEventListener");
+    // A dead zone, so the bar cannot flicker while you are barely moving.
+    expect(fn).toContain("last + 6");
+    expect(fn).toContain("last - 6");
+    // And nothing to hide behind: on a list that can barely scroll, the bar
+    // would go and never be asked back.
+    expect(fn).toContain("sheet.scrollHeight - sheet.clientHeight < 120");
+    // Height and opacity only — the bar keeps its box, so the list below does
+    // not jump under your thumb as it goes.
+    expect(html).toContain("#app.shell.tucked .topbar");
+    expect(html).toContain("@media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }");
+    // A new screen starts at the top, so it starts with the bar showing.
+    expect(html).toContain('if (shell) shell.classList.remove("tucked")');
+  });
+
   it("puts white cards on a grey ground, not grey boxes on white", () => {
-    expect(html).toContain("background: var(--surface); border-radius: var(--r-lg) var(--r-lg) 0 0;");
+    expect(html).toContain("background: var(--surface); border-radius: 0;");
     for (const card of [".metric {", ".chart {", ".acts {", ".breakdown {"]) {
       const at = html.indexOf(card);
       expect(at, card + " is missing").toBeGreaterThan(-1);
@@ -3145,7 +3186,7 @@ describe("the surfaces and the edges", () => {
    */
   it("paints into the notch, and pays for it exactly once", () => {
     expect(html).toContain("viewport-fit=cover");
-    expect(html).toContain("padding-top: calc(var(--s2) + env(safe-area-inset-top, 0px));");
+    expect(html).toContain("padding-top: calc(var(--s1) + env(safe-area-inset-top, 0px));");
     // On staging the "not the real site" strip is above the bar and already
     // carries the notch. Both adding it would leave a gap the height of the
     // status bar.

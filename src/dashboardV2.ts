@@ -433,14 +433,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     #app.shell { width: 100%; max-width: 480px; margin: 0 auto; padding: 0;
                  flex: 1; min-height: 0; display: flex; flex-direction: column;
                  border: 0; box-shadow: none; border-radius: 0;
-                 /* Neon behind the sheet, so its rounded top corners have
-                    something to show through. */
-                 background: var(--accent); }
+                 /* Was neon, so the sheet's rounded top corners had something
+                    to show through. The bar is white now and the sheet runs to
+                    the edges, so there are no corners and nothing to show. */
+                 background: var(--bg); }
     /* position:relative so the ⋯ menu has something to hang off now that the
        bar is no longer sticky; z-index so it stays above the sheet's corners. */
     .topbar { flex: none; position: relative; z-index: 40; display: flex; align-items: center;
-              gap: var(--s2); background: var(--accent); color: var(--on-accent);
-              /* The green runs to the very top of the phone. The page paints
+              gap: var(--s2); background: var(--bg); color: var(--ink); border-bottom: 1px solid var(--line);
+              /* The bar runs to the very top of the phone. The page paints
                  into the notch now (viewport-fit=cover), so the bar's own
                  padding carries the status bar rather than leaving a white
                  strip above it with the green starting underneath — which read
@@ -448,8 +449,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                  the app. Paying for the notch in padding also means the bar
                  itself can be shorter, which is where the room below came
                  from. */
-              min-height: 52px; padding: var(--s2) var(--s4) var(--s2);
-              padding-top: calc(var(--s2) + env(safe-area-inset-top, 0px)); }
+              min-height: 44px; padding: var(--s1) var(--s4);
+              padding-top: calc(var(--s1) + env(safe-area-inset-top, 0px));
+              /* Shrinks away as you scroll and comes back when you scroll up,
+                 so the content gets the whole screen. Height and opacity only —
+                 the bar keeps its box, so nothing below it reflows as it goes
+                 and the list does not jump under your thumb. */
+              overflow: hidden;
+              transition: min-height .18s ease, padding .18s ease, opacity .18s ease; }
+    #app.shell.tucked .topbar { min-height: 0; padding-top: env(safe-area-inset-top, 0px);
+                                padding-bottom: 0; opacity: 0; pointer-events: none; }
+    @media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
     /* ...unless the staging strip is above it and has already paid for the
        notch. Two elements both adding the inset would leave a gap the height
        of the status bar. Live renders no strip, so this never matches there. */
@@ -462,7 +472,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        page, grey boxes — which made every card read as a hole rather than as a
        thing sitting on the page. */
     .sheet { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-             background: var(--surface); border-radius: var(--r-lg) var(--r-lg) 0 0;
+             background: var(--surface); border-radius: 0;
              padding: 0 var(--s3) calc(96px + env(safe-area-inset-bottom, 0px)); }
     /* The Powered by line is a sibling of #app in the shared shell, which with
        nothing scrolling would strand it under the floating nav. The script
@@ -476,7 +486,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                     font-weight: 800; font-size: var(--t-md); letter-spacing: var(--tr-lg);
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .topbar .dots { flex: none; width: 36px; height: 36px; border: 0; border-radius: 999px;
-                    background: transparent; color: var(--on-accent); font-size: var(--t-lg);
+                    background: transparent; color: var(--ink); font-size: var(--t-lg);
                     /* Not type: the glyph is centred in a 36px circle, so the
                        line box has to be the glyph and nothing else. */
                     line-height: 1; cursor: pointer; padding: 0; }
@@ -1626,6 +1636,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       render();
       const sheet = document.querySelector(".sheet");
       if (sheet) sheet.scrollTop = 0;
+      // Back at the top, so the bar belongs on screen — without this it stays
+      // tucked from the last screen and the new one opens with no chrome.
+      const shell = document.querySelector("#app.shell");
+      if (shell) shell.classList.remove("tucked");
     }
     window.addEventListener("popstate", () => { render(); });
 
@@ -1719,11 +1733,49 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const pby = document.querySelector("body > .pby");
       if (pby) $(".sheet").appendChild(pby);
       wireChrome();
+      tuckOnScroll();
       renderPinWarning();
       render();
     }
 
     /** The shop's own name, which is what the top bar says instead of "Dashboard". */
+    /**
+     * The bar gets out of the way as you scroll, and comes back on the way up.
+     *
+     * It listens on .sheet, not the window: body.shelled sets overflow hidden
+     * and the window never scrolls at all, so a window listener here would be
+     * a handler that could never fire.
+     *
+     * Two guards. A DEAD ZONE, so the bar cannot flicker while you are barely
+     * moving; and a minimum amount of overflow before it will hide at all, so a
+     * short list that can only scroll a little never takes the bar away and
+     * leaves nothing to bring it back with.
+     */
+    function tuckOnScroll() {
+      const sheet = document.querySelector(".sheet");
+      const shell = document.querySelector("#app.shell");
+      if (!sheet || !shell) return;
+      let last = 0, queued = false;
+      const apply = () => {
+        queued = false;
+        const y = sheet.scrollTop;
+        if (sheet.scrollHeight - sheet.clientHeight < 120) {
+          shell.classList.remove("tucked");
+          last = y;
+          return;
+        }
+        if (y < 24) shell.classList.remove("tucked");
+        else if (y > last + 6) shell.classList.add("tucked");
+        else if (y < last - 6) shell.classList.remove("tucked");
+        last = y;
+      };
+      sheet.addEventListener("scroll", () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(apply);
+      });
+    }
+
     function shopName() { return (S.cards[0] || {}).shopName || "your shop"; }
 
     function topBarHtml() {

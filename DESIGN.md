@@ -69,16 +69,16 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
    why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
-   **four** fenced exceptions, each described below: the marketing page's three
+   **three** fenced exceptions, each described below: the marketing page's three
    tile colours, the neon reassurance band pinned to the bottom of that page,
-   the dashboard's **top bar**, and **Home's charts**.
+   and **Home's charts**.
 
-   The top bar is neon on purpose, decided by the founder — the same call that
-   was made for the `.greet` header it replaced. It earns the exception on the
-   same grounds: it is the shop's identity, it is the only thing on the
-   dashboard that never changes as you move around, and it **carries no control
-   except the ⋯ menu**, so it cannot compete with whatever the owner came here
-   to do. Its text is `--on-accent`, never white.
+   **The top bar used to be the fourth, and is not any more.** It is a thin
+   white bar that tucks away as the sheet scrolls and comes back on the way up,
+   so the accent has one job again on that screen: the next thing to press. The
+   `.greet` header before it was neon on the same grounds and went the same way.
+   Nothing was lost by it — the bar carries the shop's name and the ⋯ menu, and
+   neither needed a colour to be found.
 
    Home's charts are neon, also the founder's call: the area **under** the
    visits line, and the bars in the two comparison cards. Always a FILL and
@@ -94,9 +94,10 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    particular the nav's active item is marked by **weight**, because a third
    neon object would leave the screen with no single place the eye goes.
 2. **Weight comes from the black panel, not from colour.** If something needs to
-   dominate, put it on `--slab`. The dashboard's top bar is the exception named
-   in rule 1; it was `--slab` for exactly this reason before the founder took
-   it neon.
+   dominate, put it on `--slab`. The card designer's surface switcher is the
+   live example: the selected face is `--slab`, not neon, because the wizard's
+   Next button is the neon on that screen and two filled things leave the eye
+   with nowhere to go.
 3. **Focus rings are ink on light and neon on dark.** A neon ring on a white
    page is too low-contrast to be an accessibility feature, and an ink ring
    vanishes on a black panel. Both directions are declared; keep them.
@@ -151,9 +152,14 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   reason. Set `--t-xs` on sentence text and both stop being true.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
-- **App chrome** is a locked neon top bar, a scrolling sheet under it, and a
-  `--bg` bottom nav that FLOATS — a pill inset from the screen edges, not a
-  strip welded to the bottom.
+- **App chrome** is a thin white top bar that tucks away as you scroll, a
+  scrolling sheet under it that runs edge to edge, and a `--bg` bottom nav that
+  FLOATS — a pill inset from the screen edges, not a strip welded to the bottom.
+
+  The sheet's rounded top corners went with the neon: they existed to sit
+  against a coloured bar, and the neon behind `#app` existed only so those
+  corners had something to show through. White on white, both were drawing a
+  seam that is not there.
 
   **The box is the CONTENT, not the bar.** The bar is a flat neon block with no
   rounding at all; the sheet beneath it carries `--r-lg` on its **top** corners
