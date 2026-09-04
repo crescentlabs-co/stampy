@@ -2164,9 +2164,13 @@ export async function createCard(row: {
   // URLs inside live Google classes. See renameCafesToCards.
   const id = generateShortCode(8).toLowerCase();
   const res = await getPool().query<CardRow>(
+    // logo_has_name TRUE on a new card, which is the designer's "Show company
+    // name next to logo" switch starting OFF. The column's own default is
+    // false, and it stays that way: flipping it would change what every card
+    // written by any other path does. Only a card made from here starts quiet.
     `INSERT INTO cards (id, merchant_id, name, reward, stamps_target, stamps_start, kind, milestones,
-                        published_at, staff_pin, staff_pin_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '', '') RETURNING *`,
+                        published_at, logo_has_name, staff_pin, staff_pin_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, '', '') RETURNING *`,
     [id, row.merchantId, row.name, row.reward, row.stampsTarget, row.stampsStart, row.kind ?? "stamp",
      JSON.stringify(row.milestones ?? []),
      // Passed straight through, never COALESCEd: a draft's null IS the value,

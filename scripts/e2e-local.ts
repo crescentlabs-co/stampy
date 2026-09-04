@@ -494,6 +494,12 @@ async function main() {
 
     const draftCard = (await getCard(draftId))!;
     expect(draftCard.published_at === null, "an unfinished card carries no published date");
+    // The designer's "Show company name next to logo" switch starts OFF on a
+    // new card, which is this column being TRUE. The column's own default is
+    // false and stays that way — flipping it would change what every card
+    // written by any other path does.
+    expect(draftCard.logo_has_name === true,
+      "a new card starts with the name switch off");
     expect(
       (await liveCardsForMerchant(draftCard.merchant_id!)).every((c) => c.id !== draftId),
       "an unfinished card is not one of the shop's live cards",
