@@ -2761,15 +2761,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * (CardKind: stamp / milestones / membership / points). Labelling them from
      * the same four means wiring this up later is a rename, not a migration.
      */
-    const REWARD_TYPES = [
-      { k: "stamp", name: "Stamps", tag: "Reward (most popular)", icon: ICON_STAMP,
-        blurb: "Customers collect stamps and earn a reward when they reach the goal" },
-      { k: "points", name: "Points", icon: ICON_POINTS,
-        blurb: "Customers earn points they can redeem for rewards you choose" },
-      { k: "membership", name: "Membership", icon: ICON_MEMBER,
-        blurb: "Sell or manage memberships with perks for members" },
-    ];
-
+    // DECLARED BEFORE REWARD_TYPES, and it has to stay that way. The array
+    // below is a const whose literal READS these at declaration time, so a
+    // const declared after it is in its temporal dead zone: a ReferenceError
+    // while the script is still evaluating, which blanks the whole dashboard
+    // before boot() and its catch ever run. Valid syntax, defined name, and
+    // nothing that compiles or greps this file can see it.
     // Line art, matching the bottom nav's: 20px, stroked, never filled.
     const ICON_STAMP =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/>' +
@@ -2779,6 +2776,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     const ICON_MEMBER =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/>' +
       '<circle cx="9" cy="11" r="2"/><path d="M5.5 16.5c.8-1.6 2-2.4 3.5-2.4s2.7.8 3.5 2.4M15 10h4M15 13.5h4"/></svg>';
+
+    const REWARD_TYPES = [
+      { k: "stamp", name: "Stamps", tag: "Reward (most popular)", icon: ICON_STAMP,
+        blurb: "Customers collect stamps and earn a reward when they reach the goal" },
+      { k: "points", name: "Points", icon: ICON_POINTS,
+        blurb: "Customers earn points they can redeem for rewards you choose" },
+      { k: "membership", name: "Membership", icon: ICON_MEMBER,
+        blurb: "Sell or manage memberships with perks for members" },
+    ];
 
     /**
      * The four campaign types. All four run the same three steps and the same
