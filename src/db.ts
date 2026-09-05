@@ -2074,6 +2074,97 @@ export async function cardsForMerchant(merchantId: string): Promise<CardRow[]> {
 }
 
 /**
+ * Remove a card the owner is finished with.
+ *
+ * TWO OUTCOMES, and which one you get is decided here rather than by the
+ * person pressing the button:
+ *
+ *   'deleted'  the card is gone, rows and all. Only ever when NOBODY has one:
+ *              no pass has ever been issued from it, so there is nothing in a
+ *              wallet to orphan and no history to contradict.
+ *   'archived' the card is hidden from the owner and everything else about it
+ *              stands. Its cards keep updating, its stamps keep counting, and
+ *              its history stays in the log.
+ *
+ * A card's id is printed on posters, forms the Google class id, and is inside
+ * the art URLs of every Android card it issued — so deleting one that has been
+ * out in the world stops every card it made, permanently, with no way to tell
+ * the phone. That is why the test is "has this ever issued a pass", not "is it
+ * a draft": a published card nobody scanned is just as safe to remove, and a
+ * draft that somehow issued one is not.
+ *
+ * Archiving is the fallback rather than an error, because the owner's intent
+ * is the same either way — get it off my dashboard — and refusing outright
+ * would leave them with a card they cannot remove and no way forward.
+ *
+ * NOTHING HERE DELETES AN EVENT, and that is what decides the test.
+ *
+ * events.card_id references cards with no cascade, so a card can only be
+ * removed once it has no event rows — and the append-only rule (CLAUDE.md)
+ * says we may not clear them to make room. hardDeleteMerchant is the one
+ * documented exception and takes the whole shop with it, so nothing survives
+ * to disagree; this takes one card out of a shop that carries on, so it cannot
+ * copy that. A card with any history at all is therefore archived, which is
+ * the honest outcome anyway: something happened on it, and the log is where
+ * that is kept.
+ */
+export type CardRemoval = { ok: true; outcome: "deleted" | "archived" } | { ok: false };
+
+export async function removeCard(cardId: string): Promise<CardRemoval> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const card = await client.query<{ id: string }>(
+      `SELECT id FROM cards WHERE id = $1 FOR UPDATE`,
+      [cardId],
+    );
+    if (!card.rows.length) {
+      await client.query("ROLLBACK");
+      return { ok: false };
+    }
+    // Has anything at all ever happened on this card?
+    //
+    // Passes, unfiltered — a pruned pass row still had a serial inside
+    // somebody's wallet at some point, and ACTIVE_PASS_SQL exists precisely
+    // because "gone from the table" is not the same as "never existed".
+    //
+    // Events and messages for the reason above: they reference the card with no
+    // cascade and may not be cleared, so their presence is what makes this
+    // card un-deletable. A poster that was scanned once has a join_view, and
+    // that scan really happened.
+    const used = await client.query<{ n: string }>(
+      `SELECT (
+         (SELECT count(*) FROM passes   WHERE card_id = $1) +
+         (SELECT count(*) FROM events   WHERE card_id = $1) +
+         (SELECT count(*) FROM messages WHERE card_id = $1)
+       )::text AS n`,
+      [cardId],
+    );
+    if (Number(used.rows[0]?.n ?? "1") > 0) {
+      await client.query(
+        `UPDATE cards SET archived_at = COALESCE(archived_at, now()) WHERE id = $1`,
+        [cardId],
+      );
+      await client.query("COMMIT");
+      return { ok: true, outcome: "archived" };
+    }
+    // Nothing has ever happened on it. The art, the strips and owner_cards all
+    // cascade from cards — owner_cards is listed anyway so the order is
+    // readable rather than implied — and by the check above there is no pass,
+    // no event and no message left to reference it.
+    await client.query(`DELETE FROM owner_cards WHERE card_id = $1`, [cardId]);
+    await client.query(`DELETE FROM cards WHERE id = $1`, [cardId]);
+    await client.query("COMMIT");
+    return { ok: true, outcome: "deleted" };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Finish a programme, or start it again.
  *
  * One column and nothing else: no pass is touched, no event is rewritten, no

@@ -30,7 +30,7 @@ async function main() {
   // it again where the closed behaviour is what is being asserted.
   process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
-  const { migrate, ensureEnvStamp, liveCardsForMerchant, cardsForMerchant, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, merchantForOwner: ownerMerchant } =
+  const { migrate, ensureEnvStamp, liveCardsForMerchant, cardsForMerchant, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, removeCard, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -3356,6 +3356,56 @@ async function main() {
         stamps_target: asIssued!.stamps_target,
         reward: asIssued!.reward,
       });
+    }
+
+    // Removing a card, and WHICH of the two things that means.
+    //
+    // The dangerous half is the delete: a card's id is inside every Android
+    // card it issued and in the art URLs those phones fetch, so removing one
+    // that has been out in the world stops every card it made, permanently,
+    // with no way to tell the phone. The server decides, never the browser.
+    {
+      const owner = await createOwner(crypto.randomUUID(), "remove-card@shop.my", "x");
+      const merch = await ensureMerchantForOwner(owner.id, "Remove Card Cafe");
+      const mkOne = async (name: string) => {
+        const made = await createCard({
+          merchantId: merch.id, name, reward: "Free tea", stampsTarget: 10, stampsStart: 1,
+        });
+        await linkOwnerCard(owner.id, made.id);
+        return made;
+      };
+
+      // Nobody has ever held it: really gone.
+      const untouched = await mkOne("Never used");
+      const del = await removeCard(untouched.id);
+      expect(del.ok && del.outcome === "deleted", "a card nobody has ever held is deleted");
+      expect((await getCard(untouched.id)) === null, "...and the row really is gone");
+
+      // Somebody holds one: archived, and their card keeps working.
+      const used = await mkOne("In use");
+      const heldPass = await mk("apple", (await mkCustomer(merch.id)).id, used.id);
+      const arch = await removeCard(used.id);
+      expect(arch.ok && arch.outcome === "archived", "a card somebody holds is archived, not deleted");
+      const stillThere = await getCard(used.id);
+      expect(stillThere !== null && stillThere.archived_at !== null,
+        "...the card row survives, marked archived");
+      expect((await getPass(heldPass.serial)) !== null,
+        "...and the pass in their wallet is untouched");
+      expect(!(await cardsForMerchant(merch.id)).some((x) => x.id === used.id),
+        "...while the owner stops seeing it");
+
+      // A card with HISTORY but no pass is archived too: events reference it
+      // with no cascade and may never be deleted, so there is nothing to be
+      // done but hide it.
+      const scanned = await mkOne("Scanned once");
+      await logEvent(scanned.id, "", "join_view", { merchantId: merch.id });
+      const hist = await removeCard(scanned.id);
+      expect(hist.ok && hist.outcome === "archived",
+        "a card with history but no pass is archived, because its log may not be deleted");
+      expect((await getCard(scanned.id)) !== null, "...so its row and its log both survive");
+
+      expect((await removeCard("no-such-card-at-all")).ok === false,
+        "removing a card that does not exist is refused");
     }
 
     // How a points card EARNS, over HTTP, because the sum has to happen on this

@@ -33,6 +33,7 @@ import {
   cardMetrics,
   cardsForMerchant,
   publishCard,
+  removeCard,
   cardsForOwner,
   counterActivity,
   ensureMerchantForOwner,
@@ -540,6 +541,27 @@ dashboardRouter.post("/api/card/:id/ended", requireOwner, async (req: OwnerReque
  * is the moment it becomes real, and it is one-way — a published card comes off
  * the shelf through /ended, which keeps every issued pass working.
  */
+/**
+ * Take a card off the dashboard.
+ *
+ * The SERVER decides whether that means deleted or archived — see removeCard.
+ * A card nobody has ever held is really gone; one that has issued a pass, or
+ * that anything at all has happened on, is hidden and keeps working. The
+ * browser is told which happened so it can say so, and is never asked which it
+ * wants: a card's id is inside every Android card it issued, so "delete this
+ * one anyway" is not a choice an owner can be given the consequences of in a
+ * dialog.
+ */
+dashboardRouter.post("/api/card/:id/remove", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) {
+    return void res.status(404).json({ error: "not-your-card" });
+  }
+  const out = await removeCard(cardId);
+  if (!out.ok) return void res.status(404).json({ error: "no-such-card" });
+  res.json({ ok: true, outcome: out.outcome });
+});
+
 dashboardRouter.post("/api/card/:id/publish", requireOwner, async (req: OwnerRequest, res) => {
   const cardId = req.params.id!;
   if (!(await ownerHasCard(req.owner!.id, cardId))) {

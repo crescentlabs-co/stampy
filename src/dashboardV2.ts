@@ -848,8 +848,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 padding: var(--s3); margin-top: var(--s3);
                 background: var(--surface); border-radius: var(--r);
                 font-size: var(--t-sm); color: var(--muted); }
-    .draftbar span:not(.pill) { flex: 1; min-width: 140px; }
-    .draftbar .btn { width: auto; flex: none; }
+    /* min-width 0, so the sentence SHRINKS instead of forcing a wrap at 140px
+       and leaving the button stranded at the left of its own line. */
+    .draftbar span:not(.pill) { flex: 1; min-width: 0; }
+    /* Its own line, full width. It is the main thing to do on this card. */
+    .draftbar .btn { flex: 1 0 100%; width: 100%; }
+    /* Not a button: a second filled control beside Continue editing would make
+       the bar ask which one you meant, and this is the rarer of the two. */
+    .draftdel { flex: 1 0 100%; background: none; border: 0; padding: var(--s1) 0 0;
+                color: var(--muted); font: inherit; font-size: var(--t-sm); font-weight: 600;
+                cursor: pointer; text-decoration: underline; }
     /* Says the quiet part out loud: nothing on this screen is saved. Amber like
        the setup banner — nothing is broken, something is outstanding. */
     .draftnote { background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
@@ -2446,8 +2454,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         { k: "visits", name: "Visits", of: (r) => r.visits, fmt: (v) => v.toLocaleString() },
         { k: "customers", name: "Customers", of: (r) => r.customers, fmt: (v) => v.toLocaleString() },
       ],
-      rows: () => S.cards.map((c) => ({
-        id: c.id, name: c.shopName || c.name, kind: c.kind || "stamp",
+      // Drafts are not in here. A draft has no poster, no link and nobody
+      // holding it, so every column is zero — and a row of zeroes in a
+      // comparison reads as a card that is doing badly rather than one that has
+      // not started. Its own screen says "Draft" and offers the way back in.
+      rows: () => S.cards.filter((c) => c.publishedAt).map((c) => ({
+        // The CARD's name, not the shop's. A merchant runs several cards and
+        // every one of them is at the same shop, so naming them all after it
+        // made a comparison of four identical labels.
+        id: c.id, name: c.name || c.shopName, kind: c.kind || "stamp",
         ended: Boolean(c.endedAt), daysAgo: daysSince(c.createdAt),
         customers: c.metrics.active, visits: c.metrics.stamps,
         avgGapDays: c.metrics.avgGapDays || 0,
@@ -4076,6 +4091,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           // Back to Rules, not to Choose: the type is the one answer they
           // definitely gave — it is what created the card.
           resume.onclick = () => navigate("/create/" + c.id + "/rules");
+          // Two taps, never a browser dialog (invariant 8). The server decides
+          // whether this really deletes: a draft nobody has ever been given is
+          // gone for good, and one that somehow issued a card is archived.
+          arm(body.querySelector("[data-draftdel]"), "Tap again to delete it", async () => {
+            const { body: out } = await api("/card/" + encodeURIComponent(c.id) + "/remove", {
+              method: "POST",
+            });
+            if (!out || !out.ok) { toast("That didn\u2019t work. Try again."); return; }
+            await refreshCards();
+            navigate("/manage/rewards", true);
+            toast(out.outcome === "deleted"
+              ? "Deleted."
+              : "Removed from your dashboard. Cards already issued keep working.");
+          });
           return;
         }
         body.querySelector("[data-poster]").onclick = () =>
@@ -4121,7 +4150,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       return (draft
         ? '<div class="draftbar"><span class="pill pill-warn">Draft</span>' +
           "<span>Not finished yet, so nobody can be given this card.</span>" +
-          '<button type="button" class="btn btn-neon" data-resume>Continue editing</button></div>'
+          '<button type="button" class="btn btn-neon" data-resume>Continue editing</button>' +
+          // The other thing you might want, and the only screen a draft can be
+          // reached from: its Edit button is Continue editing, so the card page
+          // that carries Remove has no link to it from here.
+          '<button type="button" class="draftdel" data-draftdel>Delete this card</button></div>'
         : '<div class="cardacts">' +
             actBtn("poster", ICON_POSTER, "Poster") +
             actBtn("share", ICON_SHARE, "Share") +
@@ -4313,7 +4346,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const enrolled = m.active > 0;
       const over = Boolean(card.endedAt);
       d.innerHTML = back +
-        '<h2 class="sec first">' + esc(card.shopName || card.name) +
+        '<h2 class="sec first">' + esc(card.name || card.shopName) +
           '<span class="pstat' + (over ? " off" : "") + '">' +
           (over ? "Ended" : "Active") + "</span></h2>" +
         // No Performance block. Home's two charts answer how a programme is
@@ -4354,6 +4387,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             "collecting on it, and keeps getting their reward.") + "</p>" +
         '<button class="btn btn-ghost" style="width:auto;padding:11px 18px;margin-top:10px" data-end>' +
         (over ? "Start sign-ups again" : "End sign-ups") + "</button>" +
+        // What removing this card will actually DO, said before the button
+        // rather than in a dialog after it. Which of the two happens is the
+        // server's answer, not a choice offered here: a card's id is inside
+        // every Android card it issued, so "delete it anyway" is not a thing an
+        // owner can be handed the consequences of in a confirm box.
+        '<h2 class="sec">Remove it</h2>' +
+        '<p class="muted">' + (enrolled
+          ? "People are holding this card, so removing it takes it off your " +
+            "dashboard and leaves every card already issued working. Nothing " +
+            "a customer has stops."
+          : "Nobody has ever been given this card, so removing it deletes it " +
+            "for good. That cannot be undone.") + "</p>" +
+        '<button class="btn btn-ghost" style="width:auto;padding:11px 18px;margin-top:10px" data-remove>' +
+        (enrolled ? "Remove from my dashboard" : "Delete this card") + "</button>" +
         '<h2 class="sec">What it looks like</h2>' +
         '<div data-design></div>';
 
@@ -4373,6 +4420,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           await refreshCards();
           navigate("/manage/rewards/" + card.id, true);
           toast(over ? "Sign-ups are open again." : "Sign-ups closed. Existing cards still work.");
+        });
+      arm(d.querySelector("[data-remove]"),
+        enrolled ? "Tap again to remove it" : "Tap again to delete it",
+        async () => {
+          const { body } = await api("/card/" + encodeURIComponent(card.id) + "/remove", {
+            method: "POST",
+          });
+          if (!body || !body.ok) { toast("That didn\u2019t work. Try again."); return; }
+          await refreshCards();
+          navigate("/manage/rewards");
+          // The server says which of the two happened, and the message says the
+          // same. Reporting "deleted" for a card that was archived would be the
+          // one lie an owner could not check.
+          toast(body.outcome === "deleted"
+            ? "Deleted."
+            : "Removed from your dashboard. Cards already issued keep working.");
         });
       d.querySelector("[data-design]").appendChild(designerFor(card));
       return d;
