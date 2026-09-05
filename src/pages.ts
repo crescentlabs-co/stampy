@@ -1515,6 +1515,11 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
     .ready { color: #1a7f37; font-weight: 700; }
     .signout { background: none; border: none; color: var(--muted); font: inherit; font-size: .85rem;
                cursor: pointer; padding: 4px 0; text-decoration: underline; }
+    .homehint { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line);
+                border-radius: 12px; background: var(--surface); }
+    .homehint p { margin: 0; font-size: .88rem; line-height: 1.55; }
+    .homehint button { background: none; border: 0; color: var(--muted); font: inherit; padding: 6px 0 0;
+                       text-decoration: underline; cursor: pointer; }
     #scanner {
       position: fixed; inset: 0; background: #000; z-index: 40;
       display: none; flex-direction: column;
@@ -1581,17 +1586,17 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
   const loginJs = /* js */ `
     $("#app").innerHTML = \`
       <h1>Staff login</h1>
-      <p class="sub">Enter the staff PIN. This phone stays signed in for two weeks.</p>
-      <input id="pin" type="password" inputmode="numeric" placeholder="PIN">
+      <p class="sub">Enter the staff access code. This phone stays signed in for two weeks.</p>
+      <input id="pin" type="password" inputmode="numeric" placeholder="Access code">
       <button class="btn btn-dark" style="margin-top:12px" id="go">Enter</button>\`;
     async function signIn() {
       const pin = $("#pin").value.trim();
-      if (!pin) return toast("Type the PIN");
+      if (!pin) return toast("Type the access code");
       // The PIN crosses the wire once, here — after this the phone is authorised
       // by its session cookie instead of resending the PIN on every stamp.
       const out = await api("/login", { method: "POST", body: JSON.stringify({ pin }) });
       if (out.ok) location.reload();
-      else toast("Wrong PIN");
+      else toast("Wrong access code");
     }
     $("#go").onclick = signIn;
     $("#pin").onkeydown = (e) => { if (e.key === "Enter") signIn(); };
@@ -1998,6 +2003,7 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
     $("#app").innerHTML = \`
       <h1>Stamper</h1>
       <p class="sub">Scan the customer’s card, or type its code.</p>
+      <div id="homehint"></div>
       <div id="cards"></div>
       <button class="btn btn-stamp" id="scan">📷 Scan card</button>
       <div class="codebox">
@@ -2011,6 +2017,14 @@ export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
         <div id="list" style="margin-top:10px"></div>
       </details>
       <button class="signout" id="out">Sign this phone out</button>\`;
+    // This only records a dismissed hint, never a credential. The owner can
+    // dismiss it on this counter without affecting another staff phone.
+    try {
+      if (!document.cookie.includes("punchme-scanner-home-hint=1")) {
+        $("#homehint").innerHTML = '<div class="homehint"><p><strong>Add scanner to Home Screen</strong><br>On iPhone: tap Share, then <em>Add to Home Screen</em>. On Android: open the browser menu, then tap <em>Install app</em> or <em>Add to Home screen</em>.</p><button type="button" data-hidehint>Don’t show again</button></div>';
+        $("[data-hidehint]").onclick = () => { document.cookie = "punchme-scanner-home-hint=1; Max-Age=31536000; Path=/staff; SameSite=Lax"; $("#homehint").innerHTML = ""; };
+      }
+    } catch (_) { /* Storage may be unavailable in a private browser window. */ }
     $("#scan").onclick = startScanner;
     $("#bycode").onclick = () => {
       const code = $("#code").value.trim();
@@ -2089,9 +2103,18 @@ export function posterPage(
   logoVersion = 0,
   /** The logo is a lockup that already reads as the name — see cards.logo_has_name. */
   logoHasName = false,
+  /** The merchant's saved counter-poster wording. Blank values retain the safe default. */
+  promotion?: { message: string; detail: string; background: "light" | "dark" | "card" },
 ): string {
   const bg = rgbToHex(card.background_color);
   const accent = rgbToHex(card.accent_color);
+  const posterBg = promotion?.background === "dark" ? "#101312"
+    : promotion?.background === "card" ? bg : "#f2f4f1";
+  const posterInk = promotion?.background === "light" ? "#0c0e0d" : contrastText(posterBg);
+  const posterMessage = promotion?.message.trim() ? esc(promotion.message) : signupLine(card);
+  const posterDetail = promotion?.detail.trim()
+    ? esc(promotion.detail)
+    : "Scan to get your card — no app to download.";
   // Never sampled: a shop whose brand colour is dark and whose accent is also
   // dark would otherwise print a header nobody can read.
   const onBg = contrastText(bg);
@@ -2107,7 +2130,7 @@ export function posterPage(
   const ref = encodeURIComponent(joinRef);
   const css = /* css */ `
     body { max-width: 640px; }
-    .poster { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: #fff; }
+    .poster { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: ${posterBg}; color: ${posterInk}; }
     .phead { background: ${bg}; color: ${onBg}; padding: 26px 28px 22px; text-align: center; }
     /* Height-bound so a wide brand lockup keeps its width — see .pv-logo. This
        one is printed, so the cap is generous: paper has the room. */
@@ -2121,7 +2144,7 @@ export function posterPage(
     .pbody { padding: 26px 28px 20px; text-align: center; }
     .poffer { font-size: clamp(1.05rem, 4.2vw, 1.5rem); font-weight: 700; line-height: 1.25;
               margin: 0 0 8px; text-wrap: balance; overflow-wrap: anywhere; }
-    .pno { font-size: 1rem; color: var(--muted); margin: 0 0 20px; }
+    .pno { font-size: 1rem; color: ${posterInk}; opacity: .72; margin: 0 0 20px; }
     /* The QR is the point of the sheet, so it takes the space. Framed in the
        card's accent so the paper reads as theirs from across a counter. */
     .pqr { border: 6px solid ${frame}; border-radius: 16px; padding: 12px; background: #fff;
@@ -2129,10 +2152,10 @@ export function posterPage(
     .pqr img { display: block; width: 100%; height: auto; }
     /* Centred to match everything else on the sheet — see .pvp-steps, which is
        the mock of this block and has to keep saying the same thing. */
-    .psteps { text-align: center; max-width: 340px; margin: 22px auto 0; color: var(--muted);
+    .psteps { text-align: center; max-width: 340px; margin: 22px auto 0; color: ${posterInk}; opacity: .78;
               font-size: .92rem; line-height: 1.8; }
-    .pfoot { border-top: 1px solid var(--line); padding: 12px 28px; text-align: center;
-             color: var(--muted); font-size: .76rem; letter-spacing: .02em; }
+    .pfoot { border-top: 1px solid rgba(12,14,13,.14); padding: 12px 28px; text-align: center;
+             color: ${posterInk}; opacity: .7; font-size: .76rem; letter-spacing: .02em; }
     .noprint { margin-top: 18px; }
     .phint { margin-top: 10px; font-size: .85rem; color: var(--muted); line-height: 1.5; }
     @media print {
@@ -2155,8 +2178,8 @@ export function posterPage(
         ${showName ? `<h1>${esc(business)}</h1>` : ""}
       </div>
       <div class="pbody">
-        <p class="poffer">${signupLine(card)}</p>
-        <p class="pno">Scan to get your card — no app to download.</p>
+        <p class="poffer">${posterMessage}</p>
+        <p class="pno">${posterDetail}</p>
         <div class="pqr"><img src="/c/${encodeURIComponent(card.id)}/qr?s=poster" alt="Scan to add your loyalty card"></div>
         <div class="psteps">
           1. Point your camera at the code<br>

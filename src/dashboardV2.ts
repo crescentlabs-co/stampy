@@ -1375,7 +1375,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 // judgement — they are how the list is built.
                 '<p class="muted" style="margin-top:12px;font-size:.82rem">Phones that have stamped in ' +
                 "the last 14 days, not phones signed in. A phone whose browser data is cleared comes " +
-                "back as a new one here. To sign every phone out, reset the staff PIN under Shop.</p>");
+                "back as a new one here. To sign every phone out, reset the staff access code under Shop.</p>");
             }
             const want = kind === "stamps" ? "stamp" : kind === "rewards" ? "redeem" : "undo";
             sheet(named[want],
@@ -1565,8 +1565,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <p class="muted" data-cycleout style="margin:6px 0 0;font-size:.84rem"></p>
 
         <h2 class="sec">Staff</h2>
-        <p class="muted">Staff use the stamper to punch cards.\${info("One PIN for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
-        <label style="margin-top:14px" data-pinlabel>Staff PIN</label>
+        <p class="muted">Staff use the stamper to record visits.\${info("One access code for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
+        <label style="margin-top:14px" data-pinlabel>Staff access code</label>
         <div class="copyrow" style="margin-top:6px">
           <input data-pin placeholder="4–12 digits" inputmode="numeric" autocomplete="off">
           <button class="btn btn-ghost" data-setpin>Set</button>
@@ -1577,7 +1577,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
              merchants the guess used to be "whoever owns the café named
              default" — a stranger. -->
         <div class="sharelist" style="margin-top:12px">
-          <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Open the stamper <span class="sub2">staff sign in here with the PIN</span></span><span class="arr">open →</span></a>
+          <a href="/staff?c=\${c.id || ""}" target="_blank"><span>Open the scanner <span class="sub2">staff sign in here with the access code</span></span><span class="arr">open →</span></a>
         </div>
 
         <h2 class="sec">Account</h2>
@@ -1612,9 +1612,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // somehow missed. The PIN itself is never sent back here: only its scrypt
       // hash is stored, so all the server can say is whether one exists.
       if (S.hasStaffPin) {
-        div.querySelector("[data-pinlabel]").textContent = "Reset staff PIN";
+        div.querySelector("[data-pinlabel]").textContent = "Reset staff access code";
         div.querySelector("[data-setpin]").textContent = "Reset";
-        div.querySelector("[data-pin]").placeholder = "New PIN (4–12 digits)";
+        div.querySelector("[data-pin]").placeholder = "New code (4–12 digits)";
       }
 
       const pinOut = div.querySelector("[data-pinout]");
@@ -1627,9 +1627,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         if (!body.ok) {
           return toast(body.error === "pin-too-short" ? "Use at least 4 digits" : (body.error || "Couldn’t set the PIN"));
         }
-        pinOut.innerHTML = '<div class="temp">PIN saved. Every staff phone has been signed out — ' +
-          'they each need to sign in again with the new one.</div>';
-        div.querySelector("[data-pinlabel]").textContent = "Reset staff PIN";
+        pinOut.innerHTML = '<div class="temp">Access code saved. Every staff phone has been signed out — ' +
+          'they each need to sign in again with the new code.</div>';
+        div.querySelector("[data-pinlabel]").textContent = "Reset staff access code";
         div.querySelector("[data-setpin]").textContent = "Reset";
         // The first PIN also clears the banner above. Without this it sits there
         // contradicting the confirmation directly beneath it until a reload.
@@ -1696,7 +1696,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // back button did nothing, a refresh dropped you back at the first one, and
     // nothing deeper than a tab had anywhere to live.
     const S = { cards: [], email: "", path: "/", selCard: 0, hasStaffPin: false,
-                joinRef: "", cycleDays: 0 };
+                joinRef: "", cycleDays: 0,
+                onboarding: { shareCompletedAt: null, scannerOpenedAt: null } };
 
     const ROOT = "/dashboard";
     /** The address inside the app, always starting with "/" and never trailing one. */
@@ -1762,7 +1763,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     async function refreshCards() {
       const { body } = await api("/overview");
-      if (body && Array.isArray(body.cards)) S.cards = body.cards;
+      if (body && Array.isArray(body.cards)) {
+        S.cards = body.cards;
+        S.onboarding = body.onboarding || { shareCompletedAt: null, scannerOpenedAt: null };
+        S.hasStaffPin = !!body.hasStaffPin;
+      }
     }
 
     async function app() {
@@ -1782,6 +1787,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       }
       S.cards = body.cards; S.email = body.email; S.selCard = 0;
       S.hasStaffPin = !!body.hasStaffPin;
+      S.onboarding = body.onboarding || { shareCompletedAt: null, scannerOpenedAt: null };
       // 0 means never chosen — the setup banner asks for it, and the Shop tab
       // shows nothing selected rather than a default they never picked.
       S.cycleDays = Number(body.returnCycleDays) || 0;
@@ -1954,7 +1960,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const todo = [];
       if (!S.hasStaffPin) {
         todo.push("<strong>Your counter can’t stamp yet.</strong> " +
-          "Staff sign in to the stamper with a PIN, and you haven’t picked one.");
+          "Staff sign in to the scanner with an access code, and you haven’t picked one.");
       }
       if (!S.cycleDays) {
         todo.push("<strong>Pick how often customers should come back.</strong> " +
@@ -1964,7 +1970,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       box.innerHTML =
         '<div class="pinwarn"><p>' + todo.join('</p><p style="margin-top:6px">') + "</p>" +
         '<button class="btn btn-ghost" id="gopin">' +
-          (todo.length > 1 ? "Finish setting up" : !S.hasStaffPin ? "Set a staff PIN" : "Set it") +
+          (todo.length > 1 ? "Finish setting up" : !S.hasStaffPin ? "Set staff access code" : "Set it") +
         "</button></div>";
       // Straight to the section that is missing, not just to Shop: the PIN and
       // the visit cycle live under different headings now.
@@ -1994,6 +2000,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       ["/create/:kind/:type", (p) => createStepScreen(p.kind, p.type)],
       ["/create/:kind", (p) => createPickScreen(p.kind)],
       ["/create", () => createScreen()],
+      ["/ready/:id", (p) => readyScreen(p.id)],
       ["/manage/:tab/:id", (p) => manageDetailScreen(p.tab, p.id)],
       ["/manage/:tab", (p) => manageScreen(p.tab)],
       ["/manage", () => manageScreen("rewards")],
@@ -2119,6 +2126,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             '<button data-w="all" type="button">All</button>' +
           "</div>" +
         "</div>" +
+        launchProgress() +
         '<div class="metrics" data-totals></div>' +
         '<div data-chart></div>' +
         '<h2 class="sec">Loyalty cards' + EG + "</h2>" +
@@ -2202,7 +2210,35 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // why the selector looked like it had nothing selected until you tapped
       // it. One frame later it has been laid out and can be measured.
       requestAnimationFrame(() => moveThumb(seg));
+      d.onclick = (e) => {
+        const button = e.target.closest("button");
+        if (button && button.dataset.launch) navigate(button.dataset.launch);
+      };
       return d;
+    }
+
+    /** A short launch checklist: all three steps have a real destination. */
+    function launchProgress() {
+      const published = S.cards.some((card) => !!card.publishedAt);
+      const card = S.cards.find((item) => item.publishedAt) || S.cards[0];
+      const shared = !!S.onboarding.shareCompletedAt;
+      const stamping = !!S.onboarding.scannerOpenedAt && S.hasStaffPin;
+      const steps = [
+        { label: "Create your card", done: published, path: published && card ? "/ready/" + card.id : "/create/card" },
+        { label: "Share your card", done: shared, path: card ? "/ready/" + card.id + "?section=share" : "/create/card" },
+        { label: "Start stamping", done: stamping, path: card ? "/ready/" + card.id + "?section=how" : "/shop/staff" },
+      ];
+      return '<section aria-label="Card launch progress" style="margin:0 0 var(--s4)">' +
+        '<p style="font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:8px">Get ready to launch</p>' +
+        '<div style="border:1px solid var(--line);border-radius:var(--r);overflow:hidden">' +
+        steps.map((step, index) => '<button type="button" data-launch="' + esc(step.path) + '" style="appearance:none;border:0;border-bottom:' +
+          (index === steps.length - 1 ? "0" : "1px solid var(--line)") + ';background:' +
+          (step.done ? "var(--surface)" : "#fff") + ';width:100%;padding:14px 16px;display:flex;align-items:center;gap:10px;text-align:left;font:inherit;cursor:pointer">' +
+          '<span aria-hidden="true" style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:' +
+          (step.done ? "var(--ink)" : "var(--ghost-bg)") + ';color:' + (step.done ? "#fff" : "var(--muted)") + ';font-weight:800">' +
+          (step.done ? "✓" : String(index + 1)) + '</span><span style="flex:1;font-weight:700">' + esc(step.label) +
+          '</span><span style="font-size:var(--t-sm);color:var(--muted)">' + (step.done ? "Done" : "To do") + '</span></button>').join("") +
+        '</div></section>';
     }
 
     /**
@@ -3703,8 +3739,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           const { status } = await api("/card/" + id + "/publish", { method: "POST" });
           if (status !== 200) { toast("Could not publish just yet"); return; }
           await refreshCards();
-          toast("Your card is live \u2014 print the poster and you are open");
-          navigate("/manage/rewards/" + id);
+          navigate("/ready/" + id);
         },
         onLater: async () => {
           await keepDesign();
@@ -4226,6 +4261,212 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * gets a QR, which is the only one of the two that can reach the phone the
      * wallet is on.
      */
+    /** The post-publish handoff. It stays a real route so Back and refresh work. */
+    function readyScreen(id) {
+      const card = S.cards.find((item) => item.id === id);
+      if (!card) return notFoundScreen();
+      const d = document.createElement("div");
+      const requested = new URLSearchParams(location.search).get("section");
+      const membershipNote = card.kind === "membership"
+        ? '<p class="muted" style="margin:10px 0 0"><strong>Record every visit so your activity tracking stays accurate.</strong></p>'
+        : "";
+      const section = (title, copy, actions, open) =>
+        '<details style="border-top:1px solid var(--line);padding:16px 0"' + (open ? " open" : "") + ">" +
+          '<summary style="cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center;font-weight:800">' +
+            '<span style="width:24px;height:24px;border-radius:50%;background:var(--surface);display:grid;place-items:center">+</span>' + esc(title) +
+          '</summary><div style="padding:14px 0 0 34px"><div class="muted" style="margin:0 0 12px">' + copy + "</div>" +
+          actions + "</div></details>";
+      d.innerHTML =
+        '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Back to Home</p>' +
+        '<h2 class="sec first">Your card is ready 🎉</h2>' +
+        '<p class="muted" style="margin-bottom:20px">It’s live now. Just a few final steps to get ready.</p>' +
+        '<div style="border-bottom:1px solid var(--line)">' +
+        section("Test your card", "Add a safe test card to your own phone. It never appears in your customer numbers.",
+          '<button type="button" class="btn btn-dark" style="width:auto;padding:11px 16px" data-test>Add a test card</button>', true) +
+        section("Share your card", "Give people the sign-up link, or create a clean post for your social channels.",
+          '<div style="display:flex;flex-wrap:wrap;gap:8px"><button type="button" class="btn btn-ghost" style="width:auto;padding:11px 16px" data-copyjoin>Copy link</button>' +
+          '<button type="button" class="btn btn-ghost" style="width:auto;padding:11px 16px" data-nativeshare>Share</button>' +
+          '<button type="button" class="btn btn-dark" style="width:auto;padding:11px 16px" data-social>Create social post</button></div>', requested === "share") +
+        section("Print your poster", "Make an A5 counter poster with a QR code that opens this card’s sign-up page.",
+          '<button type="button" class="btn btn-dark" style="width:auto;padding:11px 16px" data-poster>Make your poster</button>') +
+        section("How it works", '<ol style="margin:0;padding-left:18px;display:grid;gap:8px"><li>Customer scans your QR code or opens your sign-up link.</li><li>They add their loyalty card to Apple Wallet or Google Wallet.</li><li>At every visit, staff open the scanner and scan the card or type its code.</li><li>The customer’s card updates immediately.</li></ol>' + membershipNote,
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">' +
+          (S.hasStaffPin ? "" : '<button type="button" class="btn btn-ghost" style="width:auto;padding:11px 16px" data-code>Set staff access code</button>') +
+          '<button type="button" class="btn btn-dark" style="width:auto;padding:11px 16px" data-scanner>Open scanner</button></div>', requested === "how") +
+        "</div>";
+      d.querySelector("[data-back]").onclick = () => navigate("/");
+      d.querySelector("[data-test]").onclick = () => testCardSheet(card);
+      d.querySelector("[data-copyjoin]").onclick = async () => {
+        const copied = await copyText(signupLink(card));
+        if (copied) { await markShared(); toast("Sign-up link copied."); }
+        else toast("Couldn’t copy the link.");
+      };
+      d.querySelector("[data-nativeshare]").onclick = async () => {
+        if (!navigator.share) return void toast("Sharing is not available in this browser — copy the link instead.");
+        try {
+          await navigator.share({ title: card.shopName || card.name, text: promotionDefault(card).detail, url: signupLink(card) });
+          await markShared(); toast("Ready to share.");
+        } catch (_) { /* Closing the phone share sheet is not an error to show. */ }
+      };
+      if (!navigator.share) d.querySelector("[data-nativeshare]").style.display = "none";
+      d.querySelector("[data-social]").onclick = () => promotionMaker(card, "social");
+      d.querySelector("[data-poster]").onclick = () => promotionMaker(card, "poster");
+      const code = d.querySelector("[data-code]");
+      if (code) code.onclick = () => navigate("/shop/staff");
+      d.querySelector("[data-scanner]").onclick = () => window.open("/staff?c=" + encodeURIComponent(card.id), "_blank", "noopener");
+      return d;
+    }
+
+    function signupLink(card) { return location.origin + "/c/" + encodeURIComponent(card.id) + "?s=link"; }
+
+    function promotionDefault(card) {
+      if (card.kind === "membership") {
+        return { message: "Join " + (card.shopName || card.name || "our club"),
+          detail: card.benefits ? "Member benefits await." : (card.reward || "Enjoy member benefits.") };
+      }
+      if (card.kind === "points") {
+        return { message: "Earn points every visit", detail: card.reward || "Join our loyalty card today." };
+      }
+      return { message: "Collect stamps. Get rewarded.", detail: dealLine(card) + "." };
+    }
+
+    async function markShared() {
+      const { body } = await api("/onboarding/share", { method: "POST" });
+      if (body && body.ok) S.onboarding.shareCompletedAt = S.onboarding.shareCompletedAt || new Date().toISOString();
+    }
+
+    async function copyText(value) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); return true; }
+      } catch (_) {}
+      const ta = document.createElement("textarea");
+      ta.value = value; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      let copied = false;
+      try { copied = document.execCommand("copy"); } catch (_) {}
+      ta.remove();
+      return copied;
+    }
+
+    /** One saved layout for a social image and printed poster, never a template gallery. */
+    async function promotionMaker(card, kind) {
+      const wrap = document.createElement("div");
+      wrap.className = "mdl";
+      wrap.innerHTML = '<div class="mdlbox" role="dialog" aria-modal="true" aria-label="Create ' +
+        (kind === "social" ? "social post" : "poster") + '" style="max-width:520px">' +
+        '<h3>' + (kind === "social" ? "Create social post" : "Create your poster") + "</h3>" +
+        '<p class="muted" style="margin:0 0 14px">' + (kind === "social"
+          ? "A portrait post for Instagram or Facebook. The sign-up link belongs in your caption or story link sticker."
+          : "The same clean look, with a QR code for your counter.") + "</p>" +
+        '<div data-preview style="border-radius:16px;overflow:hidden;margin-bottom:16px"></div>' +
+        '<label>Headline</label><input data-message maxlength="120">' +
+        '<label style="margin-top:10px">Supporting line</label><input data-detail maxlength="160">' +
+        '<label style="margin-top:10px">Background</label><div style="display:flex;gap:8px;margin-top:6px">' +
+        '<button type="button" class="btn btn-ghost" style="width:auto;padding:9px 13px" data-bg="light">Light</button>' +
+        '<button type="button" class="btn btn-ghost" style="width:auto;padding:9px 13px" data-bg="dark">Dark</button>' +
+        '<button type="button" class="btn btn-ghost" style="width:auto;padding:9px 13px" data-bg="card">Card colour</button></div>' +
+        '<div class="mdlrow" style="margin-top:18px"><button type="button" class="btn btn-ghost" data-close>Close</button>' +
+        '<button type="button" class="btn btn-dark" data-save>' + (kind === "social" ? "Download image" : "Open print view") + "</button></div></div>";
+      const close = () => { document.removeEventListener("keydown", onKey, true); wrap.remove(); };
+      function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
+      document.addEventListener("keydown", onKey, true);
+      document.body.appendChild(wrap);
+      wrap.onclick = (e) => { if (e.target === wrap) close(); };
+      wrap.querySelector("[data-close]").onclick = close;
+      const defaults = promotionDefault(card);
+      let promotions = { social: { message: "", detail: "", background: "light" }, poster: { message: "", detail: "", background: "light" } };
+      const message = wrap.querySelector("[data-message]");
+      const detail = wrap.querySelector("[data-detail]");
+      const preview = wrap.querySelector("[data-preview]");
+      const value = () => ({ message: message.value.trim() || defaults.message, detail: detail.value.trim() || defaults.detail, background: promotions[kind].background });
+      const paint = () => {
+        const v = value(); const dark = v.background === "dark" || v.background === "card";
+        const bg = v.background === "card" ? (card.bg || "#101312") : dark ? "#101312" : "#f2f4f1";
+        const fg = dark ? "#fff" : "#0c0e0d";
+        preview.style.background = bg; preview.style.color = fg;
+        preview.innerHTML = '<div style="padding:24px;min-height:230px;display:flex;flex-direction:column;justify-content:space-between">' +
+          '<p style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:0">' + esc(card.shopName || card.name || "Loyalty club") + "</p>" +
+          '<div><h4 style="font-family:var(--display);font-size:28px;line-height:1.05;letter-spacing:-.03em;margin:0 0 12px">' + esc(v.message) +
+          '</h4><p style="margin:0;opacity:.78">' + esc(v.detail) + "</p></div>" +
+          (kind === "poster" ? '<div style="display:flex;align-items:center;gap:10px;margin-top:18px"><img alt="QR code" src="/c/' + esc(card.id) + '/qr?s=poster" style="width:72px;height:72px;background:#fff;padding:5px;border-radius:8px"><strong>Scan to join</strong></div>' : '<p style="margin:18px 0 0;font-weight:700">Join our loyalty club</p>') +
+          "</div>";
+      };
+      try {
+        const { body } = await api("/card/" + encodeURIComponent(card.id) + "/promotions");
+        if (body && body.ok && body.promotions) promotions = body.promotions;
+      } catch (_) {}
+      const saved = promotions[kind];
+      message.value = saved.message || defaults.message;
+      detail.value = saved.detail || defaults.detail;
+      paint();
+      message.oninput = paint; detail.oninput = paint;
+      wrap.querySelectorAll("[data-bg]").forEach((button) => { button.onclick = () => { promotions[kind].background = button.dataset.bg; paint(); }; });
+      const save = async () => {
+        promotions[kind] = value();
+        const { body } = await api("/card/" + encodeURIComponent(card.id) + "/promotions", {
+          method: "POST", body: JSON.stringify(promotions),
+        });
+        return !!(body && body.ok);
+      };
+      wrap.querySelector("[data-save]").onclick = async () => {
+        if (!(await save())) return void toast("Couldn’t save that. Try again.");
+        if (kind === "poster") {
+          await markShared();
+          window.open("/c/" + encodeURIComponent(card.id) + "/poster", "_blank", "noopener"); close(); return;
+        }
+        try {
+          await downloadSocialImage(card, value());
+          await markShared(); close(); toast("Social image downloaded.");
+        } catch (_) { toast("Couldn’t make the image. Try again."); }
+      };
+      wrap.querySelector("[data-message]").focus();
+    }
+
+    async function downloadSocialImage(card, promotion) {
+      const canvas = document.createElement("canvas"); canvas.width = 1080; canvas.height = 1350;
+      const ctx = canvas.getContext("2d");
+      const dark = promotion.background === "dark" || promotion.background === "card";
+      ctx.fillStyle = promotion.background === "card" ? (card.bg || "#101312") : dark ? "#101312" : "#f2f4f1";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = dark ? "#ffffff" : "#0c0e0d"; ctx.font = "700 34px Inter, sans-serif";
+      const brand = (card.shopName || card.name || "LOYALTY CLUB").toUpperCase();
+      let headlineTop = 500;
+      if (card.logoVersion) {
+        try {
+          const logo = await new Promise((resolve, reject) => {
+            const image = new Image(); image.onload = () => resolve(image); image.onerror = reject;
+            image.src = (card.id === "default" ? "" : "/c/" + encodeURIComponent(card.id)) +
+              "/art/logo.png?v=" + encodeURIComponent(card.logoVersion);
+          });
+          const ratio = Math.min(300 / logo.width, 110 / logo.height);
+          ctx.drawImage(logo, 84, 54, logo.width * ratio, logo.height * ratio);
+          ctx.fillText(brand, 84, 212); headlineTop = 545;
+        } catch (_) { ctx.fillText(brand, 84, 105); }
+      } else ctx.fillText(brand, 84, 105);
+      ctx.font = "800 104px Inter, sans-serif";
+      const words = promotion.message.split(/\s+/); let line = "", y = headlineTop;
+      for (const word of words) {
+        const next = line ? line + " " + word : word;
+        if (ctx.measureText(next).width > 880 && line) { ctx.fillText(line, 84, y); y += 118; line = word; }
+        else line = next;
+      }
+      if (line) ctx.fillText(line, 84, y);
+      ctx.font = "500 42px Inter, sans-serif";
+      const detailWords = promotion.detail.split(/\s+/); line = ""; y += 130;
+      for (const word of detailWords) {
+        const next = line ? line + " " + word : word;
+        if (ctx.measureText(next).width > 880 && line) { ctx.fillText(line, 84, y); y += 56; line = word; }
+        else line = next;
+      }
+      if (line) ctx.fillText(line, 84, y);
+      ctx.font = "700 38px Inter, sans-serif"; ctx.fillText("JOIN OUR LOYALTY CLUB", 84, 1240);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("image");
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = (card.shopName || card.name || "loyalty") .replace(/[^a-z0-9]+/gi, "-").toLowerCase() + "-social-post.png";
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
     function testCardSheet(card) {
       const onPhone = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
       const wrap = document.createElement("div");
@@ -4275,7 +4516,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * rewrite.
      */
     function shareSheet(card) {
-      const link = location.origin + "/j/" + S.joinRef;
+      const link = signupLink(card);
       const wrap = document.createElement("div");
       wrap.className = "mdl";
       wrap.innerHTML =
@@ -4313,6 +4554,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
           ta.remove();
         }
+        if (ok) await markShared();
         close();
         toast(ok ? "Sign-up link copied." : "Couldn’t copy — the link is on the share sheet.");
       };

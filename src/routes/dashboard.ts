@@ -147,6 +147,7 @@ export const V2_SCREENS = [
   "/create",
   "/create/:kind",
   "/create/:kind/:type",
+  "/ready/:id",
   "/manage",
   "/manage/:tab",
   "/manage/:tab/:id",

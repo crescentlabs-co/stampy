@@ -54,6 +54,7 @@ import {
   cafeLogoVersion,
   currentSlug,
   merchantForCard,
+  promotionsForCard,
   passForCustomer,
   reissuePass,
   resolveCustomer,
@@ -740,10 +741,11 @@ publicRouter.get("/c/:cardId/poster", async (req, res) => {
   const card = await findCafe(req.params.cardId!);
   if (card === "no-db") return void res.status(503).type("html").send(notReadyPage());
   if (!card) return void res.status(404).type("html").send(notReadyPage());
-  const [merchant, business, logoVersion] = await Promise.all([
+  const [merchant, business, logoVersion, promotions] = await Promise.all([
     merchantForCard(card.id).catch(() => null),
     businessNameForCard(card),
     cafeLogoVersion(card.id).catch(() => 0),
+    promotionsForCard(card.id).catch(() => null),
   ]);
   const joinRef = merchant ? await currentSlug(merchant.id) : card.id;
   // The step above join_view, and the only evidence that anything was ever put
@@ -755,7 +757,8 @@ publicRouter.get("/c/:cardId/poster", async (req, res) => {
     merchantId: merchant?.id ?? null,
     metadata: { ua: (req.get("user-agent") ?? "").slice(0, 200) },
   }).catch((err) => console.error("[poster_view] not logged:", err));
-  res.type("html").send(posterPage(card, business, joinRef, logoVersion, card.logo_has_name));
+  res.type("html").send(posterPage(card, business, joinRef, logoVersion, card.logo_has_name,
+    promotions?.poster));
 });
 
 // Publicly served logo — Google Wallet requires a hosted programLogo URL.

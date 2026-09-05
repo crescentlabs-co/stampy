@@ -1421,7 +1421,7 @@ describe("the counter view judges nothing", () => {
     expect(block).toContain("not phones signed in");
     expect(block).toContain("browser data is");
     // The only device control that exists is the PIN reset directly above it.
-    expect(block).toContain("reset the staff PIN under Shop");
+    expect(block).toContain("reset the staff access code under Shop");
   });
 
   it("opens its drill-downs in the read-only sheet, not a browser dialog", () => {
@@ -4376,6 +4376,47 @@ describe("the poster's print button on a phone", () => {
   /** The hint has to say what to DO, not that something is unsupported. */
   it("tells a phone user how to actually get paper", () => {
     expect(html).toContain("Share this page to a computer that has a printer");
+  });
+});
+
+describe("the merchant launch journey", () => {
+  const html = dashboardPage({ emailConfigured: true } as never);
+
+  it("keeps the three launch steps and their destinations in the dashboard", () => {
+    const home = html.slice(html.indexOf("function homeScreen()"),
+                            html.indexOf("const ICON_CARET"));
+    expect(home).toContain("Create your card");
+    expect(home).toContain("Share your card");
+    expect(home).toContain("Start stamping");
+    expect(html).toContain('["/ready/:id"');
+    expect(V2_SCREENS).toContain("/ready/:id");
+  });
+
+  it("hands a newly published card to a clear ready screen", () => {
+    const design = html.slice(html.indexOf("function createDesignScreen(id)"),
+                             html.indexOf("function oneOrTwo(value)"));
+    expect(design).toContain('navigate("/ready/" + id)');
+    expect(html).toContain("Your card is ready");
+    expect(html).toContain("How it works");
+  });
+
+  it("uses the card's sign-up address and records a meaningful share action", () => {
+    expect(html).toContain('"/c/" + encodeURIComponent(card.id) + "?s=link"');
+    expect(html).toContain('api("/onboarding/share", { method: "POST" })');
+    expect(html).toContain("Create social post");
+    expect(html).toContain("Print your poster");
+  });
+
+  it("keeps the scanner home-screen hint non-sensitive and makes a saved poster visible", () => {
+    expect(staffPage(true)).toContain("Add scanner to Home Screen");
+    expect(staffPage(true)).not.toContain("localStorage");
+    const poster = posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 3, false, {
+      message: "Free coffee is closer than you think.",
+      detail: "Join today.",
+      background: "dark",
+    });
+    expect(poster).toContain("Free coffee is closer than you think.");
+    expect(poster).toContain("Join today.");
   });
 });
 

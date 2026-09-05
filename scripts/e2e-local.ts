@@ -241,6 +241,19 @@ async function main() {
   expect(shareDone.status === 200, "a signed-in owner can record a completed share action");
   const sharedOverview = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
   expect(Boolean(sharedOverview.onboarding.shareCompletedAt), "the completed share action survives a refresh");
+  const noPromotions = await fetch(base + "/dashboard/api/card/default/promotions");
+  expect(noPromotions.status === 401, "an anonymous caller cannot read a card's promotion settings");
+  const savedPromotions = await fetch(base + "/dashboard/api/card/default/promotions", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie },
+    body: JSON.stringify({
+      social: { message: "Points for every visit", detail: "Join the club.", background: "dark" },
+      poster: { message: "Your next coffee could be free.", detail: "Scan to join today.", background: "card" },
+    }),
+  });
+  expect(savedPromotions.status === 200, "an owner can save card promotion settings");
+  const promotions = JSON.parse((await get("/dashboard/api/card/default/promotions", { headers: { cookie } })).body);
+  expect(promotions.promotions.poster.message === "Your next coffee could be free.",
+    "saved promotion settings survive a refresh");
 
   // Edit café via dashboard
   const pinHashBefore = (await getCard("default"))!.staff_pin_hash;
@@ -758,8 +771,8 @@ async function main() {
   await updateCard("default", { signup_message: "Free kopi on your 10th visit" });
   const poster = await get("/c/default/poster");
   expect(poster.status === 200, "the poster is served");
-  expect(poster.body.includes("Free kopi on your 10th visit"), "the poster headlines the owner's own sign-up line");
-  expect(poster.body.includes("no app to download"), "...and answers the one objection a poster has to answer");
+  expect(poster.body.includes("Your next coffee could be free."), "the poster uses the merchant's saved headline");
+  expect(poster.body.includes("Scan to join today."), "...and uses the saved supporting line");
   expect(poster.body.includes("Powered by PunchMe"), "the poster carries the product footer");
   // One poster, one card. This asserted the opposite while a shop could hold
   // only one card — the shop link then outlived a rename, and whichever card
