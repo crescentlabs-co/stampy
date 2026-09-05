@@ -31,7 +31,8 @@ should stay that way.
 | `--on-accent` | `#0c0e0d` | text **on** neon. Always dark, never white |
 | `--accent-dark` | `#2f3630` | an active label's text. Dark on purpose |
 | `--on-slab` | `#f4f6f2` | text on `--slab` |
-| `--r` / `--r-lg` | `14px` / `22px` | radii |
+| `--r-sm` / `--r` / `--r-lg` | `10px` / `16px` / `24px` | radii — plus `999px` for pills |
+| `--good` / `--info` / `--warn` / `--bad` | see rule 6 | semantic colour, each with a `-bg` pair |
 
 Neutrals carry a slight green bias so they sit under the accent rather than
 fighting it. A pure grey here reads as unconsidered.
@@ -43,10 +44,38 @@ fighting it. A pure grey here reads as unconsidered.
 so the filename must change if the file ever does.
 
 - `--display` — **Inter Tight** (`inter-tight-latin.woff2`, 500–800). Headings,
-  big numbers, prices. **800.** Tight tracking (`-.02em` to `-.03em`); the
+  big numbers, prices. **700.** Tight tracking (`-.02em` to `-.03em`); the
   bigger it is, the tighter it goes.
 - `--body` — **Inter** (`inter-latin.woff2`, 400–700). Everything you read.
-  **400**, occasionally 600–700 for emphasis.
+  **400**, occasionally 600 for emphasis.
+
+**The six sizes and the four weights**, chosen by the founder in Sept 2026 over
+the smaller set that came before them (body was 14px and the floor was 11px).
+A test pins the values, so a drift back is a failing suite rather than a
+discovery:
+
+| Token | Size | Its job |
+|---|---|---|
+| `--t-hero` | 32px | page headings |
+| `--t-xl` | 24px | section headings, a metric's number |
+| `--t-lg` | 20px | card titles, large body |
+| `--t-md` | 16px | body — the default |
+| `--t-sm` | 14px | secondary labels, helper text |
+| `--t-xs` | 12px | fine print, metadata, uppercase tags |
+
+Headings **700**, buttons and important labels **600**, body **400**, small and
+secondary labels **400–500**.
+
+**The fonts are ours, served from `/assets`** — the same Inter, downloaded once
+and cached hard, rather than fetched from Google on every visit. Two files, both
+variable, covering every weight above. Do not swap this for a `<link>` to a font
+CDN: it adds a third-party round trip to the first paint of every page and buys
+nothing.
+
+**A third family is named in exactly two places**, both monospace, both for a
+code or a link somebody has to read one character at a time — where telling `1`
+from `l` and `0` from `O` matters and the two house faces genuinely cannot help.
+Nothing else may name a family.
 
 They are two cuts of one design, so they agree about letter shapes and disagree
 about width. That is the whole point: a heading should not be the sentence under
@@ -144,17 +173,26 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   rather than designed. `--t-xs` is not one of the three: it is the size for
   UPPERCASE tags, and Home has no uppercase on it.
 
-  **`--t-sm` (12px) and `--t-xs` (11px) are one pixel apart on purpose.** No eye
-  separates those on size, and they do not have to: `--t-xs` is only ever set on
-  uppercase text, and caps read a size or two larger than sentence case, so what
-  you see is the change of CASE. A test enforces the uppercase rule, and the
-  guard on step sizes exempts this one pair for that reason and only that
-  reason. Set `--t-xs` on sentence text and both stop being true.
+  That test reads **CSS rules**, so it cannot see a `font-size` written into a
+  `style=""` attribute — which is how a step label on Home came to render at the
+  browser default, off the scale entirely, under a passing suite. If you write
+  an inline style on Home, the token is your job.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
-- **App chrome** is a thin white top bar that tucks away as you scroll, a
-  scrolling sheet under it that runs edge to edge, and a `--bg` bottom nav that
-  FLOATS — a pill inset from the screen edges, not a strip welded to the bottom.
+- **App chrome** is a thin white top bar, a scrolling sheet under it that runs
+  edge to edge, and a `--bg` bottom nav that FLOATS — a pill inset from the
+  screen edges, not a strip welded to the bottom.
+
+  **Both bars thin out as you scroll, and neither one leaves.** One class
+  (`.tucked`) on one scroll listener drives both, so they can never disagree
+  about whether the page is scrolling. The top bar keeps the PunchMe mark and
+  the ⋯ menu at full strength and fades only the greeting; the bottom bar drops
+  its words and keeps its icons, its rows staying 44px so the target never
+  shrinks below a fingertip. The top bar used to disappear altogether, which
+  meant scrolling back up to reach the menu.
+
+  The greeting is **"Hi, <shop name>", left-aligned** beside the mark. A
+  dashboard greets the person running the shop; it does not label itself.
 
   The sheet's rounded top corners went with the neon: they existed to sit
   against a coloured bar, and the neon behind `#app` existed only so those
@@ -197,8 +235,11 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   `--ink`, the context behind it is `--field-border`, and the baseline is a
   solid `--line` hairline (never dashed). **The accent appears on Home and
   nowhere else** — the fenced exception in rule 1 — because rule 1 gives it one
-  job and a neon bar on any other screen is decoration. Bars cap at 24px with a
-  2px gap, square at the baseline and 3–4px rounded at the data end.
+  job and a neon bar on any other screen is decoration. Bars share the row
+  evenly up to a **44px cap with an 8px gap**, square at the baseline and 4px
+  rounded at the data end. (This said 24px and 2px for a long time after the
+  comparison charts were rebuilt as standing bars — the code was right and the
+  line was stale.)
 
   **A bar chart's bars STAND UP.** Five heights against one shared floor is what
   makes them comparable at a glance. A fill running left to right along a row is
@@ -228,6 +269,16 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   Never a number on every point — on Home a tap puts the date and both figures
   in one line above the chart, which is the phone's answer to a hover title. A
   table view underneath carries all of them where one exists.
+
+  **A chart shows real data or says it has none. Never a blend, and never an
+  invention.** Home's two comparison charts and the Manage rewards strip used to
+  pad themselves with example programmes and example campaigns, each marked with
+  a small "Example" chip. The chip was not enough: the rows sat in the same
+  chart, at the same size, as the shop's own, and what an owner does with a chart
+  is glance at it. All of it is deleted. An empty chart now carries one sentence
+  saying what is missing and one button that starts the thing that would fill it.
+  Campaigns have no table behind them at all, so that chart is empty always and
+  honestly, until they do.
 
 ## The marketing page's above-the-fold
 

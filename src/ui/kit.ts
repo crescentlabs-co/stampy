@@ -109,17 +109,21 @@ export const baseCss = /* css */ `
     --accent: #c9f73d; --accent-2: #b8e82c; --on-accent: #0c0e0d;
     --accent-dark: #2f3630; --on-slab: #f4f6f2;
     /* --- the scale ---------------------------------------------------------
-       SIX text sizes, and the jump between them is roughly 1.3–1.45×. That gap
-       is the point: the dashboard had grown 22 sizes, twelve of them inside a
-       3.5px range, and a difference nobody can perceive does not read as a
-       hierarchy — it reads as carelessness. If a new size seems needed, one of
-       these six is wrong for the job; do not add a seventh. */
-    --t-hero: 2rem;      /* 32px — the one big number on a screen */
-    --t-xl: 1.5rem;      /* 24px — a metric's number, a screen title */
-    --t-lg: 1.125rem;    /* 18px — a section heading */
-    --t-md: .875rem;     /* 14px — body, and a row's name or value */
-    --t-sm: .75rem;      /* 12px — the subtext under either of those */
-    --t-xs: .6875rem;    /* 11px — labels, uppercase and tracked. Nothing else */
+       SIX text sizes, each with ONE stated job. The discipline is the count and
+       the jobs, not the gaps: the dashboard had grown 22 sizes, twelve of them
+       inside a 3.5px range, and a difference nobody can perceive does not read
+       as a hierarchy — it reads as carelessness. If a new size seems needed,
+       one of these six is wrong for the job; do not add a seventh.
+
+       These are the conventional 12/14/16/20/24/32 steps, chosen by the founder
+       over the smaller set that preceded them (body was 14px and the bottom of
+       the scale was 11px). Do not quietly shrink them back. */
+    --t-hero: 2rem;      /* 32px — page headings */
+    --t-xl: 1.5rem;      /* 24px — section headings */
+    --t-lg: 1.25rem;     /* 20px — card titles, large body */
+    --t-md: 1rem;        /* 16px — body. The default */
+    --t-sm: .875rem;     /* 14px — secondary labels, helper text */
+    --t-xs: .75rem;      /* 12px — fine print, metadata, uppercase tags */
     /* Line height belongs to the scale. One global 1.5 left headings loose and
        small text cramped, because those two want opposite things. These are
        deliberately airy: the whole complaint about the old type was that it
@@ -139,6 +143,15 @@ export const baseCss = /* css */ `
     --tr-sm: .005em;     /* --t-sm. Small text needs air, not less of it */
     --tr-caps: .06em;    /* --t-xs uppercase labels. Caps always need opening */
     --tr-code: .04em;    /* a short code, read one character at a time */
+    /* Semantic colour — DESIGN.md rule 6. Green for good, blue for "on its way",
+       amber for attention, red for danger. FOUR, and never a fifth. These were
+       written out as raw hex in each place that needed one, which is how a
+       palette grows a colour it cannot explain; the dashboard's health tiles
+       map them onto --hue/--hue-bg and everything else reads them here. */
+    --good: #15803d; --good-bg: #e9f7ee;
+    --info: #1d4ed8; --info-bg: #e9eefb;
+    --warn: #b45309; --warn-bg: #fdf4e3;
+    --bad:  #9a3412; --bad-bg:  #fbedeb;
     /* THREE radii and the pill. Was six — 7, 8, 10, 12, 14 and 22px, side by
        side on things that mean the same thing. */
     --r-sm: 10px;        /* chips, inputs, small controls */
@@ -170,17 +183,23 @@ export const baseCss = /* css */ `
      tint. Higher specificity than a bare .card on purpose: every page's own CSS
      is declared after this one, and one of them kept turning the shell grey. */
   body > .card { background: var(--bg); }
-  h1 { font-family: var(--display); font-weight: 800; font-size: var(--t-xl); line-height: var(--lh-tight);
+  /* Headings are 700, not 800. Inter Tight is a narrow cut already, and at the
+     larger sizes the scale now uses, the heavier weight read as shouting. The
+     marketing page keeps its own 800 — that surface takes its weight from
+     display type and says so in its own stylesheet. */
+  h1 { font-family: var(--display); font-weight: 700; font-size: var(--t-xl); line-height: var(--lh-tight);
        letter-spacing: var(--tr-hero); margin-bottom: 10px; text-wrap: balance; }
-  h2 { font-family: var(--display); font-weight: 800; font-size: var(--t-lg); line-height: var(--lh-tight);
+  h2 { font-family: var(--display); font-weight: 700; font-size: var(--t-lg); line-height: var(--lh-tight);
        letter-spacing: var(--tr-lg); margin: var(--s4) 0 var(--s3); }
   p.sub { color: var(--muted); margin-bottom: 22px; }
+  /* Pills, and 600 — the weight the whole product gives a button or an
+     important label. This was two rules, the second overriding the first's
+     radius and weight; one rule says the same thing without the puzzle. */
   .btn {
     display: block; width: 100%; text-align: center; padding: 15px 20px;
-    border-radius: 14px; border: none; font-size: 1.02rem; font-weight: 600;
+    border-radius: 999px; border: none; font-size: var(--t-md); font-weight: 600;
     cursor: pointer; text-decoration: none;
   }
-  .btn { border-radius: 999px; font-weight: 700; }
   /* The primary. Only one of these on a screen. */
   .btn-neon { background: var(--accent); color: var(--on-accent); }
   .btn-neon:hover { background: var(--accent-2); }
@@ -231,14 +250,15 @@ export const baseCss = /* css */ `
   /* The one place our own name appears inside a merchant's dashboard, and the
      quietest thing on the page on purpose: what they are looking at is their
      shop, and we are the footnote under it. Same treatment on the console. */
-  .pby { text-align: center; color: var(--muted); font-size: .72rem; letter-spacing: .04em;
+  .pby { text-align: center; color: var(--muted); font-size: var(--t-xs); letter-spacing: .04em;
          margin: 38px 0 2px; }
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 999px;
-    font-size: .9rem; opacity: 0; transition: opacity .25s; pointer-events: none;
+    font-size: var(--t-sm); opacity: 0; transition: opacity .25s; pointer-events: none;
     max-width: 90vw; text-align: center; z-index: 50;
   }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
   .toast.show { opacity: 1; }
 `;
 
@@ -654,7 +674,15 @@ export const POPOVER_CSS = /* css */ `
 
 export const POPOVER_JS = /* js */ `
     function popover(host, buttons) {
-      let pop = null, openSide = "";
+      let pop = null, openSide = "", opener = null;
+      /* Every trigger says it opens a menu, and whether that menu is open now.
+         Set once here rather than at each call site, so a new caller cannot
+         forget it. */
+      buttons.forEach((b) => {
+        if (!b) return;
+        b.setAttribute("aria-haspopup", "menu");
+        b.setAttribute("aria-expanded", "false");
+      });
       function away(e) {
         if (!pop) return;
         if (pop.contains(e.target)) return;
@@ -663,11 +691,20 @@ export const POPOVER_JS = /* js */ `
       }
       function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(); } }
       function close() {
+        const back = opener;
         if (pop) { pop.remove(); pop = null; }
         openSide = "";
-        buttons.forEach((b) => b && b.classList.remove("on"));
+        opener = null;
+        buttons.forEach((b) => {
+          if (!b) return;
+          b.classList.remove("on");
+          b.setAttribute("aria-expanded", "false");
+        });
         document.removeEventListener("pointerdown", away, true);
         document.removeEventListener("keydown", onKey, true);
+        /* Focus goes back where it came from, or a keyboard user is dropped at
+           the top of the document every time they press Escape. */
+        if (back && document.contains(back)) back.focus();
       }
       function open(side, html, onPick, mark) {
         const was = openSide;
@@ -675,12 +712,25 @@ export const POPOVER_JS = /* js */ `
         if (was === side) return;
         pop = document.createElement("div");
         pop.className = "pop " + side;
+        /* A menu, and it says so. Without the role the panel is an anonymous
+           box: a screen reader announces nothing when it appears, and the tick
+           on the chosen row is CSS content it may never read out at all. */
+        pop.setAttribute("role", "menu");
         openSide = side;
         pop.innerHTML = html;
         host.appendChild(pop);
-        if (mark) mark.classList.add("on");
+        if (mark) {
+          mark.classList.add("on");
+          mark.setAttribute("aria-expanded", "true");
+          opener = mark;
+        }
         document.addEventListener("pointerdown", away, true);
         document.addEventListener("keydown", onKey, true);
+        /* Move into the panel so the next Tab is inside it rather than past it.
+           The chosen row if there is one, else the first. */
+        const first = pop.querySelector('[role="menuitemradio"][aria-checked="true"]') ||
+                      pop.querySelector("[data-set]:not([disabled])");
+        if (first) first.focus();
         pop.addEventListener("click", (e) => {
           const b = e.target.closest("[data-set]");
           if (!b || b.disabled) return;
@@ -692,9 +742,11 @@ export const POPOVER_JS = /* js */ `
       return { open, close };
     }
 
-    /** One option inside a popover. */
+    /** One option inside a popover. The tick is CSS, so the state is spelled
+        out in aria-checked as well — generated content is not a label. */
     const popOpt = (set, name, on, off) =>
-      '<button type="button" class="popopt' + (on ? " on" : "") + '" data-set="' + set + '"' +
+      '<button type="button" role="menuitemradio" aria-checked="' + (on ? "true" : "false") +
+      '" class="popopt' + (on ? " on" : "") + '" data-set="' + set + '"' +
       (off ? " disabled" : "") + ">" + esc(name) + "</button>";
 
 `;
@@ -702,9 +754,10 @@ export const POPOVER_JS = /* js */ `
 export const SEG_CSS = /* css */ `
     .seg { position: relative; display: flex; background: var(--ghost-bg); border-radius: 999px; padding: 5px; gap: 2px; }
     .seg button { position: relative; z-index: 1; flex: 1; border: none; background: none; font: inherit;
-                  font-weight: 600; font-size: .9rem; color: var(--muted); padding: 10px 12px; cursor: pointer;
+                  font-weight: 600; font-size: var(--t-sm); color: var(--muted); padding: 10px 12px; cursor: pointer;
                   border-radius: 999px; white-space: nowrap; transition: color .2s; }
-    .seg button.on { color: var(--on-accent); font-weight: 700; }
+    @media (prefers-reduced-motion: reduce) { .seg button { transition: none; } }
+    .seg button.on { color: var(--on-accent); font-weight: 600; }
     .seg button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
     .seg .thumb { position: absolute; z-index: 0; top: 5px; bottom: 5px; left: 0; width: 0; background: var(--accent);
                   border-radius: 999px; box-shadow: 0 2px 6px rgba(32,33,29,.14);
@@ -746,9 +799,11 @@ export const DESIGN_PANEL_CSS = /* css */ `
        stretched and sat off-centre here — and it is styled in the dashboard,
        which the admin console mounting this panel does not load at all. */
     .dsurf { gap: 6px; }
+    /* 44px tall so a fingertip can actually land on it. The glyph inside stays
+       16px — it is the TARGET that has to be 44, not the drawing. */
     .dsurfbtn { display: inline-flex; align-items: center; justify-content: center;
-                width: 42px; height: 34px; background: var(--bg); color: var(--muted);
-                border: 1px solid var(--line); border-radius: 10px; padding: 0;
+                width: 48px; height: 44px; background: var(--bg); color: var(--muted);
+                border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0;
                 font: inherit; cursor: pointer; }
     /* INK, not neon. The wizard's Next button is the neon on this screen, and
        DESIGN.md gives the accent exactly one job — two filled things leave the
@@ -758,7 +813,11 @@ export const DESIGN_PANEL_CSS = /* css */ `
        own weight now and they are all the same, so overriding it here would
        re-thicken exactly what the outlines were drawn thin to avoid. */
     .dsurfbtn svg { width: 16px; height: 16px; flex: none; }
-    .dsurfbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 8px; }
+    /* DESIGN.md rule 3: ink on light, NEON on dark. The selected button is
+       --slab, so an ink ring on it is a ring you cannot see — which is the one
+       thing a focus ring may never be. Unselected stays ink on white. */
+    .dsurfbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-sm); }
+    .dsurfbtn.on:focus-visible { outline-color: var(--accent); }
 
     /* The lock screen. Dark whatever the card is, because a lock screen is. */
     .pvn { background: #1c1c1e; border-radius: 18px; padding: 22px 14px 16px; color: #fff;
@@ -784,12 +843,13 @@ export const DESIGN_PANEL_CSS = /* css */ `
        this class and the console renders the panel, so a copy kept in one
        stylesheet left every fold on the console with no border, no tint and no
        caret — a bare <details> with a browser triangle. */
-    .fold { border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; margin-top: 14px;
+    .fold { border: 1px solid var(--line); border-radius: var(--r); padding: 0 14px; margin-top: 14px;
             background: var(--surface); }
     .fold summary { cursor: pointer; padding: 14px 0; font-weight: 600; list-style: none;
                     display: flex; gap: 8px; align-items: center; }
     .fold summary::-webkit-details-marker { display: none; }
     .fold summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
+    @media (prefers-reduced-motion: reduce) { .fold summary::before { transition: none; } }
     .fold[open] summary::before { transform: rotate(90deg); }
     .fold[open] { padding-bottom: 18px; }
     /* Opened, the fold is a tinted region — so the boxes inside it step up to
@@ -820,7 +880,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .dscols .dsrail .pv { margin-top: 0; }
     .dsacts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     .dsacts .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); }
-    .dsacts .lnk { font-size: .74rem; color: var(--muted); width: 100%;
+    /* Monospace, and it is one of exactly two places that name a third family.
+       A link somebody has to read character by character (is that a 1 or an l?)
+       is the one job the two house faces genuinely cannot do. See DESIGN.md. */
+    .dsacts .lnk { font-size: var(--t-xs); color: var(--muted); width: 100%;
                    word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
     /* Below this the console is a phone too, and the owner's own single-column
        layout is the right one. The rail unpins and falls back under. */
@@ -945,7 +1008,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        "which view am I looking at" and cannot be confused with a pill. */
     .dseg { display: flex; gap: 2px; margin: 0 0 14px; padding: 0;
             background: none; border-radius: 0; border-bottom: 1px solid var(--line); }
-    .dseg button { flex: 0 0 auto; font-size: .84rem; padding: 9px 12px; border-radius: 0;
+    .dseg button { flex: 0 0 auto; font-size: var(--t-sm); padding: 9px 12px; border-radius: 0;
                    color: var(--muted); font-weight: 600; background: none;
                    border-bottom: 3px solid transparent; margin-bottom: -1px; }
     /* The highlighter, back. It was a dark hairline, which is the quietest
@@ -1013,31 +1076,37 @@ export const DESIGN_PANEL_CSS = /* css */ `
        together took most of a phone screen. */
     .logobox { position: relative; display: flex; align-items: center;
                gap: var(--s2); padding: var(--s2); border: 1px dashed var(--field-border);
-               border-radius: 12px; background: var(--bg); }
+               border-radius: var(--r-sm); background: var(--bg); }
     .lbplat { position: absolute; top: -9px; left: 10px; display: flex; align-items: center;
               padding: 0 5px; background: var(--bg); color: var(--muted); line-height: 1; }
     .lbplat svg { width: 15px; height: 15px; display: block; }
     /* The picture, with its own remove. An X ON the thumbnail rather than a
        disabled button beside Upload — two controls for a thing that is not
        there yet is one too many. */
-    .lbthumb { position: relative; flex: none; width: 52px; height: 36px; border-radius: 8px;
+    .lbthumb { position: relative; flex: none; width: 52px; height: 36px; border-radius: var(--r-sm);
                background: var(--surface); display: flex; align-items: center;
                justify-content: center; }
     /* An empty box still holds its place, so the button does not jump left the
        first time a picture lands in it. */
     .lbthumb[hidden] { display: flex; visibility: hidden; }
     .lbthumb.wide { width: 100%; height: 54px; }
-    .lbthumb img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+    .lbthumb img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--r-sm); }
     .lbx { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px;
            border-radius: 999px; border: 0; padding: 0; cursor: pointer;
-           background: var(--slab); color: var(--on-slab); font-size: 11px; line-height: 1;
+           background: var(--slab); color: var(--on-slab); font-size: var(--t-xs); line-height: 1;
            display: flex; align-items: center; justify-content: center; }
+    /* The DRAWING stays 20px — a bigger ✕ sitting on the corner of a thumbnail
+       would cover the picture it belongs to. The TARGET is 40px, thrown out
+       invisibly on every side, so a fingertip lands on it. */
+    .lbx::after { content: ""; position: absolute; inset: -10px; border-radius: 999px; }
+    /* On --slab, so the ring goes neon (DESIGN.md rule 3). */
+    .lbx:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     /* Small, and only as wide as its word. .btn is built for the one big thing
        at the bottom of a page — 15px of padding and a 16px face — and there
        were four of them stacked in a section that sets no primary action at
        all. */
     .lbup { margin: 0; width: auto; flex: none; padding: var(--s2) var(--s3);
-            border-radius: 10px; font-size: var(--t-sm); font-weight: 600; }
+            border-radius: var(--r-sm); font-size: var(--t-sm); font-weight: 600; }
     .lbup input[type=file] { display: none; }
     /* Reachable by script, invisible to the eye. display:none would make
        .click() a no-op in Safari. */
@@ -1045,7 +1114,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
                  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
     /* The frame. Checkered so a transparent logo reads as transparent rather
        than as white, which is what it will actually be on the card. */
-    .cropwrap { position: relative; overflow: hidden; border-radius: 10px; margin: 0 auto;
+    .cropwrap { position: relative; overflow: hidden; border-radius: var(--r-sm); margin: 0 auto;
                 background-color: #fff; touch-action: none; cursor: grab;
                 background-image:
                   linear-gradient(45deg, #eee 25%, transparent 25%),
@@ -1057,7 +1126,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .cropwrap canvas { display: block; }
     .bannerbox { display: flex; align-items: center; gap: var(--s2);
                  margin-top: var(--s2); padding: var(--s2); border: 1px dashed var(--field-border);
-                 border-radius: 12px; background: var(--bg); }
+                 border-radius: var(--r-sm); background: var(--bg); }
     .bannerbox .lbthumb.wide { flex: 1; min-width: 0; }
     .bandfade { margin-top: var(--s2); }
     .bandfade .dlbl { margin-top: 0; }
@@ -1071,10 +1140,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .swgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
               gap: 8px; margin-top: 10px; }
     .swbox { display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-             padding: 8px; border: 1px solid var(--line); border-radius: 12px;
+             padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm);
              background: var(--bg); cursor: pointer; font: inherit; text-align: left; }
     .swbox[aria-expanded="true"] { border-color: var(--ink); }
-    .swbox .swchip { width: 100%; height: 30px; border-radius: 8px; border: 1px solid var(--line); }
+    .swbox .swchip { width: 100%; height: 30px; border-radius: var(--r-sm); border: 1px solid var(--line); }
     .swbox .swname { font-size: var(--t-sm); font-weight: 600; color: var(--ink); }
     .swbox .swval { font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums;
                     text-transform: uppercase; }
@@ -1083,7 +1152,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* The one line that is conditional, rather than the whole row: it says
        something is being lost right now, so it only belongs on screen when
        something is. */
-    .mhint { margin: 6px 0 0; font-size: var(--t-sm); color: #9a3412; }
+    .mhint { margin: 6px 0 0; font-size: var(--t-sm); color: var(--bad); }
     .mhint[hidden] { display: none; }
     /* Colours: a read-out first, the rows only on request. Uploading a logo
        sets all five, so the resting state is "here is what your logo produced"
@@ -1098,7 +1167,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
        strip's own colour showing through as the outline AND the dividers. An
        inset shadow cannot do it once the sections are opaque — the sections
        paint over it. */
-    .swstrip { display: flex; height: 34px; margin-top: 5px; border-radius: 999px;
+    /* 44px so each of the five swatches is a real fingertip target — at 34px
+       tall and a fifth of the row wide, they were the smallest thing anyone is
+       asked to hit in the designer. */
+    .swstrip { display: flex; height: 44px; margin-top: 5px; border-radius: 999px;
                overflow: hidden; padding: 1px; gap: 1px; background: var(--field-border); }
     /* Each swatch is a button now: the strip named all five parts already, so
        it was the obvious thing to press long before it did anything. */
@@ -1120,7 +1192,9 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* Inline rejection notice (e.g. a stamp upload with no transparency) —
        stays on screen, unlike a toast, because it asks the owner to go and fix
        the file and come back. */
-    .err { color: #a33; background: #fdeaea; border: 1px solid #f2c9c9; border-radius: 10px;
+    .err { color: var(--bad); background: var(--bad-bg);
+           border: 1px solid color-mix(in srgb, var(--bad) 28%, transparent);
+           border-radius: var(--r-sm);
            padding: var(--s2) var(--s3); font-size: var(--t-sm); margin-top: var(--s2); }
     /* "Your own stamp is being used" — the shape itself, at the size it is read
        at, so the answer is the picture rather than a sentence about it. */
@@ -1133,7 +1207,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        out into the open palette, not proxied — see drawPalette. */
     .colorpark { display: none; }
     .chipcustom input[type=color] { width: 30px; height: 30px; padding: 2px; margin: 0;
-                                    border: 1px solid var(--field-border); border-radius: 8px;
+                                    border: 1px solid var(--field-border); border-radius: var(--r-sm);
                                     background: var(--surface); cursor: pointer; }
     /* The palette that opens under the swatch strip — in the editor column,
        beside the strip that was tapped. NOT under the preview: the console
@@ -1178,13 +1252,13 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .dstep { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
     .dstep:first-of-type { border-top: 0; margin-top: 6px; padding-top: 0; }
     .dstep > h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 2px;
-                 font-family: var(--display); font-weight: 800; font-size: 1rem;
-                 letter-spacing: -.01em; color: var(--ink); }
+                 font-family: var(--display); font-weight: 700; font-size: var(--t-md);
+                 letter-spacing: var(--tr-lg); color: var(--ink); }
     .dstep > h4 .sn { display: inline-flex; align-items: center; justify-content: center;
                      width: 22px; height: 22px; border-radius: 999px; flex: none;
                      background: var(--slab); color: var(--on-slab);
-                     font-size: .74rem; font-weight: 800; letter-spacing: 0; }
-    .dstep > p.hint { margin: 0 0 8px; color: var(--muted); font-size: .84rem; }
+                     font-size: var(--t-xs); font-weight: 700; letter-spacing: 0; }
+    .dstep > p.hint { margin: 0 0 8px; color: var(--muted); font-size: var(--t-sm); }
     /* DESIGN.md rule 9, which this panel was breaking by name: --ghost-bg on
        --surface is one shade apart, and eight ghost buttons live inside this
        fold. Inside it they go back to the page colour with a hairline. */
@@ -1261,8 +1335,9 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .tg input:focus-visible ~ .tgtrack { outline: 2px solid var(--ink); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { .tgtrack, .tgthumb { transition: none; } }
     .copyrow { display: flex; gap: 8px; margin-top: 4px; }
-    .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: .78rem; background: var(--ghost-bg); }
-    .copyrow .btn { width: auto; padding: 10px 14px; font-size: .9rem; }
+    /* The second of the two monospace exceptions — a code to be copied. */
+    .copyrow input { font-family: ui-monospace, Menlo, monospace; font-size: var(--t-sm); background: var(--ghost-bg); }
+    .copyrow .btn { width: auto; padding: 10px 14px; font-size: var(--t-sm); }
     /* --- colour presets --- */
     /* --- colours pulled out of an uploaded image ---
        The five named rows that used to live here are gone: the palette opens on
@@ -1271,7 +1346,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .chipcustom { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); color: var(--muted);
                   margin-left: 4px; }
     .chiprow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
-    .chip { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+    .chip { width: 30px; height: 30px; border-radius: var(--r-sm); border: 2px solid transparent; cursor: pointer;
             padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
     .chip:hover { border-color: var(--accent); }
     .chip.on { border-color: var(--accent); }
@@ -4019,10 +4094,10 @@ export const MODAL_CSS = /* css */ `
   .mdl { position: fixed; inset: 0; z-index: 50; background: rgba(24,20,16,.55);
          display: flex; align-items: center; justify-content: center; padding: 20px;
          animation: mdlin .14s ease-out; }
-  .mdlbox { background: var(--surface); border-radius: 18px; padding: 22px 20px 18px;
+  .mdlbox { background: var(--surface); border-radius: var(--r-lg); padding: 22px 20px 18px;
             width: 100%; max-width: 380px; box-shadow: 0 18px 50px -12px rgba(24,20,16,.5); }
-  .mdlbox h3 { margin: 0 0 8px; font-size: 1.12rem; }
-  .mdlbody { color: var(--muted); font-size: .9rem; line-height: 1.55; }
+  .mdlbox h3 { margin: 0 0 8px; font-size: var(--t-lg); }
+  .mdlbody { color: var(--muted); font-size: var(--t-md); line-height: 1.55; }
   .mdlbody strong { color: var(--ink); }
   /* Two blast radii, side by side rather than in one paragraph. The look and
      the rules reach completely different people, and running them together got
@@ -4030,23 +4105,27 @@ export const MODAL_CSS = /* css */ `
      about the same 5 people — which read as a contradiction and was reported as
      one. A label per row is the whole fix. */
   .mdlblast { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin-top: 12px; }
-  .mdlblast dt { font-size: .62rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  .mdlblast dt { font-size: var(--t-xs); font-weight: 600; letter-spacing: var(--tr-caps); text-transform: uppercase;
                  color: var(--muted); padding-top: 3px; white-space: nowrap; }
   .mdlblast dd { margin: 0; }
   .mdlrow { display: flex; gap: 8px; margin-top: 18px; }
-  .mdlrow .btn { width: auto; flex: 1; margin: 0; padding: 12px 14px; font-size: .92rem; }
+  .mdlrow .btn { width: auto; flex: 1; margin: 0; padding: 12px 14px; font-size: var(--t-sm); }
   @keyframes mdlin { from { opacity: 0 } to { opacity: 1 } }
   @media (prefers-reduced-motion: reduce) { .mdl { animation: none; } }
-  /* The ⓘ that replaced a paragraph of grey subtext under every field. */
-  .ihint { width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%;
+  /* The ⓘ that replaced a paragraph of grey subtext under every field.
+     The circle stays 18px: it sits inline beside a label and a big one would
+     out-shout the label. The TARGET is thrown out to 40px by the ::after
+     below, which costs no layout because it is positioned. */
+  .ihint { position: relative; width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%;
            border: 1px solid var(--field-border); background: var(--surface); color: var(--muted);
-           font-weight: 700; font-size: .68rem; line-height: 1; cursor: pointer; vertical-align: middle; }
+           font-weight: 700; font-size: var(--t-xs); line-height: 1; cursor: pointer; vertical-align: middle; }
+  .ihint::after { content: ""; position: absolute; inset: -11px; border-radius: 50%; }
   .ihint:hover, .ihint.on { border-color: var(--accent); color: var(--accent-dark); }
   /* The hint itself: a bubble over the page, not a line that pushes the form
      down. One per page, moved and refilled — see wireInfo. */
   .itip { position: fixed; z-index: 60; max-width: min(280px, calc(100vw - 20px));
-          background: var(--ink, #201d19); color: #fff; border-radius: 10px;
-          padding: 9px 12px; font-size: .8rem; line-height: 1.45;
+          background: var(--ink, #201d19); color: #fff; border-radius: var(--r-sm);
+          padding: 9px 12px; font-size: var(--t-sm); line-height: 1.45;
           box-shadow: 0 8px 24px -6px rgba(24,20,16,.45);
           opacity: 0; visibility: hidden; transition: opacity .12s;
           pointer-events: none; left: 0; top: 0; }
@@ -4097,7 +4176,7 @@ export function page(
       // padding-top carries the notch: the page paints into it now
       // (viewport-fit=cover), and a strip that stopped below the status bar
       // would leave a white band above the top of the app.
-      : `<div class="envstrip" style="position:sticky;top:0;z-index:9999;background:#101312;color:#c9f73d;text-align:center;padding:7px 10px;padding-top:calc(7px + env(safe-area-inset-top, 0px));font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">${esc(env)} — not the real site</div>`;
+      : `<div class="envstrip" style="position:sticky;top:0;z-index:9999;background:var(--slab);color:var(--accent);text-align:center;padding:7px 10px;padding-top:calc(7px + env(safe-area-inset-top, 0px));font-size:var(--t-xs);font-weight:600;letter-spacing:var(--tr-caps);text-transform:uppercase">${esc(env)} — not the real site</div>`;
   return `<!doctype html>
 <html lang="en">
 <head>

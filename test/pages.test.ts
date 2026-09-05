@@ -1450,7 +1450,9 @@ describe("dashboard information architecture", () => {
 
     it("names the shop at the top, and the account behind the menu", () => {
       expect(bars).toContain('(S.cards[0] || {}).shopName');
-      expect(bars).toContain('<div class="shop">\' + esc(shopName())');
+      // "Hi, <shop>", left of the bar — a dashboard greets the person running
+      // the shop rather than labelling itself.
+      expect(bars).toContain('<div class="shop">Hi, \' + esc(shopName())');
       expect(bars).toContain("data-menu");
       // The email moved into the menu, but it did not disappear: it is still the
       // only thing answering "which account am I in?", which starts mattering
@@ -1580,7 +1582,7 @@ describe("dashboard information architecture", () => {
       const nav = html.slice(html.indexOf(".botnav { position: fixed"),
                              html.indexOf(".botnav a {"));
       expect(nav).toContain("border-radius: 999px");
-      expect(nav).toContain("width: calc(100% - 28px)");
+      expect(nav).toContain("width: calc(100% - 24px)");
       // A floating bar needs a lifted edge: content passes underneath it now,
       // and without one the two read as a single surface.
       expect(nav).toContain("box-shadow:");
@@ -1595,13 +1597,13 @@ describe("dashboard information architecture", () => {
      */
     it("reserves its own height, and lifts the toast above itself", () => {
       // The page does not scroll any more, so the SHEET carries the clearance.
-      expect(html).toContain("padding: 0 var(--s3) calc(96px + env(safe-area-inset-bottom, 0px));");
+      expect(html).toContain("padding: 0 var(--s3) calc(80px + env(safe-area-inset-bottom, 0px));");
       // The toast is fixed to the viewport, so the sheet's padding does nothing
       // for it — it has to be lifted on its own.
-      expect(html).toContain("body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }");
+      expect(html).toContain("body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }");
       // The bar floats clear of the bottom edge, so the gap it floats in has to
       // clear the home bar as well as the bar itself.
-      expect(html).toContain("bottom: calc(12px + env(safe-area-inset-bottom, 0px));");
+      expect(html).toContain("bottom: calc(8px + env(safe-area-inset-bottom, 0px));");
       // The login form and the broken-page screen share #app and have no bars.
       // They keep the ordinary padded card, so the layout is scoped to a class
       // the script adds when the chrome mounts and removes when they take over.
@@ -3013,14 +3015,22 @@ describe("Home", () => {
     expect(cmp).toContain('<div class="vcol" style="--h:');
     expect(cmp).toContain('<div class="vnames">');
     expect(cmp).not.toContain("cmpbar");
-    expect(cmp).not.toContain("data-nav");
-    expect(cmp).not.toContain("<a ");
+    // The BARS are not links — the detail pages came off this screen. The one
+    // anchor in here is the empty state's create button, which is the whole
+    // point of an empty state and is nowhere near a bar.
+    const plot = cmp.slice(cmp.indexOf("const cols = rows.map"));
+    expect(plot).not.toContain("data-nav");
+    expect(plot).not.toContain("<a ");
     // A set of all-zero rows draws nothing rather than dividing by zero, and
     // the tallest stops short of the ceiling so its own value label fits above.
     expect(cmp).toContain("Math.max.apply(null, vals.concat([0])");
     expect(cmp).toContain("max > 0 && isFinite(v) && v > 0 ? (v / max) * 88 : 0");
-    // A filter that matches nothing says so instead of drawing an empty card.
+    // TWO kinds of nothing, told apart. "Nothing matches that filter" in front
+    // of a shop that has never made a programme blames them for a filter they
+    // never set.
     expect(cmp).toContain("Nothing matches that filter.");
+    expect(cmp).toContain("spec.empty.line");
+    expect(cmp).toContain("all.length");
   });
 
   /**
@@ -3053,9 +3063,25 @@ describe("Home", () => {
     expect(html).toContain(".metric span:not(.mlabel):not(.mnote)");
   });
 
-  /** Real programmes first, then the examples, in the chart's own rows. */
-  it("puts the real programmes ahead of the examples", () => {
-    expect(cmp.indexOf("S.cards.map")).toBeLessThan(cmp.indexOf("MOCK_PROGRAMS.map"));
+  /**
+   * Real data or an honest empty state — never a blend.
+   *
+   * Two example programmes used to be concatenated onto the owner's own rows
+   * here, told apart only by a dimmed row and a small chip. An owner scanning
+   * for "which of mine is winning" could read somebody's invention as their
+   * own result, so they are gone from the product entirely.
+   */
+  it("charts real programmes only, and says so plainly when there are none", () => {
+    expect(cmp).not.toContain("MOCK_");
+    expect(html).not.toContain("MOCK_PROGRAMS");
+    expect(html).not.toContain("MOCK_CAMPAIGNS");
+    expect(html).not.toContain("mockCard");
+    // Each chart states its own "nothing yet" line and the way out of it.
+    expect(html).toContain("No programmes yet. Publish one and it shows up here.");
+    expect(html).toContain("No campaign data yet.");
+    // Campaigns have no table behind them at all, so that chart has no source
+    // to read rather than an empty one — see CAMPAIGN_SPEC.
+    expect(html).toContain("rows: () => [],");
     // The old row builders went with the lists they drew; nothing calls them.
     expect(html).not.toContain("function programRows()");
     expect(html).not.toContain("function progRow(");
@@ -3239,15 +3265,24 @@ describe("the surfaces and the edges", () => {
     expect(fn).toContain("sheet.scrollHeight - sheet.clientHeight < 120");
     // Height and opacity only — the bar keeps its box, so the list below does
     // not jump under your thumb as it goes.
+    // It THINS rather than leaving: the logo and the ⋯ stay put and only the
+    // greeting fades, so the two things you might reach for are still there.
+    // It used to vanish outright, which meant scrolling up to find the menu.
     expect(html).toContain("#app.shell.tucked .topbar");
-    expect(html).toContain("@media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }");
+    expect(html).toContain("#app.shell.tucked .topbar .shop { opacity: 0; }");
+    expect(html).not.toContain("#app.shell.tucked .topbar { min-height: 0;");
+    // The bottom bar rides the SAME class: one scroll listener, two bars, and
+    // no second mechanism to get out of step with the first.
+    expect(html).toContain("#app.shell.tucked .botnav a span:not(.plus) { max-height: 0; opacity: 0; }");
+    // Its rows stay 44px even shrunk — what goes is the label, not the target.
+    expect(html).toContain("#app.shell.tucked .botnav a { min-height: 44px; }");
     // A new screen starts at the top, so it starts with the bar showing.
     expect(html).toContain('if (shell) shell.classList.remove("tucked")');
   });
 
   it("puts white cards on a grey ground, not grey boxes on white", () => {
     expect(html).toContain("background: var(--surface); border-radius: 0;");
-    for (const card of [".metric {", ".chart {", ".acts {", ".breakdown {"]) {
+    for (const card of [".metric {", ".chart {", ".acts {", ".cmp {"]) {
       const at = html.indexOf(card);
       expect(at, card + " is missing").toBeGreaterThan(-1);
       expect(html.slice(at, html.indexOf("}", at)), card + " is not white").toContain("var(--bg)");
@@ -3488,34 +3523,37 @@ describe("the dashboard keeps to one scale", () => {
   });
 
   /**
-   * The jump between steps is the point. Twelve sizes inside 3.5px is what this
-   * replaced, so the tokens themselves have to stay far enough apart to read as
-   * levels — roughly 1.25× or more, every step.
+   * The six values, pinned, and every step big enough to see.
+   *
+   * Twelve sizes inside 3.5px is what this replaced, so the tokens have to stay
+   * far enough apart to read as levels rather than as accidents.
+   *
+   * These are the conventional 12/14/16/20/24/32 steps, chosen by the founder
+   * over the smaller set that came before (body was 14px, the floor was 11px).
+   * Pinned by value and not only by ratio, because the SIZES are the decision —
+   * a later drift that kept the ratios but moved every number would satisfy a
+   * ratio-only guard while quietly undoing the choice.
    */
-  it("keeps the steps far enough apart to be seen", () => {
+  it("holds the six sizes, each a visible step from the next", () => {
     const kit = readFileSync(new URL("../src/ui/kit.ts", import.meta.url), "utf8");
-    const steps = ["--t-hero", "--t-xl", "--t-lg", "--t-md", "--t-sm", "--t-xs"].map((t) => {
+    const want: [string, number][] = [
+      ["--t-hero", 2], ["--t-xl", 1.5], ["--t-lg", 1.25],
+      ["--t-md", 1], ["--t-sm", 0.875], ["--t-xs", 0.75],
+    ];
+    const steps = want.map(([t, px]) => {
       const m = kit.match(new RegExp(t + ": ([\\d.]+)rem"));
       expect(m, t + " is missing from the scale").toBeTruthy();
+      expect(Number(m![1]), t + " is off the chosen scale").toBe(px);
       return Number(m![1]);
     });
-    // 1.14, not 1.2: the bottom of a scale is naturally tighter than the top —
-    // body to meta is a small, deliberate step in every design system — while
-    // the display sizes are far apart. The guard exists to stop twelve sizes
-    // inside 3.5px, and at six sizes spanning 11px to 32px it still does.
-    //
-    // ONE step is exempt, the last: --t-sm to --t-xs is 12px to 11px, which no
-    // eye can separate on size alone. It does not have to. --t-xs is only ever
-    // set on UPPERCASE text — the test above this file's HOME list enforces
-    // exactly that — and caps read a size or two larger than sentence case, so
-    // the step people actually see is the CASE, not the pixel. Take the
-    // uppercase rule away and this exemption stops being true.
-    for (let i = 0; i < steps.length - 2; i++) {
+    // EVERY step, the last one included. The old scale needed an exemption for
+    // its bottom pair — 12px against 11px, which no eye separates on size — and
+    // leaned on those two never sharing a case to tell them apart. This scale
+    // has no such pair, so the guard covers the whole thing.
+    for (let i = 0; i < steps.length - 1; i++) {
       expect(steps[i]! / steps[i + 1]!, `${steps[i]}rem over ${steps[i + 1]}rem is too small a step`)
         .toBeGreaterThanOrEqual(1.14);
     }
-    // The exempt pair still may not cross over or collide.
-    expect(steps[4]!, "--t-sm must stay larger than --t-xs").toBeGreaterThan(steps[5]!);
   });
 });
 
@@ -3674,13 +3712,22 @@ describe("the manage screens", () => {
     expect(pane).toContain("panels.forEach");
     // The last tile is the way to make the next programme.
     expect(pane).toContain('data-nav="/create/reward"');
-    // Examples are drawn by the SAME preview as a real card — a flat
-    // placeholder beside two real faces reads as a broken tile, not an example
-    // — and they carry the chip on the tile so you can tell them apart while
-    // swiping, without reading the caption under it.
-    expect(pane).toContain("MOCK_PROGRAMS.map((m) => ({ card: mockCard(m), eg: m }))");
-    expect(pane).toContain('chip.className = "egmark"');
+    // REAL cards only. Two example tiles used to sit in this strip drawn by the
+    // same preview, which is exactly what made them indistinguishable from the
+    // owner's own programmes at a swipe.
+    expect(pane).not.toContain("MOCK_");
+    expect(pane).not.toContain("egmark");
     expect(html).not.toContain("egtile");
+    // ".egchip", not "egchip": .segchip is a real class (the segment filter
+    // chips on Customers) and contains the shorter string.
+    expect(html).not.toContain(".egchip");
+    // Arrows, because swiping is a touchscreen gesture and a scroll-snap strip
+    // offers nothing else — without them a keyboard reaches card one and stops.
+    expect(pane).toContain('aria-label="Previous card"');
+    expect(pane).toContain('aria-label="Next card"');
+    expect(pane).toContain("car.scrollBy({");
+    // A one-tile strip has nowhere to go, and two dead arrows read as broken.
+    expect(pane).toContain("car.children.length < 2");
     // Which tile is showing is MEASURED against the strip's own box. offsetLeft
     // is relative to whichever ancestor happens to be positioned and the
     // carousel is not one, so the old arithmetic compared two different origins
@@ -3691,15 +3738,13 @@ describe("the manage screens", () => {
     expect(pane).not.toMatch(/\.offsetLeft\b/);
   });
 
-  /** Poster, Share, Edit — and nothing on an example, which has none of them. */
-  it("offers three actions under the card, and none on an example", () => {
+  /** Poster, Share, Add, Edit — on a real card, which is the only kind now. */
+  it("offers the card's actions and its setup, never its numbers", () => {
     const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
-    for (const a of ["Poster", "Share", "Edit"]) expect(body).toContain(a);
-    // All three are dead on an example — no poster, no link, no designer — and
-    // disabled rather than absent, so the shape of the screen does not change
-    // as you swipe past one.
-    const eg = body.slice(0, body.indexOf("const c = t.card;"));
-    expect((eg.match(/, true\)/g) || []).length).toBe(3);
+    for (const a of ["Poster", "Share", "Add", "Edit"]) expect(body).toContain(a);
+    // The example branch went with the example tiles: there is one tile shape
+    // now, so there is nothing to keep the same shape as.
+    expect(body).not.toContain("t.eg");
     // Info is SETUP, not numbers.
     expect(body).toContain("dealLine(c)");
     expect(body).toContain("Welcome stamps");
@@ -3725,17 +3770,21 @@ describe("the manage screens", () => {
     expect(sheet).toContain("Sign-up link copied.");
   });
 
-  it("lists campaigns active-first, with an edit and a way to add one", () => {
+  /**
+   * Nothing stores a campaign — there is no campaigns table at all — so this
+   * pane has nothing to list. It used to list four invented ones with Edit
+   * links behind them, which is a screen demonstrating itself.
+   */
+  it("says it has no campaign data yet, and keeps the way to make one", () => {
     const pane = html.slice(html.indexOf("function campaignsPane(host)"),
                             html.indexOf("function manageDetailScreen"));
-    expect(pane).toContain("const order = { active: 0, ended: 1 }");
-    expect(pane).toContain('class="rowedit"');
+    expect(pane).toContain("No campaign data yet.");
     expect(pane).toContain('data-nav="/create/campaign"');
+    expect(pane).not.toContain("MOCK_");
     // No carousel: a campaign has no artwork to swipe through.
     expect(pane).not.toContain("carousel");
-    // Entirely invented, so the section says so once.
-    expect(pane).toContain("MOCK_CAMPAIGNS");
-    expect(pane).toContain("+ EG +");
+    // And no Edit links into a page that cannot describe anything.
+    expect(pane).not.toContain('class="rowedit"');
   });
 
   /**
@@ -4233,14 +4282,10 @@ describe("the screen builders, actually run", () => {
     'function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){' +
       'return {"&":"&amp;","<":"&lt;",">":"&gt;",\'"\':"&quot;"}[c];});}' +
       'const ROOT = "/dashboard";' +
-      cut("const EG =", "/**\n   * Other loyalty programmes") +
-      cut("const MOCK_PROGRAMS", "/** Campaigns. None of this exists yet") +
-      cut("const MOCK_CAMPAIGNS", "// MOCK_ACCOUNT was here") +
       cut("const KIND_LABEL =", "function manageScreen(tab)") +
       cut("function custCard(x)", "/**\n     * What happened at the counter today.") +
       cut("function dealLine(card)", "function endedNote()") +
-      "return { custCard, dealLine, segLabel," +
-      " MOCK_CAMPAIGNS, KIND_LABEL };",
+      "return { custCard, dealLine, segLabel, KIND_LABEL };",
   )();
 
 
@@ -4274,39 +4319,37 @@ describe("the screen builders, actually run", () => {
   });
 });
 
-describe("example data announces itself", () => {
+describe("no invented data anywhere in the dashboard", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
 
-  it("defines the chip once and renders it beside every made-up number", () => {
-    expect(html).toContain(".egchip {");
-    expect(html).toContain(`const EG = '<span class="egchip">Example</span>'`);
+  /**
+   * There WAS a whole module of made-up numbers here — two example programmes,
+   * three example campaigns, and an "Example" chip rendered beside every one of
+   * them so an owner could tell them from their own.
+   *
+   * The chip was not enough. It marked a row that sat in the same list, at the
+   * same size, in the same chart as the shop's real programmes, and the thing
+   * an owner does with a chart is glance at it. Its whole file is deleted; what
+   * replaces it on an empty screen is a sentence saying there is nothing yet
+   * and a button that starts the thing that would fill it.
+   */
+  it("carries no mock module, no chip, and no invented row", () => {
+    expect(html).not.toContain("MOCK_");
+    // Dotted, because .segchip — a real class — contains the bare word.
+    expect(html).not.toContain(".egchip");
+    expect(html).not.toContain(".egrow");
+    expect(html).not.toContain(".egmark");
+    expect(html).not.toContain("mockCard");
+    expect(html).not.toContain(">Example<");
   });
 
-  it("keeps every made-up name in one prefix, so deleting the file finds them all", () => {
-    const names = new Set([...html.matchAll(/\bMOCK_[A-Z_]+/g)].map((m) => m[0]));
-    expect(names.size).toBeGreaterThan(2);
-    // Nothing real may be named MOCK_, and nothing made-up may be named
-    // anything else: the whole deletion story rests on the prefix.
-    for (const n of names) expect(n.startsWith("MOCK_")).toBe(true);
-  });
-
-  it("never counts example data into a real total", () => {
-    // The two headline figures and the chart come from /api/series and from
-    // nothing else: an example programme must never be added into the number
-    // an owner reads as their own.
-    const home = html.slice(html.indexOf("function homeScreen()"),
-                            html.indexOf("const ICON_CARET"));
-    expect(home).not.toContain("MOCK_");
-    // The two charts below them DO carry examples. The marking is one chip on
-    // each section's heading rather than one per bar — so what this has to hold
-    // is that no section reads a MOCK_ value without rendering EG somewhere.
-    const charts = html.slice(html.indexOf("const ICON_CARET"),
-                              html.indexOf("function shopChart(host, s)"));
-    for (const src of ["MOCK_PROGRAMS", "MOCK_CAMPAIGNS"]) {
-      expect(charts, src + " is read by no chart").toContain(src);
-    }
-    expect((home.match(/\+ EG \+/g) || []).length,
-      "each chart that reads example data needs its own chip").toBe(2);
+  it("answers an empty screen with the way to fill it", () => {
+    // Both charts, and the campaigns pane, say what is missing and offer the
+    // one control that changes it.
+    expect(html).toContain("No programmes yet. Publish one and it shows up here.");
+    expect(html).toContain("No campaign data yet.");
+    expect(html).toContain('data-nav="/create/reward"');
+    expect(html).toContain('data-nav="/create/campaign"');
   });
 });
 

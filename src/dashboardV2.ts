@@ -8,7 +8,6 @@
  * test suites keep importing it from "../pages.js" exactly as before.
  * Dependencies point one way: pages.ts → dashboardV2.ts → ui/kit.ts.
  */
-import { DASHBOARD_MOCK_CSS, MOCK_JS } from "./ui/dashboardV2Mock.js";
 import {
   APPLE_GLYPH,
   GOOGLE_GLYPH,
@@ -323,10 +322,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 padding: 0 calc((100% - var(--slide)) / 2) var(--s2); }
     .carousel::-webkit-scrollbar { display: none; }
     .slide { position: relative; flex: 0 0 100%; scroll-snap-align: center; min-width: 0; }
-    /* The Example chip, on the tile rather than only in the Info under it:
-       somebody swiping past four cards should not have to read a caption to
-       tell which two are real. */
-    .egmark { position: absolute; top: var(--s2); right: var(--s2); }
+    /* The arrows sit in the gutter the carousel's own padding already leaves,
+       so they cost no width and never overlap the card. Quiet by default — this
+       strip is swiped far more often than it is clicked, and two loud buttons
+       either side of the card would be the first thing the eye lands on instead
+       of the card. They exist because swiping is the ONLY other way through,
+       and a keyboard cannot swipe. */
+    .carwrap { position: relative; }
+    .carnav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+              width: 32px; height: 44px; display: flex; align-items: center;
+              justify-content: center; padding: 0; cursor: pointer;
+              background: none; border: 0; color: var(--muted); }
+    .carnav svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
+                  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .carnav:hover { color: var(--ink); }
+    .carnav:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-sm); }
+    .carnav.prev { left: -4px; }
+    .carnav.next { right: -4px; }
     .addtile { display: flex; flex-direction: column; align-items: center;
                justify-content: center; gap: var(--s2); min-height: 190px;
                border-radius: var(--r); padding: var(--s4); text-align: center;
@@ -335,9 +347,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .addtile span:first-child { font-size: var(--t-xl); font-weight: 700; line-height: 1; }
     .addtile span + span { font-size: var(--t-sm); }
     .addtile:active { background: var(--surface); }
-    /* Three circles under the card, the shape in the reference. Ink on a tinted
+    /* The circles under the card, the shape in the reference. Ink on a tinted
        disc, never neon: the neon marks the ONE next thing to press, and these
-       are three equals. */
+       are equals — a published card shows four (Poster, Share, Add, Edit), a
+       draft shows the one way back into the flow. This said "three" long after
+       Add made it four. */
     .cardacts { display: flex; justify-content: center; gap: var(--s5); margin: var(--s4) 0 var(--s3); }
     .actbtn { display: flex; flex-direction: column; align-items: center; gap: var(--s2);
               background: none; border: 0; padding: 0; font: inherit; font-size: var(--t-sm);
@@ -386,32 +400,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     ${DESIGN_PANEL_CSS}
     .account { margin-top: var(--s5); }
     .card { max-width: 480px; }
-    /* --- card dropdown selector --- */
-    .cardselect { display: flex; gap: var(--s2); align-items: center; margin: var(--s2) 0 var(--s2); }
-    .cardselect select { flex: 1; padding: var(--s2) var(--s3); border: 1px solid var(--field-border); border-radius: var(--r-sm);
-                         font: inherit; font-weight: 600; background: var(--surface); color: var(--ink); }
-    .cardselect .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); white-space: nowrap; }
     ${SEG_CSS}
     ${POPOVER_CSS}
     /* --- the app chrome ------------------------------------------------------
-       A shaped neon block at the top that says whose shop this is, and a
-       floating pill at the bottom that is the whole of the navigation.
+       A thin white bar at the top carrying the PunchMe mark, a greeting and the
+       ⋯ menu, and a floating pill at the bottom that is the whole of the
+       navigation.
 
-       THE TOP BAR IS NEON, and it is DESIGN.md rule 1's one fenced exception
-       inside the app — decided by the founder, the same call that was made for
-       the .greet header this bar replaced. It earns it on the same grounds:
-       it is the shop's identity, it is the only thing on the dashboard that
-       never changes as you move around, and it carries no control except the
-       menu — so it cannot compete with whatever the owner came here to do.
+       THE TOP BAR IS NOT NEON. It was, and this comment said so for a long
+       time after it stopped being true. It is white now, and that is the point:
+       DESIGN.md rule 1 gives the accent exactly one job — the next thing to
+       press — and a permanent neon band across the top spends it on something
+       nobody presses. The bar lost nothing by going white; it still carries the
+       shop's identity and the menu, and neither needed a colour to be found.
 
-       Its text is --on-accent (near-black) and NEVER white: #c9f73d is a pale
-       green, so white on it lands near 1.3:1 and is unreadable. That is the
-       whole reason --on-accent exists and is always dark.
-
-       THE BOX IS THE CONTENT, NOT THE BAR. The bar is a flat neon block and
-       the sheet under it is what has the rounded corners — rounded at the TOP,
-       tucked under the bar. That is the right way round for one reason: the
-       sheet is also the only thing on the screen that scrolls.
+       BOTH BARS THIN OUT AS YOU SCROLL, on one shared class (.tucked) driven by
+       one scroll listener. The top bar keeps the mark and the ⋯ and fades only
+       the greeting; the bottom bar drops its words and keeps its icons. Neither
+       leaves the screen: a bar that disappears is a bar you have to scroll back
+       up to find.
 
        Sticky was not enough. A sticky bar still has the page sliding behind it,
        and with a rounded bottom you could watch content pass through the corner
@@ -453,15 +460,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                  from. */
               min-height: 44px; padding: var(--s1) var(--s4);
               padding-top: calc(var(--s1) + env(safe-area-inset-top, 0px));
-              /* Shrinks away as you scroll and comes back when you scroll up,
-                 so the content gets the whole screen. Height and opacity only —
-                 the bar keeps its box, so nothing below it reflows as it goes
-                 and the list does not jump under your thumb. */
+              /* Thins out as you scroll and fills back in on the way up. It does
+                 NOT leave: the logo and the ⋯ menu stay put and only the
+                 greeting fades, so the two things you might reach for are always
+                 where you left them. It used to disappear outright, which meant
+                 scrolling up to find the menu. */
               overflow: hidden;
-              transition: min-height .18s ease, padding .18s ease, opacity .18s ease; }
-    #app.shell.tucked .topbar { min-height: 0; padding-top: env(safe-area-inset-top, 0px);
-                                padding-bottom: 0; opacity: 0; pointer-events: none; }
-    @media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
+              transition: min-height .18s ease, padding .18s ease; }
+    #app.shell.tucked .topbar { min-height: 34px; padding-top: calc(2px + env(safe-area-inset-top, 0px));
+                                padding-bottom: 2px; }
+    .topbar .shop { transition: opacity .18s ease; }
+    #app.shell.tucked .topbar .shop { opacity: 0; }
+    @media (prefers-reduced-motion: reduce) {
+      .topbar, .topbar .shop { transition: none; }
+    }
     /* ...unless the staging strip is above it and has already paid for the
        notch. Two elements both adding the inset would leave a gap the height
        of the status bar. Live renders no strip, so this never matches there. */
@@ -473,19 +485,24 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        what the eye reads as the content. It was the other way round — white
        page, grey boxes — which made every card read as a hole rather than as a
        thing sitting on the page. */
+    /* The bottom padding clears the floating nav and the gap it floats in. Both
+       numbers here and on the toast below follow the nav's real height — it is
+       54px tall sitting 8px up, so 80px leaves a thumb's width of air under the
+       last row. Shrink the nav again and these two have to come with it. */
     .sheet { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
              background: var(--surface); border-radius: 0;
-             padding: 0 var(--s3) calc(96px + env(safe-area-inset-bottom, 0px)); }
+             padding: 0 var(--s3) calc(80px + env(safe-area-inset-bottom, 0px)); }
     /* The Powered by line is a sibling of #app in the shared shell, which with
        nothing scrolling would strand it under the floating nav. The script
        moves it inside the sheet instead — see app(). */
     .sheet .pby { margin-top: var(--s5); }
     .topbar img { width: 26px; height: 26px; border-radius: var(--r-sm); flex: none; }
-    /* The shop name, centred. min-width:0 is what lets the ellipsis actually
-       happen inside a flex row — without it a long name pushes the menu button
-       off the end instead of truncating. */
-    .topbar .shop { flex: 1; min-width: 0; text-align: center; font-family: var(--display);
-                    font-weight: 800; font-size: var(--t-md); letter-spacing: var(--tr-lg);
+    /* The greeting, LEFT of the bar and next to the logo — a dashboard says
+       hello to the person running the shop, it does not label itself. min-width:0
+       is what lets the ellipsis actually happen inside a flex row — without it a
+       long name pushes the menu button off the end instead of truncating. */
+    .topbar .shop { flex: 1; min-width: 0; text-align: left; font-family: var(--display);
+                    font-weight: 700; font-size: var(--t-md); letter-spacing: var(--tr-lg);
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .topbar .dots { flex: none; width: 36px; height: 36px; border: 0; border-radius: 999px;
                     background: transparent; color: var(--ink); font-size: var(--t-lg);
@@ -569,12 +586,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        of these applies, and the admin console, which docks nothing, is the
        one that never sets it. */
     .shelled { --dockh: 88px; }
-    /* "1 visit = [2] stamps" on one line. The box is in the middle of the
-       sentence because that is where the thing being set actually is. */
-    .eqrow { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
-             margin-top: var(--s1); }
-    .eqrow select { width: auto; min-width: 72px; margin: 0; }
-    .eqrow span { font-size: var(--t-sm); font-weight: 600; }
     /* "RM 1 = 1 Points" on one line, both halves exactly the same width.
        The two numbers are ONE setting, so a form that made either half wider
        would be saying one of them mattered more than the other. The unit sits
@@ -670,20 +681,34 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pill-bad  { background: #f8e7e5; color: #a33028; }
 
     .botnav { position: fixed; left: 50%; transform: translateX(-50%);
-              bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-              width: calc(100% - 28px); max-width: 420px; z-index: 40;
+              bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+              width: calc(100% - 24px); max-width: 420px; z-index: 40;
               display: flex; align-items: center; justify-content: space-between;
-              gap: var(--s1); padding: var(--s2);
+              gap: var(--s1); padding: var(--s1);
               background: var(--bg); border: 1px solid var(--line); border-radius: 999px;
-              box-shadow: 0 10px 30px -10px rgba(12,14,13,.28), 0 2px 8px rgba(12,14,13,.06); }
+              box-shadow: 0 10px 30px -10px rgba(12,14,13,.28), 0 2px 8px rgba(12,14,13,.06);
+              transition: padding .18s ease; }
     .botnav a { flex: 1; min-width: 0; display: flex; flex-direction: column;
-                align-items: center; justify-content: center; gap: var(--s1);
-                min-height: 52px; border-radius: 999px; text-decoration: none;
+                align-items: center; justify-content: center; gap: 2px;
+                min-height: 46px; border-radius: 999px; text-decoration: none;
                 /* The one --t-xs that is not uppercase. Five labels share one
                    pill on a 360px phone and "Customers" at --t-sm does not fit;
                    every phone sets its nav in sentence case anyway. */
                 color: var(--muted); font-size: var(--t-xs); font-weight: 600;
-                letter-spacing: var(--tr-code); padding: var(--s2) 0; }
+                letter-spacing: var(--tr-code); padding: var(--s1) 0;
+                transition: min-height .18s ease; }
+    /* Scrolling drops the words and keeps the icons: the same class the top bar
+       thins on, so the two bars move together and there is one mechanism, not
+       two. The row stays 44px so the target never shrinks below a fingertip —
+       what goes is the label, not the button. The name is still announced,
+       because the <a> keeps its aria-label. */
+    .botnav a span:not(.plus) { max-height: 1.4em; overflow: hidden;
+                                transition: max-height .18s ease, opacity .18s ease; }
+    #app.shell.tucked .botnav a span:not(.plus) { max-height: 0; opacity: 0; }
+    #app.shell.tucked .botnav a { min-height: 44px; }
+    @media (prefers-reduced-motion: reduce) {
+      .botnav, .botnav a, .botnav a span:not(.plus) { transition: none; }
+    }
     .botnav a svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
                     stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
     /* Active is marked by WEIGHT and ink, never by a fill. Three nav controls
@@ -710,7 +735,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        nothing for it. baseCss pins it 24px from the bottom, which is inside the
        floating bar exactly. Lifted here rather than in baseCss: the stamper and
        the console read that too, and neither of them has a bottom bar. */
-    body.shelled .toast { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+    body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
 
     /* Rule 9 inverts with everything else. baseCss steps a ghost button inside
        a tinted box back to --bg, which was the step DOWN when boxes were grey.
@@ -865,11 +890,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .draftdel { flex: 1 0 100%; background: none; border: 0; padding: var(--s1) 0 0;
                 color: var(--muted); font: inherit; font-size: var(--t-sm); font-weight: 600;
                 cursor: pointer; text-decoration: underline; }
-    /* Says the quiet part out loud: nothing on this screen is saved. Amber like
-       the setup banner — nothing is broken, something is outstanding. */
-    .draftnote { background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
-                 border-radius: var(--r); padding: var(--s3); margin: var(--s3) 0;
-                 font-size: var(--t-sm); line-height: var(--lh-read); }
     /* Three steps, so it is obvious there are three and which one you are on. */
     .steps { display: flex; gap: var(--s2); list-style: none; padding: 0; margin: var(--s3) 0 var(--s1);
              counter-reset: s; }
@@ -891,8 +911,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .logothumb { height: 30px; max-width: 130px; object-fit: contain; background: #fff;
                  border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s1) var(--s2);
                  vertical-align: middle; }
-    .segwrap { margin: var(--s2) 0 var(--s1); }
-    .segwrap .lbl { font-size: var(--t-sm); color: var(--muted); margin-bottom: var(--s2); }
     /* --- share tab --- */
     .sharelist { display: flex; flex-direction: column; gap: var(--s2); margin: var(--s2) 0 var(--s3); }
     .sharelist a { display: flex; justify-content: space-between; align-items: center; gap: var(--s2);
@@ -940,40 +958,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .h-returning { --hue: #1d4ed8; --hue-bg: #e9eefb; }
     .h-new       { --hue: #b45309; --hue-bg: #fdf4e3; }
     .h-lost      { --hue: #9a3412; --hue-bg: #fbedeb; }
-    .breakdown { width: 100%; border-collapse: collapse; font-size: var(--t-sm);
-                 margin-top: var(--s2); background: var(--bg); border-radius: var(--r);
-                 overflow: hidden; }
-    .breakdown th { text-align: left; color: var(--muted); font-size: var(--t-xs);
-                    text-transform: uppercase; letter-spacing: var(--tr-caps); padding: var(--s3); }
-    .breakdown td { padding: var(--s3); }
-    .breakdown tr + tr td { box-shadow: inset 0 1px 0 var(--line); }
-    .breakdown td.n { text-align: right; font-variant-numeric: tabular-nums; }
-    .viewall { margin-top: var(--s3); }
-    /* --- card picker (Cards + Share) --- */
-    .cardpick { display: flex; gap: var(--s2); flex-wrap: wrap; margin: var(--s2) 0 var(--s4); }
-    .cardpick button { width: auto; padding: var(--s2) var(--s3); border-radius: 999px; border: 1px solid var(--field-border);
-                       background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
-    .cardpick button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
-    /* --- customer rows (Customers view) — the dashboard's own card style --- */
-    .pass { border-radius: var(--r); padding: var(--s3); margin-top: var(--s3);
-            background: var(--bg); box-shadow: var(--shadow); }
-    .pass strong { font-size: var(--t-md); }
-    .pass .row { display: flex; gap: var(--s2); margin-top: var(--s3); }
-    .pass .row .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); }
     .ready { color: #1a7f37; font-weight: 700; }
     /* --- customers view: one collapsible section per recency group --- */
-    .custctl { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s1); }
-    .custctl > div { flex: 1; min-width: 130px; }
     .grp { border-radius: var(--r); padding: 0 var(--s3) var(--s3); margin-bottom: var(--s2); background: var(--bg); }
     .grp summary { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; cursor: pointer;
                    padding: var(--s3) 0; font-weight: 700; list-style: none; }
     .grp summary::-webkit-details-marker { display: none; }
     .grp summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
     .grp[open] summary::before { transform: rotate(90deg); }
-    .grp .gc { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: 999px;
-               padding: var(--s1) var(--s2); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
     .grp .gh { color: var(--muted); font-weight: 400; font-size: var(--t-sm); }
-    .grp .gnudge { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); margin-bottom: var(--s1); }
+    /* The launch checklist's folds: the same .grp fold, separated by a rule
+       instead of sitting in its own box, because they are one list. */
+    .grp.rdy { border-radius: 0; padding: 0; margin: 0; background: none;
+               border-top: 1px solid var(--line); }
+    .grp.rdy summary { padding: var(--s3) 0; }
+    .rdybody { padding: 0 0 var(--s3) var(--s4); }
     /* Rows sit inside a group box already, so they're separated by a rule rather
        than being a second card-in-a-card. */
     .crow { padding: var(--s3) 0; box-shadow: inset 0 1px 0 var(--line); }
@@ -999,11 +998,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pinwarn p { margin: 0; flex: 1; min-width: 200px; }
     .pinwarn .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); flex: none;
                     background: #fff; border-color: #d9a441; color: #7c2d12; }
-    /* --- Customers: one standalone row per lapse cohort (not a collapsible) --- */
-    .bucket { border-radius: var(--r); padding: var(--s3);
-              margin-bottom: var(--s2); background: var(--bg); }
-    .bucket .cprog { text-align: right; padding-right: 6px; }
-    .bucket .cn:disabled { opacity: .4; }
     /* --- a value shown exactly once (a new PIN) --- */
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: var(--s2) var(--s3);
             border-radius: var(--r-sm); margin-top: var(--s2); font-size: var(--t-sm); line-height: var(--lh-read); }
@@ -1054,7 +1048,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .eye { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--muted); margin: var(--s2) 0 0; }
     .eye input { width: auto; }
     ${MODAL_CSS}
-    ${DASHBOARD_MOCK_CSS}
   `;
   const js = /* js */ `
     ${PALETTE_JS}
@@ -1179,7 +1172,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     // old single panel mixed a colour picker with the staff PIN behind one button.
     ${DESIGN_PANEL_JS}
     ${HEALTH_JS}
-    ${MOCK_JS}
 
     /**
      * Customer health: the shape of the base, not its size.
@@ -1669,20 +1661,37 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         toast("Saved ✓");
       };
 
-      div.querySelector("[data-setpin]").onclick = () => {
+      div.querySelector("[data-setpin]").onclick = async (e) => {
+        const btn = e.currentTarget;
         const el = div.querySelector("[data-pin]");
         const pin = el.value.trim();
         if (pin.length < 4) return toast("Use at least 4 digits");
         el.value = "";
-        setPin(pin);
+        // Held disabled until the answer comes back: this one signs every staff
+        // phone out, so sending it twice because the first tap looked inert is
+        // not a harmless double-submit.
+        btn.disabled = true;
+        try { await setPin(pin); } finally { btn.disabled = false; }
       };
 
-      div.querySelector("[data-pwsave]").onclick = async () => {
-        const { body } = await api("/change-password", { method: "POST", body: JSON.stringify({
-          current: div.querySelector("[data-cur]").value, next: div.querySelector("[data-new]").value,
-        })});
-        if (body.ok) { toast("Password updated ✓"); div.querySelector("[data-cur]").value = ""; div.querySelector("[data-new]").value = ""; }
-        else toast(body.error || "Couldn’t update");
+      div.querySelector("[data-pwsave]").onclick = async (e) => {
+        const btn = e.currentTarget;
+        const next = div.querySelector("[data-new]").value;
+        // Checked here as well as on the server. The field says "min 8", so
+        // being told so only after a round trip is the app repeating back
+        // something it could see before it asked.
+        if (next.length < 8) return toast("Use at least 8 characters");
+        // Disabled while it is in flight, like the Create wizard's Next button.
+        // Without it a slow connection looks like nothing happened, and the
+        // obvious response to that is to press it again.
+        btn.disabled = true;
+        try {
+          const { body } = await api("/change-password", { method: "POST", body: JSON.stringify({
+            current: div.querySelector("[data-cur]").value, next,
+          })});
+          if (body.ok) { toast("Password updated ✓"); div.querySelector("[data-cur]").value = ""; div.querySelector("[data-new]").value = ""; }
+          else toast(body.error || "Couldn’t update");
+        } finally { btn.disabled = false; }
       };
       return div;
     }
@@ -1871,7 +1880,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function topBarHtml() {
       return '<header class="topbar">' +
         '<img src="/assets/img/punchme-favicon-v1.png" alt="PunchMe">' +
-        '<div class="shop">' + esc(shopName()) + "</div>" +
+        '<div class="shop">Hi, ' + esc(shopName()) + "</div>" +
         '<button class="dots" data-menu aria-label="Account menu" aria-haspopup="true">⋯</button>' +
         "</header>";
     }
@@ -1892,7 +1901,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function botNavHtml() {
       return '<nav class="botnav" aria-label="Main">' + NAV.map((n) => {
         const icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + n.d + '"></path></svg>';
+        // aria-label on every one of them, not just the (+): the labels collapse
+        // to nothing as you scroll, and the (+)'s label is display:none always,
+        // so the visible word cannot be what names these to a screen reader.
         return '<a href="' + ROOT + (n.p === "/" ? "" : n.p) + '" data-nav="' + n.p + '"' +
+          ' aria-label="' + n.label + '"' +
           (n.add ? ' class="navadd"' : "") + ">" +
           (n.add ? '<span class="plus">' + icon + "</span>" : icon) +
           "<span>" + n.label + "</span></a>";
@@ -2129,9 +2142,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         launchProgress() +
         '<div class="metrics" data-totals></div>' +
         '<div data-chart></div>' +
-        '<h2 class="sec">Loyalty cards' + EG + "</h2>" +
+        // No EG chip on either heading any more: both charts read real data or
+        // say they have none. The chip existed to disown invented numbers, and
+        // there are none left to disown.
+        '<h2 class="sec">Loyalty cards</h2>' +
         '<div data-programs></div>' +
-        '<h2 class="sec">Campaigns' + EG + "</h2>" +
+        '<h2 class="sec">Campaigns</h2>' +
         '<div data-campaigns></div>';
 
       const totals = d.querySelector("[data-totals]");
@@ -2229,14 +2245,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         { label: "Start stamping", done: stamping, path: card ? "/ready/" + card.id + "?section=how" : "/shop/staff" },
       ];
       return '<section aria-label="Card launch progress" style="margin:0 0 var(--s4)">' +
-        '<p style="font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:8px">Get ready to launch</p>' +
+        '<p style="font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px">Get ready to launch</p>' +
         '<div style="border:1px solid var(--line);border-radius:var(--r);overflow:hidden">' +
         steps.map((step, index) => '<button type="button" data-launch="' + esc(step.path) + '" style="appearance:none;border:0;border-bottom:' +
           (index === steps.length - 1 ? "0" : "1px solid var(--line)") + ';background:' +
           (step.done ? "var(--surface)" : "#fff") + ';width:100%;padding:14px 16px;display:flex;align-items:center;gap:10px;text-align:left;font:inherit;cursor:pointer">' +
           '<span aria-hidden="true" style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:' +
-          (step.done ? "var(--ink)" : "var(--ghost-bg)") + ';color:' + (step.done ? "#fff" : "var(--muted)") + ';font-weight:800">' +
-          (step.done ? "✓" : String(index + 1)) + '</span><span style="flex:1;font-weight:700">' + esc(step.label) +
+          (step.done ? "var(--ink)" : "var(--ghost-bg)") + ';color:' + (step.done ? "#fff" : "var(--muted)") + ';font-size:var(--t-sm);font-weight:700">' +
+          // font-size, because without one this inherits the browser default
+          // rather than the scale — a size the "Home is exactly three sizes"
+          // test cannot see, because it reads CSS rules and this is an inline
+          // style attribute.
+          (step.done ? "✓" : String(index + 1)) + '</span><span style="flex:1;font-size:var(--t-md);font-weight:600">' + esc(step.label) +
           '</span><span style="font-size:var(--t-sm);color:var(--muted)">' + (step.done ? "Done" : "To do") + '</span></button>').join("") +
         '</div></section>';
     }
@@ -2248,6 +2268,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     /** The icons, in the style of the nav's single paths. */
     const ICON_CARET = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+    const ICON_CHEV_L = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+    const ICON_CHEV_R = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
     const ICON_COLUMNS =
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<path d="M5 20V10M12 20V4M19 20v-7"/></svg>';
@@ -2283,7 +2305,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
       // Filter, then order, THEN cut to five — cutting first would let a filter
       // hide a row that should have made the cut.
-      let rows = spec.rows();
+      const all = spec.rows();
+      let rows = all;
       if (state.picked.length) {
         rows = rows.filter((r) => state.picked.indexOf(r.id) >= 0);
       } else {
@@ -2312,10 +2335,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           "</button>" +
         "</div>";
 
+      // Two different kinds of nothing, and saying the wrong one is worse than
+      // saying nothing at all. "Nothing matches that filter" in front of a shop
+      // that has never made a programme blames them for a filter they never set.
       if (!rows.length) {
-        host.innerHTML = '<div class="cmp">' + head +
-          '<p class="cmpempty">Nothing matches that filter.</p></div>';
+        const body = all.length
+          ? '<p class="cmpempty">Nothing matches that filter.</p>'
+          : '<div class="cmpnone"><p>' + esc(spec.empty.line) + "</p>" +
+            '<a class="btn btn-ghost" href="' + ROOT + spec.empty.to +
+              '" data-nav="' + spec.empty.to + '">' + esc(spec.empty.cta) + "</a></div>";
+        host.innerHTML = '<div class="cmp">' + head + body + "</div>";
         wireComparison(host, spec, state);
+        wireLinks(host);
         return;
       }
 
@@ -2509,16 +2540,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         ended: Boolean(c.endedAt), daysAgo: daysSince(c.createdAt),
         customers: c.metrics.active, visits: c.metrics.stamps,
         avgGapDays: c.metrics.avgGapDays || 0,
-      })).concat(MOCK_PROGRAMS.map((m) => ({
-        id: m.id, name: m.name, kind: m.kind,
-        ended: m.status === "ended", daysAgo: m.createdDaysAgo,
-        customers: m.customers, visits: m.visits, avgGapDays: m.avgGapDays,
-      }))),
+      })),
+      empty: { line: "No programmes yet. Publish one and it shows up here.",
+               cta: "Create a reward", to: "/create/reward" },
     };
 
     /**
-     * Campaigns, compared the same way. Entirely example data — there is no
-     * campaign table — which is why the heading carries the chip.
+     * Campaigns, compared the same way — once there are any.
+     *
+     * **There is no campaigns table.** Nothing in this product stores a campaign
+     * yet, so this chart has no source to read and always shows its empty state.
+     * It stays on screen rather than being deleted because the section is real
+     * work that is coming; what it must never do is fill itself with invented
+     * numbers, which is exactly what it used to do. An owner cannot tell a
+     * convincing example from their own result, and a dashboard that shows one
+     * is worth less than a blank space.
      *
      * Return rate is the only number that says whether a campaign worked:
      * "11 came back" means nothing until you know it went to 42 people.
@@ -2533,11 +2569,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         { k: "reached", name: "Customers reached",
           of: (r) => r.targeted, fmt: (v) => v.toLocaleString() },
       ],
-      rows: () => MOCK_CAMPAIGNS.map((c) => ({
-        id: c.id, name: c.name, kind: c.kind,
-        ended: c.status === "ended", daysAgo: c.createdDaysAgo,
-        targeted: c.targeted, returned: c.returned,
-      })),
+      rows: () => [],
+      empty: { line: "No campaign data yet.",
+               cta: "Create a campaign", to: "/create/campaign" },
     };
 
     /**
@@ -3002,7 +3036,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const { body } = await api("/nudge", {
         method: "POST", body: JSON.stringify(Object.assign({ message }, payload)),
       });
-      if (!body.ok) { toast(body.error || "Failed"); return false; }
+      if (!body.ok) { toast(body.error || "That didn’t send. Try again."); return false; }
       const s = body.skipped || {};
       const held = (s.rateLimited || 0) + (s.removed || 0);
       toast("Sent to " + body.sent + " of " + body.total +
@@ -3736,8 +3770,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         onStep: (i) => navigate(i === 0 ? "/create/card" : "/create/" + id + "/rules"),
         onNext: async () => {
           await keepDesign();
-          const { status } = await api("/card/" + id + "/publish", { method: "POST" });
-          if (status !== 200) { toast("Could not publish just yet"); return; }
+          // The server says WHY it refused; this used to throw that away and
+          // show one sentence for every cause, so an owner with a fixable
+          // problem was told only that it had not worked.
+          const { status, body: out } = await api("/card/" + id + "/publish", { method: "POST" });
+          if (status !== 200) {
+            toast((out && out.error) || "Could not publish just yet");
+            return;
+          }
           await refreshCards();
           navigate("/ready/" + id);
         },
@@ -4055,13 +4095,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function rewardsPane(host) {
       // Newest first, the same order the Home charts use, so the two agree
       // about which programme is "the current one".
-      const real = S.cards.slice().sort((a, b) => daysSince(a.createdAt) - daysSince(b.createdAt));
-      // Examples are drawn by the SAME preview as a real card. A flat
-      // placeholder beside two real faces reads as a broken tile rather than as
-      // an example, and the point of having them here is to see what running
-      // more than one looks like.
-      const tiles = real.map((c) => ({ card: c }))
-        .concat(MOCK_PROGRAMS.map((m) => ({ card: mockCard(m), eg: m })));
+      //
+      // REAL CARDS ONLY. Two example tiles used to sit in this strip, drawn by
+      // the same preview as a real card so they would not read as broken — and
+      // that was exactly the problem: an owner swiping their own cards could not
+      // tell someone else's invention from their own programme at a glance. A
+      // shop with no cards yet gets the Create tile and a line of copy, which is
+      // an honest empty strip rather than a full-looking fake one.
+      const tiles = S.cards.slice()
+        .sort((a, b) => daysSince(a.createdAt) - daysSince(b.createdAt))
+        .map((c) => ({ card: c }));
 
       host.innerHTML =
         '<div class="cardhead">' +
@@ -4075,7 +4118,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
               ' aria-selected="false" aria-label="Android">${GOOGLE_GLYPH}</button>' +
           "</div>" +
         "</div>" +
-        '<div class="carousel" data-car></div>' +
+        // The arrows are the keyboard's way through the strip. Swiping is a
+        // touchscreen gesture and a scroll-snap strip offers nothing else, so
+        // without these a keyboard could reach card one and stop there.
+        '<div class="carwrap">' +
+          '<button type="button" class="carnav prev" data-car-prev aria-label="Previous card">' +
+            ICON_CHEV_L + "</button>" +
+          '<div class="carousel" data-car></div>' +
+          '<button type="button" class="carnav next" data-car-next aria-label="Next card">' +
+            ICON_CHEV_R + "</button>" +
+        "</div>" +
         '<div data-cardbody></div>';
 
       const car = host.querySelector("[data-car]");
@@ -4091,26 +4143,35 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         slide.className = "slide";
         const panel = designerFor(t.card, { previewOnly: true, customersPath: null, titled: false });
         slide.appendChild(panel);
-        // Marked on the tile, not only in the Info below it: somebody swiping
-        // past four cards should not have to read a caption to tell which two
-        // are real.
-        if (t.eg) {
-          const chip = document.createElement("div");
-          chip.className = "egmark";
-          chip.innerHTML = EG;
-          slide.appendChild(chip);
-        }
         panels.push(panel);
         car.appendChild(slide);
       });
 
       // The last tile, and the only one that is a link: there is nothing to
-      // preview yet, so the whole tile is the action.
+      // preview yet, so the whole tile is the action. On a shop with no cards
+      // at all it is the ONLY tile, and it says what will appear beside it.
       const add = document.createElement("div");
       add.className = "slide";
       add.innerHTML = '<a class="addtile" href="' + ROOT + '/create/reward" data-nav="/create/reward">' +
-        "<span>+</span><span>Create reward</span></a>";
+        "<span>+</span><span>" + (tiles.length ? "Create reward" : "Create your first reward") +
+        "</span></a>";
       car.appendChild(add);
+
+      // One tile at a time, in the direction pressed. scrollBy rather than a
+      // computed index: the strip is scroll-snapped, so the browser lands it on
+      // the nearest tile itself and there is no index to get out of step with.
+      const step = (dir) => {
+        const first = car.firstElementChild;
+        const by = first ? first.getBoundingClientRect().width + 8 : car.clientWidth;
+        car.scrollBy({ left: dir * by, behavior: "smooth" });
+      };
+      host.querySelector("[data-car-prev]").onclick = () => step(-1);
+      host.querySelector("[data-car-next]").onclick = () => step(1);
+      // A one-tile strip has nowhere to go, and two dead arrows on it read as
+      // something being broken.
+      if (car.children.length < 2) {
+        for (const b of host.querySelectorAll(".carnav")) b.hidden = true;
+      }
 
       for (const b of host.querySelectorAll("[data-face]")) {
         b.onclick = () => {
@@ -4154,7 +4215,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       function paint() {
         const t = current();
         body.innerHTML = t ? cardBody(t) : "";
-        if (!t || t.eg) return;
+        if (!t) return;
         const c = t.card;
         // A draft shows one button instead of three, so the other three are
         // not there to wire.
@@ -4196,24 +4257,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       paint();
     }
 
-    /** The three actions and the setup, under whichever card is showing. */
+    /** The four actions and the setup, under whichever card is showing. */
     function cardBody(t) {
-      if (t.eg) {
-        // The three actions are dead on an example: there is no poster to open,
-        // no link to copy and no designer behind it. Disabled and visible
-        // rather than absent, so the shape of the screen does not change as you
-        // swipe past one.
-        return '<div class="cardacts">' +
-            actBtn("", ICON_POSTER, "Poster", true) +
-            actBtn("", ICON_SHARE, "Share", true) +
-            actBtn("", ICON_EDIT, "Edit", true) +
-          "</div>" +
-          '<h2 class="sec">Info' + EG + "</h2>" +
-          '<div class="drow"><span>Type</span><b>' + esc(KIND_LABEL[t.eg.kind] || "Stamps") + "</b></div>" +
-          '<div class="drow"><span>The deal</span><b>' + esc(t.eg.setup) + "</b></div>" +
-          '<div class="drow"><span>Status</span><b>' +
-            (t.eg.status === "ended" ? "Ended" : "Active") + "</b></div>";
-      }
       const c = t.card;
       // An unfinished card has no poster to print and no link worth sharing —
       // nothing hands it to a customer until it is published. So it says what
@@ -4270,11 +4315,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const membershipNote = card.kind === "membership"
         ? '<p class="muted" style="margin:10px 0 0"><strong>Record every visit so your activity tracking stays accurate.</strong></p>'
         : "";
+      // The SAME fold the Customers screen uses (.grp), not a fourth one. This
+      // hand-rolled its own <details> with its own "+" disc, which made four
+      // different-looking expandable sections in one product — and an owner
+      // learning that a ▸ opens a section on one screen learns nothing that
+      // helps them on this one.
       const section = (title, copy, actions, open) =>
-        '<details style="border-top:1px solid var(--line);padding:16px 0"' + (open ? " open" : "") + ">" +
-          '<summary style="cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center;font-weight:800">' +
-            '<span style="width:24px;height:24px;border-radius:50%;background:var(--surface);display:grid;place-items:center">+</span>' + esc(title) +
-          '</summary><div style="padding:14px 0 0 34px"><div class="muted" style="margin:0 0 12px">' + copy + "</div>" +
+        '<details class="grp rdy"' + (open ? " open" : "") + ">" +
+          "<summary>" + esc(title) + "</summary>" +
+          '<div class="rdybody"><div class="muted" style="margin:0 0 12px">' + copy + "</div>" +
           actions + "</div></details>";
       d.innerHTML =
         '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Back to Home</p>' +
@@ -4569,19 +4618,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * pretending there is something to look at.
      */
     function campaignsPane(host) {
-      const order = { active: 0, ended: 1 };
-      const rows = MOCK_CAMPAIGNS.slice()
-        .sort((a, b) => (order[a.status] - order[b.status]) || (a.createdDaysAgo - b.createdDaysAgo));
+      // Nothing stores a campaign yet — see CAMPAIGN_SPEC. This list used to be
+      // four invented rows with Edit links behind them, which is a screen
+      // demonstrating itself rather than a screen doing anything. It says the
+      // true thing instead and keeps the one control that will matter.
       host.innerHTML =
-        '<h2 class="sec first">Campaigns' + EG + "</h2>" +
-        '<div class="slist">' + rows.map((c) =>
-          '<div class="srow"><span class="sl">' +
-            '<span class="sn">' + esc(c.name) + "</span>" +
-            '<span class="st">' + esc(c.type) + " · " +
-              (c.status === "ended" ? "Ended" : "Active") + "</span></span>" +
-            '<a class="rowedit" href="' + ROOT + "/manage/campaigns/" + c.id +
-            '" data-nav="/manage/campaigns/' + c.id + '">Edit</a>' +
-          "</div>").join("") + "</div>" +
+        '<h2 class="sec first">Campaigns</h2>' +
+        '<p class="cmpempty">No campaign data yet.</p>' +
         '<a class="addrow" href="' + ROOT + '/create/campaign" data-nav="/create/campaign">' +
         "+ Create campaign</a>";
     }
@@ -4597,29 +4640,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * the designer that changes what it looks like.
      */
     function rewardDetailScreen(id) {
+      // Real cards only. There was a branch here for the two example
+      // programmes; they are gone from the product, so an id that is not a real
+      // card is now simply not a page — which is what a stale bookmark to one
+      // should say.
       const card = S.cards.find((c) => c.id === id);
-      const eg = MOCK_PROGRAMS.find((m) => m.id === id);
-      if (!card && !eg) return notFoundScreen();
+      if (!card) return notFoundScreen();
 
       const d = document.createElement("div");
       const back = '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Rewards</p>';
-
-      // An example programme. Everything about it is made up, so it says so
-      // once at the top and does not pretend to have a designer behind it.
-      if (!card) {
-        d.innerHTML = back +
-          '<h2 class="sec first">' + esc(eg.name) + EG +
-            '<span class="pstat' + (eg.status === "ended" ? " off" : "") + '">' +
-              (eg.status === "ended" ? "Ended" : "Active") + "</span></h2>" +
-          '<p class="muted">This is an example card, so you can see what running more ' +
-          "than one looks like.</p>" +
-          '<h2 class="sec">Setup</h2>' +
-          '<div class="drow"><span>Type</span><b>' + (KIND_LABEL[eg.kind] || "Stamps") + "</b></div>" +
-          '<div class="drow"><span>The deal</span><b>' + esc(eg.setup) + "</b></div>" +
-          (eg.status === "ended" ? endedNote() : "");
-        d.querySelector("[data-back]").onclick = () => navigate("/manage/rewards");
-        return d;
-      }
 
       const m = card.metrics || {};
       const enrolled = m.active > 0;
@@ -4638,6 +4667,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         (card.stampsStart ? '<div class="drow"><span>Welcome stamps</span><b>' +
           card.stampsStart + "</b></div>" : "") +
         (enrolled ? lockNote(m.active) : "") +
+        // Ended is not gone, and the pill alone does not say so. This note used
+        // to appear only on the example programmes, which meant the one page
+        // where it is actually true never carried it.
+        (over ? endedNote() : "") +
         '<h2 class="sec">Share it</h2>' +
         '<div class="sharelist">' +
           // THIS card's own sign-up page, not the shop's. With more than one
@@ -4747,21 +4780,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "until they claim their next reward.</div>";
     }
 
-    function campaignDetailScreen(id) {
-      const c = MOCK_CAMPAIGNS.find((x) => x.id === id);
-      if (!c) return notFoundScreen();
-      const d = document.createElement("div");
-      d.innerHTML = '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Campaigns</p>' +
-        '<h2 class="sec first">' + esc(c.name) + EG +
-          '<span class="pstat' + (c.status === "ended" ? " off" : "") + '">' +
-            (c.status === "ended" ? "Ended" : "Active") + "</span></h2>" +
-        '<p class="muted">An example campaign, so you can see the shape of one. ' +
-        "Campaigns are set up under Create.</p>" +
-        '<h2 class="sec">Setup' + EG + "</h2>" +
-        '<div class="drow"><span>Type</span><b>' + esc(c.type) + "</b></div>" +
-        '<div class="drow"><span>Sent</span><b>' + esc(c.sent) + "</b></div>";
-      d.querySelector("[data-back]").onclick = () => navigate("/manage/campaigns");
-      return d;
+    // Nothing stores a campaign, so no id can name one. The page stays wired up
+    // (the address is in V2_SCREENS and a refresh must not 404 into the void)
+    // and says so, rather than inventing a campaign to fill itself with.
+    function campaignDetailScreen() {
+      return notFoundScreen();
     }
 
     /**
