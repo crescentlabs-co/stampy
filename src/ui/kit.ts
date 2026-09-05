@@ -2911,7 +2911,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-a=rmlogo]").disabled = false;
         lastLogoUrl = url;
         // Straight away, not only from the probe below: the button now has to
-        // say "Replace logo", and that is true the moment the upload lands. The
+        // say "Replace", and that is true the moment the upload lands. The
         // probe can fail — a decode is not guaranteed — and the label must not
         // depend on it.
         updateMark();
