@@ -78,6 +78,11 @@ export class FakeEl {
   scrollWidth = 0;
   clientWidth = 0;
   scrollIntoView(): void {}
+  /** Nothing here is laid out, so every edge is 0 — the same answer a detached
+   *  node gives in a browser, which is the case the callers already guard. */
+  getBoundingClientRect(): Record<string, number> {
+    return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 };
+  }
   /** Populated for a <canvas>; the log of everything drawn on it. */
   calls: DrawCall[] = [];
 

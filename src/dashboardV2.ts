@@ -562,6 +562,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 cursor: pointer; text-decoration: underline; }
     /* Room for the footer, on top of what the sheet already reserves. */
     .haswiz { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+    /* How tall whatever is docked at the bottom happens to be. A bottom sheet
+       reads it to sit ABOVE the bars instead of over them — it out-ranks them
+       on z-index, so it was hiding the very buttons you press next. It is a
+       custom property so it INHERITS: the sheet is a descendant of whichever
+       of these applies, and the admin console, which docks nothing, is the
+       one that never sets it. */
+    .shelled { --dockh: 88px; }
     /* "1 visit = [2] stamps" on one line. The box is in the middle of the
        sentence because that is where the thing being set actually is. */
     .eqrow { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
@@ -3191,6 +3198,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       });
       d.lockNext(() => null);
       if (opts.blocked) d.lockNext(opts.blocked);
+      // How tall the docked footer actually is, so a bottom sheet can sit above
+      // it. Measured rather than guessed: this bar wraps differently with a
+      // "Save and finish later" link under it and at different text sizes, and
+      // a hard-coded number was 47px short. Deferred a frame because the node
+      // is still detached here — its caller appends the return value.
+      requestAnimationFrame(() => {
+        // From the footer's TOP to the bottom of the screen — not its own
+        // height. It is docked 84px up, above the nav bar, so its height alone
+        // was 84px short of where its top edge actually sits.
+        const top = foot.getBoundingClientRect().top;
+        if (top > 0) d.style.setProperty("--dockh", Math.round(innerHeight - top) + 12 + "px");
+      });
       const later = d.querySelector("[data-wlater]");
       if (later) later.onclick = () => opts.onLater();
       return d;
@@ -3652,7 +3671,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       body.innerHTML = '<h2 class="sec first">Design</h2>' +
         "<div data-design></div>";
       // The rules live in step 2 now, so the designer shows its look half only.
-      body.querySelector("[data-design]").appendChild(designerFor(card, {
+      const panel = designerFor(card, {
         showDetails: false,
         // Asked on the Rules step, one screen back. Two boxes for one setting
         // means the screen saved last wins, which is not a rule anybody could
@@ -3660,18 +3679,36 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         showShop: false,
         saveLabel: "Save design",
         customersPath: null,
-      }));
+      });
+      body.querySelector("[data-design]").appendChild(panel);
+      /**
+       * Send the design, then do the thing the button says.
+       *
+       * The panel stages every upload and every colour until ITS save button is
+       * pressed, which is right when the panel is the whole screen. Here it is
+       * not: the button underneath says "Finish and publish", and pressing it
+       * published a card whose logo, colours and stamp shape had never been
+       * sent anywhere. The owner watched their card being designed and got the
+       * default brown one — and "Save and finish later" lost it just as
+       * completely.
+       */
+      const keepDesign = async () => {
+        if (panel.saveDesign) await panel.saveDesign(true);
+      };
       return wizardFrame(2, body, {
         nextLabel: "Finish and publish",
         onStep: (i) => navigate(i === 0 ? "/create/card" : "/create/" + id + "/rules"),
         onNext: async () => {
+          await keepDesign();
           const { status } = await api("/card/" + id + "/publish", { method: "POST" });
           if (status !== 200) { toast("Could not publish just yet"); return; }
           await refreshCards();
           toast("Your card is live \u2014 print the poster and you are open");
           navigate("/manage/rewards/" + id);
         },
-        onLater: () => {
+        onLater: async () => {
+          await keepDesign();
+          await refreshCards();
           toast("Saved \u2014 finish it from Manage whenever you like");
           navigate("/manage/rewards");
         },

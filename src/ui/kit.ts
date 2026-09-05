@@ -842,22 +842,30 @@ export const DESIGN_PANEL_CSS = /* css */ `
        a square box letterboxed it down to a sliver — which read as "this only
        takes a small symbol" when the wallet was happy to show the whole thing.
        A square mark is unchanged: it simply stops at the height. */
-    .pv-logo { height: 34px; width: auto; max-width: 120px; border-radius: 8px;
+    /* The card mock is 320px wide and a real storeCard is 375pt, so everything
+       in it is set ~15% below the real card's point sizes. At the real sizes it
+       rendered oversized, which is what made the header collide.
+       96px, not 120. Apple's logo band is 160x50pt beside BOTH the shop's name
+       and the header field, and the logo is cropped to that band now — so at
+       120 it ate the row and the name came out as "Kopi Cor...". Nothing is
+       lost by the narrower cap: the picture is letterboxed inside it, not
+       trimmed. */
+    .pv-logo { height: 30px; width: auto; max-width: 96px; border-radius: 8px;
                object-fit: contain; background: rgba(255,255,255,.14); }
-    .pv-name { font-weight: 700; font-size: 1.02rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pv-name { font-weight: 700; font-size: .88rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* margin-left:auto, not "whatever .pv-name pushes". The name is hidden for a
        logo that already carries it, and the progress was then the last flexible
        thing in the row — so it stopped sitting on the right edge the moment the
        tick-box was used. Wallet keeps the header field hard right regardless. */
     .pv-hdr { text-align: right; margin-left: auto; }
-    .pv-lbl { font-size: .62rem; letter-spacing: .08em; font-weight: 600; }
-    .pv-progress { font-size: 1.05rem; font-weight: 700; }
+    .pv-lbl { font-size: .56rem; letter-spacing: .08em; font-weight: 600; }
+    .pv-progress { font-size: .9rem; font-weight: 700; }
     .pv-dots { font-size: 1.25rem; letter-spacing: 3px; margin: 2px 0 10px; }
     /* The two secondary fields, side by side as Wallet lays them out. */
     .pv-row2 { display: flex; gap: 14px; margin-top: 10px; }
     .pv-row2 > div { flex: 1; min-width: 0; }
     .pv-row2 > div + div { text-align: right; }
-    .pv-reward { font-size: .95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pv-reward { font-size: .82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pv-qr { background: #fff; color: #1d1d1f; width: 74px; height: 74px; border-radius: 8px;
              margin: 14px auto 2px; display: flex; align-items: center; justify-content: center;
              font-weight: 700; font-size: .8rem; letter-spacing: 1px; }
@@ -882,7 +890,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pvg-logo { width: 26px; height: 26px; border-radius: 999px; object-fit: cover;
                 background: rgba(127,127,127,.18); flex: none;
                 box-shadow: 0 0 0 1px currentColor; }
-    .pvg-issuer { font-size: .82rem; min-width: 0;
+    .pvg-issuer { font-size: .74rem; min-width: 0;
                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* The hairlines Google draws under the header and under the progress row.
        currentColor at low opacity so they hold on any card colour — a fixed
@@ -893,8 +901,8 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .pvg-row { display: flex; align-items: flex-start; gap: 12px; padding-bottom: 13px; }
     .pvg-row > div { min-width: 0; }
     .pvg-row > div + div { margin-left: auto; text-align: right; }
-    .pvg-lbl { font-size: .66rem; letter-spacing: .07em; opacity: .65; text-transform: uppercase; }
-    .pvg-val { font-size: .95rem; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
+    .pvg-lbl { font-size: .58rem; letter-spacing: .07em; opacity: .65; text-transform: uppercase; }
+    .pvg-val { font-size: .82rem; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
     .pvg-stamps { padding-top: 13px; }
     /* pre-line, because the grid arrives as a string with a newline in it — the
        only way to shape text in a field whose typography belongs to Google. */
@@ -981,8 +989,11 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* Halved. Four headings at 26+18 was 176px of empty page between the card
        and the last control, on the one screen that is read top to bottom in a
        single sitting — so its height is the thing that made it feel endless. */
-    .dsec { margin: var(--s4) 0 var(--s1); padding-top: 0; }
-    .dsec.first { margin-top: var(--s2); padding-top: 0; border-top: none; }
+    /* .sec.dsec, not .dsec: the two have the SAME specificity and the host's
+       stylesheet is printed after this one, so .sec's 40px margin won and this
+       rule did nothing measurable at all. */
+    .sec.dsec { margin: var(--s4) 0 var(--s1); padding-top: 0; }
+    .sec.dsec.first { margin-top: var(--s2); padding-top: 0; border-top: none; }
     /* More air above a label than below it: the gap belongs to the control it
        introduces, not to the one it follows. */
     .dlbl { margin: var(--s3) 0 var(--s1); }
@@ -1134,10 +1145,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
        so the thing you were looking at moved at the exact moment you touched
        it. A sheet always arrives in the same place, and the backdrop says the
        rest of the page is waiting. */
-    .crpal { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; margin: 0;
+    /* ABOVE the bottom bars, not over them. It out-ranks them on z-index, so it
+       painted on top and hid the very buttons the owner was about to press
+       next. --dockh is how tall whatever is docked down there happens to be;
+       the shell sets it, and a host with nothing docked leaves it 0. */
+    .crpal { position: fixed; left: 0; right: 0; z-index: 60; margin: 0;
+             bottom: calc(var(--dockh, 0px) + env(safe-area-inset-bottom, 0px));
              background: var(--bg); border-top: 1px solid var(--line);
              border-radius: var(--r-lg) var(--r-lg) 0 0;
-             padding: var(--s3) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom, 0px));
+             padding: var(--s3);
              box-shadow: 0 -12px 40px -12px rgba(12, 14, 13, .3);
              max-height: 62vh; overflow-y: auto; }
     .crpal[hidden] { display: none; }
@@ -1603,7 +1619,7 @@ export const DESIGN_PANEL_JS = /* js */ `
              when there IS a picture: with no upload the band is the colour and
              a slider fading nothing into itself does nothing. -->
         <div class="bandfade" data-bandfade\${c.bandTexture === "image" ? "" : " hidden"}>
-          <label class="dlbl" for="bandop">Image strength</label>
+          <label class="dlbl" for="bandop">Transparency</label>
           <input id="bandop" data-f="bandOpacity" type="range" min="0" max="100" step="5"
                  value="\${c.bandOpacity == null ? 100 : c.bandOpacity}">
         </div>
@@ -2262,7 +2278,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         const im = q("[data-pvg-logo]");
         const v = c.markVersion || c.logoVersion;
         if (v) {
-          im.src = env.artUrl(c.markVersion ? "mark" : "logo", v);
+          im.src = artSrc(c.markVersion ? "mark" : "logo", v);
           im.style.display = "";
         } else im.style.display = "none";
         // The hero band: the ALL-FILLED grid, never the customer's real count.
@@ -2396,6 +2412,21 @@ export const DESIGN_PANEL_JS = /* js */ `
       // paintArt for why: a staged upload is not on the server yet, so its
       // hosted URL is a 404 and the thumbnail draws as a broken image.
       let freshLogo = "", freshMark = "", freshBand = "";
+      /**
+       * Where to draw one of the three pictures from.
+       *
+       * The one JUST UPLOADED if there is one, else the hosted copy. An upload
+       * is STAGED — nothing reaches the server until Save — so asking the
+       * server for it draws a broken image, and the version number has already
+       * been bumped locally so the URL looks perfectly valid and 404s. Every
+       * place that shows a picture goes through here; three of them did their
+       * own arithmetic and two of those were wrong.
+       */
+      function artSrc(kind, version) {
+        const fresh = kind === "logo" ? freshLogo : kind === "mark" ? freshMark : freshBand;
+        return fresh || env.artUrl(kind, version);
+      }
+
       function paintArt() {
         const one = (key, on, url) => {
           const box = div.querySelector('[data-lbthumb="' + key + '"]');
@@ -2412,9 +2443,9 @@ export const DESIGN_PANEL_JS = /* js */ `
         // that appeared in the box the moment a logo was chosen. The version
         // number had already been bumped locally, so the URL looked valid and
         // 404'd.
-        one("logo", Boolean(c.logoVersion), freshLogo || env.artUrl("logo", c.logoVersion));
-        one("mark", Boolean(c.markVersion), freshMark || env.artUrl("mark", c.markVersion));
-        one("banner", bandIsImage, freshBand || env.artUrl("banner", c.bannerVersion));
+        one("logo", Boolean(c.logoVersion), artSrc("logo", c.logoVersion));
+        one("mark", Boolean(c.markVersion), artSrc("mark", c.markVersion));
+        one("banner", bandIsImage, artSrc("banner", c.bannerVersion));
         // The strength slider only means something when there is a picture to
         // fade. With no upload the band IS the colour, and a slider fading
         // nothing into itself is a control that cannot do anything.
@@ -2473,7 +2504,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         const shop = f("shopName").value || "Your shop";
         q("[data-pvn-app]").textContent = shop;
         const im = q("[data-pvn-logo]");
-        if (c.logoVersion) { im.src = env.artUrl("logo", c.logoVersion); im.style.display = ""; }
+        if (c.logoVersion) { im.src = artSrc("logo", c.logoVersion); im.style.display = ""; }
         else im.style.display = "none";
         // What iOS actually shows: the header field's changeMessage with %@
         // already substituted. Mirrors buildPassJson in src/passModel.ts — if
@@ -3649,6 +3680,11 @@ export const DESIGN_PANEL_JS = /* js */ `
           c.stampIconVersion = Date.now();
           showStamp();
           await applyStamps("custom");
+          // The list is put back to "Dots" the moment the picker OPENS, because
+          // choosing it may be cancelled. Nothing put it right again when the
+          // upload actually landed, so the card wore a custom stamp while the
+          // control underneath said it was on dots.
+          drawStampPick();
           toast("Stamp shape ready — press " + (env.saveLabel || "Save"));
         };
         probe.onerror = () => show("Couldn't read that image.");
@@ -3729,7 +3765,7 @@ export const DESIGN_PANEL_JS = /* js */ `
        * stored PNG — so saving the field alone would leave the old band on the
        * card and the new one only in the picker.
        */
-      async function saveLook() {
+      async function saveLook(quiet) {
         // No shopName here. The field sits above the fold now, next to Save
         // rules — leaving its save on a button inside a collapsed section is how
         // you get an owner who renamed their shop and lost it.
@@ -3737,13 +3773,13 @@ export const DESIGN_PANEL_JS = /* js */ `
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
           bandOpacity: Math.round(bandFade() * 100),
-        }, "Design");
+        }, "Design", quiet);
         // Only while the band IS the flat colour. card_banners holds either the
         // generated band or the owner's artwork, and regenerating unconditionally
         // would paint a flat rectangle over an upload the first time somebody
         // touched a colour picker — silently, with no undo and no copy of the
         // file. band_texture is what tells the two apart.
-        if (!bandIsImage) await saveBanner(bandPng(1125, 369));
+        if (!bandIsImage) await saveBanner(bandPng(1125, 369), quiet);
       }
 
       /**
@@ -3867,6 +3903,18 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (surfaceSeg) { surfaceSeg.hidden = true; surfaceSeg.style.display = "none"; }
         div.setSurface = showFace;
       }
+      // Save the LOOK, with no dialog and without touching the rules.
+      //
+      // The panel stages every upload and every colour until its own Save
+      // button is pressed, which is right when this panel IS the screen. In the
+      // Create wizard it is not: the button underneath says "Finish and
+      // publish", and pressing it published a card whose logo, colours and
+      // stamp shape had never been sent anywhere — the owner watched their card
+      // being designed and got the default brown one.
+      //
+      // saveLook is the whole of it: it flushes the staged uploads, writes the
+      // colours, and re-renders and commits the strips.
+      div.saveDesign = saveLook;
       return div;
     }
 `;
