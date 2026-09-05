@@ -211,8 +211,12 @@ describe("the design panel, mounted", () => {
     expect(div.querySelector("[data-stampimg]")).not.toBeNull();
     const values = sel.children.map((o) => o.getAttribute("value"));
     expect(values).toContain("dot");
-    expect(values).toContain("emoji");
     expect(values).toContain("custom");
+    // Every ready-made shape is a TEXT glyph, never a colour emoji: an emoji
+    // ignores fillStyle, so it could not take the card's Stamps colour and a
+    // red heart stayed red on a green card.
+    expect(values).not.toContain("emoji");
+    expect(values).toContain("\u2605");
     // Dots is what a new card is on, so that is what the list shows.
     expect(sel.children.find((o) => "selected" in o.attrs)!.getAttribute("value")).toBe("dot");
   });
@@ -1015,23 +1019,50 @@ describe("nothing syncs until Save", () => {
     expect(c.bandTexture).toBe("image");
   });
 
-  /** The name tick changes what the card looks like, so it waits with the rest. */
-  it("stages the my-logo-already-says-my-name tick", async () => {
+  /**
+   * The switch and the column mean OPPOSITE things.
+   *
+   * logo_has_name is "my logo already says the shop's name", so the pass DROPS
+   * its logoText when it is true. The switch asks the owner-facing question —
+   * "show company name next to logo" — which is that fact inverted. The markup
+   * flipped it and the handler did not, so ticking the box turned the name OFF.
+   *
+   * It also waits for Save, like everything else that changes what a card
+   * looks like.
+   */
+  it("shows the name when the switch is ON, and stages it until Save", async () => {
     const h = makeHarness();
-    const c = card();
+    // A card whose logo already carries the name, so the switch starts off.
+    const c = card({ logoHasName: true });
     const div = build(c, h);
     await h.settle();
-    const before = h.requests.length;
     const box = div.querySelector("[data-lname]")! as FakeEl & { checked: boolean };
+    expect(box.attrs.checked).toBe(undefined);
+
+    const before = h.requests.length;
     box.checked = true;
     await box.onchange?.();
     await h.settle();
     expect(h.requests.slice(before).filter((r) => r.method === "POST").length).toBe(0);
-    expect(c.logoHasName).toBe(false);
+    expect(c.logoHasName).toBe(true);
 
     await div.querySelector("[data-a=save]")!.onclick!();
     await h.settle();
-    expect(c.logoHasName).toBe(true);
+    expect(c.logoHasName).toBe(false);
+  });
+
+  /** And the preview agrees, before any save. */
+  it("puts the name beside the logo the moment the switch goes on", async () => {
+    const h = makeHarness();
+    const div = build(card({ logoHasName: true, logoVersion: 2 }), h);
+    await h.settle();
+    const name = div.querySelector("[data-pv-name]")!;
+    expect((name as unknown as { style: { display: string } }).style.display).toBe("none");
+    const box = div.querySelector("[data-lname]")! as FakeEl & { checked: boolean };
+    box.checked = true;
+    await box.onchange?.();
+    await h.settle();
+    expect((name as unknown as { style: { display: string } }).style.display).toBe("");
   });
 
   /**

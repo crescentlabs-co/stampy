@@ -1984,8 +1984,6 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("data-bandtex");
   });
 
-  // Six preset tiles did what the emoji field does, and every card starts on
-  // dots anyway. Three routes remain, each a different kind of answer.
   /**
    * One list, not a row of buttons — and still not a grid of preset tiles,
    * which is the mistake this control has already made once.
@@ -1995,11 +1993,37 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("STAMP_ICONS");
     expect(html).toContain("data-stamppick");
     expect(html).toContain("STAMP_PRESETS");
-    // The emoji field still exists — the list opens it — but the three-button
-    // bar it used to sit beside is gone.
-    expect(html).toContain("data-emoji");
     expect(html).not.toContain('data-a="rmstamp"');
     expect(html).toContain("data-stampimg");
+  });
+
+  /**
+   * Every ready-made shape obeys the card's Stamps colour, and a colour emoji
+   * cannot: it ignores fillStyle, so a red heart stayed red on a green card and
+   * no colour setting could touch it. So the type-your-own-emoji route is gone
+   * and the presets are plain text glyphs.
+   */
+  it("offers no emoji route, and no shape that ignores the card's colour", () => {
+    expect(html).not.toContain("data-emoji");
+    expect(html).not.toContain("askEmoji");
+    // The variation selector is what makes a glyph render as a colour emoji.
+    const presets = html.slice(html.indexOf("const STAMP_PRESETS = ["),
+                               html.indexOf("function stampNow()"));
+    expect(presets).not.toContain("\uFE0F");
+  });
+
+  /**
+   * The file input must be reachable by SCRIPT, and display:none is not.
+   *
+   * Safari ignores a scripted .click() on a display:none file input, so
+   * "Upload your own" opened nothing at all. The five colour pickers further
+   * down are parked for the same reason, and say so.
+   */
+  it("keeps the stamp file input off-screen rather than hidden", () => {
+    expect(html).toContain('data-stampimg type="file" accept="image/*" class="offscreen"');
+    expect(html).not.toContain('data-stampimg type="file" accept="image/png,image/svg+xml" hidden');
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    expect(css).toContain(".offscreen { position: absolute;");
   });
 
   // A hint that pushes the form down is a paragraph with extra steps.
@@ -2089,9 +2113,15 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("rmbanner");
   });
 
-  it("takes any emoji as the stamp", () => {
-    expect(html).toContain("data-emoji");
+  /**
+   * firstGrapheme stays, and is still tested on its own further down. It is a
+   * general helper on the page, not the designer's — the emoji stamp route
+   * that used to call it is gone, because a colour emoji cannot take the
+   * card's Stamps colour.
+   */
+  it("keeps firstGrapheme, and no longer takes an emoji as the stamp", () => {
     expect(html).toContain("firstGrapheme");
+    expect(html).not.toContain("data-emoji");
   });
 
   // A PIN is only ever stored hashed, so it can never be read back out — the

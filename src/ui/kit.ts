@@ -1010,6 +1010,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
            display: flex; align-items: center; justify-content: center; }
     .lbup { margin: 0; width: 100%; }
     .lbup input[type=file] { display: none; }
+    /* Reachable by script, invisible to the eye. display:none would make
+       .click() a no-op in Safari. */
+    .offscreen { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+                 overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
     .lbcap { font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 2px; }
     /* The frame. Checkered so a transparent logo reads as transparent rather
        than as white, which is what it will actually be on the card. */
@@ -1526,7 +1530,13 @@ export const DESIGN_PANEL_JS = /* js */ `
              question — dots, an emoji, or your own picture — and a row of
              buttons made them look like three different things you could do. -->
         <select data-stamppick></select>
-        <input data-stampimg type="file" accept="image/png,image/svg+xml" hidden>
+        <!-- Off-screen, NOT hidden. A display:none file input ignores a
+             scripted .click() in Safari, so "Upload your own" opened nothing
+             at all — the same trap the five colour inputs are parked around
+             further down, for the same reason. accept is deliberately wide:
+             a phone's photo library hands back HEIC and JPEG, and a picker
+             that shows every photo greyed out reads as broken. -->
+        <input data-stampimg type="file" accept="image/*" class="offscreen">
         <p class="stampnow" data-stampnow style="display:none">
           <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
         </p>
@@ -1852,6 +1862,11 @@ export const DESIGN_PANEL_JS = /* js */ `
             x.fill();
             x.globalAlpha = 1;
           } else {
+            // fillStyle, which this did not set. The last thing to set it was
+            // paintBand above, so every ready-made shape was drawn in the BAND
+            // colour, on top of the band — invisible, on every card, while dots
+            // worked fine because the dot path sets it two lines up.
+            x.fillStyle = accent;
             x.font = (r * 1.9) + "px serif"; x.textAlign = "center"; x.textBaseline = "middle";
             x.globalAlpha = on ? 1 : .25;
             x.fillText(icon, cx, cy);
@@ -1903,6 +1918,19 @@ export const DESIGN_PANEL_JS = /* js */ `
         const box = f("memberLabel");
         const v = (box ? box.value : c.memberLabel) || "Member";
         return v.trim() || "Member";
+      }
+
+      /**
+       * Does the logo already carry the shop's name?
+       *
+       * Read from the SWITCH and not from the card it was loaded with, so the
+       * preview moves as it is flicked. It used to read the card, and the card
+       * is only updated on Save — so ticking "show company name" did nothing
+       * visible at all, and the switch read as broken.
+       */
+      function hasNameNow() {
+        const box = q("[data-lname]");
+        return box ? !box.checked : Boolean(c.logoHasName);
       }
 
       /**
@@ -2071,7 +2099,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // owner ticks the box and sees no change until the card is on a phone.
         const pvName = q("[data-pv-name]");
         pvName.textContent = f("shopName").value || "Your card";
-        pvName.style.display = c.logoHasName && c.logoVersion ? "none" : "";
+        pvName.style.display = hasNameNow() && c.logoVersion ? "none" : "";
         // Every one of these mirrors buildPassJson in src/passModel.ts. A
         // membership card shows who the holder is instead of how far along they
         // are, because it has no target to be along the way to.
@@ -2203,32 +2231,42 @@ export const DESIGN_PANEL_JS = /* js */ `
        * place. A list says what it is set to by being set to it.
        *
        * The presets are drawn in the card's own Stamps colour like any other
-       * glyph, so they are emoji rather than art: nothing to store, nothing to
-       * upload, and they survive a colour change.
+       * glyph: nothing to store, nothing to upload, and they survive a colour
+       * change. They are TEXT glyphs and not emoji for exactly that reason — a
+       * colour emoji ignores fillStyle, so a red heart stayed red on a green
+       * card and there was no way to make it match. That is also why the
+       * coffee cup went: there is no plain-text one.
        */
       const STAMP_PRESETS = [
         { v: "dot", name: "Dots" },
         { v: "\u2605", name: "Star" },
-        { v: "\u2764\uFE0F", name: "Heart" },
-        { v: "\u2615\uFE0F", name: "Coffee" },
+        { v: "\u2665", name: "Heart" },
         { v: "\u2713", name: "Tick" },
+        { v: "\u25C6", name: "Diamond" },
       ];
 
       function stampNow() {
         if (c.stampIconVersion && stampStyle === "custom") return "custom";
         if (!stampStyle || stampStyle === "dot") return "dot";
-        return STAMP_PRESETS.some((x) => x.v === stampStyle) ? stampStyle : "emoji";
+        return stampStyle;
       }
 
       function drawStampPick() {
         const sel = q("[data-stamppick]");
         if (!sel) return;
         const now = stampNow();
+        // A card already wearing a shape this list no longer offers keeps it,
+        // as its own first entry. The emoji route is gone — a colour emoji
+        // ignores the card's Stamps colour, which is the one thing every other
+        // shape here obeys — but cards chosen while it existed are still out
+        // there, and a list with nothing selected would silently rewrite one to
+        // dots on the next save.
+        const known = now === "custom" || STAMP_PRESETS.some((x) => x.v === now);
         sel.innerHTML =
+          (known ? "" : '<option value="' + esc(now) + '" selected>' + esc(now) + " (your shape)</option>") +
           STAMP_PRESETS.map((x) =>
             '<option value="' + esc(x.v) + '"' + (x.v === now ? " selected" : "") + ">" +
             esc(x.name) + "</option>").join("") +
-          '<option value="emoji"' + (now === "emoji" ? " selected" : "") + ">Another emoji\u2026</option>" +
           '<option value="custom"' + (now === "custom" ? " selected" : "") + ">Upload your own\u2026</option>";
       }
 
@@ -2242,7 +2280,6 @@ export const DESIGN_PANEL_JS = /* js */ `
             // put back to what is actually set rather than left showing a
             // choice that was never made.
             if (v === "custom") { drawStampPick(); q("[data-stampimg]").click(); return; }
-            if (v === "emoji") { await askEmoji(); drawStampPick(); return; }
             if (v === "dot") { await backToDots(); drawStampPick(); return; }
             await applyStamps(v);
             drawStampPick();
@@ -2289,19 +2326,31 @@ export const DESIGN_PANEL_JS = /* js */ `
        * disabled until there was something to remove — two controls for a thing
        * that did not exist yet.
        */
+      // Declared ABOVE paintArt, which updateMark() calls during setup: a let
+      // read before its own declaration throws, and the panel never mounts.
+      // The three pictures as data URLs, held only while they are staged. See
+      // paintArt for why: a staged upload is not on the server yet, so its
+      // hosted URL is a 404 and the thumbnail draws as a broken image.
+      let freshLogo = "", freshMark = "", freshBand = "";
       function paintArt() {
         const one = (key, on, url) => {
           const box = div.querySelector('[data-lbthumb="' + key + '"]');
           if (!box) return;
           box.hidden = !on;
-          if (on) {
+          if (on && url) {
             const img = div.querySelector('[data-lbimg="' + key + '"]');
             if (img) img.src = url;
           }
         };
-        one("logo", Boolean(c.logoVersion), env.artUrl("logo", c.logoVersion));
-        one("mark", Boolean(c.markVersion), env.artUrl("mark", c.markVersion));
-        one("banner", bandIsImage, env.artUrl("banner", c.bannerVersion));
+        // The picture JUST UPLOADED, if there is one, and only then the hosted
+        // copy. An upload is STAGED — nothing reaches the server until Save —
+        // so asking the server for it draws a broken image, which is the "?"
+        // that appeared in the box the moment a logo was chosen. The version
+        // number had already been bumped locally, so the URL looked valid and
+        // 404'd.
+        one("logo", Boolean(c.logoVersion), freshLogo || env.artUrl("logo", c.logoVersion));
+        one("mark", Boolean(c.markVersion), freshMark || env.artUrl("mark", c.markVersion));
+        one("banner", bandIsImage, freshBand || env.artUrl("banner", c.bannerVersion));
       }
       // Measured off its own Image rather than the preview's: the preview logo
       // is hidden on two of the three tabs, and a hidden img still decodes but
@@ -2784,7 +2833,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       // is the right shape to upload.
       wireUpload("[data-logo]", "logo", 1280, 400, (url) => {
         const im = q("[data-pv-logo]");
-        im.src = url; im.style.display = ""; c.logoVersion = 1;
+        im.src = url; im.style.display = ""; c.logoVersion = 1; freshLogo = url;
         q("[data-a=rmlogo]").disabled = false;
         lastLogoUrl = url;
         // Straight away, not only from the probe below: the button now has to
@@ -2821,7 +2870,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         c.logoVersion = 0;
         q("[data-pv-logo]").style.display = "none";
         q("[data-a=rmlogo]").disabled = true;
-        lastLogoUrl = "";
+        lastLogoUrl = ""; freshLogo = "";
         logoRatio = 0;
         updateMark();
         toast("Logo removed");
@@ -2832,8 +2881,8 @@ export const DESIGN_PANEL_JS = /* js */ `
       // is the shape being fitted, and letterboxing beats a cropped mark.
       // Nothing on this page previews it: the preview is the Apple card, which
       // never uses it, and a preview that showed it would be a lie.
-      wireUpload("[data-mark]", "mark", 660, 660, () => {
-        c.markVersion = 1;
+      wireUpload("[data-mark]", "mark", 660, 660, (url) => {
+        c.markVersion = 1; freshMark = url;
         q("[data-a=rmmark]").disabled = false;
         // The row stays, and changes what it says: with one uploaded it is no
         // longer a warning, it is where you go to replace or remove it. Removing
@@ -2850,7 +2899,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (!ok) return;
         const { body } = await api(P("/mark"), { method: "DELETE" });
         if (!body.ok) return toast(body.error || "Couldn't remove it");
-        c.markVersion = 0;
+        c.markVersion = 0; freshMark = "";
         q("[data-a=rmmark]").disabled = true;
         updateMark();
         renderPreview();
@@ -2859,21 +2908,30 @@ export const DESIGN_PANEL_JS = /* js */ `
 
       // Staged like the upload above it, not saved on the tick. It changes what
       // the card LOOKS like, and everything that does now waits for one button.
+      // The switch and the column mean OPPOSITE things, and this is where that
+      // gets converted — once, in one place.
+      //
+      // logo_has_name is "my logo already says the shop's name", so the pass
+      // DROPS its logoText when it is true. The switch asks the owner-facing
+      // question, "show company name next to logo", which is the same fact
+      // inverted. The markup already flips it; this handler did not, so ticking
+      // the box turned the name OFF and untitcking turned it on.
       q("[data-lname]").onchange = () => {
-        const on = q("[data-lname]").checked;
+        const showName = q("[data-lname]").checked;
+        const hasName = !showName;
         stage("logoHasName", async () => {
           const { body } = await api(P(), {
-            method: "POST", body: JSON.stringify({ logoHasName: on }),
+            method: "POST", body: JSON.stringify({ logoHasName: hasName }),
           });
           if (!body.ok) {
             // Put the box back where the server left it: a control showing a
             // state that was rejected is worse than one that visibly did not take.
-            q("[data-lname]").checked = !on;
+            q("[data-lname]").checked = !showName;
             renderPreview();
             toast(body.error || "Couldn't save that");
             return false;
           }
-          c.logoHasName = on;
+          c.logoHasName = hasName;
           return true;
         });
         renderPreview();
@@ -2894,7 +2952,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         await loadBanner(url);
         bandIsImage = true;
         c.bandTexture = "image";
-        c.bannerVersion = Date.now();
+        c.bannerVersion = Date.now(); freshBand = url;
         q("[data-a=rmband]").disabled = false;
         updateBandBtn();
         // The texture flag has to reach the server WITH the image, or the next
@@ -3436,45 +3494,6 @@ export const DESIGN_PANEL_JS = /* js */ `
       }
       showStamp();
 
-      // The six preset tiles (Dot, Coffee, Star, Heart, Donut, Boba) are gone:
-      // they were six ways to do what the emoji field does, and every card
-      // starts on dots anyway. Three routes remain — dots, any emoji, your own
-      // shape — and each is a different kind of answer rather than a shortcut.
-      /**
-       * Any emoji at all — now asked for in a popup.
-       *
-       * It was a text input sitting between two buttons, which made one of three
-       * equal answers look like a field you had to fill in first. In a dialog a
-       * field is obviously a field, and the row above it is three buttons doing
-       * three comparable things.
-       *
-       * modal() resolves a boolean, not a value, so the input is grabbed
-       * SYNCHRONOUSLY: modal builds its DOM before it returns the promise, and
-       * closing removes the node while this reference keeps its value. That is
-       * why this does not await first — it could not find the field afterwards.
-       *
-       * The renderer draws whatever glyph it is handed, so this only has to hand
-       * it one — and exactly one: firstGrapheme keeps multi-code-point emoji
-       * (❤️, 🧑‍🍳) whole instead of slicing them in half.
-       */
-      async function askEmoji() {
-        const current = (c.stampStyle && c.stampStyle !== "dot" && c.stampStyle !== "custom")
-          ? c.stampStyle : "";
-        const asked = modal(
-          "Use an emoji as your stamp",
-          '<p class="muted" style="margin:0 0 10px;font-size:.86rem">Paste or type one. ' +
-            'It is drawn in your Stamps colour, on the iPhone card.</p>' +
-            '<input data-emoji maxlength="8" placeholder="e.g. ☕️" ' +
-            'style="font-size:1.6rem;text-align:center" value="' + esc(current) + '">',
-          "Use it",
-        );
-        const field = document.querySelector(".mdl [data-emoji]");
-        if (field && field.focus) field.focus();
-        if (!(await asked)) return;
-        const one = firstGrapheme(field ? field.value : "");
-        if (!one) { toast("No emoji in there — nothing changed"); return; }
-        applyStamps(one);
-      }
       // Upload your own stamp icon → check it → STORE it → re-render the grid.
       //
       // The storing step is the one that was missing. This used to pass kind
