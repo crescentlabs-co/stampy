@@ -819,7 +819,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
                         position: sticky; top: 16px; align-self: start; }
     .dscols .dsrail .pv { margin-top: 0; }
     .dsacts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-    .dsacts .btn { width: auto; padding: 9px 13px; font-size: .84rem; }
+    .dsacts .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); }
     .dsacts .lnk { font-size: .74rem; color: var(--muted); width: 100%;
                    word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
     /* Below this the console is a phone too, and the owner's own single-column
@@ -1114,7 +1114,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* "Your own stamp is being used" — the shape itself, at the size it is read
        at, so the answer is the picture rather than a sentence about it. */
     .stampnow { display: flex; align-items: center; gap: 8px; margin: 8px 0 0;
-                font-size: .84rem; color: var(--muted); }
+                font-size: var(--t-sm); color: var(--muted); }
     .stampnow img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px;
                     background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); padding: 3px; }
     /* --- designer controls --- */
@@ -1228,7 +1228,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        than the whole row. The row is a plain div now: it used to be the label,
        which is exactly how the ⓘ inside it captured the binding. */
     .tgtext label, .tg { cursor: pointer; }
-    .tgtext { flex: 1; min-width: 0; font-size: .85rem; color: var(--muted); }
+    .tgtext { flex: 1; min-width: 0; font-size: var(--t-sm); color: var(--muted); }
     .tgtext label { display: inline; margin: 0; font: inherit; letter-spacing: normal;
                     text-transform: none; color: inherit; }
     .tg { position: relative; display: inline-block; width: 44px; height: 26px; flex: none; }
@@ -1252,7 +1252,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        The five named rows that used to live here are gone: the palette opens on
        the card now (.crpal, above), against the part that was tapped. Their CSS
        went with them rather than being left behind to be puzzled over. */
-    .chipcustom { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; color: var(--muted);
+    .chipcustom { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); color: var(--muted);
                   margin-left: 4px; }
     .chiprow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
     .chip { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;

@@ -1985,6 +1985,33 @@ describe("dashboard information architecture", () => {
   });
 
   /**
+   * The design page reads at the sizes the rest of the app uses.
+   *
+   * DESIGN.md gives the whole product three sizes and one exception. This
+   * panel had eight of its own, set in raw rem, and the result was a screen
+   * that looked a size larger than every other one — which is what the founder
+   * actually noticed.
+   *
+   * The CARD MOCKS are deliberately not in this list. Their sizes transcribe
+   * what Apple and Google really print, and putting them on our scale would
+   * make the preview lie about the finished card.
+   */
+  it("sizes its own text from the scale, not from raw rem", () => {
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    for (const sel of [
+      ".dfold > summary", ".swbox .swname", ".swbox .swval",
+      ".tgtext", ".chipcustom", ".stampnow", ".mhint", ".lbup", ".crpal-n",
+    ]) {
+      const at = css.indexOf(sel + " {");
+      expect(at, sel + " is gone from the stylesheet").toBeGreaterThan(-1);
+      const rule = css.slice(at, css.indexOf("}", at));
+      if (!rule.includes("font-size")) continue;
+      expect(rule, sel + " sets a raw font size instead of a token")
+        .toMatch(/font-size: var\(--t-/);
+    }
+  });
+
+  /**
    * One list, not a row of buttons — and still not a grid of preset tiles,
    * which is the mistake this control has already made once.
    */
