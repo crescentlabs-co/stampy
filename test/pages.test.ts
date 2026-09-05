@@ -2073,13 +2073,22 @@ describe("dashboard information architecture", () => {
   });
 
   /**
-   * The Android sub-label is one line; the reason Google needs a square logo
-   * lives in the ⓘ beside it. It used to be two sentences in a bordered box,
-   * which cost four times the height to say the same thing — in the one section
-   * whose length was the complaint.
+   * The look half explains itself, so it carries no ⓘ at all.
+   *
+   * Every control under Personalize, Stamps, Banner and Colours changes the
+   * card in front of you the moment you touch it. A bubble of prose explaining
+   * a picture you can see is jargon in front of a thing that needs none — and
+   * it was on nearly every row.
+   *
+   * The one explanation that survives is the one that is CONDITIONAL: it says
+   * something is being lost right now, so it is on screen only when something
+   * is, in one plain line rather than behind a dot.
    */
-  it("keeps the Android explanation behind its info button", () => {
-    expect(html).toContain("Android crops your logo to a small circle");
+  it("carries no info bubbles in the look half, and keeps the one real warning", () => {
+    const look = html.slice(html.indexOf(">Personalize</label>"),
+                            html.indexOf("================= LOYALTY CARD"));
+    expect(look).not.toContain("info(");
+    expect(html).toContain("Your logo is wide, so Android is cropping the ends off it.");
     expect(html).not.toContain('class="marknote"');
   });
 
@@ -2099,11 +2108,23 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("bannerReady && bannerImg.naturalWidth");
   });
 
-  // Padding a square logo into a wide frame made the wallets shrink the frame,
-  // and the mark with it.
-  it("keeps an uploaded logo's own shape", () => {
+  /**
+   * The logo is CROPPED to the slot Apple actually gives it.
+   *
+   * It used to keep whatever shape was uploaded, which sounds kinder and was
+   * not: the slot is 160×50pt whatever we send, so a tall picture arrived as a
+   * tall picture scaled down into a wide gap and ended up a fraction of the
+   * size it should have been. The cropper could do nothing about it either — a
+   * frame the same shape as the image has nothing to move inside it.
+   *
+   * "keep" itself stays, because the stamp shape still uses it: that one is a
+   * silhouette we trim and refill, so its own outline IS the thing.
+   */
+  it("crops the logo to Apple's logo band, and keeps the stamp's own shape", () => {
     expect(html).toContain('fit === "keep"');
-    expect(html).toContain('}, "keep");');
+    expect(html).toContain('}, "keep", false);');
+    expect(html).not.toContain('}, "keep");');
+    expect(html).toContain('wireUpload("[data-logo]", "logo", 1280, 400');
   });
 
   it("builds the band from one colour, not a texture and not an uploaded photo", () => {
@@ -3947,8 +3968,11 @@ describe("the create screens", () => {
     expect(stamp).toContain('<select data-r="perVisit">');
     expect(stamp).not.toContain('data-r="welcome" type="number"');
     expect(stamp).not.toContain('data-r="perVisit" type="number"');
-    // "1 visit = [2] stamps" reads as the sentence it is.
-    expect(stamp).toContain("1 visit =");
+    // The same row a points card uses: two halves of equal width, the fixed
+    // one greyed, the unit inside the box. It was a small centred sentence,
+    // which read as a caption rather than as the setting it is.
+    expect(stamp).toContain('<span class="unit-fixed">1 visit</span>');
+    expect(stamp).toContain("<i>Stamps</i>");
     const helper = html.slice(html.indexOf("function oneOrTwo(value)"),
                               html.indexOf("How many visits one reward costs"));
     expect(helper).toContain("[1, 2].map");

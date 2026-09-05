@@ -107,6 +107,48 @@ beforeAll(() => {
  * gone — no save, no uploads, nothing an owner could press by accident in a
  * strip of cards they are only swiping through.
  */
+/**
+ * The banner's strength, and the fact that it is STORED.
+ *
+ * The strip images are re-rendered from the original upload every time the
+ * target, the stamp shape or the band colour changes, so a one-off flatten
+ * would be undone by the next save. It has to be a setting the render reads.
+ */
+describe("how strong the banner is", () => {
+  it("is hidden until there is a picture to fade", async () => {
+    const h = makeHarness();
+    const flat = build(card({ bandTexture: "flat" }), h);
+    await h.settle();
+    expect(flat.querySelector("[data-bandfade]")!.hidden).toBe(true);
+
+    const art = build(card({ bandTexture: "image", bannerVersion: 3 }), makeHarness());
+    await h.settle();
+    expect(art.querySelector("[data-bandfade]")!.hidden).toBe(false);
+  });
+
+  it("saves what the slider says, with the rest of the look", async () => {
+    const h = makeHarness();
+    const div = build(card({ bandTexture: "image", bannerVersion: 3 }), h);
+    await h.settle();
+    div.querySelector('[data-f="bandOpacity"]')!.value = "40";
+    await div.querySelector("[data-a=save]")!.onclick!();
+    await h.settle();
+    const body = h.requests
+      .map((r) => r.body as Record<string, unknown> | undefined)
+      .find((b) => b && b.bandOpacity !== undefined);
+    expect(body!.bandOpacity).toBe(40);
+  });
+
+  /** A card with no slider left (a preview tile) falls back to what is stored. */
+  it("falls back to the stored value when the editor is gone", async () => {
+    const h = makeHarness();
+    const div = build(card({ bandTexture: "image", bannerVersion: 3, bandOpacity: 0 }),
+                      h, { previewOnly: true });
+    await h.settle();
+    expect(div.querySelector('[data-f="bandOpacity"]')).toBe(null);
+  });
+});
+
 describe("the panel as a preview tile", () => {
   /**
    * The trim throws the fields away, and the artwork finishes decoding AFTER
@@ -695,7 +737,7 @@ describe("the design panel, mounted", () => {
     });
 
     /**
-     * "Upload logo" sat on the button whether or not a logo was already there,
+     * "Upload" sat on the button whether or not a logo was already there,
      * so a merchant looking at their own logo was invited to upload one. The
      * Android row below it had been doing this correctly all along, which is
      * exactly what made the difference visible.
@@ -708,9 +750,9 @@ describe("the design panel, mounted", () => {
         return div;
       };
       const bare = await open(card({ logoVersion: 0 }));
-      expect(bare.querySelector("[data-logobtn]")!.textContent).toBe("Upload logo");
+      expect(bare.querySelector("[data-logobtn]")!.textContent).toBe("Upload");
       const withLogo = await open(card({ logoVersion: 7 }));
-      expect(withLogo.querySelector("[data-logobtn]")!.textContent).toBe("Replace logo");
+      expect(withLogo.querySelector("[data-logobtn]")!.textContent).toBe("Replace");
     });
 
     /**
@@ -764,12 +806,12 @@ describe("the design panel, mounted", () => {
       it("stops warning once a square version is there to use instead", async () => {
         const div = await mounted(card({ logoVersion: 5, markVersion: 9 }), { w: 480, h: 120 });
         expect(div.querySelector("[data-markhint]")!.hidden).toBe(true);
-        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Replace logo");
+        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Replace");
       });
 
       it("says on the button whether one is already there", async () => {
         const div = await mounted(card({ logoVersion: 5 }), { w: 480, h: 120 });
-        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Upload logo");
+        expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Upload");
       });
 
     });

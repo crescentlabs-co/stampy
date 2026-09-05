@@ -754,8 +754,10 @@ export const DESIGN_PANEL_CSS = /* css */ `
        DESIGN.md gives the accent exactly one job — two filled things leave the
        eye with nowhere to go. Say the word and this one takes it instead. */
     .dsurfbtn.on { background: var(--slab); color: var(--on-slab); border-color: var(--slab); }
-    .dsurfbtn svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
-                    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    /* stroke-width is the ONE thing this does not set. Each glyph carries its
+       own weight now and they are all the same, so overriding it here would
+       re-thicken exactly what the outlines were drawn thin to avoid. */
+    .dsurfbtn svg { width: 16px; height: 16px; flex: none; }
     .dsurfbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 8px; }
 
     /* The lock screen. Dark whatever the card is, because a lock screen is. */
@@ -973,14 +975,17 @@ export const DESIGN_PANEL_CSS = /* css */ `
        thing that makes it feel long. */
     /* The design fold's own summary carries the section heading now, so the
        first control inside it must not add a second heading's worth of air. */
-    .dfold { margin-top: 18px; }
-    .dfold > summary { font-size: .95rem; }
+    .dfold { margin-top: var(--s4); }
+    .dfold > summary { font-size: var(--t-md); }
     .dfold .dsec.first { margin-top: 0; }
-    .dsec { margin: 26px 0 4px; padding-top: 18px; }
-    .dsec.first { margin-top: 4px; padding-top: 0; border-top: none; }
+    /* Halved. Four headings at 26+18 was 176px of empty page between the card
+       and the last control, on the one screen that is read top to bottom in a
+       single sitting — so its height is the thing that made it feel endless. */
+    .dsec { margin: var(--s4) 0 var(--s1); padding-top: 0; }
+    .dsec.first { margin-top: var(--s2); padding-top: 0; border-top: none; }
     /* More air above a label than below it: the gap belongs to the control it
        introduces, not to the one it follows. */
-    .dlbl { margin: 20px 0 6px; }
+    .dlbl { margin: var(--s3) 0 var(--s1); }
     /* The three logo rows, identical in shape so they read as three answers to
        one question rather than one control with two things stuck to it. The
        first label in a row loses its top margin: the row supplies the gap, and
@@ -989,32 +994,44 @@ export const DESIGN_PANEL_CSS = /* css */ `
 
     /* Two logo boxes side by side. Each wears its platform's mark on the frame,
        so neither needs a name to say which it is. */
-    .logopair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-    .logobox { position: relative; display: flex; flex-direction: column; align-items: center;
-               gap: 8px; padding: 12px 10px 10px; border: 1px dashed var(--field-border);
-               border-radius: 14px; background: var(--bg); }
+    .logopair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2);
+                margin-top: var(--s2); }
+    /* A ROW, not a column: picture on the left, one small button on the right.
+       Stacked, each box was a full-width button under a thumbnail under a
+       caption — three lines to say "here is your logo" — and the two boxes
+       together took most of a phone screen. */
+    .logobox { position: relative; display: flex; align-items: center;
+               gap: var(--s2); padding: var(--s2); border: 1px dashed var(--field-border);
+               border-radius: 12px; background: var(--bg); }
     .lbplat { position: absolute; top: -9px; left: 10px; display: flex; align-items: center;
               padding: 0 5px; background: var(--bg); color: var(--muted); line-height: 1; }
     .lbplat svg { width: 15px; height: 15px; display: block; }
     /* The picture, with its own remove. An X ON the thumbnail rather than a
        disabled button beside Upload — two controls for a thing that is not
        there yet is one too many. */
-    .lbthumb { position: relative; width: 76px; height: 46px; border-radius: 8px;
+    .lbthumb { position: relative; flex: none; width: 52px; height: 36px; border-radius: 8px;
                background: var(--surface); display: flex; align-items: center;
                justify-content: center; }
-    .lbthumb.wide { width: 100%; height: 62px; }
+    /* An empty box still holds its place, so the button does not jump left the
+       first time a picture lands in it. */
+    .lbthumb[hidden] { display: flex; visibility: hidden; }
+    .lbthumb.wide { width: 100%; height: 54px; }
     .lbthumb img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
     .lbx { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px;
            border-radius: 999px; border: 0; padding: 0; cursor: pointer;
            background: var(--slab); color: var(--on-slab); font-size: 11px; line-height: 1;
            display: flex; align-items: center; justify-content: center; }
-    .lbup { margin: 0; width: 100%; }
+    /* Small, and only as wide as its word. .btn is built for the one big thing
+       at the bottom of a page — 15px of padding and a 16px face — and there
+       were four of them stacked in a section that sets no primary action at
+       all. */
+    .lbup { margin: 0; width: auto; flex: none; padding: var(--s2) var(--s3);
+            border-radius: 10px; font-size: var(--t-sm); font-weight: 600; }
     .lbup input[type=file] { display: none; }
     /* Reachable by script, invisible to the eye. display:none would make
        .click() a no-op in Safari. */
     .offscreen { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
                  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-    .lbcap { font-size: .78rem; color: var(--muted); display: flex; align-items: center; gap: 2px; }
     /* The frame. Checkered so a transparent logo reads as transparent rather
        than as white, which is what it will actually be on the card. */
     .cropwrap { position: relative; overflow: hidden; border-radius: 10px; margin: 0 auto;
@@ -1027,9 +1044,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
                 background-size: 14px 14px;
                 background-position: 0 0, 0 7px, 7px -7px, -7px 0; }
     .cropwrap canvas { display: block; }
-    .bannerbox { display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
-                 margin-top: 10px; padding: 12px; border: 1px dashed var(--field-border);
-                 border-radius: 14px; background: var(--bg); }
+    .bannerbox { display: flex; align-items: center; gap: var(--s2);
+                 margin-top: var(--s2); padding: var(--s2); border: 1px dashed var(--field-border);
+                 border-radius: 12px; background: var(--bg); }
+    .bannerbox .lbthumb.wide { flex: 1; min-width: 0; }
+    .bandfade { margin-top: var(--s2); }
+    .bandfade .dlbl { margin-top: 0; }
+    .bandfade[hidden] { display: none; }
+    .bandfade input[type=range] { width: 100%; padding: 0; border: 0; background: none;
+                                  accent-color: var(--ink); }
 
     /* Five boxes, not one strip. The strip put five swatches edge to edge with
        their names on a second line, so telling which name belonged to which
@@ -1041,15 +1064,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
              background: var(--bg); cursor: pointer; font: inherit; text-align: left; }
     .swbox[aria-expanded="true"] { border-color: var(--ink); }
     .swbox .swchip { width: 100%; height: 30px; border-radius: 8px; border: 1px solid var(--line); }
-    .swbox .swname { font-size: .78rem; font-weight: 600; color: var(--ink); }
-    .swbox .swval { font-size: .7rem; color: var(--muted); font-variant-numeric: tabular-nums;
+    .swbox .swname { font-size: var(--t-sm); font-weight: 600; color: var(--ink); }
+    .swbox .swval { font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums;
                     text-transform: uppercase; }
     .lrow .dlbl { margin-top: 0; }
     .lrow .tgrow { margin-top: 0; }
     /* The one line that is conditional, rather than the whole row: it says
        something is being lost right now, so it only belongs on screen when
        something is. */
-    .mhint { margin: 6px 0 0; font-size: .8rem; color: #9a3412; }
+    .mhint { margin: 6px 0 0; font-size: var(--t-sm); color: #9a3412; }
     .mhint[hidden] { display: none; }
     /* Colours: a read-out first, the rows only on request. Uploading a logo
        sets all five, so the resting state is "here is what your logo produced"
@@ -1087,7 +1110,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        stays on screen, unlike a toast, because it asks the owner to go and fix
        the file and come back. */
     .err { color: #a33; background: #fdeaea; border: 1px solid #f2c9c9; border-radius: 10px;
-           padding: 10px 12px; font-size: .84rem; margin-top: 8px; }
+           padding: var(--s2) var(--s3); font-size: var(--t-sm); margin-top: var(--s2); }
     /* "Your own stamp is being used" — the shape itself, at the size it is read
        at, so the answer is the picture rather than a sentence about it. */
     .stampnow { display: flex; align-items: center; gap: 8px; margin: 8px 0 0;
@@ -1105,13 +1128,28 @@ export const DESIGN_PANEL_CSS = /* css */ `
        beside the strip that was tapped. NOT under the preview: the console
        mounts the preview in a right-hand rail, so opening it there would put
        the answer in a different column from the control. */
-    .crpal { background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
-             padding: 10px 12px 12px; margin-top: 10px; }
-    .crpal-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .crpal-n { font-size: .68rem; font-weight: 700; letter-spacing: .05em;
+    /* A SHEET from the bottom, not a panel that unhides where it stands.
+       Five colours in a grid means the one you tapped can be anywhere on the
+       row, and a block appearing underneath pushed everything below it down —
+       so the thing you were looking at moved at the exact moment you touched
+       it. A sheet always arrives in the same place, and the backdrop says the
+       rest of the page is waiting. */
+    .crpal { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; margin: 0;
+             background: var(--bg); border-top: 1px solid var(--line);
+             border-radius: var(--r-lg) var(--r-lg) 0 0;
+             padding: var(--s3) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom, 0px));
+             box-shadow: 0 -12px 40px -12px rgba(12, 14, 13, .3);
+             max-height: 62vh; overflow-y: auto; }
+    .crpal[hidden] { display: none; }
+    .crbd { position: fixed; inset: 0; z-index: 59; background: rgba(12, 14, 13, .35); }
+    .crbd[hidden] { display: none; }
+    .crpal-h { display: flex; align-items: center; justify-content: space-between;
+               gap: var(--s2); margin-bottom: var(--s3); }
+    /* Uppercase and tracked, which is the ONE thing --t-xs is for. */
+    .crpal-n { font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-code);
                text-transform: uppercase; color: var(--muted); }
-    .crpal-x { border: none; background: none; font: inherit; font-size: .9rem; line-height: 1;
-               color: var(--muted); cursor: pointer; padding: 4px; border-radius: 6px; }
+    .crpal-x { border: none; background: none; font: inherit; font-size: var(--t-md); line-height: 1;
+               color: var(--muted); cursor: pointer; padding: var(--s1); border-radius: 6px; }
     .crpal-x:hover { background: var(--surface); color: var(--ink); }
     /* The swatch whose palette is open, marked in the read-out strip too, so
        the strip and the card never disagree about what is being edited. */
@@ -1254,22 +1292,31 @@ export const DESIGN_PANEL_CSS = /* css */ `
  * screen reader announces as "button" is not a control, and neither is one a
  * new owner has to press to find out what it does.
  */
-const APPLE_GLYPH =
-  '<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">' +
-  '<path d="M16.36 12.78c.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.69 0-1.75-.78-2.87-.76-1.48.02-2.84.86-3.6 2.18-1.53 2.66-.39 6.6 1.1 8.76.73 1.06 1.6 2.25 2.74 2.21 1.1-.04 1.52-.71 2.85-.71 1.33 0 1.71.71 2.87.69 1.19-.02 1.94-1.08 2.66-2.14.84-1.23 1.19-2.42 1.21-2.48-.03-.01-2.32-.89-2.34-3.52zM14.2 6.4c.6-.74 1.01-1.75.9-2.77-.87.04-1.93.58-2.56 1.31-.56.65-1.06 1.7-.93 2.7.97.08 1.97-.5 2.59-1.24z"/>' +
+// All three are OUTLINES in one weight, drawn in currentColor and nothing
+// else. The Apple mark was a solid silhouette and the Google one was Google's
+// four-colour G, so a row of three icons carried two fill styles and a brand
+// palette that is not ours. An icon row only reads as a row when the icons are
+// drawn the same way.
+export const APPLE_GLYPH =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M12 8.4c-1 0-1.7-.6-2.9-.6-2.1 0-3.8 1.7-3.8 4.3 0 3.1 2 6.6 3.6 6.6.9 0 1.4-.5 2.4-.5s1.5.5 2.4.5c1.6 0 3.6-3.5 3.6-6.6 0-2.6-1.7-4.3-3.8-4.3-1.2 0-1.9.6-2.9.6z"/>' +
+  '<path d="M12.3 8.1c.1-1.7 1.3-3 2.9-3.2"/>' +
   "</svg>";
 const BELL_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
   'stroke-linecap="round" stroke-linejoin="round" width="17" height="17" aria-hidden="true">' +
   '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>' +
   '<path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
 
-const GOOGLE_GLYPH =
-  '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' +
-  '<path fill="#4285F4" d="M21.6 12.23c0-.68-.06-1.34-.18-1.96H12v3.71h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.89-1.74 2.98-4.3 2.98-7.27z"/>' +
-  '<path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.61-2.43l-3.23-2.5c-.9.6-2.04.96-3.38.96-2.6 0-4.8-1.76-5.59-4.12H3.07v2.58A10 10 0 0 0 12 22z"/>' +
-  '<path fill="#FBBC05" d="M6.41 13.91a6 6 0 0 1 0-3.82V7.51H3.07a10 10 0 0 0 0 8.98l3.34-2.58z"/>' +
-  '<path fill="#EA4335" d="M12 5.96c1.47 0 2.79.5 3.83 1.5l2.86-2.86C16.95 2.98 14.7 2 12 2a10 10 0 0 0-8.93 5.51l3.34 2.58C7.2 7.73 9.4 5.96 12 5.96z"/>' +
+// The robot, not Google's four-colour G. What this button switches to is the
+// ANDROID card — the phone, not the company that makes the wallet — and the G
+// also brought a brand palette into a row that is otherwise all currentColor.
+export const GOOGLE_GLYPH =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M7 11a5 5 0 0 1 10 0v5.5A1.5 1.5 0 0 1 15.5 18h-7A1.5 1.5 0 0 1 7 16.5z"/>' +
+  '<path d="M9.2 7 8.2 5.4M14.8 7l1-1.6"/>' +
+  '<path d="M10.2 9.6h.01M13.8 9.6h.01"/>' +
+  '<path d="M4.6 11.8v3.6M19.4 11.8v3.6"/>' +
   "</svg>";
 
 export const DESIGN_PANEL_JS = /* js */ `
@@ -1493,8 +1540,7 @@ export const DESIGN_PANEL_JS = /* js */ `
               <img data-lbimg="logo" alt="">
               <button type="button" class="lbx" data-a="rmlogo" aria-label="Remove Apple logo">✕</button>
             </div>
-            <label class="lbup btn btn-ghost"><span data-logobtn>Upload logo</span><input data-logo type="file" accept="image/*"></label>
-            <span class="lbcap">Apple\${info("Your main logo. It goes on the iPhone card, your printed poster and your sign-up page — and on Android too, unless you upload an Android logo beside it. Any shape; a wide one with your name in it works well. Your card colours are read from it.")}</span>
+            <label class="lbup btn btn-ghost"><span data-logobtn>Upload</span><input data-logo type="file" accept="image/*"></label>
           </div>
           <div class="logobox" data-lb="android" data-markbox>
             <span class="lbplat" aria-hidden="true">${GOOGLE_GLYPH}</span>
@@ -1502,8 +1548,7 @@ export const DESIGN_PANEL_JS = /* js */ `
               <img data-lbimg="mark" alt="">
               <button type="button" class="lbx" data-a="rmmark" aria-label="Remove Android logo">✕</button>
             </div>
-            <label class="lbup btn btn-ghost"><span data-markbtn>Upload logo</span><input data-mark type="file" accept="image/*"></label>
-            <span class="lbcap">Android\${info("Android crops your logo to a small circle, so a wide one loses both ends. A square version fixes that. Optional — without it Android uses your Apple logo.")}</span>
+            <label class="lbup btn btn-ghost"><span data-markbtn>Upload</span><input data-mark type="file" accept="image/*"></label>
           </div>
         </div>
         <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
@@ -1516,7 +1561,7 @@ export const DESIGN_PANEL_JS = /* js */ `
              Explicit for/id as well, so it cannot drift again. -->
         <div class="lrow">
           <div class="tgrow">
-            <span class="tgtext"><label for="lname-tg">Show company name next to logo</label>\${info("Prints your shop's name beside your logo on the iPhone card. Turn it off if your logo already says the name. Android always shows it — Google prints the issuer name itself and we cannot switch that off.")}</span>
+            <span class="tgtext"><label for="lname-tg">Show company name next to logo</label></span>
             <label class="tg" for="lname-tg">
               <input id="lname-tg" data-lname type="checkbox" \${c.logoHasName ? "" : "checked"}>
               <span class="tgtrack"><span class="tgthumb"></span></span>
@@ -1525,7 +1570,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         </div>
 
         <label class="sec dsec" style="display:block">Stamps</label>
-        <label class="dlbl">Stamp shape\${info("Drawn in your Stamps colour. A simple shape reads best at the size a stamp actually is. iPhone only: Android always shows dots.")}</label>
+        <label class="dlbl">Stamp shape</label>
         <!-- One dropdown where there were three buttons. The three answered one
              question — dots, an emoji, or your own picture — and a row of
              buttons made them look like three different things you could do. -->
@@ -1552,8 +1597,15 @@ export const DESIGN_PANEL_JS = /* js */ `
             <img data-lbimg="banner" alt="">
             <button type="button" class="lbx" data-a="rmband" aria-label="Remove banner">✕</button>
           </div>
-          <label class="lbup btn btn-ghost"><span data-bandbtn>Upload image</span><input data-band type="file" accept="image/*"></label>
-          <span class="lbcap">\${info("The strip behind your stamps. Leave it empty and the band is just your Band colour. Your stamps are drawn ON TOP of it, so something simple and open in the middle works best.")}</span>
+          <label class="lbup btn btn-ghost"><span data-bandbtn>Upload</span><input data-band type="file" accept="image/*"></label>
+        </div>
+        <!-- How solid that picture is over the band colour. Only on screen
+             when there IS a picture: with no upload the band is the colour and
+             a slider fading nothing into itself does nothing. -->
+        <div class="bandfade" data-bandfade\${c.bandTexture === "image" ? "" : " hidden"}>
+          <label class="dlbl" for="bandop">Image strength</label>
+          <input id="bandop" data-f="bandOpacity" type="range" min="0" max="100" step="5"
+                 value="\${c.bandOpacity == null ? 100 : c.bandOpacity}">
         </div>
 
         <label class="sec dsec" style="display:block">Colours</label>
@@ -1562,6 +1614,7 @@ export const DESIGN_PANEL_JS = /* js */ `
              belonged to which colour meant counting along. Each box now carries
              its own swatch, name and value. -->
         <div class="swgrid" data-swatches></div>
+        <div class="crbd" data-palbd hidden></div>
         <div class="crpal" data-palette hidden></div>
         <!-- The five native pickers are the source of truth every other function
              reads through f("bg"), f("bandColor") and so on, so they must exist
@@ -1588,9 +1641,20 @@ export const DESIGN_PANEL_JS = /* js */ `
              it were another colour. The console cannot set the programme's
              rules, so calling it "Loyalty card" there would be a promise
              the page does not keep. -->
+        <!-- HIDDEN, not dropped, when the host asks it to be. The Create
+             wizard asks for the shop name on its Rules step, so showing it
+             again here is one setting in two places and the second one wins on
+             whichever screen is saved last. It still has to EXIST: the preview,
+             the notification mock and the save all read it through
+             f("shopName"), so removing the input would leave the panel unable
+             to draw the card it is designing. Hidden, it is seeded from the
+             card and never editable, so a save can only write it back
+             unchanged. -->
+        <div \${env.showShop === false ? "hidden" : ""}>
         <label class="sec dsec" style="display:block">\${env.showDetails ? "Loyalty card" : "Shop"}</label>
         <label class="dlbl">Shop name\${info("The name customers see on the card.")}</label>
         <input data-f="shopName" value="\${(c.shopName || "").replace(/"/g, "&quot;")}">
+        </div>
 
         <!-- The card's TERMS. Hidden rather than dropped when env.showDetails is
              false: renderPreview and drawStampStrip read stampsTarget and reward
@@ -2307,13 +2371,13 @@ export const DESIGN_PANEL_JS = /* js */ `
         // where the state of the row above it lives too. The hint is the one
         // extra thing, and only in the one state where something is actually
         // being lost: a wide logo, and no square version to use instead.
-        q("[data-markbtn]").textContent = c.markVersion ? "Replace logo" : "Upload logo";
+        q("[data-markbtn]").textContent = c.markVersion ? "Replace" : "Upload";
         // The SAME line for the row above. It never had one — its button said
         // "Upload logo" whether or not a logo was already there, so a merchant
         // looking at their own logo was invited to upload one. The Android row
         // has been doing this correctly all along, which is what made the
         // difference visible.
-        q("[data-logobtn]").textContent = c.logoVersion ? "Replace logo" : "Upload logo";
+        q("[data-logobtn]").textContent = c.logoVersion ? "Replace" : "Upload";
         hint.hidden = !(c.logoVersion && logoRatio > 1.25 && !c.markVersion);
         paintArt();
       }
@@ -2351,6 +2415,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         one("logo", Boolean(c.logoVersion), freshLogo || env.artUrl("logo", c.logoVersion));
         one("mark", Boolean(c.markVersion), freshMark || env.artUrl("mark", c.markVersion));
         one("banner", bandIsImage, freshBand || env.artUrl("banner", c.bannerVersion));
+        // The strength slider only means something when there is a picture to
+        // fade. With no upload the band IS the colour, and a slider fading
+        // nothing into itself is a control that cannot do anything.
+        const fade = div.querySelector("[data-bandfade]");
+        if (fade) fade.hidden = !bandIsImage;
       }
       // Measured off its own Image rather than the preview's: the preview logo
       // is hidden on two of the three tabs, and a hidden img still decodes but
@@ -2827,10 +2896,15 @@ export const DESIGN_PANEL_JS = /* js */ `
           img.src = URL.createObjectURL(file);
         };
       }
-      // Capped at Apple's 160×50pt logo band at @3x, but NOT padded to it: the
-      // image keeps its own shape, so a square mark stays square and fills the
-      // wallet's logo slot, and a wide wordmark stays wide. Whichever they have
-      // is the right shape to upload.
+      // Apple's 160×50pt logo band at @3x, and the picture is CROPPED to it.
+      //
+      // It used to keep whatever shape was uploaded. That sounds kinder and was
+      // not: the slot on the card is this shape whatever we send, so a tall
+      // picture arrived as a tall picture scaled down to fit a wide gap, ending
+      // up a fraction of the size it should have been — and the cropper could
+      // do nothing about it, because a frame the same shape as the image has
+      // nothing to move. Cropping to the real slot is what makes the frame a
+      // choice: what you put inside it is what appears on the card.
       wireUpload("[data-logo]", "logo", 1280, 400, (url) => {
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1; freshLogo = url;
@@ -2852,7 +2926,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         // One awaited sequence: read the palette, apply it, then check the logo
         // is still readable on the colour that came out of it.
         void applyLogoColours(url);
-      }, "keep");
+      });
       // Removing the logo hides it here too, because the pass drops the image
       // entirely with no upload and shows the shop name alone — the preview has
       // to agree, or the owner is designing against something they won't get.
@@ -2998,7 +3072,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       /** Upload vs Replace, the same tell the logo rows carry. */
       function updateBandBtn() {
         const b = q("[data-bandbtn]");
-        if (b) b.textContent = bandIsImage ? "Replace image" : "Upload image";
+        if (b) b.textContent = bandIsImage ? "Replace" : "Upload";
         paintArt();
       }
       updateBandBtn();
@@ -3219,6 +3293,14 @@ export const DESIGN_PANEL_JS = /* js */ `
         for (const r of ROLES) park.appendChild(f(r.k));
         palHost.innerHTML = "";
         palHost.hidden = !activeRole;
+        // The backdrop is what makes it a sheet rather than a box that happens
+        // to be at the bottom: it dims what is behind and takes the tap that
+        // closes it, so there is a way out that is not a small ✕.
+        const bd = q("[data-palbd]");
+        if (bd) {
+          bd.hidden = !activeRole;
+          bd.onclick = () => { activeRole = null; drawPalette(); };
+        }
         if (!activeRole) { drawSwatches(); return; }
 
         const role = ROLES.find((r) => r.k === activeRole);
@@ -3317,9 +3399,29 @@ export const DESIGN_PANEL_JS = /* js */ `
         x.fillStyle = c1;
         x.fillRect(0, 0, w, h);
         if (!bannerReady || !bannerImg.naturalWidth) return;
+        // The colour is painted first and the picture goes ON TOP of it, so
+        // fading the picture lets the shop's own colour come through rather
+        // than the white of the canvas. That is what makes this a strength
+        // control and not a hole in the card.
+        const a = bandFade();
+        if (a <= 0) return;
         const k = Math.max(w / bannerImg.naturalWidth, h / bannerImg.naturalHeight);
         const iw = bannerImg.naturalWidth * k, ih = bannerImg.naturalHeight * k;
+        x.globalAlpha = a;
         x.drawImage(bannerImg, (w - iw) / 2, (h - ih) / 2, iw, ih);
+        x.globalAlpha = 1;
+      }
+
+      /**
+       * How solid the banner is, 0 to 1.
+       *
+       * Off the SLIDER when there is one, so the card fades as it is dragged.
+       * previewOnly strips the editor, so a tile falls back to the stored value.
+       */
+      function bandFade() {
+        const box = f("bandOpacity");
+        const v = box ? Number(box.value) : Number(c.bandOpacity);
+        return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) / 100 : 1;
       }
       // ---- The band: the strip the stamps sit on, in one flat colour ----
       //
@@ -3634,6 +3736,7 @@ export const DESIGN_PANEL_JS = /* js */ `
         await save({
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
+          bandOpacity: Math.round(bandFade() * 100),
         }, "Design");
         // Only while the band IS the flat colour. card_banners holds either the
         // generated band or the owner's artwork, and regenerating unconditionally

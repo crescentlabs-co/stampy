@@ -31,6 +31,7 @@ function card(overrides: Partial<CardRow> = {}): CardRow {
     stamps_per_visit: 1,
     point_presets: "",
     member_label: "Member",
+    band_opacity: 100,
     earn_mode: "visit",
     earn_spend_cents: 0,
     earn_points: 0,

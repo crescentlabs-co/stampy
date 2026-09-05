@@ -10,6 +10,8 @@
  */
 import { DASHBOARD_MOCK_CSS, MOCK_JS } from "./ui/dashboardV2Mock.js";
 import {
+  APPLE_GLYPH,
+  GOOGLE_GLYPH,
   DESIGN_PANEL_CSS,
   DESIGN_PANEL_JS,
   HEALTH_JS,
@@ -575,7 +577,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             gap: var(--s2); margin-top: var(--s1); }
     .rate-eq { color: var(--muted); font-weight: 700; font-size: var(--t-md); }
     .unit { position: relative; display: block; }
-    .unit input { margin: 0; width: 100%; }
+    .unit input, .unit select { margin: 0; width: 100%; }
     /* pointer-events off so a tap anywhere on the box, unit included, lands in
        the field. Otherwise the greyed word is a dead spot in the middle of the
        one thing on the row you are meant to touch. */
@@ -586,6 +588,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .unit-pre input { padding-left: 44px; }
     .unit-post i { right: 14px; }
     .unit-post input { padding-right: 58px; }
+    /* A select draws its own arrow hard against the right edge, so the unit
+       sits INSIDE of it rather than underneath it. */
+    .unit-post select { padding-right: 86px; }
+    .unit-post select + i { right: 36px; }
     /* The fixed half of a visit rate. Not a box: nothing about it is being set,
        and a box that cannot be typed in is a box that gets tapped anyway. Same
        height as the field beside it so the equals sign sits on their line. */
@@ -3398,12 +3404,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
       /** A stamp card's earning half: what a visit is worth, how many, head start. */
       const stampEarn = (targets) =>
-        // A sentence with the box in the middle, because "1 visit = 2 stamps"
-        // is the thing being set and a lone number box above a label is not
-        // that sentence.
-        '<div class="eqrow"><span>1 visit =</span>' +
-          '<select data-r="perVisit">' + oneOrTwo(r.perVisit) + "</select>" +
-          "<span>stamps" + info("Almost always one. Set it to two and a single tap on your counter is worth two stamps.") + "</span></div>" +
+        // The same row a points card uses: two halves of equal width with the
+        // unit inside the box. It was a small centred sentence, which read as a
+        // caption rather than as the setting it is \u2014 and did not line up with
+        // anything above or below it.
+        "<label>How customers earn stamps</label>" +
+        '<div class="rate">' +
+          '<span class="unit-fixed">1 visit</span>' +
+          '<span class="rate-eq">=</span>' +
+          '<span class="unit unit-post">' +
+            '<select data-r="perVisit">' + oneOrTwo(r.perVisit) + "</select>" +
+            "<i>Stamps</i></span>" +
+        "</div>" +
         "<label>Stamps to reward" + info("Number of stamps a customer needs to earn their reward.") +
           '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
         '<select data-r="target">' + targets.join("") + "</select>" +
@@ -3532,8 +3544,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             relock();
           });
         }
+        // A second tap CLOSES it. This only ever assigned, so pressing the
+        // header of the section you were already in set it to the value it
+        // already had and nothing moved — the minus sign said it would close
+        // and it never did.
         for (const b of body.querySelectorAll("[data-open]")) {
-          b.onclick = () => { open = b.getAttribute("data-open"); paint(); relock(); };
+          b.onclick = () => {
+            const want = b.getAttribute("data-open");
+            open = open === want ? "" : want;
+            paint(); relock();
+          };
         }
         // A full repaint, because the rate row underneath changes SHAPE with
         // this answer rather than just its numbers.
@@ -3615,11 +3635,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       if (!card) return notFoundScreen();
       const body = document.createElement("div");
       body.innerHTML = '<h2 class="sec first">Design</h2>' +
-        '<p class="muted">Change anything and watch the card change with it.</p>' +
         "<div data-design></div>";
       // The rules live in step 2 now, so the designer shows its look half only.
       body.querySelector("[data-design]").appendChild(designerFor(card, {
         showDetails: false,
+        // Asked on the Rules step, one screen back. Two boxes for one setting
+        // means the screen saved last wins, which is not a rule anybody could
+        // work out from looking at it.
+        showShop: false,
         saveLabel: "Save design",
         customersPath: null,
       }));
@@ -3955,15 +3978,21 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
       host.innerHTML =
         '<div class="cardhead">' +
-          '<button type="button" class="cmpmetric" data-face><span>Apple</span>' + ICON_CARET + "</button>" +
+          // The SAME control the design step has, not a dropdown that says the
+          // answer in a word. Two icons and one tap each, instead of open, read,
+          // tap — for a choice with exactly two options.
+          '<div class="dsurf" data-faces role="tablist">' +
+            '<button type="button" class="dsurfbtn on" data-face="apple" role="tab"' +
+              ' aria-selected="true" aria-label="iPhone">${APPLE_GLYPH}</button>' +
+            '<button type="button" class="dsurfbtn" data-face="google" role="tab"' +
+              ' aria-selected="false" aria-label="Android">${GOOGLE_GLYPH}</button>' +
+          "</div>" +
         "</div>" +
         '<div class="carousel" data-car></div>' +
         '<div data-cardbody></div>';
 
       const car = host.querySelector("[data-car]");
       const body = host.querySelector("[data-cardbody]");
-      const faceBtn = host.querySelector("[data-face]");
-      const pop = popover(host.querySelector(".cardhead"), [faceBtn]);
       // One surface for the whole carousel, not one each: an owner asking "how
       // does this look on Android" means all of them, and two tiles disagreeing
       // about which phone you are looking at is unreadable.
@@ -3996,16 +4025,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "<span>+</span><span>Create reward</span></a>";
       car.appendChild(add);
 
-      faceBtn.onclick = () => pop.open("center",
-        popOpt("face:apple", "Apple", face === "apple") +
-        popOpt("face:google", "Android", face === "google"),
-        (v) => {
-          face = v.split(":")[1];
-          faceBtn.querySelector("span").textContent = face === "apple" ? "Apple" : "Android";
+      for (const b of host.querySelectorAll("[data-face]")) {
+        b.onclick = () => {
+          face = b.getAttribute("data-face");
+          for (const o of host.querySelectorAll("[data-face]")) {
+            const on = o.getAttribute("data-face") === face;
+            o.classList.toggle("on", on);
+            o.setAttribute("aria-selected", on ? "true" : "false");
+          }
           // Through the panel's own switcher, so "show the Android face" has
           // one implementation rather than a copy that toggles hidden.
           panels.forEach((p) => p.setSurface && p.setSurface(face));
-        }, faceBtn);
+        };
+      }
 
       /**
        * Whichever tile is nearest the middle of the strip right now.

@@ -261,6 +261,15 @@ export interface CardRow {
   /** The band across the middle — its own colour, and which texture fills it. */
   band_color: string;
   band_texture: string;
+  /**
+   * How solid an uploaded banner is over the band colour, 0-100.
+   *
+   * Stored rather than applied once and baked in, because the strip images are
+   * RE-RENDERED from the original upload every time the target, the stamp shape
+   * or the band colour changes. A one-off flatten would be undone by the next
+   * save. 100 is what every card had before this existed.
+   */
+  band_opacity: number;
   /** Legacy plaintext column — blanked by the migration once hashed. Never read. */
   staff_pin: string;
   /** scrypt hash of the staff PIN (same format as a password hash). */
@@ -1128,6 +1137,9 @@ export async function migrate(): Promise<void> {
     -- change, not before. On the CUSTOMER because a customer is a PERSON: one
     -- name covers every card they hold at this shop.
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS display_name text NOT NULL DEFAULT '';
+    -- v2.11: how solid an uploaded banner is over the band colour. 100 is what
+    -- every card drew before the slider existed, so nothing changes.
+    ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_opacity integer NOT NULL DEFAULT 100;
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -2498,6 +2510,7 @@ export async function updateCard(
     auto_winback_days: number;
     auto_winback_message: string;
     stamp_style: string;
+    band_opacity: number;
     logo_has_name: boolean;
     signup_message: string;
     band_color: string;

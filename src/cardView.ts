@@ -229,6 +229,11 @@ export function cardFieldsFromBody(
   if (typeof body.bandTexture === "string") {
     fields.band_texture = body.bandTexture === "image" ? "image" : "flat";
   }
+  // How solid that artwork is over the band colour. Only meaningful with an
+  // image behind the stamps, and harmless on a card without one.
+  if (body.bandOpacity !== undefined) {
+    fields.band_opacity = clampInt(body.bandOpacity, 0, 100, 100);
+  }
   if (typeof body.bandColor === "string") fields.band_color = hexToRgb(body.bandColor);
   // The default text a nudge is pre-filled with. The column is still called
   // auto_winback_message from when a scheduler used it; nothing is automated
@@ -366,6 +371,8 @@ export interface DesignerCard {
   bandColor: string;
   /** Always 'flat' now; kept so an older stored value still round-trips. */
   bandTexture: string;
+  /** 0-100. How solid an uploaded banner is over the band colour. */
+  bandOpacity: number;
   stampStyle: string;
   /** The logo is a lockup that already says the shop's name — see CardRow. */
   logoHasName: boolean;
@@ -449,6 +456,7 @@ export async function designerCard(card: CardRow, shopName?: string): Promise<De
     accent: rgbToHex(card.accent_color),
     bandColor: rgbToHex(card.band_color),
     bandTexture: card.band_texture,
+    bandOpacity: card.band_opacity,
     stampStyle: card.stamp_style,
     logoHasName: card.logo_has_name,
     logoVersion,
@@ -490,6 +498,9 @@ export function touchesLook(
   const drawn = [
     "background_color", "foreground_color", "label_color",
     "accent_color", "band_color", "stamp_style", "name",
+    // The banner is composited into every strip image, so how solid it is
+    // changes the picture on a card already in a wallet.
+    "band_opacity",
     // Both of these are printed on the pass itself. The kind decides every
     // field on the front, and the perks are a back field on Apple — where,
     // unlike Google's class-level copy, nothing reaches an issued card until
