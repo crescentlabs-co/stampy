@@ -41,6 +41,10 @@ import {
   logMessage,
   merchantAccount,
   merchantForOwner,
+  markOnboardingShare,
+  onboardingForMerchant,
+  promotionsForCard,
+  setPromotionsForCard,
   endCard,
   reopenCard,
   liveCardsForMerchant,
@@ -72,6 +76,8 @@ import {
   updateMerchant,
   updateOwnerPassword,
   type CardRow,
+  type CardPromotions,
+  type PromotionBackground,
   type OwnerRow,
 } from "../db.js";
 import { applyAndPush, refreshCardArt } from "../cardActions.js";
@@ -351,6 +357,9 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
   // The shop name lives on the merchant, not the card — it's what the pass shows
   // as logoText, so the designer edits it alongside the card's own fields.
   const merchant = await merchantForOwner(req.owner!.id);
+  const onboarding = merchant
+    ? await onboardingForMerchant(merchant.id)
+    : { share_completed_at: null, scanner_opened_at: null };
   // designerCard() is shared with the admin console, which renders the same
   // designer against any merchant's card — see src/cardView.ts. The PIN is
   // never in it: only its scrypt hash is stored, so there is nothing to reveal.
@@ -369,6 +378,10 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
     email: req.owner!.email,
     cards: out,
     hasStaffPin: (req.owner!.staff_pin_hash ?? "") !== "",
+    onboarding: {
+      shareCompletedAt: onboarding.share_completed_at?.toISOString() ?? null,
+      scannerOpenedAt: onboarding.scanner_opened_at?.toISOString() ?? null,
+    },
     // Null until they choose. The dashboard reads it the same way it reads
     // hasStaffPin — as "is this set-up step still outstanding".
     returnCycleDays: merchant?.expected_return_days ?? null,
@@ -391,6 +404,51 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
         }
       : null,
   });
+});
+
+/** An owner action, not a public metric: this is only the dashboard checklist. */
+dashboardRouter.post("/api/onboarding/share", requireOwner, async (req: OwnerRequest, res) => {
+  const merchant = await merchantForOwner(req.owner!.id);
+  if (!merchant) return void res.status(404).json({ error: "no-merchant" });
+  await markOnboardingShare(merchant.id);
+  res.json({ ok: true });
+});
+
+const PROMOTION_BACKGROUNDS: readonly PromotionBackground[] = ["light", "dark", "card"];
+
+function promotionText(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function promotionBackground(value: unknown): PromotionBackground {
+  return PROMOTION_BACKGROUNDS.includes(value as PromotionBackground)
+    ? value as PromotionBackground
+    : "light";
+}
+
+function promotionsFromBody(body: unknown): CardPromotions {
+  const source = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const read = (key: "social" | "poster") => {
+    const value = (source[key] && typeof source[key] === "object" ? source[key] : {}) as Record<string, unknown>;
+    return {
+      message: promotionText(value.message, 120),
+      detail: promotionText(value.detail, 160),
+      background: promotionBackground(value.background),
+    };
+  };
+  return { social: read("social"), poster: read("poster") };
+}
+
+dashboardRouter.get("/api/card/:id/promotions", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) return void res.status(403).json({ error: "not-your-card" });
+  res.json({ ok: true, promotions: await promotionsForCard(cardId) });
+});
+
+dashboardRouter.post("/api/card/:id/promotions", requireOwner, async (req: OwnerRequest, res) => {
+  const cardId = req.params.id!;
+  if (!(await ownerHasCard(req.owner!.id, cardId))) return void res.status(403).json({ error: "not-your-card" });
+  res.json({ ok: true, promotions: await setPromotionsForCard(cardId, promotionsFromBody(req.body)) });
 });
 
 /**

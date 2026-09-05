@@ -37,6 +37,7 @@ import {
   getCard,
   getOwner,
   merchantForOwner,
+  markOnboardingScannerOpened,
   ownerForCard,
   ownerIsArchived,
   type OwnerRow,
@@ -223,6 +224,8 @@ staffRouter.post("/api/login", async (req, res) => {
   // One sign-in covers every card this owner runs — the phone picks which one
   // it's stamping, it doesn't type the PIN again per card.
   setStaffCookie(res, found.owner.id, newStaffDeviceId(), found.owner.staff_session_epoch);
+  const merchant = await merchantForOwner(found.owner.id);
+  if (merchant) await markOnboardingScannerOpened(merchant.id);
   res.json({ ok: true });
 });
 

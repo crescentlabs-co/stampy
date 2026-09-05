@@ -1140,6 +1140,25 @@ export async function migrate(): Promise<void> {
     -- v2.11: how solid an uploaded banner is over the band colour. 100 is what
     -- every card drew before the slider existed, so nothing changes.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_opacity integer NOT NULL DEFAULT 100;
+    -- v2.12: setup completion is a merchant fact, while the small amount of
+    -- promotion copy belongs to the card it advertises. Keeping both in tiny
+    -- additive tables avoids turning either into a second lifecycle column on
+    -- the card, and lets an owner return to the same social/poster design.
+    CREATE TABLE IF NOT EXISTS merchant_onboarding (
+      merchant_id         text PRIMARY KEY REFERENCES merchants(id) ON DELETE CASCADE,
+      share_completed_at  timestamptz,
+      scanner_opened_at   timestamptz
+    );
+    CREATE TABLE IF NOT EXISTS card_promotions (
+      card_id            text PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+      social_message     text NOT NULL DEFAULT '',
+      social_detail      text NOT NULL DEFAULT '',
+      social_background  text NOT NULL DEFAULT 'light',
+      poster_message     text NOT NULL DEFAULT '',
+      poster_detail      text NOT NULL DEFAULT '',
+      poster_background  text NOT NULL DEFAULT 'light',
+      updated_at         timestamptz NOT NULL DEFAULT now()
+    );
   `);
 
   // v1.6: accent colour — the fill of an earned stamp in the rendered grid. Added
@@ -1537,6 +1556,86 @@ export interface MerchantRow {
    *  Cleared on claim and on withdrawal — see src/claim.ts for the trade. */
   claim_token: string | null;
   paid_at: Date | null;
+}
+
+export interface MerchantOnboarding {
+  share_completed_at: Date | null;
+  scanner_opened_at: Date | null;
+}
+
+export type PromotionBackground = "light" | "dark" | "card";
+
+export interface PromotionSettings {
+  message: string;
+  detail: string;
+  background: PromotionBackground;
+}
+
+export interface CardPromotions {
+  social: PromotionSettings;
+  poster: PromotionSettings;
+}
+
+const EMPTY_PROMOTION: PromotionSettings = { message: "", detail: "", background: "light" };
+
+/** Setup only records actions that cannot be inferred from the card itself. */
+export async function onboardingForMerchant(merchantId: string): Promise<MerchantOnboarding> {
+  const res = await getPool().query<MerchantOnboarding>(
+    `SELECT share_completed_at, scanner_opened_at FROM merchant_onboarding WHERE merchant_id = $1`,
+    [merchantId],
+  );
+  return res.rows[0] ?? { share_completed_at: null, scanner_opened_at: null };
+}
+
+/** First completion wins: re-opening a sheet must not keep moving the milestone. */
+export async function markOnboardingShare(merchantId: string): Promise<void> {
+  await getPool().query(
+    `INSERT INTO merchant_onboarding (merchant_id, share_completed_at)
+     VALUES ($1, now())
+     ON CONFLICT (merchant_id) DO UPDATE
+       SET share_completed_at = COALESCE(merchant_onboarding.share_completed_at, EXCLUDED.share_completed_at)`,
+    [merchantId],
+  );
+}
+
+/** A valid staff session proves this phone can really operate the counter. */
+export async function markOnboardingScannerOpened(merchantId: string): Promise<void> {
+  await getPool().query(
+    `INSERT INTO merchant_onboarding (merchant_id, scanner_opened_at)
+     VALUES ($1, now())
+     ON CONFLICT (merchant_id) DO UPDATE
+       SET scanner_opened_at = COALESCE(merchant_onboarding.scanner_opened_at, EXCLUDED.scanner_opened_at)`,
+    [merchantId],
+  );
+}
+
+export async function promotionsForCard(cardId: string): Promise<CardPromotions> {
+  const res = await getPool().query<{
+    social_message: string; social_detail: string; social_background: PromotionBackground;
+    poster_message: string; poster_detail: string; poster_background: PromotionBackground;
+  }>(`SELECT * FROM card_promotions WHERE card_id = $1`, [cardId]);
+  const row = res.rows[0];
+  if (!row) return { social: { ...EMPTY_PROMOTION }, poster: { ...EMPTY_PROMOTION } };
+  return {
+    social: { message: row.social_message, detail: row.social_detail, background: row.social_background },
+    poster: { message: row.poster_message, detail: row.poster_detail, background: row.poster_background },
+  };
+}
+
+export async function setPromotionsForCard(cardId: string, promotions: CardPromotions): Promise<CardPromotions> {
+  const { social, poster } = promotions;
+  await getPool().query(
+    `INSERT INTO card_promotions
+       (card_id, social_message, social_detail, social_background, poster_message, poster_detail, poster_background)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (card_id) DO UPDATE SET
+       social_message = EXCLUDED.social_message, social_detail = EXCLUDED.social_detail,
+       social_background = EXCLUDED.social_background, poster_message = EXCLUDED.poster_message,
+       poster_detail = EXCLUDED.poster_detail, poster_background = EXCLUDED.poster_background,
+       updated_at = now()`,
+    [cardId, social.message, social.detail, social.background, poster.message, poster.detail, poster.background],
+  );
+  return promotions;
 }
 
 export interface CustomerRecord {

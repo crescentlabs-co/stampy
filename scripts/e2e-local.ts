@@ -226,6 +226,21 @@ async function main() {
     (await get("/dashboard/api/overview", { headers: { cookie } })).body,
   );
   expect(overview1.cards.length === 1 && overview1.cards[0].id === "default", "overview lists default café");
+  // Onboarding belongs to the merchant and survives a dashboard refresh. A
+  // published card is derived from the cards themselves; sharing and opening
+  // the counter are deliberate actions the product must remember.
+  expect(
+    overview1.onboarding.shareCompletedAt === null && overview1.onboarding.scannerOpenedAt === null,
+    "a new merchant has not completed the sharing or counter steps",
+  );
+  const noOnboarding = await fetch(base + "/dashboard/api/onboarding/share", { method: "POST" });
+  expect(noOnboarding.status === 401, "an anonymous caller cannot complete a merchant's onboarding");
+  const shareDone = await fetch(base + "/dashboard/api/onboarding/share", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie }, body: "{}",
+  });
+  expect(shareDone.status === 200, "a signed-in owner can record a completed share action");
+  const sharedOverview = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  expect(Boolean(sharedOverview.onboarding.shareCompletedAt), "the completed share action survives a refresh");
 
   // Edit café via dashboard
   const pinHashBefore = (await getCard("default"))!.staff_pin_hash;
@@ -338,6 +353,9 @@ async function main() {
     staff1.status === 200 && /^stampy_staff_[0-9a-f-]+=/.test(staff1.cookie),
     "the right PIN issues a staff session cookie",
   );
+  const scannerOverview = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie } })).body);
+  expect(Boolean(scannerOverview.onboarding.scannerOpenedAt),
+    "a successful staff sign-in completes the start-stamping step");
   const staffHeaders = { "Content-Type": "application/json", "x-card-id": "default", cookie: staff1.cookie };
   expect(
     (await staffLogin("default", "9876")).cookie !== staff1.cookie,
