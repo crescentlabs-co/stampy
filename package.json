@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Digital loyalty stamp cards in Apple & Google Wallet for small shops \u2014 no customer app.",
+  "description": "Digital loyalty stamp cards in Apple & Google Wallet for small shops — no customer app.",
   "engines": {
     "node": ">=22"
   },
@@ -13,6 +13,7 @@
     "dev": "tsx watch src/server.ts",
     "test": "vitest run",
     "e2e": "tsx scripts/e2e-local.ts",
+    "test:ui": "tsx scripts/ui-test.ts",
     "dev:local": "tsx scripts/dev-local.ts",
     "typecheck": "tsc --noEmit",
     "art": "tsx scripts/generate-art.ts",
@@ -42,6 +43,7 @@
     "@types/pg": "^8.11.10",
     "@types/qrcode": "^1.5.5",
     "embedded-postgres": "18.4.0-beta.17",
+    "playwright": "^1.63.0",
     "sharp": "^0.33.5",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

@@ -33,12 +33,23 @@ founder's, and anyone holding a link. Commit working changes, not broken ones.
 ## Verify before claiming done
 ```sh
 pnpm typecheck && pnpm test && pnpm e2e && pnpm test:migration && pnpm test:backup
+pnpm test:ui
 ```
 `pnpm e2e` boots an embedded Postgres and runs the full HTTP flow (190+ checks).
 `pnpm test:migration` builds a REAL pre-v1.3 database and upgrades it — the only
 cover for the path a deploy actually takes. `pnpm test:backup` dumps, erases and
 restores a real database, because a backup nobody has restored is not a backup.
-All five must be green before any change is called complete. Commit after
+`pnpm test:ui` drives the Create → Design → Publish → Manage flow in a REAL
+Chromium and then reads the server back. It exists because every other suite
+here drives the page's code directly — it mounts the design panel and calls its
+functions — which proves the functions work and proves nothing about the SCREEN.
+Three rounds of "fixed" reached the founder still broken that way, the worst
+being a photograph that was too big to store: the save was refused, the refusal
+was swallowed, and "Finish and publish" published a card with no artwork on it.
+**Its test images are deliberately photographic noise.** A flat logo compresses
+to a few kilobytes and slips under every size limit in the app, which is exactly
+why nothing caught this. Never swap them for a simple shape to make a test pass.
+All six must be green before any change is called complete. Commit after
 every working change with a meaningful message.
 
 `pnpm dev:local` runs the whole app on localhost:3010 with an embedded Postgres

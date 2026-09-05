@@ -3004,7 +3004,15 @@ export const DESIGN_PANEL_JS = /* js */ `
           img.src = URL.createObjectURL(file);
         };
       }
-      // Apple's 160×50pt logo band at @3x, and the picture is CROPPED to it.
+      // Apple's 160×50pt logo band at @3x — 480x150, and the picture is
+      // CROPPED to it.
+      //
+      // It was 1280x400: two and a half times more picture than the card can
+      // possibly show, and 512,000 pixels. A logo on a flat background squashes
+      // to a few kilobytes at that size and slips under the limit; a PHOTOGRAPH
+      // comes out over a megabyte and is refused, so the upload silently never
+      // happened. The size checker beside it has always said uploads arrive as
+      // "~480x150 PNGs" — the two had simply drifted apart.
       //
       // It used to keep whatever shape was uploaded. That sounds kinder and was
       // not: the slot on the card is this shape whatever we send, so a tall
@@ -3013,7 +3021,7 @@ export const DESIGN_PANEL_JS = /* js */ `
       // do nothing about it, because a frame the same shape as the image has
       // nothing to move. Cropping to the real slot is what makes the frame a
       // choice: what you put inside it is what appears on the card.
-      wireUpload("[data-logo]", "logo", 1280, 400, (url) => {
+      wireUpload("[data-logo]", "logo", 480, 150, (url) => {
         const im = q("[data-pv-logo]");
         im.src = url; im.style.display = ""; c.logoVersion = 1; freshLogo = url;
         q("[data-a=rmlogo]").disabled = false;
@@ -3058,12 +3066,14 @@ export const DESIGN_PANEL_JS = /* js */ `
         toast("Logo removed");
       };
 
-      // The square version, for Google's small near-square logo slot. Padded to
-      // a square on purpose — the opposite of the logo above — because that slot
+      // The square version, for Google's small near-square logo slot. 480 and
+      // not 660 for the same reason the logo above came down: Google draws this
+      // in a circle a few millimetres across, and 660x660 was 435,000 pixels of
+      // photograph that could not be stored. Padded to a square on purpose — the opposite of the logo above — because that slot
       // is the shape being fitted, and letterboxing beats a cropped mark.
       // Nothing on this page previews it: the preview is the Apple card, which
       // never uses it, and a preview that showed it would be a lie.
-      wireUpload("[data-mark]", "mark", 660, 660, (url) => {
+      wireUpload("[data-mark]", "mark", 480, 480, (url) => {
         c.markVersion = 1; freshMark = url;
         q("[data-a=rmmark]").disabled = false;
         // The row stays, and changes what it says: with one uploaded it is no
@@ -3466,12 +3476,13 @@ export const DESIGN_PANEL_JS = /* js */ `
       // uses it as the hero image. Photos are gone — this is always generated.
       async function saveBanner(dataUrl, quiet) {
         const { body } = await api(P("/banner"), { method: "POST", body: JSON.stringify({ png: dataUrl.split(",")[1] }) });
-        if (!body.ok) return toast(body.error || "Band failed");
+        if (!body.ok) { toast(body.error || "Band failed"); return false; }
         // Re-bake the strips: the band is the backdrop INSIDE each strip PNG,
         // so a new band that isn't re-rendered would never reach the pass.
         await loadBanner(dataUrl);
-        await applyStamps(stampStyle || "dot", true, true);
+        if (!(await applyStamps(stampStyle || "dot", true, true))) return false;
         if (!quiet) toast("Band saved ✓");
+        return true;
       }
 
       /** The band as a data URL — the copy the wallets fetch. */
@@ -3589,13 +3600,20 @@ export const DESIGN_PANEL_JS = /* js */ `
         // that the all-at-once replace is what prunes a target nobody holds any
         // more — so chunking is not available as an escape.
         //
-        // So: render, weigh, and if it is too heavy render the set again at @2x.
-        // A shop with artwork trades some resolution for a card that saves; a
-        // flat shop keeps @3x. The GRID is what gets smaller, which is the wrong
-        // half to lose — but a strip that will not upload is worse than a strip
-        // that is 750px wide, and 750x246 is what every card shipped with until
-        // two commits ago.
-        const CAP = 512 * 1024;
+        // So: render, weigh, and step down until it fits. A shop with artwork
+        // trades some resolution for a card that saves; a flat shop never
+        // leaves the top rung. The GRID is what gets smaller, which is the
+        // wrong half to lose — but a strip that will not upload is worse than a
+        // strip that is 750px wide.
+        //
+        // TWO ceilings, and the second was the one being missed. validateArtPng
+        // refuses a single strip over MAX_ART_BYTES; express.json refuses the
+        // whole BODY over 8MB — and a 20-stamp card sends 21 strips in ONE
+        // request, because setStampStrips replaces the set atomically. With a
+        // photograph composited behind the grid the total is what breaks first,
+        // and nothing was weighing the total.
+        const CAP = 1500 * 1024;         // one strip — matches MAX_ART_BYTES
+        const BODY = 6 * 1024 * 1024;    // the batch, with headroom under 8MB
         // base64 is 4 bytes per 3, and the cap is applied to the DECODED bytes.
         const decoded = (b64) => Math.floor(b64.length * 3 / 4);
         // A membership card stores exactly ONE band, keyed (0, 0) — see
@@ -3617,17 +3635,25 @@ export const DESIGN_PANEL_JS = /* js */ `
           }
           return out;
         };
-        let strips = render(1125, 369);
-        if (strips.some((s) => decoded(s.png) > CAP * 0.9)) strips = render(750, 246);
+        // Full retina first, then down. @3x is Apple's storeCard strip at
+        // 375x123pt; every rung below it is the same picture, smaller.
+        const SCALES = [[1125, 369], [750, 246], [563, 185], [375, 123]];
+        let strips = [];
+        for (const wh of SCALES) {
+          strips = render(wh[0], wh[1]);
+          const total = strips.reduce((n, x) => n + decoded(x.png), 0);
+          if (total <= BODY && strips.every((x) => decoded(x.png) <= CAP * 0.9)) break;
+        }
         const put = async () => {
           const { body } = await api(P("/stamps"), { method: "POST", body: JSON.stringify({ style, strips }) });
           if (!body.ok) { toast(body.error || "Couldn't save stamps"); return false; }
           return true;
         };
-        if (!commit) { stage("stamps", put); renderPreview(); return; }
-        if (!(await put())) return;
+        if (!commit) { stage("stamps", put); renderPreview(); return true; }
+        if (!(await put())) return false;
         renderPreview();
         if (!quiet) toast("Stamp style saved ✓");
+        return true;
       }
 
 
@@ -3809,19 +3835,25 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (env.draft) {
           Object.assign(c, fields);
           toast("Saving a new card arrives with the Create flow — nothing was written.");
-          return;
+          return false;
         }
         const { body } = await api(P(), { method: "POST", body: JSON.stringify(fields) });
-        if (!body.ok) return toast(body.error || "Save failed");
+        if (!body.ok) { toast(body.error || "Save failed"); return false; }
         Object.assign(c, fields);
         // Everything the owner staged goes out with the fields — this is the
         // press they were waiting for. A failure leaves the rest staged and says
         // so, rather than reporting a save that only half happened.
-        if (!(await flushPending())) return;
+        //
+        // And it RETURNS that failure. It used to swallow it: the refusal was
+        // toasted and nothing was told, so the Create wizard published a card
+        // whose logo had never been sent anywhere. The owner designed a card
+        // and got the default one.
+        if (!(await flushPending())) return false;
         // Always regenerate, even on plain dots: the strip image is now the only
         // place stamps are drawn, so a card with no strips would show nothing.
-        await applyStamps(stampStyle || "dot", true, true);
+        if (!(await applyStamps(stampStyle || "dot", true, true))) return false;
         if (!quiet) toast(label + " saved ✓");
+        return true;
       }
 
       // How many people this actually reaches. Read once when the panel opens, so
@@ -3842,21 +3874,24 @@ export const DESIGN_PANEL_JS = /* js */ `
        * stored PNG — so saving the field alone would leave the old band on the
        * card and the new one only in the picker.
        */
+      /** True only when everything the owner staged actually reached the card. */
       async function saveLook(quiet) {
         // No shopName here. The field sits above the fold now, next to Save
         // rules — leaving its save on a button inside a collapsed section is how
         // you get an owner who renamed their shop and lost it.
-        await save({
+        const look = await save({
           bg: f("bg").value, fg: f("fg").value, label: f("label").value, accent: f("accent").value,
           bandColor: f("bandColor").value,
           bandOpacity: Math.round(bandFade() * 100),
         }, "Design", quiet);
+        if (!look) return false;
         // Only while the band IS the flat colour. card_banners holds either the
         // generated band or the owner's artwork, and regenerating unconditionally
         // would paint a flat rectangle over an upload the first time somebody
         // touched a colour picker — silently, with no undo and no copy of the
         // file. band_texture is what tells the two apart.
-        if (!bandIsImage) await saveBanner(bandPng(1125, 369), quiet);
+        if (!bandIsImage) return await saveBanner(bandPng(1125, 369), quiet);
+        return true;
       }
 
       /**

@@ -3754,13 +3754,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        * completely.
        */
       const keepDesign = async () => {
-        if (panel.saveDesign) await panel.saveDesign(true);
+        if (!panel.saveDesign) return true;
+        if (await panel.saveDesign(true)) return true;
+        // The panel has already named WHICH picture it could not store, in its
+        // own words. This says what that means for the button just pressed —
+        // and above all it does not carry on, which was the whole bug: a
+        // refused upload published a card with no artwork on it.
+        toast("Nothing was published \u2014 your design did not save. Check the message above.");
+        return false;
       };
       return wizardFrame(2, body, {
         nextLabel: "Finish and publish",
         onStep: (i) => navigate(i === 0 ? "/create/card" : "/create/" + id + "/rules"),
         onNext: async () => {
-          await keepDesign();
+          if (!(await keepDesign())) return;
           // The server says WHY it refused; this used to throw that away and
           // show one sentence for every cause, so an owner with a fixable
           // problem was told only that it had not worked.
@@ -3773,7 +3780,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           navigate("/ready/" + id);
         },
         onLater: async () => {
-          await keepDesign();
+          if (!(await keepDesign())) return;
           await refreshCards();
           toast("Saved \u2014 finish it from Manage whenever you like");
           navigate("/manage/rewards");

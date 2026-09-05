@@ -2153,7 +2153,11 @@ describe("dashboard information architecture", () => {
     expect(html).toContain('fit === "keep"');
     expect(html).toContain('}, "keep", false);');
     expect(html).not.toContain('}, "keep");');
-    expect(html).toContain('wireUpload("[data-logo]", "logo", 1280, 400');
+    // 480x150 is Apple's logo band at full retina — the most the card can
+    // possibly show. It was 1280x400, two and a half times more picture than
+    // that, and 512,000 pixels: a flat logo squashes to nothing at that size
+    // and a PHOTOGRAPH comes out over a megabyte and is refused outright.
+    expect(html).toContain('wireUpload("[data-logo]", "logo", 480, 150');
   });
 
   it("builds the band from one colour, not a texture and not an uploaded photo", () => {
