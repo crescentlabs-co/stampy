@@ -1541,7 +1541,7 @@ describe("dashboard information architecture", () => {
       // Active nav items are marked by weight, never by a third fill — the
       // bottom bar, Manage's pill and the designer's underline are three nav
       // controls on one screen, and DESIGN.md says they differ by shape.
-      expect(html).toContain(".botnav a.on { color: var(--ink); font-weight: 800; }");
+      expect(html).toContain(".botnav a.on { color: var(--ink); font-weight: var(--type-navigation-weight); }");
       expect(html).not.toContain(".botnav a.on { background: var(--accent)");
     });
 
@@ -2730,9 +2730,9 @@ describe("the visit-cycle setting", () => {
    */
   it("sets every screen's title at the size Home's headings are", () => {
     const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
-    expect(css).toContain(".sec.first { margin-top: 0; font-size: var(--t-xl); }");
+    expect(css).toContain(".sec.first { margin-top: 0; font-size: var(--type-page-title-size); }");
     // A section heading further down a screen is still the smaller one.
-    expect(css).toMatch(/\.sec \{ font-size: var\(--t-lg\)/);
+    expect(css).toMatch(/\.sec \{ font-size: var\(--type-section-heading-size\)/);
   });
 
   it("is one dropdown holding the three ranges", () => {
@@ -2905,7 +2905,7 @@ describe("Home", () => {
     // at a time, which is what made it read as generated. Three now: 24 for the
     // title, both headings and every number; 14 for a row's name and figure;
     // 12 for every other word.
-    for (const cls of [".metrics .metric b {", ".cfig b {", ".home .sec {"]) {
+    for (const cls of [".metrics .metric b {", ".cfig b {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the big size").toContain("var(--t-xl)");
     }
@@ -2921,7 +2921,8 @@ describe("Home", () => {
     }
     // Home's headings are a rank above every other screen's, so the rule hangs
     // off the screen's own class rather than resizing .sec for everybody.
-    expect(html).toContain(".home .sec { font-size: var(--t-xl); }");
+    expect(html).toContain(".sec.first { margin-top: 0; font-size: var(--type-page-title-size); }");
+    expect(html).toContain(".sec { font-size: var(--type-section-heading-size)");
     const label = html.slice(html.indexOf(".mlabel {"), html.indexOf(".mnote {"));
     expect(label).not.toContain("uppercase");
     // The change beside a number is a colour, not a size and not a weight.
@@ -3343,21 +3344,67 @@ describe("the dashboard keeps to one scale", () => {
     [...new Set([...css.matchAll(new RegExp(prop + ": ([^;}]+)", "g"))].map((m) => m[1]!.trim()))];
 
   it("names a font family in one place, the :root tokens", () => {
-    // Swapping the product's type must stay a two-line edit. It was one family
-    // for both jobs and is now two, and the only way that stays true is if no
-    // rule anywhere spells a family out. Monospace is exempt: it is a stack of
-    // whatever the machine has, not a face we ship, and there is no token for
-    // it because nothing about it is a design decision.
+    // Swapping the product's type must stay a two-line edit. Inter variable is
+    // now the one face for every role, and the only way that stays true is if
+    // no rule anywhere spells a family out. Monospace is exempt: it is a stack
+    // of whatever the machine has, not a face we ship, and there is no token
+    // for it because nothing about it is a design decision.
     const kit = readFileSync(new URL("../src/ui/kit.ts", import.meta.url), "utf8");
     for (const [name, text] of [["dashboardV2.ts", css], ["kit.ts", kit], ["pages.ts", readFileSync(new URL("../src/pages.ts", import.meta.url), "utf8")]] as const) {
       const named = [...text.matchAll(/font-family: (?!var\(--|inherit|ui-monospace)([^;}\n]+)/g)].map((m) => m[1]!.trim());
       // kit.ts declares the @font-face blocks themselves, which is where the
       // names are allowed to appear, and the two tokens that point at them.
-      const stray = named.filter((v) => !/^"(Inter Tight|Inter|Figtree|Bricolage Grotesque|Instrument Serif)"[,;]?$/.test(v));
+      const stray = named.filter((v) => !/^"(Inter|Figtree|Bricolage Grotesque|Instrument Serif)"[,;]?$/.test(v));
       expect(stray, name + " spells out a font family: " + stray.join(" | ")).toEqual([]);
     }
-    expect(kit).toContain(`--display: "Inter Tight",`);
+    expect(kit).not.toContain('font-family: "Inter Tight"');
+    expect(kit).toContain(`--display: "Inter",`);
     expect(kit).toContain(`--body: "Inter",`);
+  });
+
+  it("defines Inter variable roles without global tracking", () => {
+    const kit = readFileSync(new URL("../src/ui/kit.ts", import.meta.url), "utf8");
+    const base = kit.slice(kit.indexOf("export const baseCss"), kit.indexOf("export function esc"));
+    const role = (name: string, value: string) =>
+      expect(base, name + " is missing").toContain(name + ": " + value);
+
+    role("--type-page-title-size", "44px");
+    role("--type-page-title-weight", "700");
+    role("--type-page-title-leading", "1.05");
+    role("--type-page-title-tracking", "-.04em");
+    role("--type-section-heading-size", "28px");
+    role("--type-section-heading-weight", "700");
+    role("--type-section-heading-leading", "1.1");
+    role("--type-section-heading-tracking", "-.025em");
+    role("--type-card-title-size", "22px");
+    role("--type-card-title-weight", "600");
+    role("--type-card-title-leading", "1.2");
+    role("--type-card-title-tracking", "-.015em");
+    role("--type-body-size", "17px");
+    role("--type-body-weight", "400");
+    role("--type-body-leading", "1.45");
+    role("--type-navigation-size", "16px");
+    role("--type-navigation-weight", "600");
+    role("--type-eyebrow-size", "16px");
+    role("--type-eyebrow-weight", "600");
+    role("--type-eyebrow-tracking", ".06em");
+    expect(base).toContain("font-optical-sizing: auto");
+    expect(base).toContain("-webkit-font-smoothing: antialiased");
+    expect(base).toContain("-moz-osx-font-smoothing: grayscale");
+
+    const body = base.slice(base.indexOf("body {"), base.indexOf("}", base.indexOf("body {")));
+    expect(body).toContain("font-size: var(--type-body-size)");
+    expect(body).not.toContain("letter-spacing:");
+
+    for (const selector of ["h1, .type-page-title", "h2, .type-section-heading", "h3, .type-card-title", ".eyebrow, .type-eyebrow"]) {
+      expect(base).toContain(selector);
+    }
+    expect(css).toContain(".sec { font-size: var(--type-section-heading-size)");
+    expect(css).toContain(".sec.first { margin-top: 0; font-size: var(--type-page-title-size); }");
+    const nav = css.slice(css.indexOf(".botnav a {"), css.indexOf("}", css.indexOf(".botnav a {")));
+    expect(nav).toContain("font-size: var(--type-navigation-size)");
+    expect(nav).toContain("font-weight: var(--type-navigation-weight)");
+    expect(nav).toContain("letter-spacing: var(--type-navigation-tracking)");
   });
 
   /**
@@ -3471,10 +3518,10 @@ describe("the dashboard keeps to one scale", () => {
     const lh = values("line-height").filter(
       // The ⋯ button centres one glyph in a 36px circle. That is a layout
       // reset, not a reading decision, and no token should describe it.
-      (v) => !v.startsWith("var(--lh-") && v !== "1",
+      (v) => !v.startsWith("var(--lh-") && !v.startsWith("var(--type-") && v !== "1",
     );
     expect(lh, "line heights off the scale: " + lh.join(", ")).toEqual([]);
-    const tr = values("letter-spacing").filter((v) => !v.startsWith("var(--tr-"));
+    const tr = values("letter-spacing").filter((v) => !v.startsWith("var(--tr-") && !v.startsWith("var(--type-"));
     expect(tr, "tracking off the scale: " + tr.join(", ")).toEqual([]);
   });
 
@@ -3482,7 +3529,7 @@ describe("the dashboard keeps to one scale", () => {
     const off = values("font-size").filter(
       // .48em is a RATIO of its parent — the share beside a health count — not
       // a size, so it moves when the token it sits inside moves.
-      (v) => !v.startsWith("var(--t-") && v !== ".48em",
+      (v) => !v.startsWith("var(--t-") && !v.startsWith("var(--type-") && v !== ".48em",
     );
     expect(off, "text sizes off the scale: " + off.join(", ")).toEqual([]);
   });

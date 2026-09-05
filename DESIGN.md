@@ -39,15 +39,25 @@ fighting it. A pure grey here reads as unconsidered.
 
 ## Type
 
-**Two families, one for each job.** Both are variable files declared inline in
-`baseCss` (src/ui/kit.ts) and served from `/assets` with a long immutable cache,
-so the filename must change if the file ever does.
+**One variable family, with distinct roles.** Inter (`inter-latin.woff2`,
+400–700) is declared inline in `baseCss` (src/ui/kit.ts) and served from
+`/assets` with a long immutable cache, so the filename must change if the file
+ever does. It uses `font-optical-sizing: auto` and antialiased rendering.
 
-- `--display` — **Inter Tight** (`inter-tight-latin.woff2`, 500–800). Headings,
-  big numbers, prices. **700.** Tight tracking (`-.02em` to `-.03em`); the
-  bigger it is, the tighter it goes.
-- `--body` — **Inter** (`inter-latin.woff2`, 400–700). Everything you read.
-  **400**, occasionally 600 for emphasis.
+| Role | Size | Weight | Line-height | Letter spacing |
+|---|---:|---:|---:|---:|
+| Page title | 44px | 700 | 1.05 | -0.04em |
+| Section heading | 28px | 700 | 1.1 | -0.025em |
+| Card title | 22px | 600 | 1.2 | -0.015em |
+| Body | 17px | 400 | 1.45 | natural (no override) |
+| Navigation | 16px | 600 | inherited | natural (no override) |
+| Uppercase eyebrow | 16px | 600 | inherited | 0.06em |
+
+Use the semantic classes (`.type-page-title`, `.type-section-heading`,
+`.type-card-title`, `.type-body`, `.type-eyebrow`) where the matching semantic
+element is not available. Do not put a `letter-spacing` value on `body` or a
+universal selector: tracking adds to Inter's own spacing and only belongs where
+the role explicitly calls for it.
 
 **The six sizes and the four weights**, chosen by the founder in Sept 2026 over
 the smaller set that came before them (body was 14px and the floor was 11px).
@@ -66,24 +76,20 @@ discovery:
 Headings **700**, buttons and important labels **600**, body **400**, small and
 secondary labels **400–500**.
 
-**The fonts are ours, served from `/assets`** — the same Inter, downloaded once
-and cached hard, rather than fetched from Google on every visit. Two files, both
-variable, covering every weight above. Do not swap this for a `<link>` to a font
-CDN: it adds a third-party round trip to the first paint of every page and buys
-nothing.
+**The font is ours, served from `/assets`** — Inter is downloaded once and
+cached hard, rather than fetched from Google on every visit. Do not swap this
+for a `<link>` to a font CDN: it adds a third-party round trip to the first paint
+of every page and buys nothing.
 
 **A third family is named in exactly two places**, both monospace, both for a
 code or a link somebody has to read one character at a time — where telling `1`
 from `l` and `0` from `O` matters and the two house faces genuinely cannot help.
 Nothing else may name a family.
 
-They are two cuts of one design, so they agree about letter shapes and disagree
-about width. That is the whole point: a heading should not be the sentence under
-it at a different size, which is what one family doing both jobs produced.
-
-**These two lines in `:root` are the only place a font family is named.** Every
-rule in the product goes through `var(--display)` or `var(--body)`. Swapping the
-type means editing two lines, and it must stay that way.
+**These two aliases in `:root` are the only place a font family is named.**
+Every rule in the product goes through `var(--display)` or `var(--body)`. They
+currently point to the same Inter variable family so hierarchy comes from the
+role's size, weight, leading and only its deliberate tracking.
 
 Figtree, Bricolage Grotesque and Instrument Serif are still in `assets/fonts`
 and still declared, because dropping a face is not free — an unused `@font-face`

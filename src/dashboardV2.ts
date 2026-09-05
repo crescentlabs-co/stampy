@@ -75,12 +75,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        Home's two, and only those two. .metric is also the health tiles on
        Customers and the three-up grids on the detail screens — four of these
        across a phone at hero size is a number that does not fit its own box. */
-    /* --body, not --display, and 700 rather than 800.
-       A figure sits INSIDE a block of small text — its label above it and what
-       it is measured against below — and --display is Inter TIGHT, a narrower
-       cut. Two widths of the same design at one size do not read as a level,
-       they read as a mismatch, which is what the chart card looked like with
-       its two figures in one family and its dates and tooltip in the other.
+    /* --body, not --display, and 700 rather than 800. A figure sits inside a
+       block of small text, so it stays in the same Inter variable family as its
+       label, dates and tooltip.
        Slashed zero for the same reason a counter's short code drops O and 0:
        these are figures to be read exactly, not words. */
     .metrics .metric b { font-family: var(--body); font-weight: 700; font-size: var(--t-xl);
@@ -123,10 +120,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .homehead { display: flex; align-items: center; justify-content: space-between;
                 gap: var(--s3); flex-wrap: wrap; margin: var(--s3) 0 var(--s3); }
     .homehead .sec { margin: 0; }
-    /* Every heading on Home, not only the title: Programmes and Campaigns sit
-       at the same rank as it and as the numbers. .sec elsewhere keeps --t-lg,
-       which is why this hangs off the screen's own class. */
-    .home .sec { font-size: var(--t-xl); }
     /* A .seg shrunk to sit on a heading row without towering over it: reading
        size, and the smallest padding on the scale top and bottom. The labels
        are "7d" and "30d" for the same reason — three words would not fit beside
@@ -691,11 +684,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .botnav a { flex: 1; min-width: 0; display: flex; flex-direction: column;
                 align-items: center; justify-content: center; gap: 2px;
                 min-height: 46px; border-radius: 999px; text-decoration: none;
-                /* The one --t-xs that is not uppercase. Five labels share one
-                   pill on a 360px phone and "Customers" at --t-sm does not fit;
-                   every phone sets its nav in sentence case anyway. */
-                color: var(--muted); font-size: var(--t-xs); font-weight: 600;
-                letter-spacing: var(--tr-code); padding: var(--s1) 0;
+                color: var(--muted); font-size: var(--type-navigation-size);
+                font-weight: var(--type-navigation-weight); letter-spacing: var(--type-navigation-tracking); padding: var(--s1) 0;
                 transition: min-height .18s ease; }
     /* Scrolling drops the words and keeps the icons: the same class the top bar
        thins on, so the two bars move together and there is one mechanism, not
@@ -715,7 +705,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        share this screen — this bar, Manage's tab pill and the designer's
        preview switch — and DESIGN.md's rule is that they differ by shape, so
        only one of them may be a filled pill. */
-    .botnav a.on { color: var(--ink); font-weight: 800; }
+    .botnav a.on { color: var(--ink); font-weight: var(--type-navigation-weight); }
     .botnav a.on svg { stroke-width: 2.4; }
     .botnav a:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; }
     /* The primary action. Inside the pill rather than raised out of it: a bar
@@ -1004,7 +994,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* --- Card tab: Design / Rules section headings --- */
     /* Sections are separated by SPACE and a heading, never by a rule. A line
        above every heading is most of what made this read as a wiki page. */
-    .sec { font-size: var(--t-lg); line-height: var(--lh-tight);
+    .sec { font-size: var(--type-section-heading-size); font-weight: var(--type-section-heading-weight);
+           line-height: var(--type-section-heading-leading); letter-spacing: var(--type-section-heading-tracking);
            margin: var(--s5) 0 var(--s3); }
     /* --- counter activity: facts, and nothing that looks like a verdict --- */
     /* Deliberately has no state styling at all. There is no red, no bold-on-
@@ -1040,7 +1031,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        Home's are. Headings further down — Info, Status, Share it — stay a rank
        below on purpose: making every one of them a title flattens the
        hierarchy rather than fixing it. */
-    .sec.first { margin-top: 0; font-size: var(--t-xl); }
+    .sec.first { margin-top: 0; font-size: var(--type-page-title-size); }
     /* Design is a set-it-once job, so it folds away (.fold lives in
        DESIGN_PANEL_CSS, with the panel that emits it). Rules — the reward, the
        stamp count, the win-back — is what owners come back to, and stays open. */
@@ -2245,7 +2236,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         { label: "Start stamping", done: stamping, path: card ? "/ready/" + card.id + "?section=how" : "/shop/staff" },
       ];
       return '<section aria-label="Card launch progress" style="margin:0 0 var(--s4)">' +
-        '<p style="font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:8px">Get ready to launch</p>' +
+        '<p class="eyebrow" style="color:var(--muted);margin-bottom:8px">Get ready to launch</p>' +
         '<div style="border:1px solid var(--line);border-radius:var(--r);overflow:hidden">' +
         steps.map((step, index) => '<button type="button" data-launch="' + esc(step.path) + '" style="appearance:none;border:0;border-bottom:' +
           (index === steps.length - 1 ? "0" : "1px solid var(--line)") + ';background:' +

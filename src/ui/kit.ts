@@ -77,19 +77,8 @@ export const baseCss = /* css */ `
     font-display: swap;
     src: url("/assets/fonts/figtree-latin.woff2") format("woff2");
   }
-  /* The two faces everything is actually set in. Two families, because one
-     family doing both jobs is why a heading and the paragraph under it used to
-     read as the same thing at two sizes. Inter Tight is the narrower cut of the
-     same design, so the pair agree about letter shapes and disagree about
-     width — which is the difference you want between a heading and a sentence.
-     Both are variable files: one request each covers every weight we set. */
-  @font-face {
-    font-family: "Inter Tight";
-    font-style: normal;
-    font-weight: 500 800;
-    font-display: swap;
-    src: url("/assets/fonts/inter-tight-latin.woff2") format("woff2");
-  }
+  /* Inter is one variable face, used across every dashboard role. One request
+     covers its complete in-use weight range, without a third-party round trip. */
   @font-face {
     font-family: "Inter";
     font-style: normal;
@@ -108,7 +97,7 @@ export const baseCss = /* css */ `
        That is what --on-accent and --accent-dark are for. */
     --accent: #c9f73d; --accent-2: #b8e82c; --on-accent: #0c0e0d;
     --accent-dark: #2f3630; --on-slab: #f4f6f2;
-    /* --- the scale ---------------------------------------------------------
+    /* --- the supporting scale ---------------------------------------------
        SIX text sizes, each with ONE stated job. The discipline is the count and
        the jobs, not the gaps: the dashboard had grown 22 sizes, twelve of them
        inside a 3.5px range, and a difference nobody can perceive does not read
@@ -121,7 +110,7 @@ export const baseCss = /* css */ `
     --t-hero: 2rem;      /* 32px — page headings */
     --t-xl: 1.5rem;      /* 24px — section headings */
     --t-lg: 1.25rem;     /* 20px — card titles, large body */
-    --t-md: 1rem;        /* 16px — body. The default */
+    --t-md: 1rem;        /* 16px — controls and compact interface text */
     --t-sm: .875rem;     /* 14px — secondary labels, helper text */
     --t-xs: .75rem;      /* 12px — fine print, metadata, uppercase tags */
     /* Line height belongs to the scale. One global 1.5 left headings loose and
@@ -132,11 +121,8 @@ export const baseCss = /* css */ `
     --lh-tight: 1.25;    /* headings */
     --lh-body: 1.65;     /* body */
     --lh-read: 1.75;     /* a paragraph somebody has to read */
-    /* Tracking belongs to the scale too, and it is paired to SIZE, because that
-       is how Inter is drawn: it wants tightening as it gets big and opening up
-       as it gets small. We had ten tracking values chosen one at a time, and
-       most of them squeezed. --display is Inter TIGHT, a narrow cut already;
-       tightening a narrow face is what made headings feel packed. */
+    /* These are retained for compact interface details. Reading text inherits
+       its natural Inter spacing; tracking is only opted into by a role. */
     --tr-hero: -.02em;   /* --t-hero and --t-xl: big display, gently closed */
     --tr-lg: -.01em;     /* --t-lg section headings */
     --tr-body: 0;        /* --t-md. Inter is drawn correct at reading size */
@@ -161,17 +147,28 @@ export const baseCss = /* css */ `
        pixel or two. A card is --s3 or --s4 and nothing else. */
     --s1: 4px; --s2: 8px; --s3: 16px; --s4: 24px; --s5: 40px;
     --shadow: 0 10px 30px -16px rgba(12,14,13,.18), 0 2px 6px rgba(12,14,13,.06);
-    /* Headings and big numbers take the narrow cut, sentences take the normal
-       one. Change these two lines and the whole product changes with them —
-       nothing else in the codebase names a font family by hand. */
-    --display: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* Change these two lines and the whole product changes with them — nothing
+       else in the codebase names a font family by hand. */
+    --display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* Semantic typography roles. Do not substitute a global tracking value:
+       Inter's natural spacing is correct for body and navigation text. */
+    --type-page-title-size: 44px; --type-page-title-weight: 700;
+    --type-page-title-leading: 1.05; --type-page-title-tracking: -.04em;
+    --type-section-heading-size: 28px; --type-section-heading-weight: 700;
+    --type-section-heading-leading: 1.1; --type-section-heading-tracking: -.025em;
+    --type-card-title-size: 22px; --type-card-title-weight: 600;
+    --type-card-title-leading: 1.2; --type-card-title-tracking: -.015em;
+    --type-body-size: 17px; --type-body-weight: 400; --type-body-leading: 1.45;
+    --type-navigation-size: 16px; --type-navigation-weight: 600; --type-navigation-tracking: 0;
+    --type-eyebrow-size: 16px; --type-eyebrow-weight: 600; --type-eyebrow-tracking: .06em;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
-    font-family: var(--body); line-height: var(--lh-body); letter-spacing: var(--tr-body);
+    font-family: var(--body); font-size: var(--type-body-size); font-weight: var(--type-body-weight);
+    line-height: var(--type-body-leading); font-optical-sizing: auto;
     background: var(--bg); color: var(--ink); min-height: 100vh;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
     display: flex; flex-direction: column; align-items: center;
     padding: 28px 16px 56px;
   }
@@ -183,14 +180,19 @@ export const baseCss = /* css */ `
      tint. Higher specificity than a bare .card on purpose: every page's own CSS
      is declared after this one, and one of them kept turning the shell grey. */
   body > .card { background: var(--bg); }
-  /* Headings are 700, not 800. Inter Tight is a narrow cut already, and at the
-     larger sizes the scale now uses, the heavier weight read as shouting. The
-     marketing page keeps its own 800 — that surface takes its weight from
-     display type and says so in its own stylesheet. */
-  h1 { font-family: var(--display); font-weight: 700; font-size: var(--t-xl); line-height: var(--lh-tight);
-       letter-spacing: var(--tr-hero); margin-bottom: 10px; text-wrap: balance; }
-  h2 { font-family: var(--display); font-weight: 700; font-size: var(--t-lg); line-height: var(--lh-tight);
-       letter-spacing: var(--tr-lg); margin: var(--s4) 0 var(--s3); }
+  h1, .type-page-title { font-family: var(--display); font-weight: var(--type-page-title-weight);
+       font-size: var(--type-page-title-size); line-height: var(--type-page-title-leading);
+       letter-spacing: var(--type-page-title-tracking); margin-bottom: 10px; text-wrap: balance; }
+  h2, .type-section-heading { font-family: var(--display); font-weight: var(--type-section-heading-weight);
+       font-size: var(--type-section-heading-size); line-height: var(--type-section-heading-leading);
+       letter-spacing: var(--type-section-heading-tracking); margin: var(--s4) 0 var(--s3); }
+  h3, .type-card-title { font-family: var(--display); font-weight: var(--type-card-title-weight);
+       font-size: var(--type-card-title-size); line-height: var(--type-card-title-leading);
+       letter-spacing: var(--type-card-title-tracking); }
+  .type-body { font-family: var(--body); font-size: var(--type-body-size);
+               font-weight: var(--type-body-weight); line-height: var(--type-body-leading); }
+  .eyebrow, .type-eyebrow { font-size: var(--type-eyebrow-size); font-weight: var(--type-eyebrow-weight);
+                             letter-spacing: var(--type-eyebrow-tracking); text-transform: uppercase; }
   p.sub { color: var(--muted); margin-bottom: 22px; }
   /* Pills, and 600 — the weight the whole product gives a button or an
      important label. This was two rules, the second overriding the first's
