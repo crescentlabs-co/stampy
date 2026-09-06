@@ -5104,7 +5104,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         artUrl: (kind, v) => artBase + "/art/" + kind + ".png" + (v ? "?v=" + v : ""),
         customersPath: "/customers?cardId=" + encodeURIComponent(card.id),
         rulesNote: "",
-        showDetails: true,
+        // OFF by default, and it has to stay that way. Turning it on reveals the
+        // panel's own rules editor — no guidance, no validation, and a Card type
+        // dropdown that can turn a live stamp card into a membership card. Every
+        // owner-facing mount passes false or previewOnly; the default used to be
+        // true, which meant a new caller got the dangerous editor by forgetting
+        // rather than by choosing. Nothing in the dashboard may switch it on.
+        showDetails: false,
         // The programme's own page names it above, so the panel does not.
         titled: false,
         saveLabel: "Save changes",
