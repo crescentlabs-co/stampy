@@ -155,6 +155,11 @@ async function main(): Promise<void> {
     ok(/\/rules$/.test(page.url()), "choosing a card type lands on its rules");
 
     await page.fill('[data-r="name"]', "Photo card");
+    // The average order value. Every money figure the owner reads is built on
+    // it, and it used to be taken from the reward's value instead — which is
+    // how a shop that priced its free coffee at RM88 was told it had earned
+    // RM88 a stamp.
+    await page.fill('[data-r="basket"]', "20");
     await page.locator("[data-cont]").click();
     await page.waitForTimeout(400);
     await page.fill('[data-r="rewardName"]', "Free coffee");
@@ -205,6 +210,9 @@ async function main(): Promise<void> {
     ok(card?.bandTexture === "image", "the banner they uploaded actually reached the server");
     ok(card?.stampStyle === "★", "the stamp shape they picked actually reached the server");
     ok(card?.bg !== "#3b2016", "the card kept its own colours rather than the defaults");
+    ok(Number(card?.averageSpend) === 20, "the average order value reached the server");
+    // And it is NOT the reward's value, which is what used to set it.
+    ok(Number(card?.rewardValue) === 12, "...while the reward keeps its own, different, price");
 
     // A published card must never be published with a design that failed to
     // save. Either both happened or neither did.
@@ -357,7 +365,8 @@ async function main(): Promise<void> {
         // NOT "is the field disabled" — there is no field. A greyed-out form is
         // still a form, and a screen full of controls that cannot be used
         // invites an owner to keep trying them.
-        fields: document.querySelectorAll("[data-r]").length,
+        fields: [...document.querySelectorAll("[data-r]")]
+          .map((el) => el.getAttribute("data-r")),
         folds: document.querySelectorAll("[data-open]").length,
         summaries: sums,
         saves: [...document.querySelectorAll("[data-savecard], [data-a=save], [data-saverules]")]
@@ -366,11 +375,17 @@ async function main(): Promise<void> {
         danger: danger ? (danger.textContent || "") : "",
       };
     })()`)) as {
-      note: string; fields: number; folds: number; summaries: string[];
+      note: string; fields: string[]; folds: number; summaries: string[];
       saves: number; designPanel: boolean; danger: string;
     };
     ok(/rules are locked/.test(shut.note), "once somebody joins, Setup says so");
-    ok(shut.fields === 0, "...and shows no rule fields at all, not greyed-out ones");
+    // EXACTLY one field, and it is not a rule. The average order value is a
+    // fact about the shop's till, and every money figure on Home is built on
+    // it — lock that away and a shop that mistyped it reads a wrong revenue
+    // number for the life of the programme. Everything that IS a promise to a
+    // customer is gone, not greyed out.
+    ok(shut.fields.join(",") === "basket",
+      "...shows the average order value and nothing else (got: " + shut.fields.join(",") + ")");
     ok(shut.folds === 0, "...nor the earn/reward accordion inside it");
     ok(shut.summaries.some((s) => s.startsWith("Setup")), "...the section is still there to read");
     ok(shut.designPanel, "...and Design is untouched, which is the point of keeping it");
