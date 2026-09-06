@@ -3395,6 +3395,54 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function createRulesScreen(id) {
       const card = S.cards.find((c) => c.id === id);
       if (!card) return notFoundScreen();
+      let frame = null;
+      const form = rulesForm(card, {
+        onChange: () => { if (frame) frame.lockNext(form.blocked); },
+      });
+      frame = wizardFrame(1, form.el, {
+        blocked: form.blocked,
+        onStep: () => navigate("/create/card"),
+        onNext: async () => {
+          await form.save();
+          await refreshCards();
+          navigate("/create/" + id + "/design");
+        },
+        onLater: async () => {
+          await form.save();
+          await refreshCards();
+          toast("Saved \u2014 finish it from Manage whenever you like");
+          navigate("/manage/rewards");
+        },
+      });
+      return frame;
+    }
+
+    /**
+     * The rules of a programme, as a form — the create wizard's step 2, and the
+     * Rules half of the Edit screen, from ONE piece of code.
+     *
+     * It was a closure inside createRulesScreen, so editing a finished card had
+     * to use the OTHER rules editor, the one buried in the design panel: no
+     * guidance, no validation, and a card-type dropdown that could turn a live
+     * stamp card into a membership card. Splitting it out is what let that
+     * second editor be switched off for good.
+     *
+     * opts.locked makes the earning and reward halves read-only and prints the
+     * notice above them. The card name and the shop name stay editable: they
+     * are what the card is CALLED, not what it promises, and the promise is the
+     * only thing joining a programme freezes.
+     *
+     * opts.onChange fires whenever an answer changes, so the host can re-ask
+     * blocked(). The wizard uses it to grey out Next; the Edit screen does not
+     * need to, so it passes nothing.
+     *
+     * Returns { el, save, blocked } — the node to mount, the one save, and
+     * "what is still missing", as the element to point at.
+     */
+    function rulesForm(card, opts) {
+      const id = card.id;
+      const locked = Boolean(opts && opts.locked);
+      const onChange = (opts && opts.onChange) || (() => {});
       const kind = card.kind || "stamp";
       const member = kind === "membership";
       const points = kind === "points";
@@ -3442,10 +3490,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // already saved once is past that: its owner has answered, and making
       // them press Continue again to get back to a screen they have seen would
       // be a gate on nothing.
-      let reached = member || Boolean(card.publishedAt) || card.rewardType !== "item" ||
-        Boolean((card.reward || "").trim());
+      // A locked form has nothing left to settle, so the Continue gate is
+      // already past — there is no button to press and nothing it would open.
+      let reached = locked || member || Boolean(card.publishedAt) ||
+        card.rewardType !== "item" || Boolean((card.reward || "").trim());
       const body = document.createElement("div");
-      let frame = null;
 
       /**
        * What is stopping this step, as the element to point at.
@@ -3535,7 +3584,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           welcome: r.welcome,
         };
       };
-      const relock = () => { if (frame && frame.lockNext) frame.lockNext(blocked); };
+      // Kept under its old name because eleven call sites use it. It no longer
+      // locks anything itself — it tells whoever mounted this form to re-ask.
+      const relock = () => onChange();
 
       // Whether the guidance box is open, kept out here so a repaint cannot
       // shut it under the owner's hand.
@@ -3635,6 +3686,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<input data-r="shopName" maxlength="60" value="' +
             esc(r.shopName).replace(/"/g, "&quot;") + '">' +
           '<p class="dhint">This will be what your card displays.</p>' +
+          (locked
+            ? '<div class="locknote">Your program rules are locked. Customers have ' +
+              "already joined this program, so its earning and reward rules can no " +
+              "longer be changed.</div>"
+            : "") +
           // A membership card counts nothing, so it has neither half. Two
           // questions and no folds: what this shop calls its regulars, and what
           // being one actually gets you.
@@ -3716,6 +3772,26 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         }
         const cont = body.querySelector("[data-cont]");
         if (cont) cont.onclick = () => { reached = true; open = "reward"; paint(); relock(); };
+        // Read-only, and still readable. Disabling the controls rather than
+        // dropping them is the point: an owner asking "what did I promise these
+        // people?" is asking a fair question, and a blank section answers it
+        // with nothing. The two name boxes are deliberately not in here —
+        // see the note on this function for why.
+        //
+        // The folds still open and shut. Showing both halves at once would need
+        // paint() to render two bodies, and one accordion behaving the same way
+        // everywhere is worth more than saving a tap.
+        if (locked) {
+          for (const el of body.querySelectorAll("[data-r]")) {
+            const k = el.getAttribute("data-r");
+            if (k !== "name" && k !== "shopName") el.disabled = true;
+          }
+          for (const b of body.querySelectorAll("[data-earn]")) b.disabled = true;
+          // Continue only ever meant "the earning rules are settled". They are,
+          // permanently, so the button has nothing left to say.
+          const c = body.querySelector("[data-cont]");
+          if (c) c.remove();
+        }
         const bulb = body.querySelector("[data-bulb]");
         if (bulb) {
           bulb.onclick = () => modal("Why this number",
@@ -3741,6 +3817,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        */
       const save = () => {
         const b = { name: r.name, shopName: r.shopName };
+        // Locked: the earning and reward halves are read-only, so only the two
+        // names go. The server drops the rest of them anyway — this is the
+        // same one rule said on the near side, not a second gate that could
+        // disagree with it.
+        if (locked) return api("/card/" + id, { method: "POST", body: JSON.stringify(b) });
         if (member) {
           b.memberLabel = r.memberLabel;
           b.benefits = r.benefits;
@@ -3764,23 +3845,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         return api("/card/" + id, { method: "POST", body: JSON.stringify(b) });
       };
 
-      frame = wizardFrame(1, body, {
-        blocked,
-        onStep: () => navigate("/create/card"),
-        onNext: async () => {
-          await save();
-          await refreshCards();
-          navigate("/create/" + id + "/design");
-        },
-        onLater: async () => {
-          await save();
-          await refreshCards();
-          toast("Saved \u2014 finish it from Manage whenever you like");
-          navigate("/manage/rewards");
-        },
-      });
-      relock();
-      return frame;
+      return { el: body, save, blocked };
     }
 
     /** Step 3 — the look. The existing designer, then publish. */

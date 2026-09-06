@@ -4268,7 +4268,10 @@ describe("the create screens", () => {
     expect(rules).toContain('data-r="benefits"');
     expect(rules).toContain('placeholder="VIP"');
     expect(rules).toContain("What you call your regulars.");
-    const save = rules.slice(rules.indexOf("const save = ()"), rules.indexOf("frame = wizardFrame(1"));
+    // The form ends where it hands itself back; the wizard frame that used to
+    // sit here now lives in createRulesScreen, above.
+    const save = rules.slice(rules.indexOf("const save = ()"),
+                             rules.indexOf("return { el: body, save, blocked }"));
     expect(save).toContain("b.memberLabel = r.memberLabel");
     expect(save).toContain("b.benefits = r.benefits");
     // The reward fields sit in the OTHER branch of the same if.
