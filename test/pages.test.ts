@@ -3387,7 +3387,7 @@ describe("the dashboard keeps to one scale", () => {
     role("--type-body-size", "17px");
     role("--type-body-weight", "400");
     role("--type-body-leading", "1.45");
-    role("--type-navigation-size", "16px");
+    role("--type-navigation-size", "10px");
     role("--type-navigation-weight", "600");
     role("--type-eyebrow-size", "16px");
     role("--type-eyebrow-weight", "600");

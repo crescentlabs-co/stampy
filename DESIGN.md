@@ -50,7 +50,7 @@ ever does. It uses `font-optical-sizing: auto` and antialiased rendering.
 | Section heading | 28px | 700 | 1.1 | -0.025em |
 | Card title | 22px | 600 | 1.2 | -0.015em |
 | Body | 17px | 400 | 1.45 | natural (no override) |
-| Navigation | 16px | 600 | inherited | natural (no override) |
+| Navigation | 10px | 600 | inherited | natural (no override) |
 | Uppercase eyebrow | 16px | 600 | inherited | 0.06em |
 
 Use the semantic classes (`.type-page-title`, `.type-section-heading`,
@@ -59,10 +59,11 @@ element is not available. Do not put a `letter-spacing` value on `body` or a
 universal selector: tracking adds to Inter's own spacing and only belongs where
 the role explicitly calls for it.
 
-**The six sizes and the four weights**, chosen by the founder in Sept 2026 over
-the smaller set that came before them (body was 14px and the floor was 11px).
-A test pins the values, so a drift back is a failing suite rather than a
-discovery:
+**The six supporting sizes and the four weights**, chosen by the founder in
+Sept 2026 over the smaller set that came before them (body was 14px and the
+floor was 11px). Navigation is the one semantic exception: its 10px label is
+always paired with an icon and a full-size tap target. A test pins the values,
+so a drift back is a failing suite rather than a discovery:
 
 | Token | Size | Its job |
 |---|---|---|

@@ -160,7 +160,10 @@ export const baseCss = /* css */ `
     --type-card-title-size: 22px; --type-card-title-weight: 600;
     --type-card-title-leading: 1.2; --type-card-title-tracking: -.015em;
     --type-body-size: 17px; --type-body-weight: 400; --type-body-leading: 1.45;
-    --type-navigation-size: 16px; --type-navigation-weight: 600; --type-navigation-tracking: 0;
+    /* Navigation is paired with an icon and keeps a 44px tap target, so its
+       label can stay deliberately quiet without making the control harder to
+       use. */
+    --type-navigation-size: 10px; --type-navigation-weight: 600; --type-navigation-tracking: 0;
     --type-eyebrow-size: 16px; --type-eyebrow-weight: 600; --type-eyebrow-tracking: .06em;
   }
   * { box-sizing: border-box; margin: 0; }

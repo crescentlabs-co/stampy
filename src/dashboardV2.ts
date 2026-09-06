@@ -127,6 +127,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .winsel { flex: none; margin: 0; padding: var(--s1); }
     .winsel button { font-size: var(--t-sm); padding: var(--s1) var(--s3); }
     .winsel .thumb { top: var(--s1); bottom: var(--s1); }
+    /* Home's launch checklist uses the same quiet label, readable row name,
+       and small supporting state as the rest of the page. Keeping it here
+       rather than as inline declarations makes every state look alike. */
+    .launch-progress { margin: 0 0 var(--s4); }
+    .launch-eyebrow { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--t-xs);
+                      font-weight: 700; letter-spacing: var(--tr-caps); text-transform: uppercase; }
+    .launch-steps { overflow: hidden; border: 1px solid var(--line); border-radius: var(--r); }
+    .launch-step { appearance: none; width: 100%; display: flex; align-items: center;
+                   gap: var(--s2); padding: var(--s3); border: 0; border-bottom: 1px solid var(--line);
+                   background: var(--bg); color: var(--ink); text-align: left; cursor: pointer; }
+    .launch-step:last-child { border-bottom: 0; }
+    .launch-step.done { background: var(--surface); }
+    .launch-step:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; }
+    .launch-marker { width: 22px; height: 22px; flex: none; display: grid; place-items: center;
+                     border-radius: 999px; background: var(--ghost-bg); color: var(--muted);
+                     font-size: var(--t-sm); font-weight: 700; }
+    .launch-step.done .launch-marker { background: var(--ink); color: var(--on-slab); }
+    .launch-name { flex: 1; min-width: 0; font-size: var(--t-sm); font-weight: 600; }
+    .launch-status { color: var(--muted); font-size: var(--t-sm); font-weight: 600; }
     /* The number and its change share a line, sitting on the same baseline. It
        wraps on a narrow phone rather than shrinking: two tiles across 360px is
        about 150px each, and "+3 vs last week" does not always fit beside a
@@ -2235,20 +2254,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         { label: "Share your card", done: shared, path: card ? "/ready/" + card.id + "?section=share" : "/create/card" },
         { label: "Start stamping", done: stamping, path: card ? "/ready/" + card.id + "?section=how" : "/shop/staff" },
       ];
-      return '<section aria-label="Card launch progress" style="margin:0 0 var(--s4)">' +
-        '<p class="eyebrow" style="color:var(--muted);margin-bottom:8px">Get ready to launch</p>' +
-        '<div style="border:1px solid var(--line);border-radius:var(--r);overflow:hidden">' +
-        steps.map((step, index) => '<button type="button" data-launch="' + esc(step.path) + '" style="appearance:none;border:0;border-bottom:' +
-          (index === steps.length - 1 ? "0" : "1px solid var(--line)") + ';background:' +
-          (step.done ? "var(--surface)" : "#fff") + ';width:100%;padding:14px 16px;display:flex;align-items:center;gap:10px;text-align:left;font:inherit;cursor:pointer">' +
-          '<span aria-hidden="true" style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:' +
-          (step.done ? "var(--ink)" : "var(--ghost-bg)") + ';color:' + (step.done ? "#fff" : "var(--muted)") + ';font-size:var(--t-sm);font-weight:700">' +
-          // font-size, because without one this inherits the browser default
-          // rather than the scale — a size the "Home is exactly three sizes"
-          // test cannot see, because it reads CSS rules and this is an inline
-          // style attribute.
-          (step.done ? "✓" : String(index + 1)) + '</span><span style="flex:1;font-size:var(--t-md);font-weight:600">' + esc(step.label) +
-          '</span><span style="font-size:var(--t-sm);color:var(--muted)">' + (step.done ? "Done" : "To do") + '</span></button>').join("") +
+      return '<section class="launch-progress" aria-label="Card launch progress">' +
+        '<p class="launch-eyebrow">Get ready to launch</p>' +
+        '<div class="launch-steps">' +
+        steps.map((step, index) => '<button type="button" class="launch-step' + (step.done ? " done" : "") +
+          '" data-launch="' + esc(step.path) + '">' +
+          '<span class="launch-marker" aria-hidden="true">' + (step.done ? "✓" : String(index + 1)) + '</span>' +
+          '<span class="launch-name">' + esc(step.label) + '</span>' +
+          '<span class="launch-status">' + (step.done ? "Done" : "To do") + '</span></button>').join("") +
         '</div></section>';
     }
 
