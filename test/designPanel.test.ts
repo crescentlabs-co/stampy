@@ -170,13 +170,33 @@ describe("the panel as a preview tile", () => {
     expect(div.querySelector("[data-pv-progress]")!.textContent).toBeTruthy();
   });
 
-  it("keeps the card faces and drops the editor", () => {
+  /**
+   * The editor is hidden AT ONCE and removed once the artwork has decoded.
+   *
+   * It used to be removed on the spot, on the reasoning that nothing could
+   * change a preview tile afterwards. That was wrong in the one way that
+   * mattered: the banner and the stamp shape are IMAGES, they finish decoding
+   * after the mount, and the repaint that draws them reads fields the trim had
+   * already deleted — so it bailed on its own guard and every tile showed a
+   * flat band where the shop's artwork should be. Only the edit screen, which
+   * keeps its fields, ever drew it.
+   */
+  it("keeps the card faces and drops the editor", async () => {
     const h = makeHarness();
     const div = build(card(), h, { previewOnly: true, customersPath: null });
     // Both faces are there, which is the whole reason to reuse this panel.
     expect(div.querySelector("[data-pv]")).not.toBeNull();
     expect(div.querySelector("[data-pvg]")).not.toBeNull();
-    // ...and nothing that changes anything is.
+    // Nothing that changes anything is VISIBLE, from the first frame: every
+    // block except the card box is display:none until it is removed.
+    const box = div.querySelector("[data-pvbox]");
+    for (const child of div.children) {
+      if (child === box) continue;
+      expect((child as unknown as { style: { display: string } }).style.display,
+        "an editor block was left visible on a preview tile").toBe("none");
+    }
+    await h.settle();
+    // ...and gone entirely once the pictures have landed.
     for (const gone of ["[data-save]", "[data-f=reward]", "[data-a=emoji]", "[data-stampimg]"]) {
       expect(div.querySelector(gone), gone + " survived into a preview tile").toBeNull();
     }

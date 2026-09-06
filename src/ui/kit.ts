@@ -4033,16 +4033,30 @@ export const DESIGN_PANEL_JS = /* js */ `
        * face" has one implementation rather than a copy that toggles hidden.
        */
       if (env.previewOnly) {
-        // Paint BEFORE the trim, while the fields renderPreview reads are still
-        // here. Nothing can change a preview tile afterwards, so once is enough
-        // and setSurface below never needs to repaint.
         showSurface("apple");
         const box = q("[data-pvbox]");
+        // HIDDEN now, removed once the artwork has finished decoding.
+        //
+        // This used to remove them here and now, and the comment above it said
+        // nothing could change a preview tile afterwards. That was wrong in the
+        // one way that mattered: the banner and the stamp shape are IMAGES, they
+        // finish decoding after this line, and the repaint that draws them reads
+        // fields this trim had already deleted — so it bailed on its own guard
+        // and the tile kept a flat band where the shop's artwork should be. Only
+        // the edit screen, which keeps its fields, ever drew it.
+        //
+        // Deferring the removal costs nothing: they are display:none from this
+        // moment, so nothing is visible or reachable in the meantime, and the
+        // repaint registered earlier on these same two promises runs first.
+        //
         // children + remove(), not lastChild + removeChild: those two are the
         // pair the test harness does not implement, so a trim written with them
         // does nothing under test and everything in a browser — which is a test
         // that reports success about code it never ran.
-        Array.prototype.slice.call(div.children).forEach((el) => { if (el !== box) el.remove(); });
+        const trimmed = Array.prototype.slice.call(div.children).filter((el) => el !== box);
+        trimmed.forEach((el) => { el.style.display = "none"; });
+        const drop = () => trimmed.forEach((el) => el.remove());
+        void Promise.all([stampIconReadyPromise, bannerReadyPromise]).then(drop, drop);
         // display, not the hidden ATTRIBUTE: .seg sets display:flex, and an
         // element's own display beats [hidden] every time. The strip stayed on
         // screen above every tile in the carousel — three tab strips saying

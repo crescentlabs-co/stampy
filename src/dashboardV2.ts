@@ -371,7 +371,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* The state of the card you are looking at, above it. A dot and a word:
        the dot carries the colour so the word never has to be read to get the
        gist, and the word carries the meaning so the colour never has to be. */
-    .cstat { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2);
+    /* Centred, over a strip that is centred. */
+    .cstat { display: flex; align-items: center; justify-content: center;
+             gap: var(--s2); margin: 0 0 var(--s2);
              font-size: var(--t-sm); font-weight: 700; color: var(--muted);
              letter-spacing: var(--tr-sm); min-height: 18px; }
     .cstat::before { content: ""; width: 8px; height: 8px; border-radius: 999px;
@@ -927,21 +929,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        pill here would compete with the selected state right beside it. */
     .picktag { display: inline-block; margin-left: var(--s2); color: var(--muted);
                font-size: var(--t-sm); font-weight: 600; }
-    /* An unfinished card, where the three actions would otherwise be. */
-    .draftbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2);
-                padding: var(--s3); margin-top: var(--s3);
-                background: var(--surface); border-radius: var(--r);
-                font-size: var(--t-sm); color: var(--muted); }
-    /* min-width 0, so the sentence SHRINKS instead of forcing a wrap at 140px
-       and leaving the button stranded at the left of its own line. */
-    .draftbar span:not(.pill) { flex: 1; min-width: 0; }
-    /* Its own line, full width. It is the main thing to do on this card. */
-    .draftbar .btn { flex: 1 0 100%; width: 100%; }
     /* Not a button: a second filled control beside Continue editing would make
        the bar ask which one you meant, and this is the rarer of the two. */
-    .draftdel { flex: 1 0 100%; background: none; border: 0; padding: var(--s1) 0 0;
-                color: var(--muted); font: inherit; font-size: var(--t-sm); font-weight: 600;
-                cursor: pointer; text-decoration: underline; }
+    /* The quiet half of a destructive pair: red, because of what it does, and
+       a link rather than a second filled button beside the one you usually
+       want. */
+    .linkdel { display: block; width: 100%; background: none; border: 0;
+               padding: var(--s3) 0 0; color: var(--bad); font: inherit;
+               font-size: var(--t-sm); font-weight: 700; cursor: pointer;
+               text-decoration: underline; }
     /* Three steps, so it is obvious there are three and which one you are on. */
     .steps { display: flex; gap: var(--s2); list-style: none; padding: 0; margin: var(--s3) 0 var(--s1);
              counter-reset: s; }
@@ -4293,6 +4289,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           // definitely gave — it is what created the card. Deleting lives on
           // the card's own page now, and this is how a draft reaches it.
           resume.onclick = () => navigate("/create/" + c.id + "/rules");
+          body.querySelector("[data-draftdel]").onclick = () => removeCardFlow(c, false);
           return;
         }
         body.querySelector("[data-share]").onclick = () => shareSheet(c);
@@ -4308,6 +4305,41 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         requestAnimationFrame(() => { queued = false; paint(); });
       });
       paint();
+    }
+
+    /**
+     * Remove a card, ask first, and say which of the two things happened.
+     *
+     * ONE implementation, because there are two ways in: a draft, whose only
+     * other button goes into the wizard rather than to the card's own page, and
+     * the card page itself. Putting delete only on the page left a draft with no
+     * way to reach it at all — the card most likely to want deleting.
+     *
+     * Our own box, never the browser's built-in one, which a phone can silence
+     * (invariant 8). The server decides delete-or-archive; this only reports it.
+     */
+    async function removeCardFlow(card, enrolled) {
+      const ok = await modal(
+        enrolled ? "Remove this card?" : "Delete this card?",
+        enrolled
+          ? "<p>It comes off your dashboard. Every card already issued keeps " +
+            "working \u2014 those customers carry on collecting and can still claim.</p>"
+          : "<p>Nobody has ever been given this card, so it is deleted for good. " +
+            "This cannot be undone.</p>",
+        enrolled ? "Remove it" : "Delete it",
+        true,
+      );
+      if (!ok) return;
+      const { body } = await api("/card/" + encodeURIComponent(card.id) + "/remove", { method: "POST" });
+      if (!body || !body.ok) { toast("That didn\u2019t work. Try again."); return; }
+      await refreshCards();
+      navigate("/manage/rewards", true);
+      // The server says which of the two happened, and the message says the
+      // same. Reporting "deleted" for a card that was archived would be the one
+      // lie an owner could not check.
+      toast(body.outcome === "deleted"
+        ? "Deleted."
+        : "Removed from your dashboard. Cards already issued keep working.");
     }
 
     /**
@@ -4394,7 +4426,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const draft = !c.publishedAt;
       return (draft
         ? '<button type="button" class="btn btn-neon" data-resume style="margin-top:14px">' +
-          "Continue editing</button>"
+          "Continue editing</button>" +
+          // A draft's only other button goes into the WIZARD, not to the card's
+          // own page — so without this there was no way to delete the one kind
+          // of card most likely to need it.
+          '<button type="button" class="linkdel" data-draftdel>Delete this card</button>'
         : '<div class="cardacts">' +
             actBtn("testadd", ICON_ADD, "Test") +
             actBtn("share", ICON_SHARE, "Share") +
@@ -4863,33 +4899,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // A box, not a second tap. Two-tap arming is right on a counter phone
       // being used at speed by somebody who may not have chosen to press it;
       // this is an owner, sitting still, doing something that cannot be undone,
-      // and it deserves to be asked properly. Our own box — never confirm(),
-      // which a phone can silence (invariant 8).
-      d.querySelector("[data-remove]").onclick = async () => {
-        const ok = await modal(
-          enrolled ? "Remove this card?" : "Delete this card?",
-          enrolled
-            ? "<p>It comes off your dashboard. Every card already issued keeps " +
-              "working \u2014 those customers carry on collecting and can still claim.</p>"
-            : "<p>Nobody has ever been given this card, so it is deleted for good. " +
-              "This cannot be undone.</p>",
-          enrolled ? "Remove it" : "Delete it",
-          true,
-        );
-        if (!ok) return;
-        const { body } = await api("/card/" + encodeURIComponent(card.id) + "/remove", {
-          method: "POST",
-        });
-        if (!body || !body.ok) { toast("That didn\u2019t work. Try again."); return; }
-        await refreshCards();
-        navigate("/manage/rewards");
-        // The server says which of the two happened, and the message says the
-        // same. Reporting "deleted" for a card that was archived would be the
-        // one lie an owner could not check.
-        toast(body.outcome === "deleted"
-          ? "Deleted."
-          : "Removed from your dashboard. Cards already issued keep working.");
-      };
+      // and it deserves to be asked properly.
+      d.querySelector("[data-remove]").onclick = () => removeCardFlow(card, enrolled);
       d.querySelector("[data-design]").appendChild(designerFor(card));
       return d;
     }

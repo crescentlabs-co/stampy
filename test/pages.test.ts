@@ -3928,8 +3928,12 @@ describe("the manage screens", () => {
     expect(body).toContain("Continue editing");
     expect(body).toContain("data-resume");
     expect(body).not.toContain("draftbar");
-    expect(body).not.toContain("data-draftdel");
     expect(body).not.toContain("Not finished yet");
+    // Delete stays, as a quiet red link. A draft's other button goes into the
+    // WIZARD, not to the card's own page — so moving delete to that page alone
+    // left the one kind of card most likely to need it with no way to reach it.
+    expect(body).toContain("data-draftdel");
+    expect(html).toContain("removeCardFlow(c, false)");
     // Back to Rules, not Choose: the type is the answer that made the card.
     const paint = html.slice(html.indexOf("const resume = body.querySelector"),
                              html.indexOf('body.querySelector("[data-share]")'));
