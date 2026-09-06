@@ -224,6 +224,11 @@ async function main(): Promise<void> {
     ok(crashes.length === 0, "nothing threw in the browser" + (crashes[0] ? ": " + crashes[0] : ""));
   } finally {
     if (browser) await browser.close();
+    // Close the pool BEFORE stopping Postgres. Pulling the database out from
+    // under a live pool makes node-postgres emit an unhandled 'error', which
+    // takes the process down before the summary prints — so a run where every
+    // assertion passed still exited 1 and reported as a failure.
+    await db.getPool().end().catch(() => {});
     await pg.stop();
   }
 

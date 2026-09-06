@@ -253,7 +253,13 @@ describe("the design panel, mounted", () => {
     expect(div.querySelector("[data-stampimg]")).not.toBeNull();
     const values = sel.children.map((o) => o.getAttribute("value"));
     expect(values).toContain("dot");
-    expect(values).toContain("custom");
+    // "Your own" is a BUTTON beside the list now, not an option inside it.
+    // As an option it opened the file picker by scripting a click from the
+    // list's change handler, which never worked on a phone: iOS opens a select
+    // as a native sheet, and by the time change fires the tap that would have
+    // authorised a file picker is gone.
+    expect(values).not.toContain("custom");
+    expect(div.querySelector(".stamprow [data-stampimg]")).not.toBeNull();
     // Every ready-made shape is a TEXT glyph, never a colour emoji: an emoji
     // ignores fillStyle, so it could not take the card's Stamps colour and a
     // red heart stayed red on a green card.
@@ -665,8 +671,11 @@ describe("the design panel, mounted", () => {
       // Neither owns the other's control.
       expect(boxes[0]!.querySelector("[data-mark]")).toBeNull();
       expect(boxes[1]!.querySelector("[data-logo]")).toBeNull();
-      // The mark on the frame is what says which is which.
-      for (const b of boxes) expect(b.querySelector(".lbplat")).not.toBeNull();
+      // The WORD under each is what says which is which. It was a platform
+      // mark on the frame, which asked the owner to think about wallets in
+      // order to answer a question about the shape of their own logo.
+      expect(boxes.map((b) => b.querySelector(".lbcap")!.textContent))
+        .toEqual(["Wide", "Small"]);
       // The name switch is its own row, below the pair.
       expect(div.querySelector("[data-lname]")).not.toBeNull();
       expect(pair.querySelector("[data-lname]")).toBeNull();
@@ -788,24 +797,23 @@ describe("the design panel, mounted", () => {
         }
       });
 
-      it("warns only while a wide logo is being cropped", async () => {
+      /**
+       * The warning is gone, deliberately.
+       *
+       * It said "your logo is wide, so Android is cropping the ends off it" —
+       * true, and the only thing an owner could do about it was upload the
+       * small one, which is the box sitting right next to it. A warning whose
+       * only remedy is the control beside it is a warning that should have
+       * been the control's label.
+       */
+      it("no longer warns about cropping, because the answer is the next box", async () => {
         const wide = await mounted(card({ logoVersion: 5 }), { w: 480, h: 120 });
-        expect(wide.querySelector("[data-markhint]")!.hidden).toBe(false);
-        // Square logo: nothing is lost, so nothing is said.
-        const square = await mounted(card({ logoVersion: 5 }), { w: 200, h: 200 });
-        expect(square.querySelector("[data-markhint]")!.hidden).toBe(true);
-        // No logo yet — the row is offered, but there is nothing to crop.
-        const none = await mounted(card({ logoVersion: 0 }), 64);
-        expect(none.querySelector("[data-markhint]")!.hidden).toBe(true);
+        expect(wide.querySelector("[data-markhint]")).toBeNull();
+        expect(wide.querySelector("[data-markbox]")!.hidden).toBe(false);
       });
 
-      // The buttons say Upload/Replace/Remove "logo", the same words as the row
-      // above — the row's own label ("Square logo for Android") is what says
-      // WHICH logo, so repeating it on the control left the two rows reading as
-      // different kinds of thing when they are the same action on two files.
-      it("stops warning once a square version is there to use instead", async () => {
+      it("says on the button whether one is already there", async () => {
         const div = await mounted(card({ logoVersion: 5, markVersion: 9 }), { w: 480, h: 120 });
-        expect(div.querySelector("[data-markhint]")!.hidden).toBe(true);
         expect(div.querySelector("[data-markbtn]")!.textContent).toBe("Replace");
       });
 

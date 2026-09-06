@@ -920,6 +920,9 @@ export const DESIGN_PANEL_CSS = /* css */ `
        trimmed. */
     .pv-logo { height: 30px; width: auto; max-width: 96px; border-radius: 8px;
                object-fit: contain; background: rgba(255,255,255,.14); }
+    /* The square one, when the shop's name is printed beside it: it takes only
+       the width it needs so the words have the rest of the row. */
+    .pv-logo.small { max-width: 30px; }
     .pv-name { font-weight: 700; font-size: .88rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* margin-left:auto, not "whatever .pv-name pushes". The name is hidden for a
        logo that already carries it, and the progress was then the last flexible
@@ -1082,9 +1085,15 @@ export const DESIGN_PANEL_CSS = /* css */ `
     .logobox { position: relative; display: flex; align-items: center;
                gap: var(--s2); padding: var(--s2); border: 1px dashed var(--field-border);
                border-radius: var(--r-sm); background: var(--bg); }
-    .lbplat { position: absolute; top: -9px; left: 10px; display: flex; align-items: center;
-              padding: 0 5px; background: var(--bg); color: var(--muted); line-height: 1; }
-    .lbplat svg { width: 15px; height: 15px; display: block; }
+    /* The word, and the button under it. The frame used to wear a platform
+       mark instead, which asked the owner to think about wallets in order to
+       answer a question about the shape of their own logo. */
+    .lbcol { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
+    /* The list and its escape hatch, on one line. */
+    .stamprow { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s1); }
+    .stamprow select { flex: 1; min-width: 0; margin: 0; }
+    .lbcap { font-size: var(--t-xs); font-weight: 700; letter-spacing: var(--tr-code);
+             text-transform: uppercase; color: var(--muted); }
     /* The picture, with its own remove. An X ON the thumbnail rather than a
        disabled button beside Upload — two controls for a thing that is not
        there yet is one too many. */
@@ -1157,8 +1166,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* The one line that is conditional, rather than the whole row: it says
        something is being lost right now, so it only belongs on screen when
        something is. */
-    .mhint { margin: 6px 0 0; font-size: var(--t-sm); color: var(--bad); }
-    .mhint[hidden] { display: none; }
     /* Colours: a read-out first, the rows only on request. Uploading a logo
        sets all five, so the resting state is "here is what your logo produced"
        rather than five things to fill in. All on ONE line — label, the way in,
@@ -1629,25 +1636,39 @@ export const DESIGN_PANEL_JS = /* js */ `
              Removing is an ✕ ON the picture rather than a button in a bar. A
              disabled "Remove logo" sitting beside "Upload logo" is two controls
              for a thing that is not there yet. -->
+        <!-- WIDE and SMALL, not Apple and Android. They are two shapes of one
+             logo, and each surface takes whichever fits: Android has always
+             preferred the small one because it draws logos in a circle, and the
+             iPhone card takes it too when the shop's name is printed beside it,
+             because a wide lockup leaves no room for the words.
+
+             It used to say Apple and Android, which asked the owner to think
+             about wallets in order to answer a question about their own logo —
+             and then warned them that a wide logo gets cropped on Android,
+             which is not something they can do anything about except upload the
+             small one, which is the box right next to it. -->
         <div class="logopair">
-          <div class="logobox" data-lb="apple">
-            <span class="lbplat" aria-hidden="true">${APPLE_GLYPH}</span>
+          <div class="logobox" data-lb="wide">
             <div class="lbthumb" data-lbthumb="logo"\${c.logoVersion ? "" : " hidden"}>
               <img data-lbimg="logo" alt="">
-              <button type="button" class="lbx" data-a="rmlogo" aria-label="Remove Apple logo">✕</button>
+              <button type="button" class="lbx" data-a="rmlogo" aria-label="Remove wide logo">✕</button>
             </div>
-            <label class="lbup btn btn-ghost"><span data-logobtn>Upload</span><input data-logo type="file" accept="image/*"></label>
+            <div class="lbcol">
+              <span class="lbcap">Wide</span>
+              <label class="lbup btn btn-ghost"><span data-logobtn>Upload</span><input data-logo type="file" accept="image/*"></label>
+            </div>
           </div>
-          <div class="logobox" data-lb="android" data-markbox>
-            <span class="lbplat" aria-hidden="true">${GOOGLE_GLYPH}</span>
+          <div class="logobox" data-lb="small" data-markbox>
             <div class="lbthumb" data-lbthumb="mark"\${c.markVersion ? "" : " hidden"}>
               <img data-lbimg="mark" alt="">
-              <button type="button" class="lbx" data-a="rmmark" aria-label="Remove Android logo">✕</button>
+              <button type="button" class="lbx" data-a="rmmark" aria-label="Remove small logo">✕</button>
             </div>
-            <label class="lbup btn btn-ghost"><span data-markbtn>Upload</span><input data-mark type="file" accept="image/*"></label>
+            <div class="lbcol">
+              <span class="lbcap">Small</span>
+              <label class="lbup btn btn-ghost"><span data-markbtn>Upload</span><input data-mark type="file" accept="image/*"></label>
+            </div>
           </div>
         </div>
-        <p class="mhint" data-markhint hidden>Your logo is wide, so Android is cropping the ends off it.</p>
 
         <!-- The ⓘ is OUTSIDE the <label>, and that is a bug this row carried for
              months rather than a style choice. A label binds to its FIRST
@@ -1667,17 +1688,20 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         <label class="sec dsec" style="display:block">Stamps</label>
         <label class="dlbl">Stamp shape</label>
-        <!-- One dropdown where there were three buttons. The three answered one
-             question — dots, an emoji, or your own picture — and a row of
-             buttons made them look like three different things you could do. -->
-        <select data-stamppick></select>
-        <!-- Off-screen, NOT hidden. A display:none file input ignores a
-             scripted .click() in Safari, so "Upload your own" opened nothing
-             at all — the same trap the five colour inputs are parked around
-             further down, for the same reason. accept is deliberately wide:
-             a phone's photo library hands back HEIC and JPEG, and a picker
-             that shows every photo greyed out reads as broken. -->
-        <input data-stampimg type="file" accept="image/*" class="offscreen">
+        <!-- The ready-made shapes in a list, and "your own" as its own BUTTON
+             beside it.
+             It was an option inside the list, which opened the file picker by
+             calling .click() on a hidden input from the list's change handler.
+             That never worked on a phone: iOS opens a select as a native sheet,
+             the change fires after the sheet is dismissed, and by then the tap
+             that would have authorised opening a file picker is long gone — so
+             the option was chosen and nothing happened.
+             A label wrapping a file input needs no script at all, and it is the
+             same shape the logo and banner boxes already use, which work. -->
+        <div class="stamprow">
+          <select data-stamppick></select>
+          <label class="lbup btn btn-ghost">Your own<input data-stampimg type="file" accept="image/*"></label>
+        </div>
         <p class="stampnow" data-stampnow style="display:none">
           <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
         </p>
@@ -1819,7 +1843,11 @@ export const DESIGN_PANEL_JS = /* js */ `
              one lived inside a collapsed section, so it could be missed
              entirely. The confirmation carries both consequences instead, since
              they genuinely differ and one button is what now hides that. -->
-        <button class="btn btn-neon" style="margin-top:20px" data-a="save">\${env.saveLabel}</button>\`;
+        <!-- Hidden where the host has its own. In the Create wizard the button
+             underneath already says "Finish and publish" and already saves the
+             design, so this was a second Save for the same work — and an owner
+             who pressed the wrong one was told nothing had happened. -->
+        <button class="btn btn-neon" style="margin-top:20px" data-a="save"\${env.hideSave ? " hidden" : ""}>\${env.saveLabel}</button>\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -2259,7 +2287,19 @@ export const DESIGN_PANEL_JS = /* js */ `
         // owner ticks the box and sees no change until the card is on a phone.
         const pvName = q("[data-pv-name]");
         pvName.textContent = f("shopName").value || "Your card";
-        pvName.style.display = hasNameNow() && c.logoVersion ? "none" : "";
+        const hasName = hasNameNow();
+        pvName.style.display = hasName && c.logoVersion ? "none" : "";
+        // WHICH logo, by the same answer — mirrors passLogo in
+        // src/passBuilder.ts. With the shop's name printed beside it there is
+        // no room for a wide lockup, so the small one is the right picture; a
+        // shop with only one gets that one.
+        const pvLogo = q("[data-pv-logo]");
+        const useSmall = !hasName && c.markVersion;
+        if (c.logoVersion || c.markVersion) {
+          pvLogo.src = useSmall ? artSrc("mark", c.markVersion) : artSrc("logo", c.logoVersion);
+          pvLogo.style.display = "";
+          pvLogo.classList.toggle("small", Boolean(useSmall));
+        } else pvLogo.style.display = "none";
         // Every one of these mirrors buildPassJson in src/passModel.ts. A
         // membership card shows who the holder is instead of how far along they
         // are, because it has no target to be along the way to.
@@ -2427,7 +2467,10 @@ export const DESIGN_PANEL_JS = /* js */ `
           STAMP_PRESETS.map((x) =>
             '<option value="' + esc(x.v) + '"' + (x.v === now ? " selected" : "") + ">" +
             esc(x.name) + "</option>").join("") +
-          '<option value="custom"' + (now === "custom" ? " selected" : "") + ">Upload your own\u2026</option>";
+          // "Your own" is not in this list any more \u2014 it is the button beside
+          // it. It stays SELECTABLE as a state, so a card already wearing an
+          // uploaded shape shows that rather than reading as dots.
+          (now === "custom" ? '<option value="custom" selected>Your own</option>' : "");
       }
 
       {
@@ -2439,7 +2482,6 @@ export const DESIGN_PANEL_JS = /* js */ `
             // Both of these open something and may be cancelled, so the list is
             // put back to what is actually set rather than left showing a
             // choice that was never made.
-            if (v === "custom") { drawStampPick(); q("[data-stampimg]").click(); return; }
             if (v === "dot") { await backToDots(); drawStampPick(); return; }
             await applyStamps(v);
             drawStampPick();
@@ -2459,22 +2501,15 @@ export const DESIGN_PANEL_JS = /* js */ `
        * The trigger is the shape of the image they already uploaded, measured in
        * the browser — no new column, and no guessing.
        */
-      let logoRatio = 0;
       function updateMark() {
-        const hint = q("[data-markhint]");
-        if (!hint) return;
-        // The row's label is fixed and its state lives on the button, which is
-        // where the state of the row above it lives too. The hint is the one
-        // extra thing, and only in the one state where something is actually
-        // being lost: a wide logo, and no square version to use instead.
-        q("[data-markbtn]").textContent = c.markVersion ? "Replace" : "Upload";
-        // The SAME line for the row above. It never had one — its button said
-        // "Upload logo" whether or not a logo was already there, so a merchant
-        // looking at their own logo was invited to upload one. The Android row
-        // has been doing this correctly all along, which is what made the
-        // difference visible.
+        const btn = q("[data-markbtn]");
+        if (!btn) return;
+        // Each box says whether it already holds something. That is the whole
+        // state either of them has now: the warning about Android cropping a
+        // wide logo is gone, because the only thing an owner could do about it
+        // was upload the small one — which is the box beside it, unprompted.
+        btn.textContent = c.markVersion ? "Replace" : "Upload";
         q("[data-logobtn]").textContent = c.logoVersion ? "Replace" : "Upload";
-        hint.hidden = !(c.logoVersion && logoRatio > 1.25 && !c.markVersion);
         paintArt();
       }
 
@@ -2531,17 +2566,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         // nothing into itself is a control that cannot do anything.
         const fade = div.querySelector("[data-bandfade]");
         if (fade) fade.hidden = !bandIsImage;
-      }
-      // Measured off its own Image rather than the preview's: the preview logo
-      // is hidden on two of the three tabs, and a hidden img still decodes but
-      // this way nothing depends on which tab happens to be open.
-      if (c.logoVersion) {
-        const probe = new Image();
-        probe.onload = () => {
-          if (probe.naturalHeight > 0) logoRatio = probe.naturalWidth / probe.naturalHeight;
-          updateMark();
-        };
-        probe.src = env.artUrl("logo", c.logoVersion);
       }
       updateMark();
 
@@ -3034,14 +3058,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         // probe can fail — a decode is not guaranteed — and the label must not
         // depend on it.
         updateMark();
-        // Re-measure: whether Android needs a square version is a fact about
-        // THIS image, so a new upload can turn that row on or off.
-        const probe = new Image();
-        probe.onload = () => {
-          if (probe.naturalHeight > 0) logoRatio = probe.naturalWidth / probe.naturalHeight;
-          updateMark();
-        };
-        probe.src = url;
         // One awaited sequence: read the palette, apply it, then check the logo
         // is still readable on the colour that came out of it.
         void applyLogoColours(url);
@@ -3064,7 +3080,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         q("[data-pv-logo]").style.display = "none";
         q("[data-a=rmlogo]").disabled = true;
         lastLogoUrl = ""; freshLogo = "";
-        logoRatio = 0;
         updateMark();
         toast("Logo removed");
       };
@@ -3918,7 +3933,10 @@ export const DESIGN_PANEL_JS = /* js */ `
        */
       q("[data-a=save]").onclick = async () => {
         const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
-        const ok = await modal(
+        // Nobody holds this card, so there is nothing to warn about: the dialog
+        // existed to say "this reaches everyone who has one", and with none it
+        // was a pop-up asking permission to save the thing just pressed.
+        const ok = liveCustomers === 0 ? true : await modal(
           env.showDetails ? "Save these changes?" : "Save this card?",
           '<dl class="mdlblast">' +
           // The look half is true on every path — the console sets no rules, but

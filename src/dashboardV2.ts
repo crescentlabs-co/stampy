@@ -3751,6 +3751,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // means the screen saved last wins, which is not a rule anybody could
         // work out from looking at it.
         showShop: false,
+        // "Finish and publish" below already saves the design, so a second
+        // Save inside the panel was two buttons for one job.
+        hideSave: true,
         saveLabel: "Save design",
         customersPath: null,
       });

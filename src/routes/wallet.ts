@@ -19,6 +19,7 @@ import {
   getCard,
   getCardBanner,
   getCardLogo,
+  getCardLogoMark,
   getPass,
   getStampStrip,
   serialsUpdatedSince,
@@ -88,12 +89,13 @@ walletRouter.get("/v1/passes/:passTypeId/:serial", async (req, res) => {
   if (!card) return void res.status(500).end();
   try {
     const key = stripKey(row.kind, row.stamps_target, row.stamp_count);
-    const [logo, banner, strip] = await Promise.all([
+    const [logo, mark, banner, strip] = await Promise.all([
       getCardLogo(card.id).catch(() => null),
+      getCardLogoMark(card.id).catch(() => null),
       getCardBanner(card.id).catch(() => null),
       getStampStrip(card.id, key.target, key.filled).catch(() => null),
     ]);
-    const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, await businessNameForCard(card));
+    const pkpass = buildPkpass(row, card, logo?.png, banner?.png, strip?.png, await businessNameForCard(card), mark?.png);
     res
       .status(200)
       .set("Content-Type", "application/vnd.apple.pkpass")

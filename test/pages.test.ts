@@ -2002,7 +2002,7 @@ describe("dashboard information architecture", () => {
     const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
     for (const sel of [
       ".dfold > summary", ".swbox .swname", ".swbox .swval",
-      ".tgtext", ".chipcustom", ".stampnow", ".mhint", ".lbup", ".crpal-n",
+      ".tgtext", ".chipcustom", ".stampnow", ".lbup", ".lbcap", ".crpal-n",
     ]) {
       const at = css.indexOf(sel + " {");
       expect(at, sel + " is gone from the stylesheet").toBeGreaterThan(-1);
@@ -2048,11 +2048,21 @@ describe("dashboard information architecture", () => {
    * "Upload your own" opened nothing at all. The five colour pickers further
    * down are parked for the same reason, and say so.
    */
-  it("keeps the stamp file input off-screen rather than hidden", () => {
-    expect(html).toContain('data-stampimg type="file" accept="image/*" class="offscreen"');
-    expect(html).not.toContain('data-stampimg type="file" accept="image/png,image/svg+xml" hidden');
-    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
-    expect(css).toContain(".offscreen { position: absolute;");
+  /**
+   * The file input is opened by a LABEL, never by script.
+   *
+   * It used to be an option inside the stamp list, which called .click() on a
+   * hidden input from the list's change handler. That cannot work on a phone:
+   * iOS opens a select as a native sheet, change fires once it is dismissed,
+   * and by then the tap that would have authorised opening a file picker is
+   * gone — so the option was chosen and nothing happened at all. A label
+   * wrapping the input is the same shape the logo and banner boxes use, and
+   * those have always worked.
+   */
+  it("opens the stamp picker with a label, not a scripted click", () => {
+    expect(html).toContain('<label class="lbup btn btn-ghost">Your own<input data-stampimg');
+    expect(html).not.toContain('q("[data-stampimg]").click()');
+    expect(html).toContain('accept="image/*"');
   });
 
   // A hint that pushes the form down is a paragraph with extra steps.
@@ -2117,8 +2127,14 @@ describe("dashboard information architecture", () => {
     const look = html.slice(html.indexOf(">Personalize</label>"),
                             html.indexOf("================= LOYALTY CARD"));
     expect(look).not.toContain("info(");
-    expect(html).toContain("Your logo is wide, so Android is cropping the ends off it.");
+    // And no standing warning either. The one that survived said a wide logo
+    // gets cropped on Android — true, and the only remedy was to upload the
+    // small one, which is the box beside it. A warning whose only answer is
+    // the next control should have been that control's label.
+    expect(html).not.toContain("Android is cropping the ends off it");
     expect(html).not.toContain('class="marknote"');
+    expect(look).toContain(">Wide</span>");
+    expect(look).toContain(">Small</span>");
   });
 
   // Matching a shade by hand in a colour picker is the fiddliest thing on the

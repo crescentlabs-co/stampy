@@ -51,6 +51,29 @@ export class NotConfiguredError extends Error {}
  *    composited into it (see drawStampStrip in src/pages.ts), so nothing is lost
  *    when the grid wins.
  */
+/**
+ * Which of the two logos an Apple card should wear.
+ *
+ * `logo_has_name` is "my wide logo already says the shop's name", so the pass
+ * drops its own name text and the wide lockup is the whole header. Turn that
+ * OFF and the pass prints the shop's name beside the logo — and a wide lockup
+ * leaves no room for the words, so the SMALL one is the right picture.
+ *
+ * Google has always preferred the small one (it draws logos in a circle); this
+ * is the same rule reaching the iPhone, and it is why the two boxes are now
+ * called Wide and Small rather than Apple and Android.
+ *
+ * Falls back to whichever exists. A shop with only one logo gets that one.
+ */
+export function passLogo(
+  card: Pick<CardRow, "logo_has_name">,
+  wide?: Buffer | null,
+  small?: Buffer | null,
+): Buffer | null | undefined {
+  if (!card.logo_has_name && small) return small;
+  return wide ?? small;
+}
+
 export function passArt(
   logoPng?: Buffer | null,
   stripPng?: Buffer | null,
@@ -83,6 +106,8 @@ export function buildPkpass(
   bannerPng?: Buffer | null,
   stampStripPng?: Buffer | null,
   business?: string,
+  /** The square version, when the shop uploaded one. See passLogo. */
+  markPng?: Buffer | null,
 ): Buffer {
   if (!setupStatus().canSignPasses) {
     throw new NotConfiguredError(
@@ -90,7 +115,7 @@ export function buildPkpass(
     );
   }
 
-  const art = passArt(logoPng, stampStripPng ?? bannerPng);
+  const art = passArt(passLogo(card, logoPng, markPng), stampStripPng ?? bannerPng);
 
   const pass = new PKPass(
     {
