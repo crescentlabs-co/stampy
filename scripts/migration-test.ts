@@ -183,6 +183,11 @@ async function main(): Promise<void> {
 
   // --- The upgrade ----------------------------------------------------------
   await db.migrate();
+  // Recreate the two legacy manual-points shapes that can exist on staging:
+  // one with a useful fixed rate and one with no rate at all. The next boot
+  // must turn both into supported visit-based rules without losing the first.
+  await sql.query(`UPDATE cards SET earn_mode = 'manual', earn_points = 7 WHERE id = 'default'`);
+  await sql.query(`UPDATE cards SET earn_mode = 'manual', earn_points = 0 WHERE id = 'ab12cd34'`);
   await db.migrate(); // idempotency: a second boot must be a no-op
 
   // --- The things that would be catastrophic to get wrong --------------------
@@ -209,6 +214,25 @@ async function main(): Promise<void> {
   expect(
     new Set(passes.map((p) => p.customer_id)).size === passes.length,
     "one customer per pass — the Apple/Google pair cannot be merged retroactively",
+  );
+  const profileColumns = (await sql.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'customers'
+        AND column_name IN ('display_name', 'phone_number', 'profile_consent_at')
+      ORDER BY column_name`,
+  )).rows.map((r) => r.column_name);
+  expect(
+    profileColumns.length === 3,
+    "customer lookup fields arrive additively without replacing customer ids",
+  );
+  const migratedPoints = (await sql.query<{ id: string; earn_mode: string; earn_points: number }>(
+    `SELECT id, earn_mode, earn_points FROM cards WHERE id IN ('default', 'ab12cd34') ORDER BY id`,
+  )).rows;
+  expect(
+    migratedPoints.every((c) => c.earn_mode === "visit") &&
+      migratedPoints.find((c) => c.id === "default")?.earn_points === 7 &&
+      migratedPoints.find((c) => c.id === "ab12cd34")?.earn_points === 1,
+    "legacy manual points become visit-based and preserve a usable fixed rate",
   );
 
   // v1.4: the denormalised event columns. The backfill reads cards.merchant_id
