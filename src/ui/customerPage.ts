@@ -16,9 +16,8 @@
  *      on customers' phones and the barcode content IS the serial. The address
  *      is /c/:cardId/me and the person is identified by the same signed
  *      per-merchant cookie the sign-up flow already sets.
- *   3. **It asks for nothing.** No name, no email, no phone — the privacy page
- *      promises exactly that, and a page addressed to the customer is precisely
- *      where that promise would erode first.
+ *   3. Customer details stay lookup-only. They are never credentials and never
+ *      become a second customer identity beside the signed merchant cookie.
  *
  * The progress figures are placeholders for now: reading a live balance means
  * resolving the cookie to a pass on the server, which is a real change to a
@@ -99,8 +98,8 @@ export function customerCardPage(
          <p>${esc(card.reward ? `Collect ${card.stamps_target} stamps, get ${card.reward}` : "Your loyalty card")}</p>
        </div>
        ${body}
-       <p class="muted" style="margin-top:20px;font-size:.78rem">This shop knows you only as a card.
-         No name, no phone number, no email — ever.
+       <p class="muted" style="margin-top:20px;font-size:.78rem">Your saved name and phone number help
+         this shop find your loyalty card. They are not used for marketing or sold.
          <a href="/privacy">How we handle your data</a>.</p>
      </div>`,
     css,

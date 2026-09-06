@@ -55,13 +55,9 @@ export {
 
 // ------------------------------------------------------------- customer ----
 
-/**
- * A link, not a tick-box: we ask customers for no name, email or phone, and a
- * consent gate at a counter costs real sign-ups. It sits BELOW the buttons so
- * the Add button stays at thumb height, and leads with the fact rather than the
- * links — "no name, no phone, no email" is the reason to join, not fine print.
- */
-const legalLine = `<p class="muted" style="margin-top:10px;font-size:.78rem">No name, no phone number, no email — ever.
+/** The narrow reason customer details are held, repeated beside the wallet action. */
+const legalLine = `<p class="muted" style="margin-top:10px;font-size:.78rem">Your name and phone number
+  help this shop find your loyalty card and support your account. They are not used for marketing or sold.
   Adding this card means you accept our <a href="/terms" target="_blank">Terms</a> and
   <a href="/privacy" target="_blank">Privacy Policy</a>.</p>`;
 
@@ -125,6 +121,13 @@ export function landingPage(
   business = card.name,
   /** 0 = no uploaded logo, so the page falls back to the generic mark. */
   logoVersion = 0,
+  signup: {
+    profileComplete: boolean;
+    error?: "invalid-name" | "invalid-phone" | "consent-required";
+    displayName?: string;
+    phoneNumber?: string;
+    source?: string;
+  } = { profileComplete: true },
 ): string {
   const base = cardId === DEFAULT_CARD_ID ? "" : `/c/${cardId}`;
   const bg = rgbToHex(card.background_color);
@@ -144,8 +147,17 @@ export function landingPage(
     .lhero .sub { color: ${onBg}; opacity: .85; margin: 8px 0 0; }
     .card { overflow: hidden; }
     .wbtn.btn-dark { background: ${accent}; border-color: ${accent}; color: ${contrastText(accent)}; }
+    .joinform { text-align: left; margin-top: 18px; }
+    .joinform h2 { font-size: var(--t-lg); margin: 0 0 4px; }
+    .joinform label { color: var(--ink); }
+    .joinform .consent { display: grid; grid-template-columns: 22px 1fr; gap: 10px;
+                         align-items: start; color: var(--ink2); font-size: var(--t-sm);
+                         font-weight: 400; line-height: var(--lh-body); margin-top: 16px; }
+    .joinform .consent input { width: 20px; height: 20px; margin-top: 2px; }
+    .joinerr { color: var(--bad); background: var(--bad-bg); border-radius: var(--r-sm);
+               padding: 10px 12px; font-size: var(--t-sm); margin: 12px 0 0; }
   `;
-  const buttons = [
+  const walletButtons = [
     appleReady
       ? `<a class="btn btn-dark wbtn" data-w="apple" href="${base}/enroll">&#63743; Add to Apple Wallet</a>`
       : "",
@@ -153,6 +165,30 @@ export function landingPage(
       ? `<a class="btn btn-dark wbtn" data-w="google" style="margin-top:10px" href="${base}/enroll/google">Add to Google Wallet</a>`
       : "",
   ].join("");
+  const buttons = signup.profileComplete ? walletButtons : "";
+  const errorText = signup.error === "invalid-name"
+    ? "Enter the customer’s name."
+    : signup.error === "invalid-phone"
+      ? "Enter a valid phone number, including the country code if it is not Malaysian."
+      : signup.error === "consent-required"
+        ? "Please agree before continuing."
+        : "";
+  const profileForm = `<form class="joinform" method="post" action="/c/${encodeURIComponent(cardId)}/profile${signup.source ? `?s=${encodeURIComponent(signup.source)}` : ""}">
+    <h2>Tell us who the card belongs to</h2>
+    <p class="muted">This lets staff find the right card quickly at the counter.</p>
+    ${errorText ? `<p class="joinerr" role="alert">${errorText}</p>` : ""}
+    <label for="displayName">Name</label>
+    <input id="displayName" name="displayName" autocomplete="name" maxlength="80" required
+      value="${esc(signup.displayName ?? "")}">
+    <label for="phoneNumber">Phone number</label>
+    <input id="phoneNumber" name="phoneNumber" type="tel" autocomplete="tel" inputmode="tel"
+      maxlength="30" placeholder="e.g. 012 345 6789" required value="${esc(signup.phoneNumber ?? "")}">
+    <label class="consent"><input name="consent" type="checkbox" value="1" required>
+      <span>We ask for your name and phone number so ${esc(business)} can find your loyalty card at the counter
+      and help with your account. We do not use these details for marketing or sell them.
+      <a href="/privacy" target="_blank">Privacy Policy</a>.</span></label>
+    <button class="btn btn-dark" type="submit" style="margin-top:16px">Continue</button>
+  </form>`;
   // Lead with the wallet native to the phone (the other stays as a fallback),
   // so scanning the QR lands the customer near-directly on the right Add sheet.
   const script = /* js */ `
@@ -194,7 +230,9 @@ export function landingPage(
       </div>
       <p class="sub">Your card lives in your phone’s wallet — no app needed.</p>
       ${
-        buttons
+        !signup.profileComplete
+          ? profileForm
+          : buttons
           ? `<div id="wallets">${buttons}</div>
              ${card.kind === "membership"
                ? ""
@@ -1192,7 +1230,7 @@ function contactLine(contactEmail: string): string {
     : `reach us through the account you signed up with in your <a href="/dashboard">dashboard</a>`;
 }
 
-const UPDATED = "28 July 2026";
+const UPDATED = "6 September 2026";
 
 /**
  * How to get help — the page a stranger should land on, and the one Google's
@@ -1236,9 +1274,10 @@ export function supportPage(contactEmail = ""): string {
         on the back. Your stamps keep working and you are still told when you are stamped.</li>
       <li><strong>To stop everything</strong>, delete the card from Apple Wallet or Google Wallet.
         Nothing further reaches you, and there is no account to close.</li>
-      <li><strong>Your data</strong> &mdash; we hold no name, email or phone number for you. To ask
-        what we hold, correct it or have it deleted, ${contactLine(contactEmail)} and quote the
-        short card code shown on your card, which is the only way we can find the right record.
+      <li><strong>Your data</strong> &mdash; your name and phone number are kept only so the shop can
+        find your loyalty card and help with your account. To ask what we hold, correct it or have
+        it deleted, ${contactLine(contactEmail)} and give the shop name plus your name, phone number
+        or short card code.
         See the <a href="/privacy">Privacy Policy</a>.</li>
     </ul>
 
@@ -1273,11 +1312,12 @@ export function privacyPage(contactEmail = ""): string {
     <p>PunchMe provides digital loyalty stamp cards that live in Apple Wallet and Google Wallet. This policy explains what we collect and why, in plain language. It is written to meet Malaysia&rsquo;s Personal Data Protection Act 2010 (PDPA).</p>
 
     <h2>The short version, for customers</h2>
-    <p>We never ask you for your name, phone number or email address, and there is no account to create. Your loyalty card is a card in your phone&rsquo;s wallet — nothing more. <strong>To stop offers and reminders, open your card and tap &ldquo;Stop messages&rdquo; on the back.</strong> Your card keeps working: you still collect stamps and you are still told when you are stamped, because that is your card updating and not an advert. <strong>To stop everything, delete the card from your wallet.</strong> Either way there is no form to fill in and no account to close.</p>
+    <p>Before adding a card, we ask for your name and phone number so the shop can find the right loyalty card at the counter and help with your account. We do not ask for an email address or payment details, and your phone number is not a login. <strong>We do not use these details for marketing or sell them.</strong> To stop offers and reminders, open your card and tap &ldquo;Stop messages&rdquo; on the back. To stop everything, delete the card from your wallet.</p>
 
     <h2>What we collect from customers</h2>
-    <p>We do <strong>not</strong> ask for, and never hold, your name, email address, phone number, date of birth or payment details. What we do hold, from the moment you add a card:</p>
+    <p>We do not ask for your email address, date of birth or payment details. We hold:</p>
     <ul>
+      <li><strong>Your name and phone number</strong> — only so that shop&rsquo;s authorised staff can find your loyalty card and help with your account. The phone number is not used to log in, merge records or send marketing.</li>
       <li><strong>A random card number and a short card code</strong> — the identifiers printed in the card&rsquo;s barcode, so staff can scan it.</li>
       <li><strong>Your stamps</strong> — the current count, and the date and time of each stamp, reward and correction.</li>
       <li><strong>Which wallet you use</strong> — Apple or Google.</li>
@@ -1286,7 +1326,7 @@ export function privacyPage(contactEmail = ""): string {
       <li><strong>The loyalty messages sent to your card</strong> — the wording of each message and whether it arrived.</li>
       <li><strong>A cookie in your browser</strong>, set for the shop you joined, so a second visit adds a stamp to the card you already have instead of issuing you another one. It contains a random reference and nothing else.</li>
     </ul>
-    <p>None of this is your identity. It identifies a <em>card in a browser</em>: a new phone reads as a new customer, and we accept that rather than ask you who you are. Each shop is separate — if you hold cards at two shops, those are two unconnected records, and neither shop can see the other.</p>
+    <p>Your signed shop cookie, not your name or phone number, connects this browser to its card. A new phone can therefore create a separate customer record; we do not merge records just because two people enter the same number. Each shop is separate — if you hold cards at two shops, those are two unconnected records, and neither shop can see the other.</p>
 
     <h2>Visitors to this website</h2>
     <p>Separately from any card, we count visits to our own public pages &mdash; this
@@ -1308,6 +1348,7 @@ export function privacyPage(contactEmail = ""): string {
     <h2>Why we collect it</h2>
     <ul>
       <li>To run the loyalty programme: issue cards, add stamps, and show the reward.</li>
+      <li>To let authorised shop staff find the right card by name or phone number at the counter and help correct account details.</li>
       <li>To update your card and send loyalty notifications — a new stamp, or a &ldquo;we miss you&rdquo; message — through your wallet.</li>
       <li>To show the café their own numbers: how many cards, stamps and rewards.</li>
       <li>To keep the service working and secure, and to stop abuse.</li>
@@ -1315,7 +1356,7 @@ export function privacyPage(contactEmail = ""): string {
     <p>We do <strong>not</strong> sell your data, we do <strong>not</strong> use it for advertising, and we do <strong>not</strong> combine what one café knows about you with any other café.</p>
 
     <h2>Who is responsible for your data</h2>
-    <p>The café whose card you hold decides how your loyalty data is used — under the PDPA they are the data user. PunchMe runs the system on their behalf as their data processor. <strong>A café can see only its own cards, stamps and messages</strong>, never another café&rsquo;s and never anything about you beyond what is listed above.</p>
+    <p>The café whose card you hold decides how your loyalty data is used — under the PDPA they are the data user. PunchMe runs the system on their behalf as their data processor. <strong>A café can see only its own customers&rsquo; names, masked phone details, cards, stamps and messages</strong>, never another café&rsquo;s.</p>
 
     <h2>Who else receives it</h2>
     <ul>
@@ -1329,12 +1370,12 @@ export function privacyPage(contactEmail = ""): string {
     <p>In a managed PostgreSQL database at Railway, transmitted over encrypted (HTTPS) connections. Passwords and staff PINs are one-way hashed and are never stored in a form anyone can read back.</p>
 
     <h2>How long we keep it</h2>
-    <p>Your card and its stamps are kept while the card is in your wallet. <strong>Turn messages off and the offers stop, while your card carries on working.</strong> <strong>Delete the card and it stops updating and receives nothing further</strong> — no more stamps, no more messages. If you turn messages off we keep the date you asked, so that we can prove we honoured it.</p>
-    <p>We do keep the record that the card existed and the stamps it earned, because that history is the café&rsquo;s own record of its business — how many people joined, how many came back, how many rewards it gave out. It stays attached to a random card number, never to a name. Cards that were never stamped and never reached a wallet are deleted automatically after 30 days.</p>
+    <p>Your card and its stamps are kept while the card is in your wallet. <strong>Turn messages off and the offers stop. Your card keeps working.</strong> <strong>Delete the card and it stops updating and receives nothing further</strong> — no more stamps, no more messages. If you turn messages off we keep the date you asked, so that we can prove we honoured it.</p>
+    <p>We keep your name and phone number while the café&rsquo;s account remains open, unless you ask for them to be corrected or deleted. We also keep the record that the card existed and the stamps it earned because that history is the café&rsquo;s business record. Cards that were never stamped and never reached a wallet are deleted automatically after 30 days.</p>
     <p>Café account data is kept while the account is open.</p>
 
     <h2>Your rights (PDPA)</h2>
-    <p>You may ask to access the personal data we hold about you, correct it, ask us to delete it, obtain a copy of it, limit how it is used, or withdraw your consent. To make a request, ${contactLine(contactEmail)}. Because we hold no name or contact details, you will need to give us your card&rsquo;s short code so we can find the right record. If your request is about a particular café&rsquo;s programme, we will pass it to that café, who decides as the data user.</p>
+    <p>You may ask to access the personal data we hold about you, correct it, ask us to delete it, obtain a copy of it, limit how it is used, or withdraw your consent. To make a request, ${contactLine(contactEmail)} and give the café name plus your name, phone number or card&rsquo;s short code. If your request is about a particular café&rsquo;s programme, we will pass it to that café, who decides as the data user.</p>
 
     <h2>Changes</h2>
     <p>We may update this policy as the product grows. We&rsquo;ll change the date above when we do.</p>
@@ -1361,11 +1402,12 @@ export function privacyPageBm(contactEmail = ""): string {
     <p>PunchMe menyediakan kad setia digital yang disimpan di dalam Apple Wallet dan Google Wallet. Dasar ini menerangkan apa yang kami kumpul dan sebabnya, dalam bahasa yang mudah. Ia ditulis untuk memenuhi Akta Perlindungan Data Peribadi 2010 (PDPA) Malaysia.</p>
 
     <h2>Ringkasnya, untuk pelanggan</h2>
-    <p>Kami tidak pernah meminta nama, nombor telefon atau alamat e-mel anda, dan tiada akaun yang perlu dibuka. Kad setia anda hanyalah sekeping kad di dalam dompet telefon anda. <strong>Untuk menghentikan tawaran dan peringatan, buka kad anda dan tekan &ldquo;Stop messages&rdquo; di belakang kad.</strong> Kad anda tetap berfungsi: anda masih mengumpul setem dan masih diberitahu apabila kad anda disetem, kerana itu ialah kad anda dikemas kini dan bukan iklan. <strong>Untuk menghentikan semuanya, padamkan kad itu daripada dompet anda.</strong> Dalam kedua-dua cara, tiada borang untuk diisi dan tiada akaun untuk ditutup.</p>
+    <p>Sebelum menambah kad, kami meminta nama dan nombor telefon anda supaya kedai boleh mencari kad setia yang betul di kaunter dan membantu dengan akaun anda. Kami tidak meminta alamat e-mel atau butiran pembayaran, dan nombor telefon anda bukan log masuk. <strong>Kami tidak menggunakan butiran ini untuk pemasaran atau menjualnya.</strong> Untuk menghentikan tawaran dan peringatan, buka kad anda dan tekan &ldquo;Stop messages&rdquo; di belakang kad. Untuk menghentikan semuanya, padamkan kad daripada dompet anda.</p>
 
     <h2>Apa yang kami kumpul daripada pelanggan</h2>
-    <p>Kami <strong>tidak</strong> meminta, dan tidak pernah menyimpan, nama, alamat e-mel, nombor telefon, tarikh lahir atau maklumat pembayaran anda. Apa yang kami simpan, bermula saat anda menambah kad:</p>
+    <p>Kami tidak meminta alamat e-mel, tarikh lahir atau butiran pembayaran anda. Kami menyimpan:</p>
     <ul>
+      <li><strong>Nama dan nombor telefon anda</strong> — hanya supaya kakitangan kedai yang dibenarkan boleh mencari kad setia anda dan membantu dengan akaun anda. Nombor itu tidak digunakan untuk log masuk, menggabungkan rekod atau menghantar pemasaran.</li>
       <li><strong>Nombor kad rawak dan kod kad ringkas</strong> — pengenalan yang tercetak dalam kod bar kad, supaya kakitangan boleh mengimbasnya.</li>
       <li><strong>Setem anda</strong> — jumlah semasa, serta tarikh dan masa setiap setem, ganjaran dan pembetulan.</li>
       <li><strong>Dompet yang anda guna</strong> — Apple atau Google.</li>
@@ -1374,7 +1416,7 @@ export function privacyPageBm(contactEmail = ""): string {
       <li><strong>Mesej setia yang dihantar ke kad anda</strong> — kandungan setiap mesej dan sama ada ia sampai.</li>
       <li><strong>Satu kuki di dalam pelayar anda</strong>, ditetapkan untuk kedai yang anda sertai, supaya lawatan kedua menambah setem pada kad sedia ada dan bukannya mengeluarkan kad baharu. Ia mengandungi rujukan rawak sahaja.</li>
     </ul>
-    <p>Semua ini bukan identiti anda. Ia mengenal pasti <em>sekeping kad di dalam sebuah pelayar</em>: telefon baharu akan dibaca sebagai pelanggan baharu, dan kami menerima hakikat itu daripada bertanya siapa anda. Setiap kedai adalah berasingan — jika anda memegang kad di dua kedai, itu dua rekod yang tidak berhubung, dan kedai yang satu tidak dapat melihat yang lain.</p>
+    <p>Kuki kedai yang ditandatangani, bukan nama atau nombor telefon anda, menghubungkan pelayar ini kepada kadnya. Oleh itu, telefon baharu boleh mencipta rekod pelanggan berasingan; kami tidak menggabungkan rekod hanya kerana dua orang memasukkan nombor yang sama. Setiap kedai adalah berasingan — jika anda memegang kad di dua kedai, rekod itu tidak berhubung dan kedai yang satu tidak dapat melihat yang lain.</p>
 
     <h2>Pelawat ke laman web ini</h2>
     <p>Berasingan daripada mana-mana kad, kami mengira lawatan ke halaman awam kami
@@ -1396,6 +1438,7 @@ export function privacyPageBm(contactEmail = ""): string {
     <h2>Mengapa kami mengumpulnya</h2>
     <ul>
       <li>Untuk menjalankan program setia: mengeluarkan kad, menambah setem, dan memaparkan ganjaran.</li>
+      <li>Untuk membolehkan kakitangan kedai yang dibenarkan mencari kad yang betul menggunakan nama atau nombor telefon di kaunter dan membetulkan butiran akaun.</li>
       <li>Untuk mengemas kini kad anda dan menghantar pemberitahuan setia — setem baharu, atau mesej &ldquo;kami rindu anda&rdquo; — melalui dompet anda.</li>
       <li>Untuk menunjukkan kepada kafe angka mereka sendiri: berapa banyak kad, setem dan ganjaran.</li>
       <li>Untuk memastikan perkhidmatan berfungsi dan selamat, serta menghalang penyalahgunaan.</li>
@@ -1403,7 +1446,7 @@ export function privacyPageBm(contactEmail = ""): string {
     <p>Kami <strong>tidak</strong> menjual data anda, <strong>tidak</strong> menggunakannya untuk pengiklanan, dan <strong>tidak</strong> menggabungkan apa yang diketahui oleh satu kafe tentang anda dengan mana-mana kafe lain.</p>
 
     <h2>Siapa yang bertanggungjawab ke atas data anda</h2>
-    <p>Kafe yang kadnya anda pegang menentukan bagaimana data setia anda digunakan — di bawah PDPA merekalah pengguna data. PunchMe mengendalikan sistem bagi pihak mereka sebagai pemproses data. <strong>Sesebuah kafe hanya dapat melihat kad, setem dan mesejnya sendiri</strong>, tidak sekali-kali milik kafe lain dan tidak apa-apa tentang anda selain yang disenaraikan di atas.</p>
+    <p>Kafe yang kadnya anda pegang menentukan bagaimana data setia anda digunakan — di bawah PDPA merekalah pengguna data. PunchMe mengendalikan sistem bagi pihak mereka sebagai pemproses data. <strong>Sesebuah kafe hanya dapat melihat nama, butiran telefon bertopeng, kad, setem dan mesej pelanggannya sendiri</strong>, tidak sekali-kali milik kafe lain.</p>
 
     <h2>Siapa lagi yang menerimanya</h2>
     <ul>
@@ -1417,12 +1460,12 @@ export function privacyPageBm(contactEmail = ""): string {
     <p>Di dalam pangkalan data PostgreSQL terurus di Railway, dihantar melalui sambungan tersulit (HTTPS). Kata laluan dan PIN kakitangan dicincang sehala dan tidak pernah disimpan dalam bentuk yang boleh dibaca semula oleh sesiapa.</p>
 
     <h2>Berapa lama kami menyimpannya</h2>
-    <p>Kad anda dan setemnya disimpan selagi kad itu berada di dalam dompet anda. <strong>Matikan mesej dan tawaran akan berhenti, manakala kad anda terus berfungsi.</strong> <strong>Padamkan kad itu dan ia berhenti dikemas kini serta tidak menerima apa-apa lagi</strong> — tiada setem, tiada mesej. Jika anda mematikan mesej, kami menyimpan tarikh anda meminta, supaya kami boleh membuktikan bahawa kami mematuhinya.</p>
-    <p>Kami memang menyimpan rekod bahawa kad itu pernah wujud dan setem yang diperolehnya, kerana sejarah itu ialah rekod perniagaan kafe itu sendiri — berapa ramai yang menyertai, berapa ramai yang kembali, berapa banyak ganjaran yang diberikan. Ia kekal terikat pada nombor kad rawak, tidak sekali-kali pada nama. Kad yang tidak pernah disetem dan tidak pernah sampai ke dompet akan dipadam secara automatik selepas 30 hari.</p>
+    <p>Kad anda dan setemnya disimpan selagi kad itu berada di dalam dompet anda. <strong>Matikan mesej dan tawaran akan berhenti. Kad anda tetap berfungsi.</strong> <strong>Padamkan kad itu dan ia berhenti dikemas kini serta tidak menerima apa-apa lagi</strong> — tiada setem, tiada mesej. Jika anda mematikan mesej, kami menyimpan tarikh anda meminta, supaya kami boleh membuktikan bahawa kami mematuhinya.</p>
+    <p>Kami menyimpan nama dan nombor telefon anda selagi akaun kafe masih dibuka, kecuali anda meminta ia dibetulkan atau dipadam. Kami juga menyimpan rekod bahawa kad itu pernah wujud dan setem yang diperolehnya kerana sejarah itu ialah rekod perniagaan kafe. Kad yang tidak pernah disetem dan tidak pernah sampai ke dompet akan dipadam secara automatik selepas 30 hari.</p>
     <p>Data akaun kafe disimpan selagi akaun itu dibuka.</p>
 
     <h2>Hak anda (PDPA)</h2>
-    <p>Anda boleh meminta akses kepada data peribadi yang kami simpan tentang anda, membetulkannya, meminta kami memadamnya, mendapatkan salinannya, mengehadkan penggunaannya, atau menarik balik persetujuan anda. Untuk membuat permintaan, ${contact}. Oleh sebab kami tidak menyimpan nama atau butiran perhubungan, anda perlu memberikan kod ringkas kad anda supaya kami dapat mencari rekod yang betul. Jika permintaan anda berkaitan program sesebuah kafe, kami akan menyalurkannya kepada kafe itu, yang memutuskan sebagai pengguna data.</p>
+    <p>Anda boleh meminta akses kepada data peribadi yang kami simpan tentang anda, membetulkannya, meminta kami memadamnya, mendapatkan salinannya, mengehadkan penggunaannya, atau menarik balik persetujuan anda. Untuk membuat permintaan, ${contact} dan berikan nama kafe bersama nama, nombor telefon atau kod ringkas kad anda. Jika permintaan anda berkaitan program sesebuah kafe, kami akan menyalurkannya kepada kafe itu, yang memutuskan sebagai pengguna data.</p>
 
     <h2>Perubahan</h2>
     <p>Kami mungkin mengemas kini dasar ini apabila produk berkembang. Kami akan menukar tarikh di atas apabila berbuat demikian.</p>

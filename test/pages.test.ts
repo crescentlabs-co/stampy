@@ -334,6 +334,32 @@ describe("the printable sign-up poster", () => {
       expect(page(true, 0)).toContain("<h1>Kopi Corner</h1>");
     });
   });
+
+  describe("customer details before wallet enrolment", () => {
+    const join = (complete: boolean) => landingPage(
+      { ...POSTER_CARD, name: "Kopi Corner" } as never,
+      true, true, "default", "Kopi Corner", 0,
+      { profileComplete: complete },
+    );
+
+    it("requires name, phone, and consent before showing wallet buttons", () => {
+      const html = join(false);
+      expect(html).toContain('action="/c/default/profile"');
+      expect(html).toContain('name="displayName"');
+      expect(html).toContain('name="phoneNumber"');
+      expect(html).toContain('name="consent"');
+      expect(html).toContain("find your loyalty card at the counter");
+      expect(html).not.toContain("Add to Apple Wallet");
+      expect(html).not.toContain("Add to Google Wallet");
+    });
+
+    it("shows wallet buttons only after the profile is complete", () => {
+      const html = join(true);
+      expect(html).toContain("Add to Apple Wallet");
+      expect(html).toContain("Add to Google Wallet");
+      expect(html).not.toContain('name="phoneNumber"');
+    });
+  });
 });
 
 /**
@@ -4085,20 +4111,29 @@ describe("the manage screens", () => {
    * LOCKED_ONCE_JOINED (src/routes/dashboard.ts) — a gate the browser computes
    * is a gate anyone can switch off in devtools.
    */
-  it("locks the rules once a real customer has joined, and shows no form at all", () => {
+  it("locks the rules once a real customer has joined, and shows no rule fields", () => {
     expect(detail).toContain("const joined = m.active > 0");
+    expect(detail).toContain("rulesForm(card, { heading: false, locked: joined })");
     // NOT a greyed-out form. No form. Every field would be a control that
     // cannot be used, and a screen full of those invites an owner to keep
     // trying them; the three summary rows above already say what the programme
     // promises. One box, and it says why.
-    expect(detail).toContain("Your program rules are locked.");
-    expect(detail).toContain('smount.innerHTML = ');
-    // The form is built ONLY in the other branch.
-    const setup = detail.slice(detail.indexOf("const smount"), detail.indexOf("---- Design ----"));
-    expect(setup.indexOf("rulesForm(card")).toBeGreaterThan(setup.indexOf("} else {"));
-    // And the save has nothing to save from Setup when there is no form.
-    expect(detail).toContain("const stop = rules && rules.blocked();");
-    expect(detail).toContain("if (rules) {");
+    const form = html.slice(html.indexOf("function rulesForm(card, opts)"),
+                            html.indexOf("function createDesignScreen(id)"));
+    expect(form).toContain("Your program rules are locked.");
+    expect(form).toContain("const paintLocked = () =>");
+    expect(form).toContain("if (locked) return paintLocked();");
+    // The ONE thing that stays: the average order value is a fact about the
+    // shop's till, not a promise to anybody holding a card, and every money
+    // figure on Home is built on it. Locking it would leave a shop that
+    // mistyped it reading a wrong revenue number for good.
+    const lockedPaint = form.slice(form.indexOf("const paintLocked"), form.indexOf("const paint ="));
+    expect(lockedPaint).toContain("basketField()");
+    expect(lockedPaint).not.toContain('data-r="target"');
+    expect(lockedPaint).not.toContain('data-r="rewardName"');
+    expect(lockedPaint).not.toContain("data-open");
+    // And a locked save sends the basket, never the rules.
+    expect(form).toContain("if (locked) return api(");
   });
 
   /**
@@ -4272,20 +4307,19 @@ describe("the create screens", () => {
    * type, and zero welcome stamps makes a card that lands in a wallet reading
    * empty, which looks like the scan did not work.
    */
-  it("offers one or two for the welcome stamps and the rate, and nothing else", () => {
+  it("offers one or two for the welcome stamps, and no rate at all", () => {
     const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
                              html.indexOf("function createDesignScreen(id)"));
     const stamp = rules.slice(rules.indexOf("const stampEarn ="),
                               rules.indexOf("const pointsEarn ="));
     expect(stamp).toContain('<select data-r="welcome">');
-    expect(stamp).toContain('<select data-r="perVisit">');
     expect(stamp).not.toContain('data-r="welcome" type="number"');
-    expect(stamp).not.toContain('data-r="perVisit" type="number"');
-    // The same row a points card uses: two halves of equal width, the fixed
-    // one greyed, the unit inside the box. It was a small centred sentence,
-    // which read as a caption rather than as the setting it is.
+    // ONE stamp a visit, stated and not chosen. Two-a-visit did more than
+    // shorten the card: a stamp carries its own amount into the event log, so
+    // it doubled the visit count and the money figure built on it.
+    expect(stamp).not.toContain('data-r="perVisit"');
     expect(stamp).toContain('<span class="unit-fixed">1 visit</span>');
-    expect(stamp).toContain("<i>Stamps</i>");
+    expect(stamp).toContain('<span class="unit-fixed">1 stamp</span>');
     const helper = html.slice(html.indexOf("function oneOrTwo(value)"),
                               html.indexOf("How many visits one reward costs"));
     expect(helper).toContain("[1, 2].map");
@@ -4444,15 +4478,11 @@ describe("the customer's own page", () => {
     expect(mine).toContain("mhero");
   });
 
-  /**
-   * The privacy promise is made ON the page it most concerns. This is the one
-   * screen a customer reads after they have a card, and the temptation to ask
-   * for an email "so we can tell you about your reward" would land here first.
-   */
-  it("asks for nothing, and says so", () => {
-    expect(mine).toContain("No name, no phone number, no email — ever.");
+  it("states the narrow purpose of the saved customer details", () => {
+    expect(mine).toContain("find your loyalty card");
+    expect(mine).toContain("not used for marketing");
     expect(mine).toContain('href="/privacy"');
-    for (const field of ["type=\"email\"", "type=\"tel\"", 'name="name"', "autocomplete=\"name\""]) {
+    for (const field of ["type=\"email\"", "type=\"tel\"", 'name="name"']) {
       expect(mine).not.toContain(field);
     }
   });

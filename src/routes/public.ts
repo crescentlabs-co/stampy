@@ -30,6 +30,7 @@ import {
   setEnrollCookie,
 } from "../auth.js";
 import { config, envName, setupStatus } from "../config.js";
+import { parseCustomerProfile } from "../customerProfile.js";
 import {
   createCustomer,
   testPassFor,
@@ -58,6 +59,7 @@ import {
   passForCustomer,
   reissuePass,
   resolveCustomer,
+  setCustomerProfile,
   type CardRow,
   type CustomerRecord,
   recordSiteView,
@@ -201,9 +203,76 @@ async function landing(
   if (!open) {
     return void res.type("html").send(shopNotOpenPage(business, logoVersion, card.id, card, why));
   }
-  res.type("html").send(
-    landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId, business, logoVersion),
+  const cookieCustomer = merchant ? readCustomerCookie(req, merchant.id) : null;
+  const customer = cookieCustomer ? await getCustomer(cookieCustomer).catch(() => null) : null;
+  const profileComplete = !merchant || Boolean(
+    customer && customer.merchant_id === merchant.id && customer.display_name
+      && customer.phone_number && customer.profile_consent_at,
   );
+  res.type("html").send(
+    landingPage(card, s.canSignPasses, s.canGoogleWallet, cardId, business, logoVersion,
+      { profileComplete, source: sourceOf(req) }),
+  );
+}
+
+async function saveCustomerProfile(
+  cardId: string,
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<void> {
+  const card = await findCafe(cardId);
+  if (card === "no-db") return void res.status(503).type("html").send(notReadyPage());
+  if (!card) return void res.status(404).type("html").send(notReadyPage());
+  const merchant = await merchantForCard(card.id).catch(() => null);
+  const { open, why, business, logoVersion } = await shopOpen(card);
+  if (!open) {
+    return void res.type("html").send(shopNotOpenPage(business, logoVersion, card.id, card, why));
+  }
+  if (!merchant) return void res.status(404).type("html").send(notReadyPage());
+
+  const parsed = parseCustomerProfile((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) {
+    const s = setupStatus();
+    return void res.status(422).type("html").send(landingPage(
+      card, s.canSignPasses, s.canGoogleWallet, card.id, business, logoVersion,
+      {
+        profileComplete: false,
+        error: parsed.error,
+        displayName: typeof req.body?.displayName === "string" ? req.body.displayName.slice(0, 80) : "",
+        phoneNumber: typeof req.body?.phoneNumber === "string" ? req.body.phoneNumber.slice(0, 30) : "",
+        source: sourceOf(req),
+      },
+    ));
+  }
+
+  const customer = await identifyCustomer(req, res, merchant, card);
+  const saved = await setCustomerProfile(customer.id, merchant.id, parsed.profile);
+  if (!saved) return void res.status(404).type("html").send(notReadyPage());
+  await logEvent(card.id, "", "customer_profile", {
+    actor: "customer",
+    customerId: customer.id,
+    merchantId: merchant.id,
+    source: sourceOf(req),
+    metadata: { profile_source: "customer" },
+  }).catch((err) => console.error("[customer_profile] not logged:", err));
+  const source = sourceOf(req);
+  res.redirect(303, `/c/${encodeURIComponent(card.id)}${source ? `?s=${encodeURIComponent(source)}` : ""}`);
+}
+
+/** A direct wallet URL cannot bypass the customer-details step. Test cards are exempt. */
+async function profileReadyForEnroll(
+  req: import("express").Request,
+  res: import("express").Response,
+  card: CardRow,
+): Promise<boolean> {
+  if (readTestPassToken(String(req.query.t ?? ""), card.id)) return true;
+  const merchant = await merchantForCard(card.id);
+  if (!merchant) return true;
+  const customer = await identifyCustomer(req, res, merchant, card);
+  if (customer.display_name && customer.phone_number && customer.profile_consent_at) return true;
+  const source = sourceOf(req);
+  res.redirect(303, `/c/${encodeURIComponent(card.id)}${source ? `?s=${encodeURIComponent(source)}` : ""}`);
+  return false;
 }
 
 async function newPass(
@@ -362,16 +431,18 @@ async function enroll(
   if (card === "no-db" || !card) {
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
-  await logWalletClick(req, card, "apple");
   // The gate is here as well as on the landing page: this URL can be reached
   // directly, and a pass minted for an unclaimed shop is a card nobody can
   // stamp. The tap is logged first either way — it is real demand.
   const gateApple = await shopOpen(card);
   if (!gateApple.open) {
+    await logWalletClick(req, card, "apple");
     return void res.status(403).type("html").send(
       shopNotOpenPage(gateApple.business, gateApple.logoVersion, card.id, card, gateApple.why),
     );
   }
+  if (!(await profileReadyForEnroll(req, res, card))) return;
+  await logWalletClick(req, card, "apple");
   if (!setupStatus().canSignPasses) {
     return void res.status(503).type("html").send(notReadyPage());
   }
@@ -411,16 +482,18 @@ async function enrollGoogle(
   if (card === "no-db" || !card) {
     return void res.status(card === "no-db" ? 503 : 404).type("html").send(notReadyPage());
   }
-  await logWalletClick(req, card, "google");
   // The gate is here as well as on the landing page: this URL can be reached
   // directly, and a pass minted for an unclaimed shop is a card nobody can
   // stamp. The tap is logged first either way — it is real demand.
   const gateGoogle = await shopOpen(card);
   if (!gateGoogle.open) {
+    await logWalletClick(req, card, "google");
     return void res.status(403).type("html").send(
       shopNotOpenPage(gateGoogle.business, gateGoogle.logoVersion, card.id, card, gateGoogle.why),
     );
   }
+  if (!(await profileReadyForEnroll(req, res, card))) return;
+  await logWalletClick(req, card, "google");
   if (!setupStatus().canGoogleWallet) {
     return void res.status(503).type("html").send(notReadyPage());
   }
@@ -656,6 +729,7 @@ publicRouter.get("/j/:ref/qr", async (req, res) => {
 });
 
 publicRouter.get("/c/:cardId", (req, res) => landing(req.params.cardId!, req, res));
+publicRouter.post("/c/:cardId/profile", (req, res) => saveCustomerProfile(req.params.cardId!, req, res));
 publicRouter.get("/enroll", (req, res) => enroll(DEFAULT_CARD_ID, req, res));
 publicRouter.get("/c/:cardId/enroll", (req, res) => enroll(req.params.cardId!, req, res));
 publicRouter.get("/enroll/google", (req, res) => enrollGoogle(DEFAULT_CARD_ID, req, res));
@@ -697,8 +771,8 @@ publicRouter.get("/c/:cardId/me", async (req, res) => {
     businessNameForCard(card),
     cafeLogoVersion(card.id).catch(() => 0),
   ]);
-  // Whether this BROWSER already holds a card for this shop. Not who they are:
-  // the cookie carries no name, email or phone, and this page asks for none.
+  // Whether this BROWSER already holds a card for this shop. The cookie carries
+  // only an opaque signed id; saved lookup details are never credentials.
   const known = merchant ? !!readCustomerCookie(req, merchant.id) : false;
   res.type("html").send(customerCardPage(card, business, logoVersion, known));
 });

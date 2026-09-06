@@ -2770,6 +2770,74 @@ async function main() {
   );
   expect((await get("/j/nope-nope")).status === 404, "an unknown join link 404s");
 
+  // --- Required customer details before either wallet button ---
+  // A fresh browser sees the short lookup form, not links that can jump around
+  // it. The direct wallet routes enforce the same rule on the server.
+  const freshJoin = await get("/c/default");
+  expect(
+    freshJoin.status === 200 && freshJoin.body.includes('name="displayName"') &&
+      !freshJoin.body.includes('class="wallet-btn apple"'),
+    "a new customer provides lookup details before wallet buttons appear",
+  );
+  const directApple = await fetch(base + "/c/default/enroll", { redirect: "manual" });
+  const directGoogle = await fetch(base + "/c/default/enroll/google", { redirect: "manual" });
+  expect(
+    directApple.status === 303 && directGoogle.status === 303 &&
+      (directApple.headers.get("location") || "").endsWith("/c/default") &&
+      (directGoogle.headers.get("location") || "").endsWith("/c/default"),
+    "direct wallet links cannot bypass required customer details",
+  );
+
+  const badProfile = await fetch(base + "/c/default/profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ displayName: "A", phoneNumber: "123", consent: "yes" }),
+    redirect: "manual",
+  });
+  expect(badProfile.status === 422, "invalid customer lookup details stay on the form");
+
+  const profileName = "Nur Aisyah";
+  const profilePhone = "012-345 6789";
+  const savedProfile = await fetch(base + "/c/default/profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ displayName: profileName, phoneNumber: profilePhone, consent: "yes" }),
+    redirect: "manual",
+  });
+  const customerCookie = savedProfile.headers.get("set-cookie")?.split(";")[0] ?? "";
+  expect(
+    savedProfile.status === 303 && customerCookie.startsWith("stampy_cust_") &&
+      !(savedProfile.headers.get("location") || "").includes(profileName) &&
+      !(savedProfile.headers.get("location") || "").includes("012"),
+    "saving customer details sets an opaque shop cookie without putting details in the URL",
+  );
+  const readyJoin = await get("/c/default", { headers: { cookie: customerCookie } });
+  expect(
+    readyJoin.body.includes('class="wallet-btn apple"') && !readyJoin.body.includes('name="displayName"'),
+    "the same customer can use the wallet buttons after completing the form",
+  );
+  const savedCustomer = (await getPool().query<{
+    display_name: string; phone_number: string; profile_consent_at: Date | null;
+  }>(
+    `SELECT display_name, phone_number, profile_consent_at FROM customers
+     WHERE merchant_id = $1 AND display_name = $2 ORDER BY created_at DESC LIMIT 1`,
+    [m1.id, profileName],
+  )).rows[0];
+  expect(
+    savedCustomer?.phone_number === "+60123456789" && Boolean(savedCustomer.profile_consent_at),
+    "customer phone numbers are normalized and consent is recorded",
+  );
+  const profileAudit = (await getPool().query<{ metadata: Record<string, unknown> }>(
+    `SELECT metadata FROM events WHERE event_type = 'customer_profile'
+     AND merchant_id = $1 ORDER BY created_at DESC LIMIT 1`, [m1.id],
+  )).rows[0];
+  expect(
+    profileAudit?.metadata?.profile_source === "customer" &&
+      !JSON.stringify(profileAudit.metadata).includes(profileName) &&
+      !JSON.stringify(profileAudit.metadata).includes("012"),
+    "customer profile audit events contain the source but no personal details",
+  );
+
   // --- Customer identity, and the legacy cookie that must not be dropped ---
   // These run against the resolver directly: the enrol routes can't be reached
   // without Apple/Google credentials, and this is the logic that would silently

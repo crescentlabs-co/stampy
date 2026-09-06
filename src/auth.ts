@@ -91,8 +91,8 @@ export function parseSessionCookie(value: string | undefined): string | null {
  * used to see one person as two. Now both resolve to one `customers` row.
  *
  * It identifies a BROWSER, not a person — a new phone reads as a new customer.
- * That is the deliberate cost of collecting no name, email or phone, which is
- * what the privacy page promises.
+ * A saved name or phone number is lookup-only and never replaces this signed
+ * cookie as identity, authentication or the key used to merge records.
  *
  * Signed like every other cookie here: an unsigned one could be edited to claim
  * somebody else's customer id and, with it, their card.
