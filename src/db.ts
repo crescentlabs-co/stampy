@@ -3,7 +3,7 @@
  *
  *   merchants      — the business (one per login), and its name on the pass
  *   cards          — one loyalty programme (branding, reward, target)
- *   customers      — a person at one merchant; deliberately holds no PII
+ *   customers      — a person at one merchant; name/phone are lookup-only PII
  *   owners         — dashboard logins (email + scrypt password hash, staff PIN)
  *   owner_cards    — which owners manage which cards
  *   passes         — one row per issued card (serial, auth token, stamp count)
@@ -19,6 +19,7 @@ import pg from "pg";
 import { randomInt, randomUUID } from "node:crypto";
 import { hashPassword, verifyPassword } from "./auth.js";
 import { config, envName, seedCard } from "./config.js";
+import type { CustomerProfile } from "./customerProfile.js";
 
 const { Pool } = pg;
 
@@ -38,9 +39,9 @@ const { Pool } = pg;
  * 'milestones' the same counter, with several rewards up the ladder instead of
  *              one at the top. Reaching 2 pays out and the card CARRIES ON from
  *              2; only the last rung restarts it.
- * 'points'     a balance that goes up by whatever staff enter and DOWN when it
- *              is spent against a catalogue of rewards. No grid: it has no
- *              ceiling, and strip images are one picture per count.
+ * 'points'     a balance that goes up from a fixed visit or spend rule and DOWN
+ *              when it is spent against a catalogue of rewards. No grid: it
+ *              has no ceiling, and strip images are one picture per count.
  *
  * The strings are stored and are effectively permanent: they sit in a column on
  * every card and every pass, and renaming one means rewriting both tables and
@@ -157,14 +158,12 @@ export function asPointPresets(v: unknown): number[] {
  * 'spend'  points from what the customer paid — the counter asks for ringgit
  *          and the SERVER does the sum, so a fiddled request cannot mint points
  *          at its own rate
- * 'manual' staff key the number in at the counter, under the shop's own rules
- *
  * Meaningless on every other kind, and read only when the card is a points
  * card, so a stamp card carrying the default costs nothing.
  */
-export type EarnMode = "visit" | "spend" | "manual";
+export type EarnMode = "visit" | "spend";
 
-const EARN_MODES: readonly EarnMode[] = ["visit", "spend", "manual"];
+const EARN_MODES: readonly EarnMode[] = ["visit", "spend"];
 
 /**
  * Anything unrecognised falls back to 'visit', matching asCardKind: an unknown
@@ -440,7 +439,10 @@ export type EventType =
   // A typed code that matched nothing, and a staff PIN that failed. Worn
   // posters, deleted passes, confused staff, and people guessing at the door.
   | "lookup_failed"
-  | "pin_failed";
+  | "pin_failed"
+  // Name and phone were saved with explicit consent. The values themselves
+  // never enter the event log; source says only customer or staff.
+  | "customer_profile";
 
 /**
  * `metadata` keys, kept in one place because renaming one later is the same
@@ -785,20 +787,9 @@ export async function migrate(): Promise<void> {
       merchant_id text NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
       created_at  timestamptz NOT NULL DEFAULT now()
     );
-    -- v1.3: a person, scoped to one merchant. Holds NO name, email or phone:
-    -- identity comes from a signed cookie instead, so this identifies a BROWSER,
-    -- not a human — a new phone reads as a new customer, and that is accepted
-    -- rather than fixed by collecting PII.
-    --
-    -- The promise we make is that we never ASK the customer for those things
-    -- (the join page and the privacy notice both say exactly that) — not that a
-    -- column can never exist. So a customer list with optional names is a
-    -- one-line additive migration here whenever it is wanted:
-    --   ALTER TABLE customers ADD COLUMN IF NOT EXISTS name text;
-    -- Nothing SELECTs * from this table into a fixed-shape type, and
-    -- src/backup.ts tolerates columns the dump predates (they restore at their
-    -- default), so an old dump still restores into the newer schema. Adding one
-    -- is a privacy-notice update, not a rework — keep it that way.
+    -- v1.3: a person, scoped to one merchant. Identity still comes from a signed
+    -- per-merchant browser cookie; later lookup-only name and phone fields must
+    -- never become authentication or merge two customer rows together.
     CREATE TABLE IF NOT EXISTS customers (
       id          text PRIMARY KEY,
       merchant_id text NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
@@ -1128,15 +1119,22 @@ export async function migrate(): Promise<void> {
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS earn_mode        text    NOT NULL DEFAULT 'visit';
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS earn_spend_cents integer NOT NULL DEFAULT 0;
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS earn_points      integer NOT NULL DEFAULT 0;
-    -- v2.11: a member's own name, for the front of a membership card.
-    --
-    -- NOTHING WRITES THIS YET, deliberately. The sign-up page asks for no name,
-    -- email or phone and the privacy page promises exactly that, so the column
-    -- exists and the card falls back to the member number until the founder
-    -- decides to ask — at which point that promise is rewritten in the same
-    -- change, not before. On the CUSTOMER because a customer is a PERSON: one
-    -- name covers every card they hold at this shop.
+    -- v2.11: one name covers every card this person holds at this shop.
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS display_name text NOT NULL DEFAULT '';
+    -- v2.13: lookup-only customer details, collected with explicit consent.
+    -- Phone is normalized to +<country><number> before it reaches this table.
+    -- Neither field is unique: a family may share one number, and knowing a
+    -- number must never let a browser adopt somebody else's wallet card.
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone_number text NOT NULL DEFAULT '';
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS profile_consent_at timestamptz;
+    CREATE INDEX IF NOT EXISTS idx_customers_merchant_name
+      ON customers(merchant_id, lower(display_name));
+    CREATE INDEX IF NOT EXISTS idx_customers_merchant_phone
+      ON customers(merchant_id, phone_number);
+    -- Manual points never reached a real card. Convert any staging draft that
+    -- still carries it before the application narrows EarnMode to visit/spend.
+    UPDATE cards SET earn_mode = 'visit', earn_points = GREATEST(earn_points, 1)
+      WHERE earn_mode = 'manual';
     -- v2.11: how solid an uploaded banner is over the band colour. 100 is what
     -- every card drew before the slider existed, so nothing changes.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS band_opacity integer NOT NULL DEFAULT 100;
@@ -1641,6 +1639,9 @@ export async function setPromotionsForCard(cardId: string, promotions: CardPromo
 export interface CustomerRecord {
   id: string;
   merchant_id: string;
+  display_name: string;
+  phone_number: string;
+  profile_consent_at: Date | null;
   created_at: Date;
 }
 
@@ -2355,7 +2356,7 @@ export async function joinTargetCard(merchant: MerchantRow): Promise<CardRow | n
 
 // ------------------------------------------------------------- customers ----
 
-/** A person at one merchant. Holds no PII — see the customers table comment. */
+/** A person at one merchant. Name and phone are lookup-only, never identity. */
 export async function createCustomer(merchantId: string, isTest = false): Promise<CustomerRecord> {
   const res = await getPool().query<CustomerRecord>(
     `INSERT INTO customers (id, merchant_id, is_test) VALUES ($1, $2, $3) RETURNING *`,
@@ -2366,6 +2367,22 @@ export async function createCustomer(merchantId: string, isTest = false): Promis
 
 export async function getCustomer(id: string): Promise<CustomerRecord | null> {
   const res = await getPool().query<CustomerRecord>(`SELECT * FROM customers WHERE id = $1`, [id]);
+  return res.rows[0] ?? null;
+}
+
+/** Save the minimum customer details needed for counter lookup, scoped to the merchant. */
+export async function setCustomerProfile(
+  customerId: string,
+  merchantId: string,
+  profile: CustomerProfile,
+): Promise<CustomerRecord | null> {
+  const res = await getPool().query<CustomerRecord>(
+    `UPDATE customers
+        SET display_name = $3, phone_number = $4, profile_consent_at = now()
+      WHERE id = $1 AND merchant_id = $2
+      RETURNING *`,
+    [customerId, merchantId, profile.displayName, profile.phoneNumber],
+  );
   return res.rows[0] ?? null;
 }
 
@@ -4444,6 +4461,76 @@ export async function testPassFor(cardId: string, platform: Platform): Promise<P
 export async function getPass(serial: string): Promise<PassRow | null> {
   const res = await getPool().query<PassRow>(`SELECT * FROM passes WHERE serial = $1`, [serial]);
   return res.rows[0] ?? null;
+}
+
+/** Resolve a wallet serial or short code inside one merchant, without mutating it. */
+export async function getPassForMerchant(
+  merchantId: string | undefined,
+  value: string,
+): Promise<PassRow | null> {
+  if (!merchantId) return null;
+  const clean = value.trim();
+  if (!clean || clean.length > 80) return null;
+  const res = await getPool().query<PassRow>(
+    `SELECT p.* FROM passes p
+       JOIN cards c ON c.id = p.card_id
+      WHERE c.merchant_id = $1
+        AND (p.serial = $2 OR p.short_code = $3)
+      LIMIT 1`,
+    [merchantId, clean, clean.toUpperCase()],
+  );
+  return res.rows[0] ?? null;
+}
+
+export interface CustomerPassSearchRow extends PassRow {
+  display_name: string;
+  phone_number: string;
+  profile_consent_at: Date | null;
+  card_name: string;
+}
+
+/**
+ * Search is deliberately capped and merchant-scoped: the scanner is a lookup
+ * tool, not a customer-directory download. Inputs remain query parameters to
+ * Postgres and never enter SQL text.
+ */
+export async function searchCustomerPasses(
+  merchantId: string | undefined,
+  query: string,
+  limit = 8,
+): Promise<CustomerPassSearchRow[]> {
+  if (!merchantId) return [];
+  const clean = query.trim().slice(0, 80);
+  if (clean.length < 2) return [];
+  const escaped = clean.toLowerCase().replace(/[\\%_]/g, "\\$&");
+  const digits = clean.replace(/\D/g, "").slice(0, 15);
+  const capped = Math.max(1, Math.min(8, Math.trunc(limit) || 8));
+  const res = await getPool().query<CustomerPassSearchRow>(
+    `SELECT p.*, cu.display_name, cu.phone_number, cu.profile_consent_at,
+            c.name AS card_name
+       FROM passes p
+       JOIN cards c ON c.id = p.card_id
+       LEFT JOIN customers cu ON cu.id = p.customer_id
+      WHERE c.merchant_id = $1 AND NOT p.is_test
+        AND (
+          p.short_code LIKE $2
+          OR lower(COALESCE(cu.display_name, '')) LIKE $3 ESCAPE '\\'
+          OR ($4 <> '' AND replace(COALESCE(cu.phone_number, ''), '+', '') LIKE $5)
+        )
+      ORDER BY CASE WHEN p.short_code = $6 THEN 0 ELSE 1 END,
+               p.updated_at DESC
+      LIMIT $7`,
+    [
+      merchantId,
+      `${clean.toUpperCase()}%`,
+      `%${escaped}%`,
+      digits,
+      `%${digits}%`,
+      clean.toUpperCase(),
+      capped,
+    ],
+  );
+  return res.rows;
 }
 
 export async function getPassByShortCode(cardId: string, shortCode: string): Promise<PassRow | null> {

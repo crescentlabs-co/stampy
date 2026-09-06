@@ -3211,24 +3211,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     const ICON_SPEND =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/>' +
       '<path d="M2.5 10h19"/></svg>';
-    const ICON_MANUAL =
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 12h7M4 17h5"/>' +
-      '<path d="M15.5 19.5l5-5-2-2-5 5-.7 2.7z"/></svg>';
 
     /**
      * How a points card decides what a visit is worth.
      *
-     * Mirrors EarnMode in src/db.ts, and the counter reads the same three
-     * strings — they are what decides whether staff get one tap, a box asking
-     * for ringgit, or a box asking for points.
+     * Mirrors EarnMode in src/db.ts. Visit is one tap; spend asks for ringgit.
      */
     const EARN_MODES = [
       { k: "visit", name: "Visit", icon: ICON_VISIT,
         blurb: "A flat number of points for each visit" },
       { k: "spend", name: "Spend", icon: ICON_SPEND,
         blurb: "Customers earn automatically from what they pay" },
-      { k: "manual", name: "Manual", icon: ICON_MANUAL,
-        blurb: "Your staff decide how many points to award using your own rules at the counter" },
     ];
 
     /**
@@ -3580,7 +3573,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // guidance figure, so a blank walks a shop past a percentage built on
         // nothing — the same bug the reward value had.
         if (points) {
-          if (r.earnMode !== "manual" && !(Number(r.earnPoints) > 0)) return at("earnPoints", "earn");
+          if (!(Number(r.earnPoints) > 0)) return at("earnPoints", "earn");
           if (r.earnMode === "spend" && !(Number(r.earnSpend) > 0)) return at("earnSpend", "earn");
           if (!(Number(r.pointsTarget) > 0)) return at("pointsTarget", "earn");
         }
@@ -3607,16 +3600,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        */
       const guideInput = () => {
         if (!points) return r;
-        if (r.earnMode === "manual") {
-          return {
-            blockedHeadline: "Your staff decide each amount.",
-            blockedReason: "Points are keyed in at the counter under your own rules, " +
-              "so there is no rate for us to divide a reward into.",
-            blockedAdvice: "Worth looking at what you have actually handed out after a " +
-              "few weeks. If it settles into a rule, set it here as a visit or a spend " +
-              "rate and we will do the sum for you.",
-          };
-        }
         if (r.earnMode === "visit") {
           // The same shape a stamp card takes: a target, a head start, and what
           // one visit is worth. Only the units differ.
@@ -3689,10 +3672,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       /**
        * A points card's earning half.
        *
-       * Three ways to earn, and the rate row changes shape with the answer: on
-       * Spend the left half is a ringgit box, on Visit it is a fixed word
-       * because nothing about it is being set, and Manual has no rate at all —
-       * the number is decided at the counter, which is the whole meaning of it.
+       * Two ways to earn, and the rate row changes shape with the answer: on
+       * Spend the left half is a ringgit box, on Visit it is a fixed word.
        *
        * The two halves are the same width on purpose. They are ONE setting, and
        * a row that made either side wider would say one of them mattered more.
@@ -3705,21 +3686,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           "<strong>" + esc(t.name) + "</strong>" +
           '<span class="pickdot" aria-hidden="true"></span>' +
           '<span class="sub2">' + esc(t.blurb) + "</span></button>").join("") + "</div>" +
-        (r.earnMode === "manual"
-          ? ""
-          : "<label>How do your customers earn points?</label>" +
-            '<div class="rate">' +
-              (r.earnMode === "spend"
-                ? '<span class="unit unit-pre"><i>RM</i>' +
-                  '<input data-r="earnSpend" type="number" min="0" step="0.10" value="' +
-                    r.earnSpend + '"></span>'
-                : '<span class="unit-fixed">1 visit</span>') +
-              '<span class="rate-eq">=</span>' +
-              '<span class="unit unit-post">' +
-                '<input data-r="earnPoints" type="number" min="1" step="1" value="' +
-                  r.earnPoints + '">' +
-                "<i>Points</i></span>" +
-            "</div>") +
+        "<label>How do your customers earn points?</label>" +
+          '<div class="rate">' +
+            (r.earnMode === "spend"
+              ? '<span class="unit unit-pre"><i>RM</i>' +
+                '<input data-r="earnSpend" type="number" min="0" step="0.10" value="' +
+                  r.earnSpend + '"></span>'
+              : '<span class="unit-fixed">1 visit</span>') +
+            '<span class="rate-eq">=</span>' +
+            '<span class="unit unit-post">' +
+              '<input data-r="earnPoints" type="number" min="1" step="1" value="' +
+                r.earnPoints + '">' +
+              "<i>Points</i></span>" +
+          "</div>" +
         "<label>Points to reward" + info("How many points one reward costs. A customer can save past it \u2014 the price comes off their balance and whatever is left over stays on the card.") +
           '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
         '<input data-r="pointsTarget" type="number" min="1" step="1" value="' + r.pointsTarget + '">' +
@@ -4507,7 +4486,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<div class="drow"><span>' + esc(k) + "</span><b>" + esc(v) + "</b></div>").join("");
     }
 
-    /** "1 visit = 2 stamps", "RM1 = 5 points", or who decides at the counter. */
+    /** "1 visit = 2 stamps" or "RM1 = 5 points". */
     function earnLine(c) {
       if (c.kind === "membership") return "";
       if (c.kind !== "points") {
@@ -4516,7 +4495,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       }
       const per = c.earnPoints || 1;
       const pts = per + (per === 1 ? " point" : " points");
-      if (c.earnMode === "manual") return "Your staff decide at the counter";
       if (c.earnMode === "spend") return rm(c.earnSpend || 1) + " = " + pts;
       return "1 visit = " + pts;
     }

@@ -4030,7 +4030,7 @@ describe("the manage screens", () => {
     const earn = html.slice(html.indexOf("function earnLine(c)"), html.indexOf("function rewardLine(c)"));
     expect(earn).toContain('if (c.kind === "membership") return ""');
     expect(earn).toContain('c.earnMode === "spend"');
-    expect(earn).toContain("Your staff decide at the counter");
+    expect(earn).not.toContain("manual");
   });
 
   /**
@@ -4311,14 +4311,13 @@ describe("the create screens", () => {
 
   /**
    * The rate row is one setting in two boxes, so both boxes are the same width
-   * and the unit sits inside them. Manual has neither: the amount is decided at
-   * the counter, which is the whole meaning of the word.
+   * and the unit sits inside them.
    */
-  it("shows a rate on visit and spend, and none at all on manual", () => {
+  it("shows a rate on visit and spend with no manual mode", () => {
     const rules = html.slice(html.indexOf("function createRulesScreen(id)"),
                              html.indexOf("function createDesignScreen(id)"));
     const pts = rules.slice(rules.indexOf("const pointsEarn ="), rules.indexOf("const paint ="));
-    expect(pts).toContain('r.earnMode === "manual"');
+    expect(pts).not.toContain('r.earnMode === "manual"');
     expect(pts).toContain('r.earnMode === "spend"');
     expect(pts).toContain('<span class="unit-fixed">1 visit</span>');
     expect(pts).toContain("<i>RM</i>");
@@ -4327,14 +4326,13 @@ describe("the create screens", () => {
     expect(css).toContain(".rate { display: grid; grid-template-columns: 1fr auto 1fr;");
   });
 
-  /** The three earn modes, worded the way the founder asked for them. */
-  it("names the three ways a points card can earn", () => {
+  /** The two automatic earn modes, worded the way the founder asked for them. */
+  it("names the two ways a points card can earn", () => {
     const modes = html.slice(html.indexOf("const EARN_MODES = ["),
                              html.indexOf("The four campaign types"));
     expect(modes).toContain("A flat number of points for each visit");
     expect(modes).toContain("Customers earn automatically from what they pay");
-    expect(modes).toContain(
-      "Your staff decide how many points to award using your own rules at the counter");
+    expect(modes).not.toContain('k: "manual"');
   });
 
   /**

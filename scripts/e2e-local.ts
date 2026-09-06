@@ -3543,7 +3543,7 @@ async function main() {
       const SHOP = [{ at: 100, reward: "Free coffee" }];
       const earner = await mk();
       const asPoints = async (
-        mode: "visit" | "spend" | "manual", spendCents: number, per: number,
+        mode: "visit" | "spend", spendCents: number, per: number,
       ) => {
         await updateCard("default", {
           kind: "points", milestones: SHOP,
@@ -3582,12 +3582,6 @@ async function main() {
         "RM12 at a point per five ringgit is 2 points");
       expect((await stamp({ spend: 0.5 })).pass.stamps === 3,
         "...and a bill too small to earn one still banks one, so the scan looks like it worked");
-
-      await asPoints("manual", 0, 0);
-      expect((await stamp({ amount: 40 })).pass.stamps === 40,
-        "manual takes the number staff typed");
-      expect((await stamp({})).pass.stamps === 41,
-        "...and nothing typed at all is worth one");
 
       await updateCard("default", {
         kind: asIssued!.kind,

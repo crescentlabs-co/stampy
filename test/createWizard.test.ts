@@ -76,7 +76,6 @@ beforeAll(() => {
       EARN_MODES: [
         { k: "visit", name: "Visit", icon: "", blurb: "A flat number of points for each visit" },
         { k: "spend", name: "Spend", icon: "", blurb: "Customers earn automatically from what they pay" },
-        { k: "manual", name: "Manual", icon: "", blurb: "…at the counter" },
       ],
       shopName: () => "Kopi Corner",
       navigate: () => {},
@@ -151,7 +150,7 @@ describe("a stamp card", () => {
 describe("a points card", () => {
   it("builds, and asks how it earns", () => {
     const { screen } = mount(card({ kind: "points" }));
-    expect(screen.querySelectorAll("[data-earn]").length).toBe(3);
+    expect(screen.querySelectorAll("[data-earn]").length).toBe(2);
     expect(at(screen, "pointsTarget")).toBeTruthy();
     expect(at(screen, "welcome")).toBeTruthy();
     // A points card counts to a price, not to a number of circles.
@@ -167,14 +166,6 @@ describe("a points card", () => {
     const spend = mount(card({ kind: "points", earnMode: "spend" })).screen;
     expect(at(spend, "earnPoints")).toBeTruthy();
     expect(at(spend, "earnSpend")).toBeTruthy();
-  });
-
-  /** Manual has no rate at all: the amount is decided at the counter. */
-  it("shows no rate on manual", () => {
-    const { screen } = mount(card({ kind: "points", earnMode: "manual" }));
-    expect(at(screen, "earnPoints")).toBe(null);
-    expect(at(screen, "earnSpend")).toBe(null);
-    expect(at(screen, "pointsTarget")).toBeTruthy();
   });
 
   it("sends the rate and one price, and no stamp target", async () => {
