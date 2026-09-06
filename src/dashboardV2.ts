@@ -90,7 +90,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        --t-xs is 11px and stays reserved for UPPERCASE tags: caps read larger
        than lowercase at the same size, so 11px caps and 13px sentence text look
        like one size, which is the point. A test holds that rule. */
-    .mlabel { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm);
+    .mlabel { display: flex; align-items: center; gap: var(--s2); font-size: var(--dashboard-interface-size);
               font-weight: 500; color: var(--muted); margin-bottom: var(--s1); }
     /* And the reading of it sits under, quieter than the number and never the
        same size as the label above — two small lines at one size would read as
@@ -98,7 +98,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* What the change is measured against, on its own line under the number —
        the sentence does not have to fit beside a 32px figure in half a phone,
        and the coloured part is then the only thing colour is doing. */
-    .mnote { display: block; margin-top: var(--s1); font-size: var(--t-sm);
+    .mnote { display: block; margin-top: var(--s1); font-size: var(--dashboard-supporting-size);
              line-height: var(--lh-body); color: var(--muted); }
     /* The label under a number in every OTHER metric grid — the health tiles
        and the detail screens. Home's tiles use .mlabel above and lead with it.
@@ -110,13 +110,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        is valid, the colour is applied, the wrong one simply wins. Add a span to
        a .metric and add it here in the same edit. */
     .metric span:not(.mlabel):not(.mnote):not(.delta) { display: block; margin-top: var(--s2);
-                   font-size: var(--t-sm); letter-spacing: var(--tr-sm); color: var(--muted); }
+                   font-size: var(--dashboard-supporting-size); letter-spacing: var(--tr-sm); color: var(--muted); }
     /* --- Home's header row: the title, and the window it is all measured over.
        The selector belongs beside the title and not above the chart, because it
        governs the tiles as well — one control, everything on the screen. */
     /* The title and the window it is all measured over, on one line. The
        selector governs the tiles as well as the chart, so there is one of it
        and it belongs beside the title rather than above the chart. */
+    .home { display: flex; flex-direction: column; }
+    .home-main { order: 2; }
     .homehead { display: flex; align-items: center; justify-content: space-between;
                 gap: var(--s3); flex-wrap: wrap; margin: var(--s3) 0 var(--s3); }
     .homehead .sec { margin: 0; }
@@ -125,27 +127,29 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        are "7d" and "30d" for the same reason — three words would not fit beside
        a title on a 360px phone. */
     .winsel { flex: none; margin: 0; padding: var(--s1); }
-    .winsel button { font-size: var(--t-sm); padding: var(--s1) var(--s3); }
+    .winsel button { font-size: var(--dashboard-interface-size); padding: var(--s1) var(--s3); }
     .winsel .thumb { top: var(--s1); bottom: var(--s1); }
     /* Home's launch checklist uses the same quiet label, readable row name,
        and small supporting state as the rest of the page. Keeping it here
        rather than as inline declarations makes every state look alike. */
-    .launch-progress { margin: 0 0 var(--s4); }
-    .launch-eyebrow { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--t-xs);
-                      font-weight: 700; letter-spacing: var(--tr-caps); text-transform: uppercase; }
-    .launch-steps { overflow: hidden; border: 1px solid var(--line); border-radius: var(--r); }
+    .launch-progress { order: 1; margin: 0 0 var(--s4); padding: var(--s3); background: var(--accent-wash);
+                       border: 1px solid var(--accent); border-radius: var(--r-lg); }
+    .launch-heading { margin: 0 0 var(--s2); font-size: var(--type-section-heading-size);
+                      font-weight: var(--type-section-heading-weight); line-height: var(--type-section-heading-leading);
+                      letter-spacing: var(--type-section-heading-tracking); }
+    .launch-steps { overflow: hidden; border-radius: var(--r-sm); }
     .launch-step { appearance: none; width: 100%; display: flex; align-items: center;
                    gap: var(--s2); padding: var(--s3); border: 0; border-bottom: 1px solid var(--line);
-                   background: var(--bg); color: var(--ink); text-align: left; cursor: pointer; }
+                   background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
     .launch-step:last-child { border-bottom: 0; }
-    .launch-step.done { background: var(--surface); }
+    .launch-step.done { background: color-mix(in srgb, var(--bg) 58%, transparent); }
     .launch-step:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; }
     .launch-marker { width: 22px; height: 22px; flex: none; display: grid; place-items: center;
-                     border-radius: 999px; background: var(--ghost-bg); color: var(--muted);
-                     font-size: var(--t-sm); font-weight: 700; }
-    .launch-step.done .launch-marker { background: var(--ink); color: var(--on-slab); }
-    .launch-name { flex: 1; min-width: 0; font-size: var(--t-sm); font-weight: 600; }
-    .launch-status { color: var(--muted); font-size: var(--t-sm); font-weight: 600; }
+                     border-radius: 999px; background: var(--bg); color: var(--muted);
+                     font-size: var(--dashboard-interface-size); font-weight: 700; }
+    .launch-step.done .launch-marker { background: var(--accent); color: var(--on-accent); }
+    .launch-name { flex: 1; min-width: 0; font-size: var(--dashboard-interface-size); font-weight: 600; }
+    .launch-status { color: var(--muted); font-size: var(--dashboard-supporting-size); font-weight: 600; }
     /* The number and its change share a line, sitting on the same baseline. It
        wraps on a narrow phone rather than shrinking: two tiles across 360px is
        about 150px each, and "+3 vs last week" does not always fit beside a
@@ -157,7 +161,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        since last week is not something you can press. */
     /* The change is a COLOUR and nothing else — not bigger, not heavier. It
        sits on the number's baseline so the pair read as one figure. */
-    .delta { font-size: var(--t-sm); font-weight: 600;
+    .delta { font-size: var(--dashboard-supporting-size); font-weight: 600;
              font-variant-numeric: tabular-nums; white-space: nowrap; }
     .delta.up { color: #15803d; }
     .delta.down { color: #9a3412; }
@@ -176,7 +180,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* The key, under the line it describes. Centred, so it reads as a caption
        for the chart rather than as a third column of figures. */
     .chartkey { display: flex; justify-content: center; gap: var(--s4);
-                margin-top: var(--s3); font-size: var(--t-sm); color: var(--muted); }
+                margin-top: var(--s3); font-size: var(--dashboard-supporting-size); color: var(--muted); }
     .chartkey span { display: flex; align-items: center; gap: var(--s2); }
     .cfig b { font-family: var(--body); font-weight: 700; font-size: var(--t-xl);
               line-height: var(--lh-num); letter-spacing: var(--tr-hero); color: var(--ink);
@@ -190,10 +194,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
             box-shadow: var(--shadow); padding: var(--s2) var(--s3);
             transform: translate(-50%, -100%); white-space: nowrap; }
-    .ctip .cd { display: block; font-size: var(--t-sm); font-weight: 700; color: var(--ink);
+    .ctip .cd { display: block; font-size: var(--dashboard-supporting-size); font-weight: 700; color: var(--ink);
                 margin-bottom: var(--s1); }
     .ctip .cr { display: flex; align-items: center; gap: var(--s2);
-                font-size: var(--t-sm); color: var(--muted); }
+                font-size: var(--dashboard-supporting-size); color: var(--muted); }
     .ctip .cr b { margin-left: var(--s4); color: var(--ink); font-weight: 700;
                   font-variant-numeric: tabular-nums slashed-zero; }
     .chartwrap { position: relative; margin-top: var(--s2); touch-action: pan-y;
@@ -229,11 +233,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        three. Three marks, not two: the middle one is what tells you the line
        is a month rather than a week. */
     .chartax { display: flex; justify-content: space-between; margin-top: var(--s2);
-               font-size: var(--t-sm); color: var(--muted); }
+               font-size: var(--dashboard-supporting-size); color: var(--muted); }
     .chartax span:nth-child(2) { text-align: center; }
     .chartax span:last-child { text-align: right; }
     .chartax span { flex: 1; min-width: 0; }
-    .chartempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
+    .chartempty { margin-top: var(--s3); font-size: var(--dashboard-supporting-size); line-height: var(--lh-read);
                   color: var(--muted); }
     /* --- the two comparison charts --------------------------------------
        Programmes and campaigns were LISTS, which answer "what have I got". The
@@ -252,7 +256,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        control with a box round it. It IS the chart's title. */
     .cmpmetric { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s1);
                  background: none; border: 0; padding: 0; font: inherit;
-                 font-size: var(--t-md); font-weight: 600; color: var(--ink);
+                 font-size: var(--dashboard-interface-size); font-weight: 600; color: var(--ink);
                  text-align: left; cursor: pointer; }
     .cmpmetric svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
                      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -287,19 +291,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             background: var(--accent); border-radius: 4px 4px 0 0;
             border-top: 1.5px solid var(--accent-2); }
     .vval { position: absolute; left: 0; right: 0; bottom: calc(var(--h) + 6px);
-            text-align: center; font-size: var(--t-sm); font-weight: 600; color: var(--ink);
+            text-align: center; font-size: var(--dashboard-supporting-size); font-weight: 600; color: var(--ink);
             font-variant-numeric: tabular-nums slashed-zero; white-space: nowrap; }
     /* The names sit under the plot in a row that mirrors it exactly — same flex,
        same gap — so a label stays under its own bar at every width. Two lines
        and then an ellipsis: a shop's programme name can be anything they typed,
        and one long name must not make its column taller than the rest. */
     .vnames { display: flex; gap: var(--s2); margin-top: var(--s2); }
-    .vnames span { flex: 1; min-width: 0; text-align: center; font-size: var(--t-sm);
+    .vnames span { flex: 1; min-width: 0; text-align: center; font-size: var(--dashboard-supporting-size);
                    line-height: var(--lh-body); color: var(--muted);
                    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
                    overflow: hidden; }
-    .cmpfoot { margin-top: var(--s3); font-size: var(--t-sm); color: var(--muted); }
-    .cmpempty { margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read);
+    .cmpfoot { margin-top: var(--s3); font-size: var(--dashboard-supporting-size); color: var(--muted); }
+    .cmpempty { margin-top: var(--s3); font-size: var(--dashboard-supporting-size); line-height: var(--lh-read);
                 color: var(--muted); }
     /* --- Manage: the card, and the three things you do to it -------------
        This screen stopped reporting. Home's charts answer how a programme is
@@ -484,14 +488,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        same #app and have no bars — they keep the ordinary padded card, and the
        ordinary scrolling page, which is what they have always been. */
     body.shelled { padding: 0; height: 100vh; height: 100dvh; overflow: hidden; }
-    /* The staging strip is a sibling above #app and keeps its own height, so
-       the column below it is what shrinks. */
-    body.shelled .envstrip { flex: none; }
     /* width:100% because body is a centred flex column — without it the column
        shrinks to whatever its widest child happens to be. min-height:0 is what
        lets the sheet inside actually scroll rather than stretching the column. */
     #app.shell { width: 100%; max-width: 480px; margin: 0 auto; padding: 0;
                  flex: 1; min-height: 0; display: flex; flex-direction: column;
+                 /* The merchant dashboard is a compact workspace. These values
+                    override the public product's reading scale only inside the
+                    signed-in shell, leaving customer pages and the staff counter
+                    comfortably readable. */
+                 --type-page-title-size: 28px; --type-section-heading-size: 22px;
+                 --dashboard-interface-size: 12px; --dashboard-supporting-size: 10px;
                  border: 0; box-shadow: none; border-radius: 0;
                  /* Was neon, so the sheet's rounded top corners had something
                     to show through. The bar is white now and the sheet runs to
@@ -519,7 +526,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                  greeting fades, so the two things you might reach for are always
                  where you left them. It used to disappear outright, which meant
                  scrolling up to find the menu. */
-              overflow: hidden;
+              overflow: visible;
               transition: min-height .18s ease, padding .18s ease; }
     #app.shell.tucked .topbar { min-height: 34px; padding-top: calc(2px + env(safe-area-inset-top, 0px));
                                 padding-bottom: 2px; }
@@ -528,10 +535,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     @media (prefers-reduced-motion: reduce) {
       .topbar, .topbar .shop { transition: none; }
     }
-    /* ...unless the staging strip is above it and has already paid for the
-       notch. Two elements both adding the inset would leave a gap the height
-       of the status bar. Live renders no strip, so this never matches there. */
-    .envstrip ~ #app.shell .topbar { padding-top: var(--s2); }
     /* THE BOX. The only scrolling thing on the screen, and the only thing with
        a shape. Its bottom padding clears the floating nav and the gap the nav
        floats in — the page itself no longer scrolls, so it cannot carry that. */
@@ -545,7 +548,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        last row. Shrink the nav again and these two have to come with it. */
     .sheet { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
              background: var(--surface); border-radius: 0;
-             padding: 0 var(--s3) calc(80px + env(safe-area-inset-bottom, 0px)); }
+             padding: 0 var(--s3) calc(80px + env(safe-area-inset-bottom, 0px));
+             font-size: var(--dashboard-interface-size); line-height: var(--type-body-leading); }
     /* The Powered by line is a sibling of #app in the shared shell, which with
        nothing scrolling would strand it under the floating nav. The script
        moves it inside the sheet instead — see app(). */
@@ -1102,6 +1106,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        below on purpose: making every one of them a title flattens the
        hierarchy rather than fixing it. */
     .sec.first { margin-top: 0; font-size: var(--type-page-title-size); }
+    /* The compact owner interface has a 12px baseline for readable controls.
+       Inputs remain at 16px in baseCss so iPhone never zooms into a form. */
+    #app.shell .sheet .btn, #app.shell .sheet button:not(.ihint), #app.shell .tmenu button {
+      font-size: var(--dashboard-interface-size);
+    }
+    #app.shell .sheet .muted { font-size: var(--dashboard-supporting-size); }
     /* Design is a set-it-once job, so it folds away (.fold lives in
        DESIGN_PANEL_CSS, with the panel that emits it). Rules — the reward, the
        stamp count, the win-back — is what owners come back to, and stays open. */
@@ -2198,7 +2208,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // without a rule that reaches out and resizes theirs too.
       d.className = "home";
       d.innerHTML =
-        '<div class="homehead"><h2 class="sec first">Dashboard</h2>' +
+        '<div class="home-main">' +
+        '<div class="homehead"><h1 class="sec first">Dashboard</h1>' +
           '<div class="seg winsel" data-win>' +
             '<span class="thumb"></span>' +
             '<button class="on" data-w="7" type="button">7d</button>' +
@@ -2206,7 +2217,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             '<button data-w="all" type="button">All</button>' +
           "</div>" +
         "</div>" +
-        launchProgress() +
         '<div class="metrics" data-totals></div>' +
         '<div data-chart></div>' +
         // No EG chip on either heading any more: both charts read real data or
@@ -2215,7 +2225,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<h2 class="sec">Loyalty cards</h2>' +
         '<div data-programs></div>' +
         '<h2 class="sec">Campaigns</h2>' +
-        '<div data-campaigns></div>';
+        '<div data-campaigns></div></div>' +
+        launchProgress();
 
       const totals = d.querySelector("[data-totals]");
       const chart = d.querySelector("[data-chart]");
@@ -2311,8 +2322,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         { label: "Share your card", done: shared, path: card ? "/ready/" + card.id + "?section=share" : "/create/card" },
         { label: "Start stamping", done: stamping, path: card ? "/ready/" + card.id + "?section=how" : "/shop/staff" },
       ];
-      return '<section class="launch-progress" aria-label="Card launch progress">' +
-        '<p class="launch-eyebrow">Get ready to launch</p>' +
+      return '<section class="launch-progress" aria-labelledby="launch-heading">' +
+        '<h2 class="launch-heading" id="launch-heading">Get ready to launch</h2>' +
         '<div class="launch-steps">' +
         steps.map((step, index) => '<button type="button" class="launch-step' + (step.done ? " done" : "") +
           '" data-launch="' + esc(step.path) + '">' +

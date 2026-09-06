@@ -95,7 +95,7 @@ export const baseCss = /* css */ `
     --muted: #5f6560; --line: #e3e7e1; --field-border: #cdd2cb; --ghost-bg: #eceee9;
     /* --accent is a FILL or a BORDER, never text: neon on white cannot be read.
        That is what --on-accent and --accent-dark are for. */
-    --accent: #c9f73d; --accent-2: #b8e82c; --on-accent: #0c0e0d;
+    --accent: #c9f73d; --accent-2: #b8e82c; --accent-wash: #f5fbd9; --on-accent: #0c0e0d;
     --accent-dark: #2f3630; --on-slab: #f4f6f2;
     /* --- the supporting scale ---------------------------------------------
        SIX text sizes, each with ONE stated job. The discipline is the count and
@@ -175,6 +175,11 @@ export const baseCss = /* css */ `
     display: flex; flex-direction: column; align-items: center;
     padding: 28px 16px 56px;
   }
+  /* Staging is a quiet, fixed reminder—not a banner that takes a row away from
+     the product. It deliberately cannot receive taps or obscure a menu. */
+  .envstrip { position: fixed; top: calc(2px + env(safe-area-inset-top, 0px)); left: 50%; z-index: 30;
+              transform: translateX(-50%); pointer-events: none; color: var(--muted);
+              font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
   .card {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
     padding: 28px 26px; box-shadow: var(--shadow); width: 100%; max-width: 440px;
@@ -4248,22 +4253,15 @@ export function page(
   script = "",
   brand = true,
 ): string {
-  // On any copy that is not live, every page says so — a strip at the top of
-  // all of them at once, because this shell is the one place they share. Same
-  // condition adds noindex, so a search engine never lists the staging site.
+  // On any copy that is not live, every page says so through a small fixed
+  // overlay. It takes no layout height. The same condition adds noindex, so a
+  // search engine never lists the staging site.
   // Live renders neither: envName() defaults to "live" with nothing set.
   const env = envName();
   const envStrip =
     env === "live"
       ? ""
-      // The class is load-bearing on one page: the dashboard's top bar is also
-      // sticky, and without a way to select this strip the two would stick to
-      // the same 0 and the strip — which sits far above everything on purpose —
-      // would cover half the bar. The dashboard offsets itself below it.
-      // padding-top carries the notch: the page paints into it now
-      // (viewport-fit=cover), and a strip that stopped below the status bar
-      // would leave a white band above the top of the app.
-      : `<div class="envstrip" style="position:sticky;top:0;z-index:9999;background:var(--slab);color:var(--accent);text-align:center;padding:7px 10px;padding-top:calc(7px + env(safe-area-inset-top, 0px));font-size:var(--t-xs);font-weight:600;letter-spacing:var(--tr-caps);text-transform:uppercase">${esc(env)} — not the real site</div>`;
+      : `<div class="envstrip">Staging</div>`;
   return `<!doctype html>
 <html lang="en">
 <head>

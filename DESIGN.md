@@ -59,6 +59,23 @@ element is not available. Do not put a `letter-spacing` value on `body` or a
 universal selector: tracking adds to Inter's own spacing and only belongs where
 the role explicitly calls for it.
 
+### Merchant dashboard compact scale
+
+The signed-in merchant workspace is intentionally denser than the public
+customer pages and the staff counter. Its overrides live only inside
+`#app.shell`, so the customer journey stays comfortably readable:
+
+| Role | Size | Weight | Where it appears |
+|---|---:|---:|---|
+| Page title | 28px | 700 | `Dashboard`, `Customers`, `Manage` |
+| Section heading | 22px | 700 | `Loyalty cards`, `Campaigns`, `Get ready to launch` |
+| Card/list title | 16px | 600 | card names and programme names |
+| Interface body, metric labels, buttons | 12px | 400–600 | `Customers`, form labels, controls and actions |
+| Supporting text | 10px | 400–600 | dates, explanations, chart labels and status detail |
+| Navigation | 10px | 600 | bottom navigation labels |
+
+Inputs remain 16px so iPhone Safari does not zoom when someone edits a form.
+
 **The six supporting sizes and the four weights**, chosen by the founder in
 Sept 2026 over the smaller set that came before them (body was 14px and the
 floor was 11px). Navigation is the one semantic exception: its 10px label is
@@ -105,9 +122,9 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    tab, a filled stamp, a live-state pill. Never a large background, never
    decoration, and **never text** — `#c9f73d` on white is unreadable, which is
    why `--on-accent` exists and why `--accent-dark` is dark. There are exactly
-   **three** fenced exceptions, each described below: the marketing page's three
+   **four** fenced exceptions, each described below: the marketing page's three
    tile colours, the neon reassurance band pinned to the bottom of that page,
-   and **Home's charts**.
+   **Home's charts**, and Home's launch checklist.
 
    **The top bar used to be the fourth, and is not any more.** It is a thin
    white bar that tucks away as the sheet scrolls and comes back on the way up,
@@ -123,6 +140,11 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
    `--ink`. The exception is that screen and those three charts; a neon bar
    anywhere else is decoration, and the rest of the chart guidance below holds
    in full.
+
+   Home's launch checklist is the fourth exception, explicitly requested by the
+   founder: it may use `--accent-wash` as a pale completion surface and
+   `--accent` for completed checkmarks. Its open steps remain neutral, so the
+   actual next button on a screen still has the strongest call to action.
 
    The bottom nav's **Create (+) button** is also neon and needs no exception:
    a primary action is what this rule has always allowed. Those two, and

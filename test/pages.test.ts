@@ -2817,7 +2817,7 @@ describe("Home", () => {
    * removed a duplicate view rather than the only way to reach anything.
    */
   it("shows two figures under one heading", () => {
-    expect(home).toContain('<h2 class="sec first">Dashboard</h2>');
+    expect(home).toContain('<h1 class="sec first">Dashboard</h1>');
     expect(home).toContain('tile("Customers"');
     expect(home).toContain('tile("Loyalty revenue (');
     for (const gone of ["Rewards given", "How your shop is doing", "data-signups"]) {
@@ -2925,24 +2925,25 @@ describe("Home", () => {
    * two series, the chart's hint. They were three treatments, one of them
    * uppercase, which is what made them read as three different kinds of thing.
    */
-  it("sets the screen in three sizes, each with a job", () => {
-    // Home reached FIVE text sizes — 11, 13, 15, 18 and 24 — one sensible step
-    // at a time, which is what made it read as generated. Three now: 24 for the
-    // title, both headings and every number; 14 for a row's name and figure;
-    // 12 for every other word.
+  it("uses the compact dashboard hierarchy", () => {
+    // The owner workspace is intentionally denser than customer-facing pages:
+    // 12px interface copy, 10px supporting detail, and large metric figures.
     for (const cls of [".metrics .metric b {", ".cfig b {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
       expect(rule, cls + " is off the big size").toContain("var(--t-xl)");
     }
-    for (const cls of [".cmpmetric {", ".popopt {"]) {
+    for (const cls of [".cmpmetric {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
-      expect(rule, cls + " is off the row size").toContain("var(--t-md)");
+      expect(rule, cls + " is off the interface size").toContain("var(--dashboard-interface-size)");
     }
     for (const cls of [".mlabel {", ".mnote {", ".delta {", ".chartax {", ".vval {",
                        ".vnames span {", ".cmpfoot {", ".chartkey {", ".ctip .cd {",
                        ".ctip .cr {", ".winsel button {"]) {
       const rule = html.slice(html.indexOf(cls), html.indexOf("}", html.indexOf(cls)));
-      expect(rule, cls + " is off the subtext size").toContain("var(--t-sm)");
+      const expected = cls === ".mlabel {" || cls === ".winsel button {"
+        ? "var(--dashboard-interface-size)"
+        : "var(--dashboard-supporting-size)";
+      expect(rule, cls + " is off its compact role").toContain(expected);
     }
     // Home's headings are a rank above every other screen's, so the rule hangs
     // off the screen's own class rather than resizing .sec for everybody.
@@ -2953,7 +2954,7 @@ describe("Home", () => {
     // The change beside a number is a colour, not a size and not a weight.
     const dAt = html.indexOf("\n    .delta {");
     expect(dAt, ".delta rule is gone").toBeGreaterThan(0);
-    expect(html.slice(dAt, html.indexOf("}", dAt))).toContain("var(--t-sm)");
+    expect(html.slice(dAt, html.indexOf("}", dAt))).toContain("var(--dashboard-supporting-size)");
     // The hint line is gone; the tooltip is the answer.
     expect(html).not.toContain("Tap the chart to read a");
   });
@@ -3328,10 +3329,10 @@ describe("the surfaces and the edges", () => {
   it("paints into the notch, and pays for it exactly once", () => {
     expect(html).toContain("viewport-fit=cover");
     expect(html).toContain("padding-top: calc(var(--s1) + env(safe-area-inset-top, 0px));");
-    // On staging the "not the real site" strip is above the bar and already
-    // carries the notch. Both adding it would leave a gap the height of the
-    // status bar.
-    expect(html).toContain(".envstrip ~ #app.shell .topbar { padding-top: var(--s2); }");
+    // Staging is a fixed overlay, so it takes no layout height and the bar alone
+    // pays for the notch.
+    expect(html).toContain(".envstrip { position: fixed;");
+    expect(html).not.toContain(".envstrip ~ #app.shell .topbar");
     const staging = dashboardPage({ emailConfigured: true } as never);
     expect(staging).toContain("env(safe-area-inset-top, 0px)");
   });
@@ -3426,23 +3427,22 @@ describe("the dashboard keeps to one scale", () => {
     }
     expect(css).toContain(".sec { font-size: var(--type-section-heading-size)");
     expect(css).toContain(".sec.first { margin-top: 0; font-size: var(--type-page-title-size); }");
+    const shell = css.slice(css.indexOf("#app.shell {"), css.indexOf("}", css.indexOf("#app.shell {")));
+    expect(shell).toContain("--type-page-title-size: 28px");
+    expect(shell).toContain("--type-section-heading-size: 22px");
+    expect(shell).toContain("--dashboard-interface-size: 12px");
+    expect(shell).toContain("--dashboard-supporting-size: 10px");
+    expect(css).toContain("#app.shell .sheet .btn, #app.shell .sheet button:not(.ihint), #app.shell .tmenu button {");
     const nav = css.slice(css.indexOf(".botnav a {"), css.indexOf("}", css.indexOf(".botnav a {")));
     expect(nav).toContain("font-size: var(--type-navigation-size)");
     expect(nav).toContain("font-weight: var(--type-navigation-weight)");
     expect(nav).toContain("letter-spacing: var(--type-navigation-tracking)");
   });
 
-  /**
-   * Home's selectors, named because the rule for them is different.
-   *
-   * Home is TWO sizes: --t-lg for the title, the two section headings and every
-   * number; --t-xs for every other word. Everywhere else --t-xs stays a TAG
-   * size for uppercase labels, with --t-sm doing the reading. Both rules are
-   * held below, and this list is what separates them.
-   */
+  /** Home selectors, named because the compact dashboard roles apply to them. */
   const HOME = [".mlabel", ".mnote", ".delta", ".winsel button", ".chartax", ".chartempty",
                 ".ctip .cd", ".ctip .cr", ".chartkey", ".cmpmetric", ".vval", ".vnames span",
-                ".cmpfoot", ".cmpempty", ".popgrp > span", ".popopt",
+                ".cmpfoot", ".cmpempty", ".popgrp > span",
                 ".metrics .metric b", ".cfig b", ".home .sec"];
 
   /**
@@ -3501,21 +3501,20 @@ describe("the dashboard keeps to one scale", () => {
     }
   });
 
-  it("gives Home three text sizes and no others", () => {
+  it("gives Home its approved compact roles", () => {
     const rules = [...css.matchAll(/\n\s*(\.[^{}\n]*?) \{([^}]*)\}/g)]
       .map((m) => [m[1]!.trim(), m[2]!] as const)
       .filter(([sel]) => HOME.includes(sel));
     // If this stops matching, the check is passing on nothing.
     expect(rules.length).toBeGreaterThan(10);
     const off = rules
-      .filter(([, body]) => /font-size: (?!var\(--t-xl\)|var\(--t-md\)|var\(--t-sm\))/.test(body))
+      .filter(([, body]) => /font-size: (?!var\(--t-xl\)|var\(--dashboard-interface-size\)|var\(--dashboard-supporting-size\))/.test(body))
       .map(([sel]) => sel);
     expect(off, "Home rules off its three sizes: " + off.join(", ")).toEqual([]);
-    // All three in use, and NOT --t-xs: that one is the uppercase tag size and
-    // Home has no uppercase on it.
+    // All three in use: metric figures, 12px interface copy and 10px support.
     const used = new Set(rules.flatMap(([, b]) =>
-      [...b.matchAll(/font-size: (var\(--t-[a-z]+\))/g)].map((m) => m[1]!)));
-    expect([...used].sort()).toEqual(["var(--t-md)", "var(--t-sm)", "var(--t-xl)"]);
+      [...b.matchAll(/font-size: (var\(--(?:t-[a-z]+|dashboard-[a-z-]+)\))/g)].map((m) => m[1]!)));
+    expect([...used].sort()).toEqual(["var(--dashboard-interface-size)", "var(--dashboard-supporting-size)", "var(--t-xl)"]);
   });
 
   it("keeps 11px for uppercase tags, and Home never reaches for it", () => {
@@ -3554,7 +3553,7 @@ describe("the dashboard keeps to one scale", () => {
     const off = values("font-size").filter(
       // .48em is a RATIO of its parent — the share beside a health count — not
       // a size, so it moves when the token it sits inside moves.
-      (v) => !v.startsWith("var(--t-") && !v.startsWith("var(--type-") && v !== ".48em",
+      (v) => !v.startsWith("var(--t-") && !v.startsWith("var(--type-") && !v.startsWith("var(--dashboard-") && v !== ".48em",
     );
     expect(off, "text sizes off the scale: " + off.join(", ")).toEqual([]);
   });
@@ -4615,6 +4614,16 @@ describe("the merchant launch journey", () => {
     expect(V2_SCREENS).toContain("/ready/:id");
   });
 
+  it("puts the highlighted launch checklist above the Dashboard title without breaking heading order", () => {
+    const home = html.slice(html.indexOf("function homeScreen()"), html.indexOf("const ICON_CARET"));
+    expect(home.indexOf('<h1 class="sec first">Dashboard</h1>')).toBeLessThan(home.indexOf("launchProgress()"));
+    expect(html).toContain(".home-main { order: 2; }");
+    expect(html).toContain(".launch-progress { order: 1;");
+    expect(html).toContain('<h2 class="launch-heading" id="launch-heading">Get ready to launch</h2>');
+    expect(html).toContain("background: var(--accent-wash)");
+    expect(html).toContain(".launch-step.done .launch-marker { background: var(--accent);");
+  });
+
   it("hands a newly published card to a clear ready screen", () => {
     const design = html.slice(html.indexOf("function createDesignScreen(id)"),
                              html.indexOf("function oneOrTwo(value)"));
@@ -4649,7 +4658,7 @@ describe("a staging copy announces itself on every page", () => {
   it("live pages carry no strip and no noindex", () => {
     delete process.env.ENV_NAME;
     const html = staffPage(false);
-    expect(html).not.toContain("not the real site");
+    expect(html).not.toContain('class="envstrip"');
     expect(html).not.toContain('name="robots"');
   });
 
@@ -4659,7 +4668,7 @@ describe("a staging copy announces itself on every page", () => {
       // Three pages from three different audiences — owner, staff, customer —
       // because the strip lives in page() and must reach all of them at once.
       for (const html of [staffPage(false), dashboardPage(false), notReadyPage()]) {
-        expect(html).toContain("not the real site");
+        expect(html).toContain('class="envstrip">Staging</div>');
         expect(html).toContain('<meta name="robots" content="noindex">');
       }
     } finally {
