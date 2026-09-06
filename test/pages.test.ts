@@ -3567,6 +3567,40 @@ describe("the dashboard keeps to one scale", () => {
     expect(off, "text sizes off the scale: " + off.join(", ")).toEqual([]);
   });
 
+  /**
+   * The SAME rule, applied to the kit — which is where the sizes actually went
+   * wrong.
+   *
+   * This guard only ever read dashboardV2.ts. src/ui/kit.ts holds the design
+   * panel, and behind that blind spot two dozen hand-written sizes had built
+   * up: .56, .58, .6, .64, .68, .72, .74, .78, .8, .82, .84, .86, .88, .9, .95
+   * — fifteen values inside a 6px range, four of them under 11px. A fold
+   * heading rendered smaller than its own hint. That is what "the sizes are all
+   * really weird" was.
+   *
+   * MOCK-UPS ARE EXEMPT, and only mock-ups. .pv-*, .pvg-* and .pvn-* draw
+   * Apple's and Google's own card chrome and their lock-screen notification:
+   * those sizes are transcriptions of what a phone really renders, not choices
+   * of ours, and pushing them onto our scale would make the preview lie about
+   * what the customer will see. Every other rule in the file uses a token.
+   */
+  it("sizes the kit's own text from the tokens too, mock-ups aside", () => {
+    const kit = readFileSync(new URL("../src/ui/kit.ts", import.meta.url), "utf8");
+    // A picture of somebody else's interface, not ours.
+    const isMock = (sel: string) => /\.pv-|\.pvg-|\.pvn-/.test(sel);
+    const off: string[] = [];
+    for (const m of kit.matchAll(/\n\s*([^{}\n@]+?)\s*\{([^}]*)\}/g)) {
+      const sel = m[1]!.trim(), body = m[2]!;
+      const size = /font-size:\s*([^;}]+)/.exec(body);
+      if (!size || isMock(sel)) continue;
+      const v = size[1]!.trim();
+      // 1rem is the iOS-zoom floor on form fields and is annotated as such.
+      if (v.startsWith("var(--") || v === "1rem" || v === "inherit") continue;
+      off.push(sel + " → " + v);
+    }
+    expect(off, "kit text sizes off the scale: " + off.join(", ")).toEqual([]);
+  });
+
   it("rounds corners from the three tokens and the pill", () => {
     // Per corner, so the shorthand a grouped row needs — rounded at the top,
     // square where the next row meets it — is judged on its parts.

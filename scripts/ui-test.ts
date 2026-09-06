@@ -225,70 +225,76 @@ async function main(): Promise<void> {
     const logoFetch = await fetch(BASE + onManage.logo.replace(BASE, ""), { headers: { cookie } });
     ok(logoFetch.status === 200, "...and that picture actually loads rather than 404ing");
 
-    // ---- The Edit screen: two folds, and no way to change the card's type ----
+    // ---- The Edit screen: two sections, and no way to change the card's type ----
     //
     // Every other suite drives this page's FUNCTIONS. This one is the only
     // place the screen itself is real, which is why the check that the type
     // dropdown is gone lives here: it is still in the DOM, because the panel
-    // reads it to draw its own preview, and "gone" therefore means "cannot be
-    // seen or used", which only a browser can answer.
+    // reads it to draw its own preview and to render the stamp grids, and
+    // "gone" therefore means "cannot be seen or used", which only a browser
+    // can answer.
     const edit = (await page.evaluate(`(() => {
       const sums = [...document.querySelectorAll("details.grp > summary")]
         .map((s) => s.textContent || "");
       const kind = document.querySelector('[data-f="kind"]');
       const danger = document.querySelector(".dzone");
+      const head = document.querySelector(".ehead");
       return {
         folds: sums,
         kindVisible: kind ? Boolean(kind.offsetParent) : false,
         kindPresent: Boolean(kind),
         danger: danger ? (danger.textContent || "") : "",
         locked: Boolean(document.querySelector(".locknote")),
-        rulesSave: Boolean(document.querySelector("[data-saverules]")),
+        head: head ? (head.textContent || "") : "",
+        // Every control on the page that could save something.
+        saves: [...document.querySelectorAll("[data-savecard], [data-a=save], [data-saverules]")]
+          .filter((el) => el.offsetParent !== null).length,
+        sharing: Boolean(document.querySelector(".sharelist, .qrbox")),
       };
     })()`)) as {
-      folds: string[]; kindVisible: boolean; kindPresent: boolean;
-      danger: string; locked: boolean; rulesSave: boolean;
+      folds: string[]; kindVisible: boolean; kindPresent: boolean; danger: string;
+      locked: boolean; head: string; saves: number; sharing: boolean;
     };
-    ok(edit.folds.some((s) => s.startsWith("Rules")), "Edit offers a Rules section");
+    ok(edit.folds.some((s) => s.startsWith("Setup")), "Edit offers a Setup section");
     ok(edit.folds.some((s) => s.startsWith("Design")), "Edit offers a Design section");
     ok(edit.folds.length === 2, "...and no third section — the card's type cannot change");
     ok(edit.kindPresent && !edit.kindVisible,
       "the Card type dropdown is in the DOM for the preview and shown to nobody");
+    ok(/Edit card/.test(edit.head), "the title says what the screen is");
+    ok(/Active/.test(edit.head), "...with the card's state beside it, not on a bar of its own");
     ok(!edit.locked, "a card nobody has joined is not locked");
-    ok(edit.rulesSave, "...so its rules can be saved");
+    // ONE save, for both sections. Two made the owner sort their own change
+    // into the right half before they could keep it.
+    ok(edit.saves === 1, "there is exactly one save on the screen, not one per section");
+    ok(!edit.sharing, "sharing is not duplicated here — it is on the carousel's Share button");
     ok(/Delete this program/.test(edit.danger),
       "the Danger zone offers a real delete on a card nobody holds");
     ok(/End sign-ups/.test(edit.danger), "...and ending it, which is the other way out");
 
-    // ---- Save a rule, then save the design, and check neither undid the other ----
+    // ---- Change a RULE and the DESIGN, press one button, read the server ----
     //
-    // THE TRAP THIS GUARDS. The design panel holds its own hidden copy of the
-    // rules so it can draw the card it is designing, seeded when it mounted.
-    // Save a rule and then save the design, and that stale copy goes back over
-    // the change — the owner watches their edit save and then vanish.
-    // Force it open rather than toggling: Rules is already open on arrival for
-    // a card nobody has joined, so a click here would SHUT it.
+    // THE TRAP THIS GUARDS, and it is not cosmetic. The design half renders the
+    // stamp-grid pictures from the panel's OWN copy of the stamps target, and
+    // it replaces the whole set for the card at once. So if one button saves a
+    // target change and then saves the design, a panel still holding the old
+    // number writes grids for the OLD target over everything — and the new one
+    // is left with no picture at all, which is a 404 where the stamps go on
+    // every card already in a wallet.
+    //
+    // Moving the target from 10 to 7 is what makes that visible: the check at
+    // the end asks the server for the grid at the NEW number.
     await page.evaluate(`(() => {
       for (const el of document.querySelectorAll("details.grp")) el.open = true;
     })()`);
     await page.waitForTimeout(400);
-    // The form is an accordion and it opens on the EARNING half, so the reward
-    // boxes are not rendered yet. This is the same two-part form the wizard
-    // uses, which is the whole point of the change.
+    // The form is an accordion and opens on the EARNING half, so the reward
+    // boxes are not rendered yet. Same two-part form the wizard uses.
+    await page.selectOption('[data-r="target"]', "7");
+    await page.waitForTimeout(300);
     await page.locator('[data-open="reward"]').click();
     await page.waitForTimeout(500);
     await page.fill('[data-r="rewardName"]', "Free croissant");
-    await page.locator("[data-saverules]").click();
-    await page.waitForTimeout(3000);
-
-    const afterRules = await readCard(cardId, cookie);
-    ok(/croissant/i.test(String(afterRules?.reward ?? "")),
-      "a rules change made on the Edit screen reaches the server");
-
-    await page.evaluate(`(() => {
-      for (const el of document.querySelectorAll("details.grp")) el.open = true;
-    })()`);
-    await page.waitForTimeout(600);
+    // And a design change in the same breath, so the one button carries both.
     await page.evaluate(`(() => {
       const el = document.querySelector('[data-f="bg"]');
       if (!el) return;
@@ -296,18 +302,28 @@ async function main(): Promise<void> {
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
     })()`);
-    await page.waitForTimeout(500);
-    await page.locator('[data-a="save"]').click();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(400);
+
+    await page.locator("[data-savecard]").click();
+    await page.waitForTimeout(900);
     const confirm = page.locator("[data-yes]");
     if (await confirm.count()) await confirm.click();
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(9000);
 
-    const afterDesign = await readCard(cardId, cookie);
-    ok(/croissant/i.test(String(afterDesign?.reward ?? "")),
-      "...and saving the DESIGN afterwards does not write the old rules back over it");
-    ok(Boolean(afterDesign?.logoVersion),
-      "...while the artwork is still there after both saves");
+    const saved = await readCard(cardId, cookie);
+    ok(/croissant/i.test(String(saved?.reward ?? "")),
+      "one press saves the rules half");
+    ok(Number(saved?.stampsTarget) === 7, "...including the new stamps target");
+    ok(String(saved?.bg ?? "").toLowerCase() === "#123456",
+      "...and the design half, in the same press");
+    ok(Boolean(saved?.logoVersion), "...while the artwork survives both");
+    // THE ONE THAT MATTERS. A grid for the target the card now has.
+    // No target in the URL by design: serveStampStrip reads the card's CURRENT
+    // stamps_target and looks the strip up under it. So this 200 is precisely
+    // the claim "a grid was written for the number the card now has".
+    const grid = await fetch(BASE + "/c/" + cardId + "/art/stamps/0.png", { headers: { cookie } });
+    ok(grid.status === 200,
+      "...and the stamp grid exists for the NEW target, not the one the panel was built with");
 
     // ---- And now somebody joins, which settles the rules for good ----
     //
@@ -331,35 +347,34 @@ async function main(): Promise<void> {
       for (const el of document.querySelectorAll("details.grp")) el.open = true;
     })()`);
     await page.waitForTimeout(400);
-    // The form's own accordion is a pair of buttons, not a <details>, so opening
-    // the outer fold does not open the reward half. Locked or not, these two
-    // headers still work — a locked section has to be READABLE, which is the
-    // whole reason the fields are disabled rather than dropped.
-    await page.locator('[data-open="reward"]').click();
-    await page.waitForTimeout(500);
     const shut = (await page.evaluate(`(() => {
       const note = document.querySelector(".locknote");
-      const reward = document.querySelector('[data-r="rewardName"]');
-      const name = document.querySelector('[data-r="name"]');
       const danger = document.querySelector(".dzone");
+      const sums = [...document.querySelectorAll("details.grp > summary")]
+        .map((s) => s.textContent || "");
       return {
         note: note ? (note.textContent || "") : "",
-        rewardDisabled: reward ? reward.disabled : null,
-        nameDisabled: name ? name.disabled : null,
-        rulesSave: Boolean(document.querySelector("[data-saverules]")),
-        design: Boolean(document.querySelector('[data-a="save"]')),
+        // NOT "is the field disabled" — there is no field. A greyed-out form is
+        // still a form, and a screen full of controls that cannot be used
+        // invites an owner to keep trying them.
+        fields: document.querySelectorAll("[data-r]").length,
+        folds: document.querySelectorAll("[data-open]").length,
+        summaries: sums,
+        saves: [...document.querySelectorAll("[data-savecard], [data-a=save], [data-saverules]")]
+          .filter((el) => el.offsetParent !== null).length,
+        designPanel: Boolean(document.querySelector('[data-f="bg"]')),
         danger: danger ? (danger.textContent || "") : "",
       };
     })()`)) as {
-      note: string; rewardDisabled: boolean | null; nameDisabled: boolean | null;
-      rulesSave: boolean; design: boolean; danger: string;
+      note: string; fields: number; folds: number; summaries: string[];
+      saves: number; designPanel: boolean; danger: string;
     };
-    ok(/rules are locked/.test(shut.note), "once somebody joins, the Rules section says so");
-    ok(shut.rewardDisabled === true, "...and the reward really cannot be edited");
-    ok(shut.nameDisabled === false,
-      "...while the card's NAME still can — what it is called is not what it promised");
-    ok(!shut.rulesSave, "...there is no Save on a section that cannot change");
-    ok(shut.design, "...but the Design section still saves, which is the point of keeping it");
+    ok(/rules are locked/.test(shut.note), "once somebody joins, Setup says so");
+    ok(shut.fields === 0, "...and shows no rule fields at all, not greyed-out ones");
+    ok(shut.folds === 0, "...nor the earn/reward accordion inside it");
+    ok(shut.summaries.some((s) => s.startsWith("Setup")), "...the section is still there to read");
+    ok(shut.designPanel, "...and Design is untouched, which is the point of keeping it");
+    ok(shut.saves === 1, "...with the same single save, which now only has Design to carry");
     ok(/Remove from my dashboard/.test(shut.danger),
       "...and the Danger zone stops offering a delete once a card is out there");
     ok(!/Delete this program/.test(shut.danger), "...it really is gone, not just reworded");

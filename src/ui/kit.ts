@@ -179,7 +179,8 @@ export const baseCss = /* css */ `
      the product. It deliberately cannot receive taps or obscure a menu. */
   .envstrip { position: fixed; top: calc(2px + env(safe-area-inset-top, 0px)); left: 50%; z-index: 30;
               transform: translateX(-50%); pointer-events: none; color: var(--muted);
-              font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+              font-size: var(--type-navigation-size); font-weight: 600;
+              letter-spacing: var(--tr-caps); text-transform: uppercase; }
   .card {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
     padding: 28px 26px; box-shadow: var(--shadow); width: 100%; max-width: 440px;
@@ -3961,7 +3962,14 @@ export const DESIGN_PANEL_JS = /* js */ `
        * landed one after the other about the same five people and read as a
        * contradiction — it was reported as one. Same two facts, labelled.
        */
-      q("[data-a=save]").onclick = async () => {
+      // Guarded, because the button is no longer always there. It used to be
+      // rendered-and-hidden even under hideSave, so this could not miss; now a
+      // host with its own save (the Create wizard, the Edit screen) has no
+      // button here at all, and an unguarded .onclick on null throws inside the
+      // constructor — which takes the WHOLE panel down and leaves the screen
+      // blank. That is not hypothetical: it is what this change did first.
+      const saveBtn = q("[data-a=save]");
+      if (saveBtn) saveBtn.onclick = async () => {
         const renamed = f("shopName").value.trim() !== (c.shopName || "").trim();
         // Nobody holds this card, so there is nothing to warn about: the dialog
         // existed to say "this reaches everyone who has one", and with none it

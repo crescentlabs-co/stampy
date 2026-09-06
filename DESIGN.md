@@ -75,6 +75,49 @@ customer pages and the staff counter. Its overrides live only inside
 | Navigation | 10px | 600 | bottom navigation labels |
 
 Inputs remain 16px so iPhone Safari does not zoom when someone edits a form.
+**Every control must SAY so.** `font: inherit` is a shorthand and resets the
+size with it, which is how a `textarea` and a filter `select` came to render at
+12px — three steps below the input beside them, and under the zoom floor. Write
+`font-family: inherit` and a `font-size` token, never the shorthand.
+
+**Nothing may rely on inheriting its size.** `.sheet` sets 12px as the inherited
+base and the lift to 14px matches `button` only, so anything that names no size
+lands on the smallest one in the product. That is how a fold *heading* ended up
+smaller than its own grey hint. If it is text somebody reads, it names a token.
+
+**Three names for one number is the trap to avoid.** `--t-sm` and
+`--dashboard-interface-size` are both 14px; `--t-xs` and
+`--dashboard-supporting-size` are both 12px. Inside the dashboard use the
+`--dashboard-*` pair, which says what the text is FOR; `--t-*` is the public
+customer scale. Do not add a third way to say 14.
+
+**Mock-ups are exempt, and only mock-ups.** `.pv-*`, `.pvg-*` and `.pvn-*` in
+the design panel — and the poster and social previews in `promotionMaker` —
+carry raw sizes on purpose. They are pictures of Apple's card, Google's card, a
+lock-screen notification and a printed poster; those sizes are transcriptions of
+what really renders, not choices of ours, and forcing them onto our scale would
+make the preview lie about what the customer will see. A test allows those
+prefixes and nothing else.
+
+### One fold, everywhere
+
+A section that opens is `▸` on the left, the heading at 14px/700, and a 12px
+grey sub-label after it. There were five treatments — two markers, four sizes
+and three weights — and an owner who learns that a triangle opens a section on
+one screen learns nothing that helps on the next. The one exception is `.wfold`
+in the rules form, which keeps `＋`/`－`: it is a step you complete, not a drawer
+you browse.
+
+The marker is `--ink2` at 16px, not muted at 12px. It is the one thing on the
+row you are meant to press, so it must not be the faintest mark on it.
+
+### Space between sections
+
+`.sec` is **24px above, 16px below** — the same rhythm as the shared `h2`, and
+the same the design panel already used. It was 40/16 over a 22px heading on
+twenty screens, which reads as an unfinished page rather than a calm one. A
+block gap is `--s4` (24px); `--s5` (40px) is for horizontal breathing room, not
+for stacking sections.
 
 **The six supporting sizes and the four weights**, chosen by the founder in
 Sept 2026 over the smaller set that came before them (body was 14px and the
