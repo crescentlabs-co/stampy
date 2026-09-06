@@ -2014,7 +2014,7 @@ describe("dashboard information architecture", () => {
     const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
     for (const sel of [
       ".dfold > summary", ".swbox .swname", ".swbox .swval",
-      ".tgtext", ".chipcustom", ".stampnow", ".lbup", ".lbcap", ".crpal-n",
+      ".tgtext", ".chipcustom", ".lbup", ".lbcap", ".crpal-n",
     ]) {
       const at = css.indexOf(sel + " {");
       expect(at, sel + " is gone from the stylesheet").toBeGreaterThan(-1);
@@ -2072,7 +2072,7 @@ describe("dashboard information architecture", () => {
    * those have always worked.
    */
   it("opens the stamp picker with a label, not a scripted click", () => {
-    expect(html).toContain('<label class="lbup btn btn-ghost">Your own<input data-stampimg');
+    expect(html).toContain('<label class="lbup btn btn-ghost">Custom<input data-stampimg');
     expect(html).not.toContain('q("[data-stampimg]").click()');
     expect(html).toContain('accept="image/*"');
   });

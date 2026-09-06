@@ -365,7 +365,6 @@ describe("the design panel, mounted", () => {
     const div = build(c, h);
     await h.settle();
     expect(c.stampIconVersion).toBeFalsy();
-    expect(div.querySelector("[data-stampnow]")?.style.display).not.toBe("");
   });
 
   /**
@@ -1011,14 +1010,50 @@ describe("the design panel, mounted", () => {
     });
   });
 
-  /** The state readout that was missing entirely — the grid was the only signal. */
-  it("says on screen when a stored shape is in use", async () => {
+  /**
+   * A stored shape shows as "Custom" in the picker, and that is the only place
+   * it is said.
+   *
+   * There was a third readout under the control — the shape at 26px next to
+   * "Your own stamp is being used." — saying what the picker above it and the
+   * card preview above THAT were both already showing.
+   */
+  it("names a stored shape Custom in the picker", async () => {
     const h = makeHarness();
     const div = build(card({ stampStyle: "custom", stampIconVersion: 1700000000000 }), h);
     await h.settle();
-    const row = div.querySelector("[data-stampnow]");
-    expect(row).not.toBeNull();
-    expect(row!.style.display).toBe("");
+    // The OPTION, not select.value: this DOM does not reflect a `selected`
+    // attribute set through innerHTML into the select's value property, and
+    // the markup is what ships.
+    const sel = div.querySelector("[data-stamppick]")!;
+    const chosen = sel.querySelector("option[selected]")!;
+    expect(chosen.getAttribute("value")).toBe("custom");
+    expect(chosen.textContent).toBe("Custom");
+    expect(sel.innerHTML).not.toContain("Your own");
+    expect(div.querySelector("[data-stampnow]")).toBeNull();
+  });
+
+  /**
+   * A points card and a membership card draw NO stamps — stripKey returns one
+   * plain band for both — so the shape picker and the "Stamps" colour were
+   * controls that could not change anything, on half the kinds of card.
+   */
+  it("hides the stamp controls on a card that has no stamps", async () => {
+    const h = makeHarness();
+    for (const kind of ["points", "membership"]) {
+      const div = build(card({ kind }), h);
+      await h.settle();
+      const sec = div.querySelector("[data-stampsec]")!;
+      expect(sec, kind + " still has the section in the DOM for the preview to read").not.toBeNull();
+      expect(sec.hidden, kind + " is offered a stamp shape it cannot use").toBe(true);
+      expect(div.querySelector('[data-role="accent"]'),
+        kind + " is offered a stamp colour it cannot use").toBeNull();
+    }
+    // And a stamp card keeps both.
+    const stamp = build(card({ kind: "stamp" }), h);
+    await h.settle();
+    expect(stamp.querySelector("[data-stampsec]")!.hidden).toBe(false);
+    expect(stamp.querySelector('[data-role="accent"]')).not.toBeNull();
   });
 });
 
@@ -1243,17 +1278,40 @@ describe("switching the card type", () => {
     expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("Member");
   });
 
-  it("redraws both previews as a points card, showing a balance", async () => {
+  /**
+   * A BRAND-NEW card, like every other kind.
+   *
+   * This was previewed at half the cheapest reward, or at a flat 50 with no
+   * rewards priced yet — the one preview in the panel showing a card nobody is
+   * ever handed, built on a number the owner never typed. A shop giving 20
+   * welcome points saw 50 here and 20 on the phone.
+   */
+  it("previews a points card at the balance a new customer starts with", async () => {
     const h = makeHarness();
-    const div = build(card({ kind: "points", milestones: [{ at: 200, reward: "Free coffee" }] }), h);
+    const div = build(card({
+      kind: "points", stampsStart: 20,
+      milestones: [{ at: 200, reward: "Free coffee" }],
+    }), h);
     await h.settle();
-    // Previewed at half the cheapest reward: what somebody part-way there sees.
-    // The header counts the shorter road, exactly as a stamp card's does — and
-    // at exactly halfway that is the road ahead.
-    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("100 points to reward");
+    // "20 earned", not "180 to reward": pointsHeader shows whichever of the two
+    // numbers is smaller, and near the start of a card that is what you have,
+    // not what is left. The old halfway preview sat exactly on the crossover,
+    // which is why it read the other way round.
+    expect(div.querySelector("[data-pv-progress]")!.textContent).toBe("20 points earned");
     expect(div.querySelector("[data-pv-clbl]")!.textContent).toBe("BALANCE");
     expect(div.querySelector("[data-pvg-prog]")!.textContent).toBe("Points card");
-    expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("100 points");
+    expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("20 points");
+  });
+
+  /** No welcome points means an empty card, and it says so honestly. */
+  it("previews a points card with no welcome points at zero", async () => {
+    const h = makeHarness();
+    const div = build(card({
+      kind: "points", stampsStart: 0,
+      milestones: [{ at: 200, reward: "Free coffee" }],
+    }), h);
+    await h.settle();
+    expect(div.querySelector("[data-pvg-bal]")!.textContent).toBe("0 points");
   });
 
   it("counts to the next rung on a milestones card, not the top", async () => {

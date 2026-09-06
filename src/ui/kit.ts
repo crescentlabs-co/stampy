@@ -1235,12 +1235,6 @@ export const DESIGN_PANEL_CSS = /* css */ `
            border: 1px solid color-mix(in srgb, var(--bad) 28%, transparent);
            border-radius: var(--r-sm);
            padding: var(--s2) var(--s3); font-size: var(--t-sm); margin-top: var(--s2); }
-    /* "Your own stamp is being used" — the shape itself, at the size it is read
-       at, so the answer is the picture rather than a sentence about it. */
-    .stampnow { display: flex; align-items: center; gap: 8px; margin: 8px 0 0;
-                font-size: var(--t-sm); color: var(--muted); }
-    .stampnow img { width: 26px; height: 26px; object-fit: contain; border-radius: 6px;
-                    background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); padding: 3px; }
     /* --- designer controls --- */
     /* Where the five native pickers sit while no palette is open. They are moved
        out into the open palette, not proxied — see drawPalette. */
@@ -1713,6 +1707,14 @@ export const DESIGN_PANEL_JS = /* js */ `
           </div>
         </div>
 
+        <!-- STAMPS: only on a card that HAS stamps.
+             A points card's balance has no ceiling and a membership card counts
+             nothing, so stripKey (src/passModel.ts) returns one plain band for
+             both and applyStamps draws no shapes on it at all. The picker was
+             therefore offering a choice that could not change anything, on two
+             of the four kinds of card. Hidden rather than dropped: the preview
+             and applyStamps both read [data-stamppick] to know what to draw. -->
+        <div data-stampsec>
         <label class="sec dsec" style="display:block">Stamps</label>
         <label class="dlbl">Stamp shape</label>
         <!-- The ready-made shapes in a list, and "your own" as its own BUTTON
@@ -1727,12 +1729,10 @@ export const DESIGN_PANEL_JS = /* js */ `
              same shape the logo and banner boxes already use, which work. -->
         <div class="stamprow">
           <select data-stamppick></select>
-          <label class="lbup btn btn-ghost">Your own<input data-stampimg type="file" accept="image/*"></label>
+          <label class="lbup btn btn-ghost">Custom<input data-stampimg type="file" accept="image/*"></label>
         </div>
-        <p class="stampnow" data-stampnow style="display:none">
-          <img data-stampnow-img alt=""><span>Your own stamp is being used.</span>
-        </p>
         <p class="err" data-stamperr style="display:none"></p>
+        </div>
 
         <label class="sec dsec" style="display:block">Banner</label>
         <!-- This was the band-artwork row, sitting among the logo rows. It is a
@@ -2179,12 +2179,25 @@ export const DESIGN_PANEL_JS = /* js */ `
         return (sel && sel.value) || "stamp";
       }
 
+      /** True when this kind of card actually draws a grid of stamps. */
+      function hasStamps() {
+        const k = kindNow();
+        return k !== "points" && k !== "membership";
+      }
+
       /** Show only the rules that belong to the type being edited. */
       function syncKind() {
         const k = kindNow();
         for (const el of div.querySelectorAll("[data-rules]")) {
           el.hidden = el.getAttribute("data-rules") !== k;
         }
+        // And the stamp controls, which only mean something on a card that has
+        // stamps. A points balance has no ceiling and a membership card counts
+        // nothing, so both get one plain band and no shapes are ever drawn on
+        // it — see stripKey in src/passModel.ts and the render() inside
+        // applyStamps, which return a single strip for those two.
+        const stampSec = div.querySelector("[data-stampsec]");
+        if (stampSec) stampSec.hidden = !hasStamps();
       }
 
       // ---- the reward ladder ----
@@ -2297,17 +2310,23 @@ export const DESIGN_PANEL_JS = /* js */ `
         // the header counts to is the FIRST unclaimed one — the same split
         // targetFor() makes in src/passModel.ts. A preview that counted to the
         // top would show a card no customer ever sees.
-        // A points card is previewed at a plausible balance rather than at the
-        // welcome stamps, which it does not have: the owner needs to see what a
-        // customer part-way to their cheapest reward is looking at.
+        // EVERY kind previews a BRAND-NEW card — the state a customer is in the
+        // second they add it, welcome stamps and all.
+        //
+        // A points card used to be shown at half its cheapest reward, or at a
+        // flat 50, on the reasoning that an owner wants to see a card part-way
+        // along. It made this the one preview that showed a card nobody is ever
+        // handed, and it invented a number: a shop giving 20 welcome points saw
+        // 50 on the mock-up and 20 on the phone. Points cards DO have a welcome
+        // value — it is the same stamps_start column, clamped as points (see
+        // cardFieldsFromBody), and the rules form asks for it as "Welcome
+        // points". So all four kinds read the same box.
         const total = points
           ? (rungs.length ? rungs[rungs.length - 1].at : 100)
           : rungs.length
             ? rungs[rungs.length - 1].at
             : Math.max(1, Math.min(20, Number(f("stampsTarget").value) || 10));
-        const start = points
-          ? (rungs.length ? Math.floor(rungs[0].at / 2) : 50)
-          : Math.max(0, Math.min(total, Number(f("stampsStart").value) || 0));
+        const start = Math.max(0, Math.min(total, Number(f("stampsStart").value) || 0));
         const nextRung = rungs.find((m) => m.at > start) || rungs[rungs.length - 1] || null;
         const target = nextRung ? nextRung.at : total;
         const pv = q("[data-pv]");
@@ -2498,10 +2517,10 @@ export const DESIGN_PANEL_JS = /* js */ `
           STAMP_PRESETS.map((x) =>
             '<option value="' + esc(x.v) + '"' + (x.v === now ? " selected" : "") + ">" +
             esc(x.name) + "</option>").join("") +
-          // "Your own" is not in this list any more \u2014 it is the button beside
+          // "Custom" is not in this list any more \u2014 it is the button beside
           // it. It stays SELECTABLE as a state, so a card already wearing an
           // uploaded shape shows that rather than reading as dots.
-          (now === "custom" ? '<option value="custom" selected>Your own</option>' : "");
+          (now === "custom" ? '<option value="custom" selected>Custom</option>' : "");
       }
 
       {
@@ -3405,6 +3424,11 @@ export const DESIGN_PANEL_JS = /* js */ `
         if (!grid) return;
         grid.innerHTML = "";
         for (const r of ROLES) {
+          // "Stamps" is the fill of an earned stamp. A points or membership
+          // card draws none, so offering the colour would be a control with
+          // nothing to change. The INPUT still exists and is still parked and
+          // saved — only the swatch is withheld.
+          if (r.k === "accent" && !hasStamps()) continue;
           const sw = document.createElement("button");
           sw.type = "button";
           sw.className = "swbox" + (r.k === activeRole ? " on" : "");
@@ -3770,15 +3794,6 @@ export const DESIGN_PANEL_JS = /* js */ `
        * "what is SAVED" — which is the question that was unanswerable, and the
        * reason a safely stored upload looked lost.
        */
-      function showStamp() {
-        const row = q("[data-stampnow]");
-        if (!row) return;
-        if (!c.stampIconVersion) { row.style.display = "none"; return; }
-        q("[data-stampnow-img]").src = env.artUrl("stamp-icon", c.stampIconVersion);
-        row.style.display = "";
-      }
-      showStamp();
-
       // Upload your own stamp icon → check it → STORE it → re-render the grid.
       //
       // The storing step is the one that was missing. This used to pass kind
@@ -3830,7 +3845,6 @@ export const DESIGN_PANEL_JS = /* js */ `
           // the logo and the square mark beside it already do this. Leaving it
           // at 0 is what let a tab switch decide the card had no shape.
           c.stampIconVersion = Date.now();
-          showStamp();
           await applyStamps("custom");
           // The list is put back to "Dots" the moment the picker OPENS, because
           // choosing it may be cancelled. Nothing put it right again when the
@@ -3866,7 +3880,6 @@ export const DESIGN_PANEL_JS = /* js */ `
         await api(P("/stamp-icon"), { method: "DELETE" });
         await loadStampIcon("");
         c.stampIconVersion = 0;
-        showStamp();
         await applyStamps("dot", true);
         toast("Back to plain dots");
       }
