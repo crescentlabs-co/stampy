@@ -11,7 +11,7 @@ process.env.BASE_URL = "https://stampy.example.test";
 process.env.DEMO_CARD_ID = "demo-card";
 
 const {
-  buildHeroClearPatch, buildLoyaltyClass, buildLoyaltyObject, buildLoyaltyPatch,
+  buildBarcodeRepairPatch, buildHeroClearPatch, buildLoyaltyClass, buildLoyaltyObject, buildLoyaltyPatch,
   buildSaveJwtClaims, classId, logoUrl,
 } = await import("../src/googleModel.js");
 // Imported here on purpose: the point of the block below is to compare the two
@@ -218,7 +218,7 @@ describe("buildLoyaltyObject", () => {
     const obj = buildLoyaltyObject(row(), card()) as any;
     expect(obj.barcode.type).toBe("QR_CODE");
     expect(obj.barcode.value).toBe(row().serial);
-    expect(obj.barcode.alternateText).toBe("Code ABC234");
+    expect(obj.barcode.alternateText).toBeUndefined();
   });
 
   /*
@@ -233,7 +233,8 @@ describe("buildLoyaltyObject", () => {
     const g = buildLoyaltyObject(row(), card()) as any;
     const a = buildPassJson(row(), card()) as any;
     expect(g.barcode.value).toBe(a.barcodes[0].message);
-    expect(g.barcode.alternateText).toBe(a.barcodes[0].altText);
+    expect(g.barcode.alternateText).toBeUndefined();
+    expect(a.barcodes[0].altText).toBeUndefined();
     expect(g.barcode.value).toBe(row().serial);
   });
 
@@ -242,22 +243,19 @@ describe("buildLoyaltyObject", () => {
     const g = buildLoyaltyObject(row(), demo) as any;
     const a = buildPassJson(row(), demo) as any;
     expect(g.barcode.value).toBe(a.barcodes[0].message);
-    expect(g.barcode.alternateText).toBe(a.barcodes[0].altText);
+    expect(g.barcode.alternateText).toBeUndefined();
+    expect(a.barcodes[0].altText).toBeUndefined();
     // The landing page, tagged so the scan is counted apart from ordinary
     // web traffic. Not the serial: this card is handed out, and a stranger
     // scanning it should reach the pitch.
     expect(g.barcode.value).toBe("https://stampy.example.test/?s=card");
-    // What a human reads under the QR. "Code ABC234" here would name a code
-    // that is not in the barcode, and an address is not typeable with that
-    // query string on it - so it says why to scan instead.
-    expect(g.barcode.alternateText).toBe("Scan for more info");
     expect(g.barcode.type).toBe("QR_CODE");
   });
 
   it("leaves every OTHER card alone when the demo card is configured", () => {
     const other = buildLoyaltyObject(row(), card({ id: "some-real-shop" })) as any;
     expect(other.barcode.value).toBe(row().serial);
-    expect(other.barcode.alternateText).toBe("Code ABC234");
+    expect(other.barcode.alternateText).toBeUndefined();
   });
 
   it("shows stamp progress as the points balance", () => {
@@ -556,6 +554,24 @@ describe("buildHeroClearPatch", () => {
   // would overwrite a real customer's progress with whatever this file guessed.
   it("carries nothing but the image", () => {
     expect(Object.keys(buildHeroClearPatch())).toEqual(["heroImage"]);
+  });
+});
+
+describe("buildBarcodeRepairPatch", () => {
+  it("keeps the QR value and explicitly deletes the old visible caption", () => {
+    expect(buildBarcodeRepairPatch(row(), card())).toEqual({
+      barcode: { type: "QR_CODE", value: row().serial, alternateText: null },
+    });
+  });
+
+  it("uses the demo link without adding a replacement caption", () => {
+    expect(buildBarcodeRepairPatch(row(), card({ id: "demo-card" }))).toEqual({
+      barcode: {
+        type: "QR_CODE",
+        value: "https://stampy.example.test/?s=card",
+        alternateText: null,
+      },
+    });
   });
 });
 

@@ -23,6 +23,7 @@ import {
   buildLoyaltyClass,
   buildLoyaltyObject,
   buildLoyaltyPatch,
+  buildBarcodeRepairPatch,
   buildHeroClearPatch,
   buildSaveJwtClaims,
   classId,
@@ -308,15 +309,8 @@ export interface GoogleObjectReport {
    * not, and the only way its count can mean anything.
    */
   barcodeValue?: string;
-  /**
-   * The line printed UNDER the QR, as Google has it.
-   *
-   * Read back alongside the value because the two change independently: the
-   * demo card's altText changed while its URL did not, and a repair comparing
-   * only the value would have skipped every card as "already correct" and
-   * fixed nothing.
-   */
-  barcodeAltText?: string;
+  /** The line beneath the QR. V2 expects this to be absent. */
+  barcodeAltText?: string | null;
   state?: string;
 }
 
@@ -375,7 +369,7 @@ export async function readObject(serial: string): Promise<GoogleObjectReport> {
         : undefined,
     barcodeAltText:
       obj.barcode && typeof obj.barcode === "object"
-        ? ((obj.barcode as Record<string, unknown>).alternateText as string | undefined)
+        ? ((obj.barcode as Record<string, unknown>).alternateText as string | null | undefined)
         : undefined,
     state: typeof obj.state === "string" ? obj.state : undefined,
   };
@@ -419,6 +413,18 @@ export async function clearObjectHero(serial: string): Promise<GoogleResult> {
   try {
     return toResult(
       await api("PATCH", `/loyaltyObject/${config.googleIssuerId}.${serial}`, buildHeroClearPatch()),
+    );
+  } catch (err) {
+    return { ok: false, reason: String(err) };
+  }
+}
+
+/** Repair the QR value and delete any legacy caption beneath it, without notifying. */
+export async function repairObjectBarcode(row: PassRow, card: CardRow): Promise<GoogleResult> {
+  if (!setupStatus().canGoogleWallet) return notConfigured();
+  try {
+    return toResult(
+      await api("PATCH", `/loyaltyObject/${objectId(row)}`, buildBarcodeRepairPatch(row, card)),
     );
   } catch (err) {
     return { ok: false, reason: String(err) };

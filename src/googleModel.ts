@@ -209,7 +209,7 @@ export function buildLoyaltyClass(
       {
         id: "privacy",
         header: "Your privacy",
-        body: "We never ask for your name, phone number or email. To stop, delete this card from your wallet.",
+        body: "Your name and phone number are used for loyalty account lookup, not marketing, and are never sold.",
       },
     ],
   };
@@ -389,7 +389,6 @@ export function buildLoyaltyObject(
     barcode: {
       type: "QR_CODE",
       value: passBarcode(row, card).message,
-      alternateText: passBarcode(row, card).altText,
     },
     // Per-CUSTOMER links. The class carries Terms and Privacy because those are
     // the same for everyone; the stop link is not — it names this person's
@@ -450,4 +449,23 @@ export function buildSaveJwtClaims(
  */
 export function buildHeroClearPatch(): Record<string, unknown> {
   return { heroImage: null };
+}
+
+/**
+ * One-off repair for Google objects issued before V2 hid the text beneath the
+ * wallet QR. Google PATCH merges omitted fields, so `alternateText` must be
+ * explicitly null; omitting it would leave the old caption in place. The QR
+ * value still comes from the same canonical helper Apple uses.
+ */
+export function buildBarcodeRepairPatch(
+  row: Pick<PassRow, "serial" | "short_code">,
+  card: Pick<CardRow, "id">,
+): Record<string, unknown> {
+  return {
+    barcode: {
+      type: "QR_CODE",
+      value: passBarcode(row, card).message,
+      alternateText: null,
+    },
+  };
 }

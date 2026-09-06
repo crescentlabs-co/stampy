@@ -75,7 +75,13 @@ import {
   type ArtKind,
 } from "../cardView.js";
 import { refreshCardArt } from "../cardActions.js";
-import { clearObjectHero, createObject, ensureClass, readClass, readObject } from "../googleWallet.js";
+import {
+  clearObjectHero,
+  ensureClass,
+  readClass,
+  readObject,
+  repairObjectBarcode,
+} from "../googleWallet.js";
 import { passBarcode } from "../passModel.js";
 import { stageOf, triage, trialDaysLeft, value } from "../health.js";
 import { validateArtPng } from "../imageValidate.js";
@@ -291,14 +297,12 @@ adminRouter.post("/api/merchant/:id/unarchive", requireAdmin, async (req, res) =
  *    Android, which is precisely the platforms-disagree state invariant 4 is
  *    there to prevent.
  *
- * createObject already answers a 409 with a full-object PATCH, which does carry
- * the barcode — so the repair is just "create it again" and needs no new Google
- * call. Each object is read first and skipped if it already holds the right
+ * Each object is read first and skipped if it already holds the right
  * value, which makes the button idempotent, free to press on a healthy card,
  * and lets `fixed` mean "was wrong, now is not". Sequential, for the same
  * reason the resync below is: a burst against one issuer finds rate limits.
  *
- * Notifies nobody. createObject carries no notifyPreference (invariant 3) and
+ * Notifies nobody. The repair carries no notifyPreference (invariant 3) and
  * the stamp count is untouched.
  */
 adminRouter.post("/api/demo-barcode-resync", requireAdmin, async (_req, res) => {
@@ -309,10 +313,8 @@ adminRouter.post("/api/demo-barcode-resync", requireAdmin, async (_req, res) => 
   // in a way that should stop the Google half from running.
   const apple = await refreshCardArt(card).catch(() => null);
 
-  // BOTH halves. The first version of this compared only the URL, and the very
-  // next change was to the line under it - so it would have read every card,
-  // found the value already right, skipped them all and reported success while
-  // fixing nothing.
+  // BOTH halves. Existing Google objects also need repairing when they still
+  // carry the old caption beneath the QR: no caption is the intended V2 state.
   const want = passBarcode({ serial: "", short_code: "" }, card);
   let checked = 0, fixed = 0, failed = 0, skipped = 0;
   if (setupStatus().canGoogleWallet) {
@@ -320,13 +322,13 @@ adminRouter.post("/api/demo-barcode-resync", requireAdmin, async (_req, res) => 
       checked++;
       const obj = await readObject(serial);
       if (!obj.found) { failed++; continue; }
-      if (obj.barcodeValue === want.message && obj.barcodeAltText === want.altText) {
+      if (obj.barcodeValue === want.message && (obj.barcodeAltText == null || obj.barcodeAltText === "")) {
         skipped++;
         continue;
       }
       const row = await getPass(serial);
       if (!row) { failed++; continue; }
-      if ((await createObject(row, card)).ok) fixed++;
+      if ((await repairObjectBarcode(row, card)).ok) fixed++;
       else failed++;
     }
   }
@@ -334,7 +336,6 @@ adminRouter.post("/api/demo-barcode-resync", requireAdmin, async (_req, res) => 
     ok: true,
     cardId: card.id,
     want: want.message,
-    wantAltText: want.altText,
     google: { checked, fixed, skipped, failed, configured: setupStatus().canGoogleWallet },
     applePushed: apple?.sent ?? 0,
   });
@@ -345,7 +346,14 @@ adminRouter.post("/api/google-resync", requireAdmin, async (_req, res) => {
     return void res.status(409).json({ error: "google-not-configured" });
   }
   const cards = await allCards();
-  const results: { id: string; name: string; ok: boolean; reason: string; cleared: number }[] = [];
+  const results: {
+    id: string;
+    name: string;
+    ok: boolean;
+    reason: string;
+    cleared: number;
+    barcodes: number;
+  }[] = [];
   for (const card of cards) {
     const r = await ensureClass(card);
     // The class is only half of it. An object's own heroImage renders OVER the
@@ -355,12 +363,19 @@ adminRouter.post("/api/google-resync", requireAdmin, async (_req, res) => {
     // and only write to the ones actually holding a stale image: that makes the
     // repair idempotent, keeps a resync of a healthy shop free, and lets the
     // count below mean "something was wrong and is now fixed".
-    let cleared = 0;
+    let cleared = 0, barcodes = 0;
     if (r.ok) {
       for (const serial of await googleSerialsForCard(card.id).catch(() => [])) {
         const obj = await readObject(serial);
-        if (!obj.ownHeroUri) continue;
-        if ((await clearObjectHero(serial)).ok) cleared++;
+        if (!obj.found) continue;
+        if (obj.ownHeroUri && (await clearObjectHero(serial)).ok) cleared++;
+        const row = await getPass(serial);
+        if (!row) continue;
+        const wanted = passBarcode(row, card).message;
+        const hasCaption = obj.barcodeAltText != null && obj.barcodeAltText !== "";
+        if ((obj.barcodeValue !== wanted || hasCaption) && (await repairObjectBarcode(row, card)).ok) {
+          barcodes++;
+        }
       }
     }
     results.push({
@@ -369,6 +384,7 @@ adminRouter.post("/api/google-resync", requireAdmin, async (_req, res) => {
       ok: r.ok,
       reason: r.ok ? "" : (r.reason ?? ""),
       cleared,
+      barcodes,
     });
   }
   res.json({
@@ -376,6 +392,7 @@ adminRouter.post("/api/google-resync", requireAdmin, async (_req, res) => {
     total: results.length,
     failed: results.filter((r) => !r.ok).length,
     cleared: results.reduce((n, r) => n + r.cleared, 0),
+    barcodes: results.reduce((n, r) => n + r.barcodes, 0),
     results,
   });
 });

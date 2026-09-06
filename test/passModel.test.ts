@@ -208,11 +208,11 @@ describe("buildPassJson", () => {
   it("puts a link in the demo card's barcode, and a serial in everyone else's", () => {
     const demo = buildPassJson(row(), card({ id: "demo-card" })) as any;
     expect(demo.barcodes[0].message).toBe("https://stampy.example.test/?s=card");
-    expect(demo.barcodes[0].altText).toBe("Scan for more info");
+    expect(demo.barcodes[0].altText).toBeUndefined();
 
     const shop = buildPassJson(row(), card({ id: "some-real-shop" })) as any;
     expect(shop.barcodes[0].message).toBe(row().serial);
-    expect(shop.barcodes[0].altText).toBe("Code ABC234");
+    expect(shop.barcodes[0].altText).toBeUndefined();
   });
 
   // The serial still identifies the pass everywhere ELSE on it. Only what the
@@ -226,15 +226,9 @@ describe("buildPassJson", () => {
     expect(back.value).toContain("ABC234");
   });
 
-  // The line under the barcode must never name a code that is not in it. That
-  // is the whole reason altText moved: "Code ABC234" under a URL sends staff
-  // hunting for a card that does not exist.
-  it("never prints a code or an address under the demo card's QR", () => {
-    const alt = passBarcode(row(), { id: "demo-card" }).altText;
-    expect(alt).not.toContain("Code");
-    expect(alt).not.toContain("ABC234");
-    expect(alt).not.toContain("//");
-    expect(alt).not.toContain(row().serial);
+  it("prints no alternative text beneath either wallet QR", () => {
+    expect("altText" in passBarcode(row(), { id: "demo-card" })).toBe(false);
+    expect("altText" in passBarcode(row(), { id: "some-real-shop" })).toBe(false);
   });
 
   // The stamp grid lives in the strip IMAGE, so nothing may be laid over it and
@@ -295,9 +289,9 @@ describe("buildPassJson", () => {
     });
   });
 
-  it("surfaces the short code for the staff typed fallback", () => {
+  it("keeps the support code in card details, not beneath the QR", () => {
     const p = buildPassJson(row(), card()) as any;
-    expect(p.barcodes[0].altText).toBe("Code ABC234");
+    expect(p.barcodes[0].altText).toBeUndefined();
     const codeField = p.storeCard.backFields.find((f: any) => f.key === "code");
     expect(codeField.value).toBe("ABC234");
     expect(codeField.changeMessage).toBeUndefined(); // must not add a third banner
@@ -511,7 +505,7 @@ describe("membership cards", () => {
     // Invariant 4: one scanner, both platforms, whatever the card kind.
     const r = memberRow();
     expect(passBarcode(r, memberCard()).message).toBe(r.serial);
-    expect(passBarcode(r, memberCard()).altText).toBe("Code " + r.short_code);
+    expect("altText" in passBarcode(r, memberCard())).toBe(false);
   });
 });
 
@@ -529,10 +523,9 @@ describe("benefitLines / benefitsText", () => {
  * What a shop calls its regulars, and who is holding the card.
  *
  * Both go in slots the card already had. The header was the fixed word
- * "Member"; the slot under the banner was the member NUMBER, and it still is —
- * nothing collects a name yet, and the privacy page promises we never ask for
- * one. The argument exists so that turning it on later is one line rather than
- * a redesign.
+ * "Member"; the slot under the banner was the member NUMBER, and older cards
+ * can still have no saved name. The optional argument lets new named members
+ * use that same slot without breaking those existing cards.
  */
 describe("a membership card's own words", () => {
   const memberCard = (o = {}) => card({ kind: "membership", ...o });

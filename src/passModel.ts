@@ -385,7 +385,7 @@ export function messageFieldValue(
 export function legalText(serial = ""): string {
   const base = config.baseUrl || "";
   const stop = serial ? `\nStop messages: ${base}/stop/${serial}` : "";
-  return `We never ask for your name, phone number or email.\n\nTerms: ${base}/terms\nPrivacy: ${base}/privacy${stop}`;
+  return `Your name and phone number are used for loyalty account lookup, not marketing, and are never sold.\n\nTerms: ${base}/terms\nPrivacy: ${base}/privacy${stop}`;
 }
 
 /**
@@ -419,12 +419,11 @@ export function legalText(serial = ""): string {
  * is the best moment this product gets, and a serial does nothing for them. So
  * its QR opens the landing page instead. It stops being stampable by camera as
  * a result — the staff scanner keys on a UUID shape (src/pages.ts) and a URL
- * fails that test. The typed short code and the recent-customer list still
- * work on it.
+ * fails that test. Its short support code still works through Scanner search.
  *
- * `altText` is printed under the barcode, so it has to describe what the code
- * actually IS. "Code K8FFZ3" under a QR that is not that code is a small lie
- * told to whoever is squinting at it.
+ * No alternative text is supplied. Apple and Google print it beneath the QR,
+ * where it adds visual clutter now that staff can search by customer details.
+ * The short code remains in the card's details view as a support fallback.
  *
  * NOTE: this bakes BASE_URL into every demo pass ever issued, alongside
  * webServiceURL and the art URLs. Point a new domain at the service and keep the
@@ -433,20 +432,11 @@ export function legalText(serial = ""): string {
 export function passBarcode(
   row: Pick<PassRow, "serial" | "short_code">,
   card: Pick<CardRow, "id">,
-): { message: string; altText: string } {
+): { message: string } {
   if (config.demoCardId && card.id === config.demoCardId) {
-    return {
-      message: `${config.baseUrl || ""}/?s=card`,
-      // An instruction, not the address. On a normal card this line is the
-      // typed fallback for when a camera will not read the code - but there is
-      // nothing to type here, because this card cannot be stamped and the
-      // barcode is a URL with a query string nobody would key in by hand. So it
-      // does the only useful job left: telling whoever is looking at the card
-      // why they would point a phone at it.
-      altText: "Scan for more info",
-    };
+    return { message: `${config.baseUrl || ""}/?s=card` };
   }
-  return { message: row.serial, altText: `Code ${row.short_code}` };
+  return { message: row.serial };
 }
 
 /**
@@ -472,11 +462,9 @@ export function buildPassJson(
   /**
    * The member's own name, on a membership card.
    *
-   * NOTHING PASSES THIS YET, and the default is what every card printed before
-   * the slot existed. The sign-up page asks for no name, email or phone and the
-   * privacy page promises exactly that — so until that promise is rewritten,
-   * this stays empty and the card shows the member NUMBER instead. The slot is
-   * here so that turning it on later is one argument rather than a redesign.
+   * Older cards can still have no saved name, so the empty default preserves
+   * their member number. New sign-ups collect the name before wallet buttons
+   * appear and can pass it here when their card is built.
    */
   memberName = "",
 ): Record<string, unknown> {
@@ -524,8 +512,6 @@ export function buildPassJson(
         // platforms cannot disagree about what is in the QR.
         message: barcode.message,
         messageEncoding: "iso-8859-1",
-        // Staff fallback: if the camera won't read, they type this code.
-        altText: barcode.altText,
       },
     ],
     storeCard: {
