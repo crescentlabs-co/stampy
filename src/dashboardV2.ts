@@ -1907,16 +1907,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // The allows flag decides what this dashboard offers, and a browser that
       // its own gate out is a gate anyone can switch off in devtools.
       S.account = body.account || null;
-      // An account that holds no shop. It happens when a shop is handed to
-      // somebody else: the login survives — deleting it would take an account
-      // away over a mis-click — but it owns nothing, and every tab below reads
-      // S.cards[0]. Say so plainly rather than render three empty tabs.
-      if (!S.cards.length) {
+      // Zero cards means two different things, and only one of them is a dead
+      // end. account is null only when the SHOP itself is gone — handed to
+      // somebody else, or never existed — and the login has nothing left to
+      // own. Say so plainly rather than render three empty tabs.
+      if (!S.cards.length && !S.account) {
         return void deadEnd(
           S.email,
           "This account does not have a shop. If that is a surprise, message whoever set your PunchMe up — they can hand it back.",
         );
       }
+      // The shop itself is still here; the owner just archived or deleted
+      // every card they had. That is a shop with nothing IN it yet, not a
+      // shop that was taken away — Create is the only screen that makes sense
+      // with no cards to show, so land there below instead of an empty Home.
       // The chrome is built HERE, inside app(), and never in the page the
       // server sends. authForm() and deadEnd() both take the whole of #app
       // over — so a navigation bar in the server's body would be visible to a
@@ -1936,7 +1940,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       wireChrome();
       tuckOnScroll();
       renderPinWarning();
-      render();
+      if (!S.cards.length) navigate("/create", { replace: true });
+      else render();
     }
 
     /** The shop's own name, which is what the top bar says instead of "Dashboard". */
