@@ -309,6 +309,61 @@ async function main(): Promise<void> {
     ok(Boolean(afterDesign?.logoVersion),
       "...while the artwork is still there after both saves");
 
+    // ---- And now somebody joins, which settles the rules for good ----
+    //
+    // The e2e suite proves the SERVER refuses to move them. This proves the
+    // screen an owner actually looks at says so, and stops offering a save it
+    // could not honour. A real pass with a real stamp, because that is what
+    // ACTIVE_PASS_SQL asks for and cardCounts is what the lock reads.
+    const merchant = await db.merchantForOwner(
+      (await db.getOwnerByEmail("ui@test.my"))!.id);
+    const joinCustomer = await db.createCustomer(merchant!.id);
+    const joinPass = await db.createPass({
+      serial: crypto.randomUUID(), cardId, customerId: joinCustomer.id, platform: "apple",
+      shortCode: db.generateShortCode(), authToken: "t".repeat(24),
+      stampCount: 1, stampsTarget: 10, reward: "Free croissant",
+    });
+    await db.logEvent(cardId, joinPass.serial, "stamp", { merchantId: merchant!.id });
+
+    await page.goto(BASE + "/dashboard/manage/rewards/" + cardId, { waitUntil: "networkidle" });
+    await page.waitForTimeout(2500);
+    await page.evaluate(`(() => {
+      for (const el of document.querySelectorAll("details.grp")) el.open = true;
+    })()`);
+    await page.waitForTimeout(400);
+    // The form's own accordion is a pair of buttons, not a <details>, so opening
+    // the outer fold does not open the reward half. Locked or not, these two
+    // headers still work — a locked section has to be READABLE, which is the
+    // whole reason the fields are disabled rather than dropped.
+    await page.locator('[data-open="reward"]').click();
+    await page.waitForTimeout(500);
+    const shut = (await page.evaluate(`(() => {
+      const note = document.querySelector(".locknote");
+      const reward = document.querySelector('[data-r="rewardName"]');
+      const name = document.querySelector('[data-r="name"]');
+      const danger = document.querySelector(".dzone");
+      return {
+        note: note ? (note.textContent || "") : "",
+        rewardDisabled: reward ? reward.disabled : null,
+        nameDisabled: name ? name.disabled : null,
+        rulesSave: Boolean(document.querySelector("[data-saverules]")),
+        design: Boolean(document.querySelector('[data-a="save"]')),
+        danger: danger ? (danger.textContent || "") : "",
+      };
+    })()`)) as {
+      note: string; rewardDisabled: boolean | null; nameDisabled: boolean | null;
+      rulesSave: boolean; design: boolean; danger: string;
+    };
+    ok(/rules are locked/.test(shut.note), "once somebody joins, the Rules section says so");
+    ok(shut.rewardDisabled === true, "...and the reward really cannot be edited");
+    ok(shut.nameDisabled === false,
+      "...while the card's NAME still can — what it is called is not what it promised");
+    ok(!shut.rulesSave, "...there is no Save on a section that cannot change");
+    ok(shut.design, "...but the Design section still saves, which is the point of keeping it");
+    ok(/Remove from my dashboard/.test(shut.danger),
+      "...and the Danger zone stops offering a delete once a card is out there");
+    ok(!/Delete this program/.test(shut.danger), "...it really is gone, not just reworded");
+
     // ---- the customer's page carries the design ----
     const signup = await fetch(BASE + "/c/" + cardId);
     ok(signup.status === 200, "the customer's sign-up page opens");
