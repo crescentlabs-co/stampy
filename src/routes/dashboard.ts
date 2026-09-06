@@ -28,6 +28,7 @@ import {
 import {
   cafeBannerVersion,
   cardCounts,
+  cardHasRealPass,
   cardCustomers,
   cafeLogoVersion,
   cardMetrics,
@@ -370,6 +371,11 @@ dashboardRouter.get("/api/overview", requireOwner, async (req: OwnerRequest, res
     out.push({
       ...(await designerCard(card, merchant?.name)),
       metrics: await cardMetrics(card.id),
+      // Whether Remove means DELETE or means archive — answered here rather
+      // than guessed in the browser, off the same predicate removeCard will
+      // use. The Edit screen labels its button from this, so it can no longer
+      // offer to delete a card the server is about to quietly archive.
+      deletable: !(await cardHasRealPass(card.id)),
     });
   }
   // Whether a PIN exists, never the PIN. It is stored as a scrypt hash and
@@ -511,6 +517,29 @@ dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) 
  * Was per-café (`/api/card/:id/rotate-pin`), which gave an owner with two cards
  * two PINs and two stamper links for one counter.
  */
+/**
+ * What a customer joining freezes: the earning rules and the reward.
+ *
+ * Read off cardFieldsFromBody (src/cardView.ts) — every key there that decides
+ * what a customer must do and what they get for it. If a new rule field is
+ * added there, it belongs in here too.
+ *
+ * `kind` is in the list, so the card TYPE can never change either. The Edit
+ * screen also hides the dropdown that used to offer it, but this is the half
+ * that actually stops it.
+ *
+ * Deliberately NOT here, because none of them is a promise to a customer: the
+ * card name, the shop name, the five colours, the band, the logo, the sign-up
+ * message, the average spend and the nudge wording.
+ */
+const LOCKED_ONCE_JOINED = [
+  "kind",
+  "reward", "rewardType", "rewardValue", "rewardPercent", "rewardCap",
+  "stampsTarget", "stampsStart", "stampsPerVisit",
+  "earnMode", "earnSpend", "earnPoints", "pointsTarget",
+  "milestones", "memberLabel", "benefits", "pointPresets",
+] as const;
+
 dashboardRouter.post("/api/staff-pin", requireOwner, async (req: OwnerRequest, res) => {
   const given = String((req.body ?? {}).pin ?? "").trim().slice(0, 12);
   // Blank means "pick one for me" — never the shared, guessable "1234".
@@ -529,6 +558,22 @@ dashboardRouter.post("/api/card/:id", requireOwner, async (req: OwnerRequest, re
   // deliberately does no authorisation of its own, because the console calls it
   // after a completely different check (requireAdmin).
   const body = (req.body ?? {}) as Record<string, unknown>;
+  // Once a real customer holds this card, its rules are settled for good.
+  //
+  // The Edit screen greys these fields out, but a gate the browser computes is
+  // a gate anyone can switch off in devtools — the same reasoning as planAllows
+  // — so the real one is here. cardCounts is the product's one definition of a
+  // customer, so a card the owner has only put on their OWN phone is not
+  // locked: a test pass is not a customer, and every count in the product
+  // already agrees about that.
+  //
+  // The fields are DROPPED, not refused. The design panel posts its whole form
+  // on every save, rules fields included — it holds them hidden so it can draw
+  // the card it is designing — so a 400 here would break saving the DESIGN of
+  // every live card, which is the one thing this screen must keep letting them
+  // do. Dropping writes back what was already there, which is what the panel
+  // was sending anyway.
+  if ((await cardCounts(cardId)).active > 0) for (const k of LOCKED_ONCE_JOINED) delete body[k];
   // The card's CURRENT kind goes in, because two of the clamps depend on it and
   // a save that only touched colours does not say what kind of card this is.
   const before = await getCard(cardId);

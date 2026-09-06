@@ -857,6 +857,18 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        programme is working behaviour — a card already in a wallet carries its
        own copy of the rules — so this explains what actually happens rather
        than disabling a field that is meant to work. */
+    /* The Danger zone. One boxed group at the foot of Edit so the two actions
+       that END something sit together and are not read as more settings. */
+    .dzone { border: 1px solid var(--bad); border-radius: var(--r);
+             padding: var(--s3); margin-top: var(--s4); }
+    .dzone h2.sec { margin-top: 0; color: var(--bad); }
+    .dzone p { margin: 0 0 var(--s2); }
+    .dzone .btn { width: auto; margin-top: var(--s2); }
+    .dzone .btn + .btn { margin-left: var(--s2); }
+    /* A locked rule is greyed and still legible. It is the answer to "what did
+       I promise these people", and a field faded to nothing does not answer. */
+    .rlock input:disabled, .rlock select:disabled, .rlock textarea:disabled,
+    .rlock button:disabled { opacity: .75; cursor: not-allowed; }
     .locknote { background: var(--ghost-bg); border-radius: var(--r); padding: var(--s3);
                 margin-top: var(--s3); font-size: var(--t-sm); line-height: var(--lh-read); color: var(--ink2); }
     /* Every programme has its own QR, which is the whole of "multiple
@@ -3442,6 +3454,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function rulesForm(card, opts) {
       const id = card.id;
       const locked = Boolean(opts && opts.locked);
+      // The Edit screen puts this inside a fold whose summary already says
+      // "Rules". Two of the same word, one under the other, reads as a mistake.
+      const heading = !(opts && opts.heading === false);
       const onChange = (opts && opts.onChange) || (() => {});
       const kind = card.kind || "stamp";
       const member = kind === "membership";
@@ -3678,7 +3693,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             ">" + n + (n === sug ? " (recommended)" : "") + "</option>");
         }
         body.innerHTML =
-          '<h2 class="sec first">Rules</h2>' +
+          (heading ? '<h2 class="sec first">Rules</h2>' : "") +
           '<label class="dlbl">Card name</label>' +
           '<input data-r="name" maxlength="60" placeholder="e.g. Coffee card" value="' +
             esc(r.name).replace(/"/g, "&quot;") + '">' +
@@ -4584,6 +4599,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
     function signupLink(card) { return location.origin + "/c/" + encodeURIComponent(card.id) + "?s=link"; }
 
+    /**
+     * The offer, in the owner's own words where they wrote any.
+     *
+     * One line, for the poster and the social post. The programme page uses
+     * detailRows instead, which answers the same question in three rows and has
+     * room to say how the card is EARNED — which this cannot.
+     */
+    function dealLine(card) {
+      if (card.kind === "membership") return card.reward || "Membership card";
+      if (card.kind === "points") return card.reward || "Points on every visit";
+      return "Collect " + card.stampsTarget + " stamps, get " + (card.reward || "a reward");
+    }
+
     function promotionDefault(card) {
       if (card.kind === "membership") {
         return { message: "Join " + (card.shopName || card.name || "our club"),
@@ -4877,28 +4905,55 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       if (!card) return notFoundScreen();
 
       const d = document.createElement("div");
-      const back = '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Rewards</p>';
-
       const m = card.metrics || {};
-      const enrolled = m.active > 0;
+      // The one definition of a customer this product has (see cardCounts on
+      // the server, which is what actually enforces the lock). A card the owner
+      // has only put on their OWN phone reads zero here, because a test pass is
+      // not a customer — and every number in the product already agrees.
+      const joined = m.active > 0;
+      // A DIFFERENT question, and not a second copy of the one above. Locking
+      // the rules asks whether a customer has joined. Deleting asks whether any
+      // real pass was ever issued — a card can be sitting on a phone before it
+      // has been stamped or confirmed, and deleting that orphans it forever
+      // with no way to tell the phone. The server answers this one, off the
+      // same predicate it will act on, so the button cannot promise a delete
+      // that then quietly turns into an archive.
+      const deletable = card.deletable === true;
       const over = Boolean(card.endedAt);
-      d.innerHTML = back +
+      // Which fold to arrive with open. A save re-renders this screen, and
+      // landing back with everything shut reads as the change being thrown
+      // away. Same trick, same query name, as the ready screen.
+      const want = new URLSearchParams(location.search).get("section");
+
+      const fold = (key, title, hint) =>
+        '<details class="grp"' + (want === key ? " open" : "") + ">" +
+          "<summary>" + esc(title) + '<span class="gh">' + esc(hint) + "</span></summary>" +
+          '<div data-mount="' + key + '"></div>' +
+        "</details>";
+
+      d.innerHTML =
+        '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Rewards</p>' +
         '<h2 class="sec first">' + esc(card.name || card.shopName) + "</h2>" +
         // The SAME badge the strip shows. This was a .pstat span with no CSS
         // anywhere, so it rendered as bare text run into the card's name.
         '<p class="cstat ' + statusOf(card).key + '">' + statusOf(card).label + "</p>" +
-        // No Performance block. Home's two charts answer how a programme is
-        // doing; the same figures computed on a second screen is how a headline
-        // came to disagree with the list under it, twice. This page is for
-        // changing a card, not for reading it.
-        '<h2 class="sec">Details</h2>' + detailRows(card) +
+        // The compact summary, and no more than that. Home's two charts answer
+        // how a programme is DOING; the same figures worked out again on a
+        // second screen is how a headline came to disagree with the list under
+        // it, twice. This screen is for changing a card, not for reading it.
+        detailRows(card) +
         (card.stampsStart ? '<div class="drow"><span>Welcome stamps</span><b>' +
           card.stampsStart + "</b></div>" : "") +
-        (enrolled ? lockNote(m.active) : "") +
-        // Ended is not gone, and the pill alone does not say so. This note used
-        // to appear only on the example programmes, which meant the one page
-        // where it is actually true never carried it.
-        (over ? endedNote() : "") +
+        (over
+          ? '<p class="muted" style="margin-top:var(--s3)">This card has ended, so nobody ' +
+            "new can sign up. Everyone who already holds a card keeps collecting on it.</p>"
+          : "") +
+        // Two sections and no third. There is no Type step, because the kind of
+        // card this is cannot change once it exists: everything a customer
+        // holds was built from it. The dropdown that used to offer it lived in
+        // the design panel and is switched off below.
+        fold("rules", "Rules", joined ? "Locked" : "How customers earn, and what they get") +
+        fold("design", "Design", "Colours, logo and artwork") +
         '<h2 class="sec">Share it</h2>' +
         '<div class="sharelist">' +
           // THIS card's own sign-up page, not the shop's. With more than one
@@ -4919,32 +4974,83 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // SHOP's QR before, which handed out whichever card the shop had.
         '<p class="muted">Every card has its own QR. This one belongs to this card ' +
         'and always will — print it, and it keeps working.</p></div>' +
-        '<h2 class="sec">Status</h2>' +
-        '<p class="muted">' + (over
-          ? "This card has ended, so nobody new can sign up. Everyone who already " +
-            "holds a card is still collecting on it and can still claim their reward."
-          : "Ending a card stops new sign-ups. Everyone already holding one keeps " +
-            "collecting on it, and keeps getting their reward.") + "</p>" +
-        '<button class="btn btn-ghost" style="width:auto;padding:11px 18px;margin-top:10px" data-end>' +
-        (over ? "Start sign-ups again" : "End sign-ups") + "</button>" +
-        // What removing this card will actually DO, said before the button
-        // rather than in a dialog after it. Which of the two happens is the
-        // server's answer, not a choice offered here: a card's id is inside
-        // every Android card it issued, so "delete it anyway" is not a thing an
-        // owner can be handed the consequences of in a confirm box.
-        '<h2 class="sec">Remove it</h2>' +
-        '<p class="muted">' + (enrolled
-          ? "People are holding this card, so removing it takes it off your " +
-            "dashboard and leaves every card already issued working. Nothing " +
-            "a customer has stops."
-          : "Nobody has ever been given this card, so removing it deletes it " +
-            "for good. That cannot be undone.") + "</p>" +
-        '<button class="btn btn-danger" style="width:auto;padding:11px 18px;margin-top:10px" data-remove>' +
-        (enrolled ? "Remove from my dashboard" : "Delete this card") + "</button>" +
-        '<h2 class="sec">What it looks like</h2>' +
-        '<div data-design></div>';
+        // Everything that ENDS something, in one box, at the bottom.
+        '<div class="dzone">' +
+          '<h2 class="sec">Danger zone</h2>' +
+          "<p>" + (over
+            ? "This card has ended, so nobody new can sign up. Everyone who already " +
+              "holds a card is still collecting on it and can still claim their reward."
+            : "Ending a card stops new sign-ups. Everyone already holding one keeps " +
+              "collecting on it, and keeps getting their reward.") + "</p>" +
+          '<button class="btn btn-ghost" data-end>' +
+          (over ? "Start sign-ups again" : "End sign-ups") + "</button>" +
+          // ONE of the two, never both. What is on offer follows the same count
+          // the server will use, so the button cannot promise something the
+          // server then refuses to do — which it used to, whenever a test card
+          // was the only thing standing between a card and a real delete.
+          '<p style="margin-top:var(--s4)">' + (!deletable
+            ? "This card has been given out, so it cannot be deleted. Removing it " +
+              "takes it off your dashboard and leaves every card already issued " +
+              "working. Nothing a customer has stops."
+            : "This card has never been given to anybody, so deleting it removes it " +
+              "for good, along with everything on it. That cannot be undone. A test " +
+              "card on your own phone does not count.") + "</p>" +
+          '<button class="btn btn-danger" data-remove>' +
+          (deletable ? "Delete this program" : "Remove from my dashboard") + "</button>" +
+        "</div>";
 
       d.querySelector("[data-back]").onclick = () => navigate("/manage/rewards");
+
+      // ---- Rules. The create flow's own form, and the only one now. ----
+      const rules = rulesForm(card, { locked: joined, heading: false });
+      const rmount = d.querySelector('[data-mount="rules"]');
+      if (joined) rmount.className = "rlock";
+      rmount.appendChild(rules.el);
+      if (!joined) {
+        const save = document.createElement("button");
+        save.className = "btn btn-neon";
+        save.style.marginTop = "14px";
+        save.textContent = "Save rules";
+        save.onclick = async () => {
+          // The same gate the wizard's Next uses, and for the same reason: it
+          // hands back the field to point at, so the answer and the arrow
+          // cannot disagree. Saving half a rule would publish it.
+          const stop = rules.blocked();
+          if (stop) {
+            stop.classList.remove("wshake");
+            void stop.offsetWidth;
+            stop.classList.add("wshake");
+            return;
+          }
+          save.disabled = true;
+          try {
+            await rules.save();
+            await refreshCards();
+            // Re-render, and this is not politeness. The design panel below
+            // holds its own copy of the rules — hidden, so it can draw the card
+            // it is designing — seeded when it was mounted. Leave it sitting
+            // there and the next design save writes that STALE copy back over
+            // the change just made. Remounting from the fresh card is what
+            // stops the two halves of this screen undoing each other.
+            navigate("/manage/rewards/" + card.id + "?section=rules", { replace: true });
+            toast("Saved.");
+          } finally { save.disabled = false; }
+        };
+        rmount.appendChild(save);
+      }
+
+      // ---- Design. showDetails:false is the whole point of this screen. ----
+      // It switches off the second rules editor buried in the design panel —
+      // the one with no guidance, no validation, and a Card type dropdown that
+      // could turn a live stamp card into a membership card. The fields stay in
+      // the DOM because the panel reads them to draw its preview; hidden, they
+      // are seeded from the card and can only be written back unchanged.
+      // showShop:false for the same reason it is off in the wizard: the shop
+      // name is asked once, in Rules, and two boxes for one setting means
+      // whichever saved last wins.
+      d.querySelector('[data-mount="design"]').appendChild(
+        designerFor(card, { showDetails: false, showShop: false }));
+
       // Two taps, never a browser dialog: a browser lets somebody silence
       // those, after which confirm() answers "no" in silence.
       arm(d.querySelector("[data-end]"),
@@ -4958,43 +5064,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           // frees the single-programme slot, so Create changes too, and a local
           // edit would leave that screen saying the opposite.
           await refreshCards();
-          navigate("/manage/rewards/" + card.id, true);
+          navigate("/manage/rewards/" + card.id, { replace: true });
           toast(over ? "Sign-ups are open again." : "Sign-ups closed. Existing cards still work.");
         });
       // A box, not a second tap. Two-tap arming is right on a counter phone
       // being used at speed by somebody who may not have chosen to press it;
       // this is an owner, sitting still, doing something that cannot be undone,
       // and it deserves to be asked properly.
-      d.querySelector("[data-remove]").onclick = () => removeCardFlow(card, enrolled);
-      d.querySelector("[data-design]").appendChild(designerFor(card));
+      d.querySelector("[data-remove]").onclick = () => removeCardFlow(card, !deletable);
       return d;
-    }
-
-    /** The offer, in the owner's own words where they wrote any. */
-    function dealLine(card) {
-      if (card.kind === "membership") return card.reward || "Membership card";
-      if (card.kind === "points") return card.reward || "Points on every visit";
-      return "Collect " + card.stampsTarget + " stamps, get " + (card.reward || "a reward");
-    }
-
-    function endedNote() {
-      return '<h2 class="sec">Status</h2><p class="muted">This card has ended, so nobody ' +
-        "new can sign up. Everyone who already holds a card keeps collecting on it.</p>";
-    }
-
-    /**
-     * Shown once anyone is enrolled — and shown, not enforced.
-     *
-     * Changing a live programme is deliberate, working behaviour: a card
-     * already in a wallet carries its own copy of the rules, so raising a
-     * target from 10 to 12 this morning only affects people from their next
-     * reward onwards. Actually disabling these fields would delete a feature.
-     */
-    function lockNote(n) {
-      return '<div class="locknote"><strong>' + n +
-        (n === 1 ? " customer is" : " customers are") + " already on this card.</strong> " +
-        "You can still change it — but the deal each of them was promised stays as it was " +
-        "until they claim their next reward.</div>";
     }
 
     // Nothing stores a campaign, so no id can name one. The page stays wired up

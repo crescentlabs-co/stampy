@@ -2196,16 +2196,40 @@ export async function cardsForMerchant(merchantId: string): Promise<CardRow[]> {
  * is the same either way — get it off my dashboard — and refusing outright
  * would leave them with a card they cannot remove and no way forward.
  *
- * NOTHING HERE DELETES AN EVENT, and that is what decides the test.
+ * THE TEST IS "HAS A REAL CUSTOMER EVER HELD THIS?", and nothing weaker.
  *
- * events.card_id references cards with no cascade, so a card can only be
- * removed once it has no event rows — and the append-only rule (CLAUDE.md)
- * says we may not clear them to make room. hardDeleteMerchant is the one
- * documented exception and takes the whole shop with it, so nothing survives
- * to disagree; this takes one card out of a shop that carries on, so it cannot
- * copy that. A card with any history at all is therefore archived, which is
- * the honest outcome anyway: something happened on it, and the log is where
- * that is kept.
+ * It used to be "has ANYTHING ever touched this?" — any pass, any event, any
+ * message. That sounds safe and was wrong in the one case an owner meets: they
+ * publish a card, put a TEST one on their own phone to look at it, decide the
+ * whole thing is wrong, and press Delete. One test pass, and the card was
+ * archived instead of deleted. The button said "Delete this card" and the card
+ * survived, which is the one lie an owner cannot check.
+ *
+ * So the question is CARD_HAS_REAL_PASS_SQL: has this card ever issued a pass
+ * that was not the owner's own test one? The dashboard labels its button off
+ * that same predicate, so the button and this decision cannot disagree.
+ *
+ * It is deliberately wider than "has a customer joined". Locking the RULES asks
+ * about customers, and uses ACTIVE_PASS_SQL to do it. Deleting asks about
+ * wallets, which is not the same question: a pass can be sitting on a phone
+ * before it has been stamped or confirmed, and deleting it would orphan a card
+ * we can never tell the phone about. Two questions, two answers, both honest.
+ *
+ * THIS DELETES EVENT ROWS, and that is a second exception to the append-only
+ * rule (CLAUDE.md), not a loosening of it.
+ *
+ * The rule exists so a CORRECTION can never rewrite history and leave a metric
+ * disagreeing with the log. Here the card and its entire log go together, in
+ * one transaction, exactly as hardDeleteMerchant takes a whole shop — so
+ * nothing survives to disagree with anything. And no customer ever held this
+ * card, so no serial inside anybody's wallet is orphaned by it, which is the
+ * harm the old test was really guarding against. Do not widen this any
+ * further: a card ONE real customer has held is archived, and stays archived.
+ *
+ * The pass rows swept up here are the owner's own test cards plus any that
+ * never reached a wallet (a bot, a prefetch, a cancelled Add sheet).
+ * pruneAbandonedPasses already deletes that second group on a timer, for the
+ * same reason.
  */
 export type CardRemoval = { ok: true; outcome: "deleted" | "archived" } | { ok: false };
 
@@ -2221,25 +2245,13 @@ export async function removeCard(cardId: string): Promise<CardRemoval> {
       await client.query("ROLLBACK");
       return { ok: false };
     }
-    // Has anything at all ever happened on this card?
-    //
-    // Passes, unfiltered — a pruned pass row still had a serial inside
-    // somebody's wallet at some point, and ACTIVE_PASS_SQL exists precisely
-    // because "gone from the table" is not the same as "never existed".
-    //
-    // Events and messages for the reason above: they reference the card with no
-    // cascade and may not be cleared, so their presence is what makes this
-    // card un-deletable. A poster that was scanned once has a join_view, and
-    // that scan really happened.
-    const used = await client.query<{ n: string }>(
-      `SELECT (
-         (SELECT count(*) FROM passes   WHERE card_id = $1) +
-         (SELECT count(*) FROM events   WHERE card_id = $1) +
-         (SELECT count(*) FROM messages WHERE card_id = $1)
-       )::text AS n`,
+    // Has this card ever issued a real pass? One shared predicate, so the
+    // Delete button on the dashboard and this decision cannot disagree.
+    const held = await client.query<{ yes: boolean }>(
+      `SELECT ${CARD_HAS_REAL_PASS_SQL} AS yes`,
       [cardId],
     );
-    if (Number(used.rows[0]?.n ?? "1") > 0) {
+    if (held.rows[0]?.yes !== false) {
       await client.query(
         `UPDATE cards SET archived_at = COALESCE(archived_at, now()) WHERE id = $1`,
         [cardId],
@@ -2247,10 +2259,22 @@ export async function removeCard(cardId: string): Promise<CardRemoval> {
       await client.query("COMMIT");
       return { ok: true, outcome: "archived" };
     }
-    // Nothing has ever happened on it. The art, the strips and owner_cards all
-    // cascade from cards — owner_cards is listed anyway so the order is
-    // readable rather than implied — and by the check above there is no pass,
-    // no event and no message left to reference it.
+    // Nobody ever held it, so the card and everything that references it go
+    // together. Child rows first and in this order, because none of these three
+    // cascade: messages.card_id and events.card_id both point at cards, and
+    // messages.serial names a pass. registrations DO cascade off passes, and
+    // the art, the strips and owner_cards cascade off cards — owner_cards is
+    // listed anyway so the order reads rather than being implied.
+    //
+    // The test CUSTOMER rows that a test pass created are deliberately left
+    // alone. They are scoped to the merchant, no count reads the customers
+    // table directly (every one of them goes through passes), and they go when
+    // the shop does.
+    // ponytail: leaves orphan test-customer rows; sweep them here only if
+    // something ever starts counting `customers` rows on their own.
+    await client.query(`DELETE FROM messages WHERE card_id = $1`, [cardId]);
+    await client.query(`DELETE FROM events WHERE card_id = $1`, [cardId]);
+    await client.query(`DELETE FROM passes WHERE card_id = $1`, [cardId]);
     await client.query(`DELETE FROM owner_cards WHERE card_id = $1`, [cardId]);
     await client.query(`DELETE FROM cards WHERE id = $1`, [cardId]);
     await client.query("COMMIT");
@@ -2994,6 +3018,36 @@ const LAST_VISIT_SQL = `COALESCE(
  * Assumes the passes table is aliased `p`.
  */
 const REAL_PASS_SQL = `p.is_test = false`;
+
+/**
+ * "This card has minted a pass that was not a test."
+ *
+ * The one question that decides whether a card can be DELETED, asked in one
+ * place because two readers ask it: removeCard, which acts on it, and the
+ * dashboard overview, which labels a button from it. Two copies of this would
+ * eventually disagree, and the disagreement would read as a button offering to
+ * delete something the server then quietly archives.
+ *
+ * Note what it does NOT use: ACTIVE_PASS_SQL. That asks whether a pass was
+ * stamped, is registered, or was ever confirmed in a wallet — and a Google
+ * customer who added their card this morning and has not been stamped yet
+ * satisfies none of the three. They are holding a real card all the same, and
+ * their serial is inside it. Deleting that is permanent and cannot be told to
+ * the phone, so the test is the wider, safer one: any real pass at all.
+ *
+ * Assumes the passes table is aliased `p` and the card id is $1.
+ */
+const CARD_HAS_REAL_PASS_SQL =
+  `EXISTS (SELECT 1 FROM passes p WHERE p.card_id = $1 AND ${REAL_PASS_SQL})`;
+
+/** Whether this card has ever issued a pass to somebody other than its owner. */
+export async function cardHasRealPass(cardId: string): Promise<boolean> {
+  const res = await getPool().query<{ yes: boolean }>(
+    `SELECT ${CARD_HAS_REAL_PASS_SQL} AS yes`,
+    [cardId],
+  );
+  return Boolean(res.rows[0]?.yes);
+}
 
 // A pass row alone proves nothing: it is written on the /enroll hit, before iOS
 // even shows the Add sheet, so prefetches, bots and cancelled sheets all left

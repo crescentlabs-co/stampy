@@ -1775,7 +1775,7 @@ describe("dashboard information architecture", () => {
     expect(shop).not.toContain("/poster");
     expect(shop).not.toContain("?s=link");
     const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"),
-                              html.indexOf("function dealLine(card)"));
+                              html.indexOf("function campaignDetailScreen()"));
     expect(detail).toContain("/poster");
     expect(detail).toContain("?s=link");
   });
@@ -3730,7 +3730,8 @@ describe("the customers screen", () => {
 
 describe("the manage screens", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
-  const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"), html.indexOf("function dealLine(card)"));
+  const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"),
+                            html.indexOf("function campaignDetailScreen()"));
 
   /**
    * ONE pane, and no switch.
@@ -3772,10 +3773,9 @@ describe("the manage screens", () => {
     expect(manage).not.toContain('>Performance');
     expect(manage).not.toContain("metrics.active");
     expect(manage).not.toContain("metrics.stamps");
-    // The one figure that stays is the lock note, which is a warning about
-    // EDITING — the deal is frozen for whoever already holds the card — not a
-    // report on how the programme is doing.
-    expect(manage).toContain("lockNote(m.active)");
+    // Not even the customer count. The only thing Manage asks m.active is
+    // whether the rules are locked, and that is on the programme page below,
+    // not in the carousel.
   });
 
   /**
@@ -4015,17 +4015,33 @@ describe("the manage screens", () => {
   });
 
   /**
-   * Shown, not enforced. A card already in a wallet carries its own copy of
-   * the rules, so changing a live programme is deliberate working behaviour —
-   * actually disabling these fields would delete a feature the product
-   * documents. The note explains what really happens instead.
+   * ENFORCED now, not explained.
+   *
+   * This used to be a note saying "you can still change it", because a card in
+   * a wallet carries its own copy of the rules and a change only reaches each
+   * customer at their next reward. That is still true. It is no longer offered:
+   * once somebody has joined, the earning rules and the reward are settled.
+   *
+   * The browser half is here. The half that matters is on the server, in
+   * LOCKED_ONCE_JOINED (src/routes/dashboard.ts) — a gate the browser computes
+   * is a gate anyone can switch off in devtools.
    */
-  it("explains the lock on an enrolled programme rather than applying one", () => {
-    expect(detail).toContain("enrolled ? lockNote(m.active)");
-    const note = html.slice(html.indexOf("function lockNote(n)"), html.indexOf("function campaignDetailScreen"));
-    expect(note).toContain("You can still change it");
-    expect(note).not.toContain("disabled");
-    expect(note).not.toContain("readOnly");
+  it("locks the rules once a real customer has joined", () => {
+    expect(detail).toContain("const joined = m.active > 0");
+    expect(detail).toContain("rulesForm(card, { locked: joined, heading: false })");
+    // Read-only, and read: the numbers stay on screen, because "what did I
+    // promise these people" is a fair question with no other answer.
+    expect(detail).toContain('rmount.className = "rlock"');
+    // No Save button at all when locked — a button that cannot work is worse
+    // than no button.
+    expect(detail).toContain("if (!joined) {");
+    const form = html.slice(html.indexOf("function rulesForm(card, opts)"),
+                            html.indexOf("function createDesignScreen(id)"));
+    expect(form).toContain("el.disabled = true");
+    expect(form).toContain("Your program rules are locked");
+    // The two names are NOT rules. What a card is called is not what it
+    // promised, so those two boxes stay live.
+    expect(form).toContain('if (k !== "name" && k !== "shopName") el.disabled = true');
   });
 
   /**
@@ -4062,7 +4078,11 @@ describe("the manage screens", () => {
    */
   it("mounts the one designer through one function", () => {
     expect(html).toContain("function designerFor(card, extra)");
-    expect(detail).toContain("designerFor(card)");
+    // With showDetails:false, which is the point of the Edit screen: it turns
+    // off the second rules editor inside the panel, and with it the Card type
+    // dropdown that could turn a live stamp card into a membership card.
+    expect(detail).toContain("designerFor(card, { showDetails: false, showShop: false })");
+    expect(detail).not.toContain("designerFor(card))");
     const mount = html.slice(html.indexOf("function designerFor(card, extra)"), html.indexOf("let armedBtn"));
     for (const key of ["path:", "apiBase:", "artUrl:", "customersPath:", "saveLabel:", "onRulesSaved:"]) {
       expect(mount).toContain(key);
@@ -4442,7 +4462,7 @@ describe("the screen builders, actually run", () => {
       'const ROOT = "/dashboard";' +
       cut("const KIND_LABEL =", "function manageScreen()") +
       cut("function custCard(x)", "/**\n     * What happened at the counter today.") +
-      cut("function dealLine(card)", "function endedNote()") +
+      cut("function dealLine(card)", "function promotionDefault(card)") +
       "return { custCard, dealLine, segLabel, KIND_LABEL };",
   )();
 
@@ -4466,6 +4486,8 @@ describe("the screen builders, actually run", () => {
    * confident nonsense that makes a whole screen untrustworthy.
    */
 
+  // Still here, and still tested: the programme page stopped using it, but the
+  // poster and the social post are one line each and this is that line.
   it("describes the deal for each kind of card", () => {
     expect(B.dealLine({ kind: "stamp", stampsTarget: 10, reward: "a free coffee" }))
       .toBe("Collect 10 stamps, get a free coffee");

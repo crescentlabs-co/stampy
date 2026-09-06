@@ -30,7 +30,7 @@ async function main() {
   // it again where the closed behaviour is what is being asserted.
   process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
-  const { migrate, ensureEnvStamp, liveCardsForMerchant, cardsForMerchant, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, removeCard, merchantForOwner: ownerMerchant } =
+  const { migrate, ensureEnvStamp, liveCardsForMerchant, cardsForMerchant, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, removeCard, cardHasRealPass, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -1931,7 +1931,10 @@ async function main() {
   const ownerOv = JSON.parse((await get("/dashboard/api/overview", { headers: { cookie: cookieNow } })).body);
   const ownerCard = ownerOv.cards.find((c: any) => c.id === "default");
   const adminCard = (await adminGet("/admin/api/card/default/design-state")).card;
-  const { metrics: _drop, ...ownerShape } = ownerCard;
+  // metrics and deletable are dashboard chrome, not part of the card the
+  // designer is handed — the console has no use for either and is not sent
+  // them. Everything BELOW this line still has to match exactly.
+  const { metrics: _drop, deletable: _drop2, ...ownerShape } = ownerCard;
   expect(
     JSON.stringify(ownerShape, Object.keys(ownerShape).sort()) ===
       JSON.stringify(adminCard, Object.keys(ownerShape).sort()),
@@ -3424,18 +3427,111 @@ async function main() {
       expect(!(await cardsForMerchant(merch.id)).some((x) => x.id === used.id),
         "...while the owner stops seeing it");
 
-      // A card with HISTORY but no pass is archived too: events reference it
-      // with no cascade and may never be deleted, so there is nothing to be
-      // done but hide it.
+      // A card that was SCANNED but never taken is deleted, and its log goes
+      // with it. This used to be archived, because any event row at all blocked
+      // the delete — which meant an owner who put a test card on their own
+      // phone, or simply opened their own sign-up page once, could never delete
+      // the card they had just decided was wrong. The append-only rule exists so
+      // a CORRECTION cannot leave a metric disagreeing with the log; here the
+      // card and its whole log go together, so nothing is left to disagree.
       const scanned = await mkOne("Scanned once");
       await logEvent(scanned.id, "", "join_view", { merchantId: merch.id });
       const hist = await removeCard(scanned.id);
-      expect(hist.ok && hist.outcome === "archived",
-        "a card with history but no pass is archived, because its log may not be deleted");
-      expect((await getCard(scanned.id)) !== null, "...so its row and its log both survive");
+      expect(hist.ok && hist.outcome === "deleted",
+        "a card scanned but never taken is deleted, and takes its log with it");
+      expect((await getCard(scanned.id)) === null, "...so its row is really gone");
+      const leftover = await getPool().query(
+        "SELECT count(*)::int AS n FROM events WHERE card_id = $1", [scanned.id]);
+      expect(leftover.rows[0].n === 0, "...and no event row is left pointing at a card that is gone");
+
+      // THE ONE THIS CHANGE IS FOR. A test card is a real pass in a real wallet
+      // — the owner's own — and it must not stand between them and deleting a
+      // card nobody else has ever seen.
+      const tried = await mkOne("Tried it myself");
+      const testPass = await createPass({
+        serial: crypto.randomUUID(), cardId: tried.id, customerId: null, platform: "apple",
+        shortCode: generateShortCode(), authToken: "t".repeat(24),
+        stampCount: 0, stampsTarget: 10, reward: "Free tea", isTest: true,
+      });
+      await logEvent(tried.id, testPass.serial, "stamp", { merchantId: merch.id });
+      expect((await cardHasRealPass(tried.id)) === false,
+        "a card whose only pass is the owner's test one has issued nothing real");
+      const gone = await removeCard(tried.id);
+      expect(gone.ok && gone.outcome === "deleted", "so it deletes, test card and all");
+      expect((await getPass(testPass.serial)) === null, "...taking the test pass with it");
+
+      // And the button says the same thing the server will do. One predicate,
+      // two readers — this is the check that they have not drifted apart.
+      const shown = await mkOne("Shown in the dashboard");
+      expect((await cardHasRealPass(shown.id)) === false, "a fresh card is deletable");
+      await mk("apple", (await mkCustomer(merch.id)).id, shown.id);
+      expect((await cardHasRealPass(shown.id)) === true,
+        "...and stops being deletable the moment it issues one real pass, stamped or not");
 
       expect((await removeCard("no-such-card-at-all")).ok === false,
         "removing a card that does not exist is refused");
+    }
+
+    // ---- The rules lock, over HTTP, because that is where it has to hold. ----
+    //
+    // The Edit screen greys these fields out, but a gate the browser computes
+    // is a gate anyone can switch off in devtools. This drives the route the
+    // way a crafted request would: it sends the locked fields anyway and reads
+    // the card back to see whether they moved.
+    {
+      const lockOwner = await getOwnerByEmail("owner@test.my");
+      const lockMerch = await ownerMerchant(lockOwner!.id);
+      const locked = await createCard({
+        merchantId: lockMerch!.id, name: "Locked rules", reward: "Free tea",
+        stampsTarget: 10, stampsStart: 1,
+      });
+      await linkOwnerCard(lockOwner!.id, locked.id);
+      const saveCard = (payload: unknown) =>
+        fetch(base + "/dashboard/api/card/" + locked.id, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", cookie: cookieNow },
+          body: JSON.stringify(payload),
+        });
+
+      // Nobody has joined yet, so the rules are still the owner's to change.
+      expect((await saveCard({ stampsTarget: 12 })).status === 200, "an unlocked card takes a rules save");
+      expect((await getCard(locked.id))!.stamps_target === 12,
+        "a card nobody holds can still change its rules");
+
+      // THE POINT OF is_test. The owner puts the card on their own phone to
+      // look at it. That must not settle the rules on them.
+      const ownPhone = await createPass({
+        serial: crypto.randomUUID(), cardId: locked.id, customerId: null, platform: "apple",
+        shortCode: generateShortCode(), authToken: "t".repeat(24),
+        stampCount: 0, stampsTarget: 12, reward: "Free tea", isTest: true,
+      });
+      await logEvent(locked.id, ownPhone.serial, "stamp", { merchantId: lockMerch!.id });
+      await saveCard({ stampsTarget: 14 });
+      expect((await getCard(locked.id))!.stamps_target === 14,
+        "the owner's own test card does not lock the rules");
+
+      // A real person joins and is stamped. Now the promise is made.
+      const joiner = await mk("apple", (await mkCustomer(lockMerch!.id)).id, locked.id);
+      await logEvent(locked.id, joiner.serial, "stamp", { merchantId: lockMerch!.id });
+      const after = await saveCard({
+        stampsTarget: 20, kind: "membership", reward: "Free cake",
+        stampsPerVisit: 5, stampsStart: 9, bg: "#123456",
+      });
+      // 200, not 400. The design panel posts the rules fields on EVERY save —
+      // it holds them hidden so it can draw the card it is designing — so
+      // refusing the request would break saving the design of every live card,
+      // which is the one thing this screen must go on letting them do. The
+      // fields are dropped instead.
+      expect(after.status === 200, "a locked card still accepts the save");
+      const settled = (await getCard(locked.id))!;
+      expect(settled.stamps_target === 14, "...but the target it promised is unchanged");
+      expect(settled.kind !== "membership", "...the card TYPE cannot change either");
+      expect(settled.reward === "Free tea", "...nor the reward");
+      expect(settled.stamps_per_visit !== 5, "...nor what a visit is worth");
+      expect(settled.stamps_start !== 9, "...nor the welcome stamps");
+      // And the half that is not a promise still saves, in the same request.
+      expect(settled.background_color === "rgb(18, 52, 86)",
+        "...while the colour, which promises a customer nothing, saves as normal");
     }
 
     // How a points card EARNS, over HTTP, because the sum has to happen on this
