@@ -118,9 +118,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        and it belongs beside the title rather than above the chart. */
     .home { display: flex; flex-direction: column; }
     .home-main { order: 2; }
-    .homehead { display: flex; align-items: center; justify-content: space-between;
+    .homehead, .ehead { display: flex; align-items: center; justify-content: space-between;
                 gap: var(--s3); flex-wrap: wrap; margin: var(--s2) 0 var(--s3); }
-    .homehead .sec { margin: 0; }
+    .homehead .sec, .ehead .sec { margin: 0; }
+    /* The Edit screen's two sections. .grp sits 8px from the next one, which is
+       right for the Customers list where the folds are ONE list — and wrong
+       here, where they are two separate things and read as a single broken
+       block. They also carry their own ground, so the page can tell them apart
+       at a glance whether they are open or shut. */
+    .esec { margin-bottom: var(--s3); }
     /* A .seg shrunk to sit on a heading row without towering over it: reading
        size, and the smallest padding on the scale top and bottom. The labels
        are "7d" and "30d" for the same reason — three words would not fit beside
@@ -375,23 +381,35 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        the dot carries the colour so the word never has to be read to get the
        gist, and the word carries the meaning so the colour never has to be. */
     /* Centred, over a strip that is centred. */
-    .cstat { display: flex; align-items: center; justify-content: center;
-             gap: var(--s2); margin: 0 0 var(--s2);
-             font-size: var(--t-sm); font-weight: 700; color: var(--muted);
+    .cstat { display: inline-flex; align-items: center; justify-content: center;
+             gap: var(--s2); margin: 0; padding: var(--s1) var(--s3);
+             border: 1px solid currentColor; border-radius: 999px;
+             background: transparent;
+             font-size: var(--dashboard-interface-size); font-weight: 700; color: var(--muted);
              letter-spacing: var(--tr-sm); min-height: 18px; }
     .cstat::before { content: ""; width: 8px; height: 8px; border-radius: 999px;
                      background: currentColor; flex: none; }
     .cstat.live  { color: #2e7d4f; }
     .cstat.draft { color: var(--muted); }
     .cstat.ended { color: #8a6100; }
-    /* Nothing selected — the add tile. No dot, because there is no state. */
+    /* Nothing selected — the add tile. No dot and no pill, because there is no
+       state: an empty outline sitting there reads as a control that failed to
+       load rather than as nothing to say. */
+    .cstat.none { border-color: transparent; }
     .cstat.none::before { display: none; }
+    /* The card's own row: which face you are looking at, and what state it is
+       in, centred together under the card. The state used to sit ABOVE the
+       card, a long way from everything else that describes it. */
+    .cardmeta { display: flex; align-items: center; justify-content: center;
+                gap: var(--s2); flex-wrap: wrap; margin: 0 0 var(--s3); }
+    .cardmeta .dsurf { margin: 0; }
     /* The add tile is not a card, so the body under it is empty — but it keeps
        its height. Without this the page was 404px shorter the instant that tile
        centred, and the scroll container reflowed under your finger mid-swipe,
        which is what "swiping to the last one sticks" actually was. */
     [data-cardbody] { min-height: 300px; }
-    /* The surface switcher sits UNDER the card in Manage, tight against it. */
+    /* The surface switcher sits UNDER the card in Manage, tight against it,
+       and now shares that row with the status pill — see .cardmeta. */
     .carwrap + .dsurf { margin: 0 0 var(--s3); }
     .addtile { display: flex; flex-direction: column; align-items: center;
                justify-content: center; gap: var(--s2); min-height: 190px;
@@ -3902,9 +3920,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // work out from looking at it.
         showShop: false,
         // "Finish and publish" below already saves the design, so a second
-        // Save inside the panel was two buttons for one job.
+        // Save inside the panel was two buttons for one job. It was also on
+        // screen despite this, for a long time: the panel hid it with a hidden
+        // attribute, which does nothing to a .btn, because an element's own
+        // display beats the attribute. It is not rendered at all now.
         hideSave: true,
-        saveLabel: "Save design",
+        // The label the panel's own toasts name — "picture ready, press X" —
+        // so it has to be the button actually in front of the owner. It said
+        // "Save design", which was the name of the button that should not have
+        // been there, and once it was gone the toasts pointed at nothing.
+        saveLabel: "Finish and publish",
         customersPath: null,
       });
       body.querySelector("[data-design]").appendChild(panel);
@@ -4262,12 +4287,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         .map((c) => ({ card: c }));
 
       host.innerHTML =
-        // What state the card you are looking at is in, above the card and
-        // changing as you swipe. Three states, not two: a card whose sign-ups
-        // have closed is still collecting and still paying out for everyone
-        // holding one, so calling it Active would be wrong — and it was the one
-        // state this screen could not show at all.
-        '<p class="cstat" data-cstat></p>' +
         // The arrows are the keyboard's way through the strip. Swiping is a
         // touchscreen gesture and a scroll-snap strip offers nothing else, so
         // without these a keyboard could reach card one and stop there.
@@ -4278,14 +4297,23 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<button type="button" class="carnav next" data-car-next aria-label="Next card">' +
             ICON_CHEV_R + "</button>" +
         "</div>" +
-        // Under the card, tight against it: it switches which face of THAT card
-        // you are looking at, and it used to sit above the strip in a header row
-        // of its own, a long way from the thing it changes.
-        '<div class="dsurf" data-faces role="tablist">' +
-          '<button type="button" class="dsurfbtn on" data-face="apple" role="tab"' +
-            ' aria-selected="true" aria-label="iPhone">${APPLE_GLYPH}</button>' +
-          '<button type="button" class="dsurfbtn" data-face="google" role="tab"' +
-            ' aria-selected="false" aria-label="Android">${GOOGLE_GLYPH}</button>' +
+        // ONE row under the card, centred: which face you are looking at, and
+        // what state the card is in. Both are facts about the card directly
+        // above them, and the state used to be stranded above the strip instead,
+        // where nothing else on the screen was.
+        //
+        // Three states, not two: a card whose sign-ups have closed is still
+        // collecting and still paying out for everyone holding one, so calling
+        // it Active would be wrong — and it was the one state this screen could
+        // not show at all.
+        '<div class="cardmeta">' +
+          '<div class="dsurf" data-faces role="tablist">' +
+            '<button type="button" class="dsurfbtn on" data-face="apple" role="tab"' +
+              ' aria-selected="true" aria-label="iPhone">${APPLE_GLYPH}</button>' +
+            '<button type="button" class="dsurfbtn" data-face="google" role="tab"' +
+              ' aria-selected="false" aria-label="Android">${GOOGLE_GLYPH}</button>' +
+          "</div>" +
+          '<p class="cstat" data-cstat></p>' +
         "</div>" +
         '<div data-cardbody></div>';
 
@@ -4948,32 +4976,34 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // that then quietly turns into an archive.
       const deletable = card.deletable === true;
       const over = Boolean(card.endedAt);
-      // Which fold to arrive with open. A save re-renders this screen, and
-      // landing back with everything shut reads as the change being thrown
-      // away. Same trick, same query name, as the ready screen.
-      //
-      // With nothing asked for, open the one they can actually change: Rules
-      // normally, Design once the rules are settled. Both shut would leave an
-      // owner who pressed Edit looking at a summary and two closed headings.
+      // Which fold to arrive with open. Setup normally; Design once the rules
+      // are settled, because that is then the only thing here that can change.
       const want = new URLSearchParams(location.search).get("section") ||
-        (joined ? "design" : "rules");
+        (joined ? "design" : "setup");
 
       const fold = (key, title, hint) =>
-        '<details class="grp"' + (want === key ? " open" : "") + ">" +
+        '<details class="grp esec"' + (want === key ? " open" : "") + ">" +
           "<summary>" + esc(title) + '<span class="gh">' + esc(hint) + "</span></summary>" +
           '<div data-mount="' + key + '"></div>' +
         "</details>";
 
       d.innerHTML =
         '<p class="muted" data-back style="margin:0 0 6px;cursor:pointer">← Rewards</p>' +
-        '<h2 class="sec first">' + esc(card.name || card.shopName) + "</h2>" +
-        // The SAME badge the strip shows. This was a .pstat span with no CSS
-        // anywhere, so it rendered as bare text run into the card's name.
-        '<p class="cstat ' + statusOf(card).key + '">' + statusOf(card).label + "</p>" +
+        // The title says what the SCREEN is, and the pill beside it says what
+        // the card is. Same row, same layout the Home header uses — the state
+        // was a full-width bar of its own under the title, which is what made
+        // this page read as broken before anything else on it did.
+        '<div class="ehead">' +
+          '<h2 class="sec first">Edit card</h2>' +
+          '<p class="cstat ' + statusOf(card).key + '">' + statusOf(card).label + "</p>" +
+        "</div>" +
         // The compact summary, and no more than that. Home's two charts answer
         // how a programme is DOING; the same figures worked out again on a
         // second screen is how a headline came to disagree with the list under
         // it, twice. This screen is for changing a card, not for reading it.
+        //
+        // It also carries its whole weight when the rules are locked: it is
+        // then the only place the programme's terms are written down.
         detailRows(card) +
         (card.stampsStart ? '<div class="drow"><span>Welcome stamps</span><b>' +
           card.stampsStart + "</b></div>" : "") +
@@ -4985,28 +5015,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // card this is cannot change once it exists: everything a customer
         // holds was built from it. The dropdown that used to offer it lived in
         // the design panel and is switched off below.
-        fold("rules", "Rules", joined ? "Locked" : "How customers earn, and what they get") +
+        //
+        // No "Share it" either. The Share button on the Manage carousel already
+        // offers the sign-up page, the poster and the customer page — the same
+        // three links, one tap away — so this was a copy of a screen next door.
+        fold("setup", "Setup", joined ? "Locked" : "How customers earn, and what they get") +
         fold("design", "Design", "Colours, logo and artwork") +
-        '<h2 class="sec">Share it</h2>' +
-        '<div class="sharelist">' +
-          // THIS card's own sign-up page, not the shop's. With more than one
-          // card the shop link cannot say which card it means, and the owner
-          // is standing on the screen for one of them.
-          '<a href="/c/' + esc(card.id) + '?s=link" target="_blank">' +
-            '<span>Sign-up page<span class="sub2">The link and the QR customers scan</span></span>' +
-            '<span class="arr">open →</span></a>' +
-          '<a href="/c/' + esc(card.id) + '/poster" target="_blank">' +
-            '<span>Printable poster<span class="sub2">The QR, ready for the counter</span></span>' +
-            '<span class="arr">open →</span></a>' +
-          '<a href="/c/' + esc(card.id) + '/me" target="_blank">' +
-            '<span>Customer page<span class="sub2">What a customer sees when they open their card</span></span>' +
-            '<span class="arr">open →</span></a>' +
-        "</div>" +
-        '<div class="qrbox"><img alt="Sign-up QR code" src="/c/' + esc(card.id) + '/qr">' +
-        // It says this because it is now true. The same line sat over the
-        // SHOP's QR before, which handed out whichever card the shop had.
-        '<p class="muted">Every card has its own QR. This one belongs to this card ' +
-        'and always will — print it, and it keeps working.</p></div>' +
         // Everything that ENDS something, in one box, at the bottom.
         '<div class="dzone">' +
           '<h2 class="sec">Danger zone</h2>' +
@@ -5034,58 +5048,102 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
       d.querySelector("[data-back]").onclick = () => navigate("/manage/rewards");
 
-      // ---- Rules. The create flow's own form, and the only one now. ----
-      const rules = rulesForm(card, { locked: joined, heading: false });
-      const rmount = d.querySelector('[data-mount="rules"]');
-      if (joined) rmount.className = "rlock";
-      rmount.appendChild(rules.el);
-      if (!joined) {
-        const save = document.createElement("button");
-        save.className = "btn btn-neon";
-        // A handle for the real-browser test, which is the only thing that
-        // drives this screen the way an owner does.
-        save.setAttribute("data-saverules", "");
-        save.style.marginTop = "14px";
-        save.textContent = "Save rules";
-        save.onclick = async () => {
-          // The same gate the wizard's Next uses, and for the same reason: it
-          // hands back the field to point at, so the answer and the arrow
-          // cannot disagree. Saving half a rule would publish it.
-          const stop = rules.blocked();
-          if (stop) {
-            stop.classList.remove("wshake");
-            void stop.offsetWidth;
-            stop.classList.add("wshake");
-            return;
-          }
-          save.disabled = true;
-          try {
-            await rules.save();
-            await refreshCards();
-            // Re-render, and this is not politeness. The design panel below
-            // holds its own copy of the rules — hidden, so it can draw the card
-            // it is designing — seeded when it was mounted. Leave it sitting
-            // there and the next design save writes that STALE copy back over
-            // the change just made. Remounting from the fresh card is what
-            // stops the two halves of this screen undoing each other.
-            navigate("/manage/rewards/" + card.id + "?section=rules", { replace: true });
-            toast("Saved.");
-          } finally { save.disabled = false; }
-        };
-        rmount.appendChild(save);
+      // ---- Setup ----
+      //
+      // LOCKED MEANS NOTHING IS SHOWN. Not a greyed-out form — no form. Every
+      // field in it would be a control that cannot be used, and a screen full
+      // of those invites the owner to keep trying them. What the programme
+      // promises is already written in the three rows above; this says why it
+      // cannot be changed, and stops.
+      const smount = d.querySelector('[data-mount="setup"]');
+      let rules = null;
+      if (joined) {
+        smount.innerHTML = '<div class="locknote">Your program rules are locked. ' +
+          "Customers have already joined this program, so its earning and reward " +
+          "rules can no longer be changed.</div>";
+      } else {
+        rules = rulesForm(card, { heading: false });
+        smount.appendChild(rules.el);
       }
 
-      // ---- Design. showDetails:false is the whole point of this screen. ----
-      // It switches off the second rules editor buried in the design panel —
-      // the one with no guidance, no validation, and a Card type dropdown that
-      // could turn a live stamp card into a membership card. The fields stay in
-      // the DOM because the panel reads them to draw its preview; hidden, they
-      // are seeded from the card and can only be written back unchanged.
+      // ---- Design ----
+      //
+      // showDetails:false is the whole point of this screen. It switches off the
+      // second rules editor buried in the design panel — the one with no
+      // guidance, no validation, and a Card type dropdown that could turn a live
+      // stamp card into a membership card. The fields stay in the DOM because
+      // the panel reads them to draw its preview and to render the stamp grids.
+      //
       // showShop:false for the same reason it is off in the wizard: the shop
-      // name is asked once, in Rules, and two boxes for one setting means
-      // whichever saved last wins.
-      d.querySelector('[data-mount="design"]').appendChild(
-        designerFor(card, { showDetails: false, showShop: false }));
+      // name is asked once, in Setup, and two boxes for one setting means
+      // whichever saved last wins. hideSave because this screen has ONE save,
+      // docked at the bottom, and it is built below.
+      const panel = designerFor(card, {
+        showDetails: false, showShop: false, hideSave: true,
+      });
+      d.querySelector('[data-mount="design"]').appendChild(panel);
+
+      // ---- One save, for both sections ----
+      //
+      // Two buttons made the owner sort their own change into the right half
+      // before they could keep it, on a screen where the two halves are one
+      // card. Everything goes together or nothing does.
+      const foot = document.createElement("div");
+      foot.className = "wizfoot";
+      foot.innerHTML = '<button class="btn btn-neon" data-savecard>Save changes</button>';
+      const saveBtn = foot.querySelector("[data-savecard]");
+      saveBtn.onclick = async () => {
+        // The same gate the wizard's Next uses, and for the same reason: it
+        // hands back the field to point at, so the answer and the arrow cannot
+        // disagree. Saving half a rule would publish it.
+        const stop = rules && rules.blocked();
+        if (stop) {
+          stop.classList.remove("wshake");
+          void stop.offsetWidth;
+          stop.classList.add("wshake");
+          // A shut fold cannot show the field it is pointing at.
+          const holder = stop.closest("details");
+          if (holder) holder.open = true;
+          stop.scrollIntoView({ block: "center", behavior: "smooth" });
+          return;
+        }
+        saveBtn.disabled = true;
+        try {
+          // ORDER MATTERS, AND THIS IS THE REASON.
+          //
+          // The design save re-renders the stamp grids from the panel's own
+          // copy of the stamps target, and it replaces the whole set at once.
+          // So the rules have to land FIRST, and the panel has to be told what
+          // they became, or a card whose target just went 8 → 12 gets grids for
+          // 8 written over everything and no picture at all for 12 — a 404
+          // where the stamps go, on every card already in a wallet.
+          if (rules) {
+            await rules.save();
+            await refreshCards();
+            panel.syncCard(S.cards.find((c) => c.id === card.id));
+          }
+          if (!(await panel.saveDesign(true))) {
+            // The panel has already named WHICH picture it could not store, in
+            // its own words. This says what that means for the button just
+            // pressed, and above all it does not pretend the save happened.
+            toast("Your design did not save — check the message above.");
+            return;
+          }
+          await refreshCards();
+          navigate("/manage/rewards/" + card.id + "?section=" + want, { replace: true });
+          toast("Saved.");
+        } finally { saveBtn.disabled = false; }
+      };
+      d.className = "haswiz";
+      d.appendChild(foot);
+      // How tall the docked bar is, so a bottom sheet opened from the design
+      // panel sits above it rather than under it. Measured, not guessed —
+      // exactly as wizardFrame does it, and deferred a frame because the node
+      // is still detached here.
+      requestAnimationFrame(() => {
+        const top = foot.getBoundingClientRect().top;
+        if (top > 0) d.style.setProperty("--dockh", Math.round(innerHeight - top) + 12 + "px");
+      });
 
       // Two taps, never a browser dialog: a browser lets somebody silence
       // those, after which confirm() answers "no" in silence.

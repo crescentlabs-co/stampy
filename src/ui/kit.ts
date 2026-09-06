@@ -4092,6 +4092,35 @@ export const DESIGN_PANEL_JS = /* js */ `
       // saveLook is the whole of it: it flushes the staged uploads, writes the
       // colours, and re-renders and commits the strips.
       div.saveDesign = saveLook;
+
+      /**
+       * Tell the panel the card changed underneath it.
+       *
+       * THIS EXISTS TO STOP A CARD LOSING ITS STAMP GRID, and that is not a
+       * theoretical worry. applyStamps reads the stamps target out of the
+       * panel's OWN hidden field, not off the card — and setStampStrips
+       * replaces every strip for the card at once. So on a screen where
+       * something else can change the target (the Edit screen saves its rules
+       * and its design with one button), a panel still holding the number it
+       * was built with would render grids for the OLD target and wipe the set.
+       * The new target would then have no picture at all: a 404 where the
+       * stamps go, on every card already in a wallet.
+       *
+       * The hidden rule fields ARE the panel's copy of the rules — it keeps
+       * them so it can draw the card it is designing — so re-seeding them is
+       * the whole job. Uploads staged and not yet sent are untouched, which is
+       * why this exists instead of simply rebuilding the panel.
+       */
+      div.syncCard = (fresh) => {
+        if (!fresh) return;
+        Object.assign(c, fresh);
+        for (const k of ["stampsTarget", "stampsStart", "stampsPerVisit",
+                         "reward", "kind", "shopName", "name", "pointPresets"]) {
+          const el = f(k);
+          if (el && c[k] != null) el.value = c[k];
+        }
+        renderPreview();
+      };
       return div;
     }
 `;

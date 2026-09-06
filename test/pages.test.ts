@@ -1770,14 +1770,21 @@ describe("dashboard information architecture", () => {
     expect(html).toContain('href="/staff?c=');
     // The PIN comes first, then the link it gates.
     expect(html.indexOf("data-pinlabel")).toBeLessThan(html.indexOf('href="/staff?c='));
-    // Sharing left Shop for the programme page.
+    // Sharing left Shop, and has since left the programme page too: it lives
+    // on the Share button in the Manage carousel, which is where somebody
+    // holding a card in front of them reaches for it.
     const shop = html.slice(html.indexOf("function accountPanel()"), html.indexOf("wireEyes(div)"));
     expect(shop).not.toContain("/poster");
     expect(shop).not.toContain("?s=link");
+    const sharing = html.slice(html.indexOf("function shareSheet(card)"),
+                               html.indexOf("function campaignsBlock()"));
+    expect(sharing).toContain("/poster");
+    expect(sharing).toContain("?s=link");
+    // And it is not ALSO on the Edit screen. One place, or the two drift.
     const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"),
                               html.indexOf("function campaignDetailScreen()"));
-    expect(detail).toContain("/poster");
-    expect(detail).toContain("?s=link");
+    expect(detail).not.toContain("/poster");
+    expect(detail).not.toContain("?s=link");
   });
 
   /**
@@ -3946,15 +3953,25 @@ describe("the manage screens", () => {
    * everybody holding one keeps collecting and keeps claiming, so it is neither
    * live nor unfinished — and it was the one state this screen could not show.
    */
-  it("says which state the card is in, above the card", () => {
+  it("says which state the card is in, on the card's own row", () => {
     const fn = html.slice(html.indexOf("function statusOf(c)"), html.indexOf("function detailRows(c)"));
     expect(fn).toContain('{ key: "draft", label: "Draft" }');
     expect(fn).toContain('{ key: "ended", label: "Ended" }');
     expect(fn).toContain('{ key: "live", label: "Active" }');
-    // Drawn above the strip, and repainted as you swipe.
+    // UNDER the strip now, sharing one centred row with the Apple/Android
+    // switch. Both are facts about the card directly above them; the state used
+    // to be stranded above the strip with nothing else beside it.
     const pane = html.slice(html.indexOf("function rewardsPane(host)"), html.indexOf("function statusOf(c)"));
-    expect(pane.indexOf("data-cstat")).toBeLessThan(pane.indexOf('class="carwrap"'));
+    expect(pane.indexOf("data-cstat")).toBeGreaterThan(pane.indexOf('class="carwrap"'));
+    expect(pane.indexOf("data-cstat")).toBeGreaterThan(pane.indexOf("data-faces"));
+    expect(pane).toContain('<div class="cardmeta">');
     expect(pane).toContain("statusOf(t.card).label");
+    // A pill, not a coloured line: transparent, so a label on a state cannot be
+    // mistaken for a third button beside the two real ones.
+    const pill = html.slice(html.indexOf(".cstat {"), html.indexOf(".cstat::before"));
+    expect(pill).toContain("border: 1px solid currentColor");
+    expect(pill).toContain("background: transparent");
+    expect(pill).toContain("border-radius: 999px");
     // The card's own page uses the SAME badge. It had a .pstat span with no CSS
     // anywhere, so it rendered as bare text run into the card's name.
     expect(html).not.toContain('class="pstat');
@@ -4003,16 +4020,23 @@ describe("the manage screens", () => {
     expect(sheet).toContain("test-qr.png");
   });
 
+  /**
+   * The three links a card needs, in ONE place.
+   *
+   * They were on the Edit screen as well, which made two copies of the same
+   * three addresses on two screens one tap apart. Edit is for changing a card;
+   * handing it out is what the Share button is.
+   */
   it("gives a card its own QR, poster and customer page", () => {
-    expect(detail).toContain("/qr");
-    expect(detail).toContain("/poster");
-    expect(detail).toContain("/me");
-    expect(detail).toContain("Every card has its own QR");
+    const sheet2 = html.slice(html.indexOf("function shareSheet(card)"),
+                              html.indexOf("function campaignsBlock()"));
+    expect(sheet2).toContain("/poster");
+    expect(sheet2).toContain("/me");
     // Built from the card on screen, never from the shop. The shop's link
     // cannot say WHICH card an owner is standing on, and with more than one
     // card that is the whole question.
-    expect(detail).toContain(`src="/c/' + esc(card.id) + '/qr`);
-    expect(detail).not.toContain("S.joinRef");
+    expect(sheet2).toContain("esc(card.id)");
+    expect(sheet2).not.toContain("S.joinRef");
   });
 
   /**
@@ -4027,22 +4051,20 @@ describe("the manage screens", () => {
    * LOCKED_ONCE_JOINED (src/routes/dashboard.ts) — a gate the browser computes
    * is a gate anyone can switch off in devtools.
    */
-  it("locks the rules once a real customer has joined", () => {
+  it("locks the rules once a real customer has joined, and shows no form at all", () => {
     expect(detail).toContain("const joined = m.active > 0");
-    expect(detail).toContain("rulesForm(card, { locked: joined, heading: false })");
-    // Read-only, and read: the numbers stay on screen, because "what did I
-    // promise these people" is a fair question with no other answer.
-    expect(detail).toContain('rmount.className = "rlock"');
-    // No Save button at all when locked — a button that cannot work is worse
-    // than no button.
-    expect(detail).toContain("if (!joined) {");
-    const form = html.slice(html.indexOf("function rulesForm(card, opts)"),
-                            html.indexOf("function createDesignScreen(id)"));
-    expect(form).toContain("el.disabled = true");
-    expect(form).toContain("Your program rules are locked");
-    // The two names are NOT rules. What a card is called is not what it
-    // promised, so those two boxes stay live.
-    expect(form).toContain('if (k !== "name" && k !== "shopName") el.disabled = true');
+    // NOT a greyed-out form. No form. Every field would be a control that
+    // cannot be used, and a screen full of those invites an owner to keep
+    // trying them; the three summary rows above already say what the programme
+    // promises. One box, and it says why.
+    expect(detail).toContain("Your program rules are locked.");
+    expect(detail).toContain('smount.innerHTML = ');
+    // The form is built ONLY in the other branch.
+    const setup = detail.slice(detail.indexOf("const smount"), detail.indexOf("---- Design ----"));
+    expect(setup.indexOf("rulesForm(card")).toBeGreaterThan(setup.indexOf("} else {"));
+    // And the save has nothing to save from Setup when there is no form.
+    expect(detail).toContain("const stop = rules && rules.blocked();");
+    expect(detail).toContain("if (rules) {");
   });
 
   /**
@@ -4082,8 +4104,13 @@ describe("the manage screens", () => {
     // With showDetails:false, which is the point of the Edit screen: it turns
     // off the second rules editor inside the panel, and with it the Card type
     // dropdown that could turn a live stamp card into a membership card.
-    expect(detail).toContain("designerFor(card, { showDetails: false, showShop: false })");
+    // hideSave with the other two: this screen has ONE save, docked at the
+    // bottom, covering both sections. Two buttons made the owner sort their own
+    // change into the right half before they could keep it.
+    expect(detail).toContain("showDetails: false, showShop: false, hideSave: true,");
     expect(detail).not.toContain("designerFor(card))");
+    expect(detail).not.toContain("data-saverules");
+    expect((detail.match(/data-savecard/g) || []).length).toBeGreaterThan(0);
     const mount = html.slice(html.indexOf("function designerFor(card, extra)"), html.indexOf("let armedBtn"));
     for (const key of ["path:", "apiBase:", "artUrl:", "customersPath:", "saveLabel:", "onRulesSaved:"]) {
       expect(mount).toContain(key);
