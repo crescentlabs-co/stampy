@@ -126,9 +126,10 @@ describe("a stamp card", () => {
     const { screen } = mount(card());
     expect(at(screen, "name")).toBeTruthy();
     expect(at(screen, "shopName")).toBeTruthy();
-    expect(at(screen, "perVisit")).toBeTruthy();
     expect(at(screen, "target")).toBeTruthy();
     expect(at(screen, "welcome")).toBeTruthy();
+    // A visit is a stamp, so there is nothing to set.
+    expect(at(screen, "perVisit")).toBe(null);
     // Nothing from the other two kinds leaks in.
     expect(at(screen, "memberLabel")).toBe(null);
     expect(at(screen, "pointsTarget")).toBe(null);
@@ -139,10 +140,9 @@ describe("a stamp card", () => {
    * make a reward, then the head start. Welcome stamps used to come first,
    * which put the smallest decision in front of the two that shape the card.
    */
-  it("asks what a visit is worth before the head start", () => {
+  it("asks how many stamps make a reward before the head start", () => {
     const { screen } = mount(card());
     const order = screen.all().filter((e) => e.attrs["data-r"]).map((e) => e.attrs["data-r"]);
-    expect(order.indexOf("perVisit")).toBeLessThan(order.indexOf("target"));
     expect(order.indexOf("target")).toBeLessThan(order.indexOf("welcome"));
   });
 });

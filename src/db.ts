@@ -4208,11 +4208,13 @@ export async function shopSeries(merchantId: string, window: ShopWindow = 7): Pr
   // window, so the tile subtracts rather than comparing two different measures.
   const cut = days ? `now() - interval '${days} days'` : "NULL::timestamptz";
   const totals = await getPool().query<{
-    cnow: string; cbefore: string | null; snow: string; sbefore: string | null; basket: string;
+    cnow: string; cbefore: string | null; snow: string; sbefore: string | null;
+    rnow: string; rbefore: string | null;
   }>(
     `WITH person AS (${BECAME_CUSTOMER_SQL}),
      ev AS (
-       SELECT e.created_at, e.type, COALESCE(e.amount, 1) AS amount
+       SELECT e.created_at, e.type, COALESCE(e.amount, 1) AS amount,
+              c.average_spend_cents AS basket
          FROM events e JOIN cards c ON c.id = e.card_id
         WHERE NOT e.is_test AND c.merchant_id = $1
      )
@@ -4228,14 +4230,22 @@ export async function shopSeries(merchantId: string, window: ShopWindow = 7): Pr
                       COALESCE(sum(amount) FILTER (WHERE type = 'stamp' AND created_at <= ${cut}), 0)
                     - COALESCE(sum(amount) FILTER (WHERE type = 'undo' AND created_at <= ${cut}), 0), 0)::int
                END FROM ev)::text AS sbefore,
-            -- The CARD's basket, not the merchant's: only the card column is
-            -- written by the dashboard. merchants.average_spend_cents is a v1.3
-            -- leftover and is not kept up to date.
-            COALESCE((SELECT max(average_spend_cents) FROM cards WHERE merchant_id = $1), 0)::text AS basket`,
+            -- EACH CARD AT ITS OWN BASKET, summed — not the whole shop's stamps
+            -- priced at the dearest card's. A shop running a RM6 coffee card and
+            -- a RM40 dinner card had every coffee stamp counted as RM40, which
+            -- is the same arithmetic that reported RM88 a stamp when the basket
+            -- was still being taken from the reward's value.
+            (SELECT GREATEST(
+                      COALESCE(sum(amount * basket) FILTER (WHERE type = 'stamp'), 0)
+                    - COALESCE(sum(amount * basket) FILTER (WHERE type = 'undo'), 0), 0)::bigint
+               FROM ev)::text AS rnow,
+            (SELECT CASE WHEN ${cut} IS NULL THEN NULL ELSE GREATEST(
+                      COALESCE(sum(amount * basket) FILTER (WHERE type = 'stamp' AND created_at <= ${cut}), 0)
+                    - COALESCE(sum(amount * basket) FILTER (WHERE type = 'undo' AND created_at <= ${cut}), 0), 0)::bigint
+               END FROM ev)::text AS rbefore`,
     [merchantId],
   );
   const t = totals.rows[0]!;
-  const basket = Number(t.basket);
   const currency = await getPool().query<{ currency: string }>(
     `SELECT COALESCE(max(currency), 'RM') AS currency FROM cards WHERE merchant_id = $1`,
     [merchantId],
@@ -4246,9 +4256,11 @@ export async function shopSeries(merchantId: string, window: ShopWindow = 7): Pr
     bucketDays,
     points: res.rows.map((r) => ({ at: r.at, visits: Number(r.visits), rewards: Number(r.rewards) })),
     customers: { now: Number(t.cnow), before: t.cbefore === null ? null : Number(t.cbefore) },
+    // Already money: each stamp was priced at its OWN card's basket in the
+    // query above, so there is nothing left to multiply here.
     revenueCents: {
-      now: Number(t.snow) * basket,
-      before: t.sbefore === null ? null : Number(t.sbefore) * basket,
+      now: Number(t.rnow),
+      before: t.rbefore === null ? null : Number(t.rbefore),
     },
     currency: currency.rows[0]?.currency || "RM",
   };

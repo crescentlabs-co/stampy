@@ -173,11 +173,16 @@ export function cardFieldsFromBody(
     const name = typeof body.reward === "string" ? body.reward : "";
     const sentence = rewardSentence(rType, name, value, pct, cap);
     if (sentence) fields.reward = sentence;
-    // What a customer spends in a visit, which is what turns stamps into a
-    // money figure on Home. The Create flow no longer asks for it separately:
-    // for a free item, what the item is worth IS the basket. For a discount it
-    // is not, so it stays where it was rather than being guessed at.
-    if (rType === "item" && value > 0) fields.average_spend_cents = value;
+    // THE BASKET IS NOT THE REWARD. It used to be set from the reward's value
+    // here, on the reasoning that a free item is worth about one visit's spend.
+    // That is only true of a shop whose reward happens to cost what a customer
+    // usually spends — and because Home prices every stamp at the basket, a
+    // cafe that valued its free coffee at RM88 was told it had earned RM88 a
+    // stamp. Nothing else set the column and no screen offered it, so there was
+    // no way to correct it either.
+    //
+    // Average order value is its own question now, asked in the rules form and
+    // written through body.averageSpend below.
   }
   // The reward ladder. asMilestones sorts it and drops anything malformed —
   // `rewards_claimed` is an index into this list, so an unsorted one would hand

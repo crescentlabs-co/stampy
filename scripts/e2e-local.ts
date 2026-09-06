@@ -595,10 +595,23 @@ async function main() {
     await saveShape({ rewardType: "item", reward: "Free croissant", rewardValue: 12 });
     const asItem = (await getCard(secondId))!;
     expect(asItem.reward === "Free croissant", "an item keeps the owner's own words");
-    // What a customer spends in a visit is no longer its own question: for a
-    // free item, what the item is worth IS the basket.
-    expect(asItem.average_spend_cents === 1200,
-      `an item's value becomes the basket (got ${asItem.average_spend_cents})`);
+    // THE BASKET IS NOT THE REWARD, and this is the check that says so.
+    //
+    // It used to be: an item reward's value was written straight into
+    // average_spend_cents, on the reasoning that a free item is worth about a
+    // visit. Home prices every stamp at that basket, so a cafe that valued its
+    // free coffee at RM88 was told it had earned RM88 a stamp — and no screen
+    // offered the field, so there was no way to correct it.
+    expect(asItem.average_spend_cents === 0,
+      `a reward's value must not become the basket (got ${asItem.average_spend_cents})`);
+
+    // The average order value is its own question, and answering it is what
+    // sets the basket.
+    await saveShape({ rewardType: "item", reward: "Free croissant", rewardValue: 12, averageSpend: 20 });
+    const withBasket = (await getCard(secondId))!;
+    expect(withBasket.average_spend_cents === 2000,
+      `the average order value sets the basket (got ${withBasket.average_spend_cents})`);
+    expect(withBasket.reward === "Free croissant", "...and leaves the reward alone");
   }
 
   // ---- one visit can be worth more than one stamp ----

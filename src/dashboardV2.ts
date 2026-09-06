@@ -2268,8 +2268,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const seg = d.querySelector("[data-win]");
       // Their own state, held here so switching screens and coming back starts
       // clean rather than restoring a filter the owner has forgotten setting.
+      // Opens on Stamps. A ratio cannot be drawn for a shop with no counted
+      // customers yet, and that is exactly the shop most likely to be looking.
       comparison(d.querySelector("[data-programs]"), PROGRAMME_SPEC,
-        { metric: "per", type: "all", status: "all", picked: [] });
+        { metric: "visits", type: "all", status: "all", picked: [] });
       comparison(d.querySelector("[data-campaigns]"), CAMPAIGN_SPEC,
         { metric: "rate", type: "all", status: "all", picked: [] });
 
@@ -2623,6 +2625,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // defined, just not yet. Same reason rows() is a function.
       types: () => REWARD_TYPES.map((t) => ({ k: t.k, name: t.name })),
       metrics: [
+        // FIRST, and so the default. It was "Visits per customer", which is a
+        // RATIO — and a ratio of anything over zero customers has no value, so
+        // a shop whose card had been stamped but had nobody counted against it
+        // yet got a dash and an empty plot under a heading that had promised
+        // its loyalty cards. A count is never undefined: it is 0, or it is a
+        // number, and either draws.
+        { k: "visits", name: "Stamps", of: (r) => r.visits, fmt: (v) => v.toLocaleString() },
         { k: "per", name: "Visits per customer",
           of: (r) => (r.customers ? r.visits / r.customers : 0),
           fmt: (v) => (v > 0 ? v.toFixed(1) : "—") },
@@ -2632,21 +2641,24 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           // bar still grows with the value, which would rank it upside down —
           // so the label carries the unit and the ordering is recency, not size.
           fmt: (v) => (v > 0 ? "every " + Math.round(v) + "d" : "—") },
-        { k: "visits", name: "Visits", of: (r) => r.visits, fmt: (v) => v.toLocaleString() },
         { k: "customers", name: "Customers", of: (r) => r.customers, fmt: (v) => v.toLocaleString() },
       ],
       // Drafts are not in here. A draft has no poster, no link and nobody
       // holding it, so every column is zero — and a row of zeroes in a
       // comparison reads as a card that is doing badly rather than one that has
       // not started. Its own screen says "Draft" and offers the way back in.
+      // Every metric read is guarded, because this runs inside homeScreen: one
+      // card arriving without metrics threw here and blanked
+      // the ENTIRE screen, error card and all, for a number that is only ever
+      // a bar on a chart.
       rows: () => S.cards.filter((c) => c.publishedAt).map((c) => ({
         // The CARD's name, not the shop's. A merchant runs several cards and
         // every one of them is at the same shop, so naming them all after it
         // made a comparison of four identical labels.
         id: c.id, name: c.name || c.shopName, kind: c.kind || "stamp",
         ended: Boolean(c.endedAt), daysAgo: daysSince(c.createdAt),
-        customers: c.metrics.active, visits: c.metrics.stamps,
-        avgGapDays: c.metrics.avgGapDays || 0,
+        customers: (c.metrics || {}).active || 0, visits: (c.metrics || {}).stamps || 0,
+        avgGapDays: (c.metrics || {}).avgGapDays || 0,
       })),
       empty: { line: "No programmes yet. Publish one and it shows up here.",
                cta: "Create a reward", to: "/create/reward" },
@@ -3492,6 +3504,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     function rulesForm(card, opts) {
       const id = card.id;
+      // Locked: the earning rules and the reward are settled, so none of that
+      // is drawn at all. The average order value still is — it is a fact about
+      // the shop's till, not a promise made to anybody holding a card, and
+      // every money figure on Home is built on it. Trapping it behind the lock
+      // would leave a shop that mistyped it reading a wrong revenue number for
+      // the life of the programme.
       const locked = Boolean(opts && opts.locked);
       // The Edit screen puts this inside a fold whose summary already says
       // "Rules". Two of the same word, one under the other, reads as a mistake.
@@ -3514,6 +3532,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         shopName: card.shopName || "",
         welcome: card.stampsStart != null ? card.stampsStart : 1,
         perVisit: card.stampsPerVisit || 1,
+        // What a customer usually spends in one visit. Every money figure the
+        // owner reads is built on it, and until now nothing asked for it — it
+        // was quietly taken from the reward's value instead.
+        basket: card.averageSpend || "",
         target: card.stampsTarget || suggestedTarget(S.cycleDays),
         rewardName: card.rewardType === "item" ? (card.reward || "") : "",
         rewardType: card.rewardType || "item",
@@ -3608,8 +3630,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         if (r.earnMode === "visit") {
           // The same shape a stamp card takes: a target, a head start, and what
           // one visit is worth. Only the units differ.
+          // value and basket ride along so an item reward is measured against
+          // the till here too, exactly as it is on a stamp card.
           return { target: r.pointsTarget, welcome: r.welcome, perVisit: r.earnPoints,
-            rewardType: r.rewardType, percent: r.percent };
+            rewardType: r.rewardType, percent: r.percent,
+            value: r.value, basket: r.basket };
         }
         if (r.rewardType === "percent") {
           return {
@@ -3658,12 +3683,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // caption rather than as the setting it is \u2014 and did not line up with
         // anything above or below it.
         "<label>How customers earn stamps</label>" +
+        // ONE stamp a visit, and no control to change it. It was a choice of one
+        // or two, and the two did more than shorten the card: a stamp is logged
+        // with its own amount, so two-a-visit doubled the visit count and the
+        // money figure Home reports along with it. A visit is a stamp.
         '<div class="rate">' +
           '<span class="unit-fixed">1 visit</span>' +
           '<span class="rate-eq">=</span>' +
-          '<span class="unit unit-post">' +
-            '<select data-r="perVisit">' + oneOrTwo(r.perVisit) + "</select>" +
-            "<i>Stamps</i></span>" +
+          '<span class="unit-fixed">1 stamp</span>' +
         "</div>" +
         "<label>Stamps to reward" + info("Number of stamps a customer needs to earn their reward.") +
           '<button type="button" class="bulb" data-bulb aria-label="Why this number">\u{1F4A1}</button></label>' +
@@ -3710,7 +3737,28 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "<label>Welcome points" + info("Points a NEW card starts with, as a welcome. Given once \u2014 a card that has just paid out keeps whatever was left over instead.") + "</label>" +
         '<input data-r="welcome" type="number" min="0" step="1" value="' + r.welcome + '">';
 
+      const basketField = () =>
+        '<label class="dlbl">Average order value (RM)' +
+          info("What a customer usually spends in one visit. This is what turns visits into a money figure on Home \u2014 it is not the reward's price.") +
+        "</label>" +
+        '<input data-r="basket" type="number" min="0" step="0.10" placeholder="e.g. 20" value="' +
+          esc(String(r.basket)).replace(/"/g, "&quot;") + '">';
+
+      const paintLocked = () => {
+        body.innerHTML =
+          '<div class="locknote">Your program rules are locked. Customers have ' +
+          "already joined this program, so its earning and reward rules can no " +
+          "longer be changed.</div>" +
+          basketField() +
+          '<p class="dhint">You can still change this \u2014 it is what your shop takes ' +
+          "in a visit, not part of what the card promises.</p>";
+        for (const el of body.querySelectorAll("[data-r]")) {
+          el.addEventListener("input", () => { r[el.getAttribute("data-r")] = el.value; onChange(); });
+        }
+      };
+
       const paint = () => {
+        if (locked) return paintLocked();
         const sug = suggestedTarget(S.cycleDays);
         const targets = [];
         for (let n = 1; n <= 10; n++) {
@@ -3726,6 +3774,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<input data-r="shopName" maxlength="60" value="' +
             esc(r.shopName).replace(/"/g, "&quot;") + '">' +
           '<p class="dhint">This will be what your card displays.</p>' +
+          '<label class="dlbl">Average order value (RM)' +
+            info("What a customer usually spends in one visit. This is what turns visits into a money figure on Home \u2014 it is not the reward's price.") +
+          "</label>" +
+          '<input data-r="basket" type="number" min="0" step="0.10" placeholder="e.g. 20" value="' +
+            esc(String(r.basket)).replace(/"/g, "&quot;") + '">' +
           (locked
             ? '<div class="locknote">Your program rules are locked. Customers have ' +
               "already joined this program, so its earning and reward rules can no " +
@@ -3856,7 +3909,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        * editor can add more rungs later and writes the same column.
        */
       const save = () => {
-        const b = { name: r.name, shopName: r.shopName };
+        const b = { name: r.name, shopName: r.shopName, averageSpend: Number(r.basket) || 0 };
+        // Locked: the two names go back exactly as they were loaded and the
+        // basket goes forward. The server drops every rule field on a card with
+        // customers anyway, so sending them would change nothing — but not
+        // sending them is what makes that true on this side too.
+        if (locked) return api("/card/" + id, { method: "POST", body: JSON.stringify(b) });
         // Locked: the earning and reward halves are read-only, so only the two
         // names go. The server drops the rest of them anyway — this is the
         // same one rule said on the near side, not a second gate that could
@@ -3878,7 +3936,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             b.earnPoints = Number(r.earnPoints) || 0;
             b.pointsTarget = Number(r.pointsTarget) || 100;
           } else {
-            b.stampsPerVisit = Number(r.perVisit) || 1;
+            // Always one. The card may still be carrying an older 2 from when
+            // that was offered; this is what puts it back, and the pass keeps
+            // whatever it was issued with either way.
+            b.stampsPerVisit = 1;
             b.stampsTarget = Number(r.target) || 8;
           }
         }
@@ -3983,7 +4044,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     function visitsPerReward(target, welcome, perVisit) {
       const need = Math.max(0, (Number(target) || 1) - (Number(welcome) || 0));
-      return Math.ceil(need / Math.max(1, Number(perVisit) || 1)) + 1;
+      // THREE parts, and the first one used to be missing.
+      //
+      // Signing up is a visit — they were in the shop to scan the poster, which
+      // is the same rule HEALTH counts by. It is ONE visit whether the welcome
+      // hands over one stamp or two: the stamps are a gift, not a second trip.
+      // Leaving it out priced the whole card one visit short.
+      //
+      // Then the visits that actually earn a stamp, and the one they walk in
+      // and claim on.
+      return 1 + Math.ceil(need / Math.max(1, Number(perVisit) || 1)) + 1;
     }
 
     /**
@@ -3995,14 +4065,31 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * guess. The bubble says the figure assumes the reward is about one
      * visit's worth.
      */
-    function rewardShare(type, percent) {
-      return type === "percent" ? Math.max(0, Math.min(100, Number(percent) || 0)) : 100;
+    /**
+     * What one reward costs the shop, as a percentage of ONE visit's takings.
+     *
+     * A percentage reward is already that: 20% off is a fifth of whatever the
+     * bill was. The other two are money, so they need the till to compare
+     * against — which is what the average order value is for. A free coffee
+     * worth RM12 against a RM20 order is 60% of a visit, not the whole one it
+     * used to be assumed to be.
+     *
+     * With no basket set we cannot know, so it falls back to the old
+     * assumption rather than reporting a confident zero.
+     */
+    function rewardShare(type, percent, value, basket) {
+      if (type === "percent") return Math.max(0, Math.min(100, Number(percent) || 0));
+      const spend = Number(basket) || 0;
+      const worth = Number(value) || 0;
+      if (spend <= 0 || worth <= 0) return 100;
+      return Math.min(100, (worth / spend) * 100);
     }
 
     /** The headline: what this card gives away per visit, as a percentage. */
     function effectiveDiscount(rules) {
       const visits = visitsPerReward(rules.target, rules.welcome, rules.perVisit);
-      return rewardShare(rules.rewardType, rules.percent) / Math.max(1, visits);
+      return rewardShare(rules.rewardType, rules.percent, rules.value, rules.basket)
+        / Math.max(1, visits);
     }
 
     /**
@@ -5038,15 +5125,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // promises is already written in the three rows above; this says why it
       // cannot be changed, and stops.
       const smount = d.querySelector('[data-mount="setup"]');
-      let rules = null;
-      if (joined) {
-        smount.innerHTML = '<div class="locknote">Your program rules are locked. ' +
-          "Customers have already joined this program, so its earning and reward " +
-          "rules can no longer be changed.</div>";
-      } else {
-        rules = rulesForm(card, { heading: false });
-        smount.appendChild(rules.el);
-      }
+      // Locked, the form draws the notice and the average order value and
+      // nothing else — see rulesForm. The basket is not part of the promise and
+      // must stay fixable, or a shop that mistyped it reads a wrong revenue
+      // figure for the life of the programme.
+      const rules = rulesForm(card, { heading: false, locked: joined });
+      smount.appendChild(rules.el);
 
       // ---- Design ----
       //

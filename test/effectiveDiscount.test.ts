@@ -30,7 +30,7 @@ const run = new Function(
   " guidance, guideHtml, suggestedTarget };",
 )() as {
   visitsPerReward: (t: number, w: number, p: number) => number;
-  rewardShare: (type: string, percent: number) => number;
+  rewardShare: (type: string, percent: number, value?: number, basket?: number) => number;
   effectiveDiscount: (r: Record<string, unknown>) => number;
   discountBand: (pct: number) => { key: string; label: string; advice: string };
   guidance: (r: Record<string, unknown>) => {
@@ -46,39 +46,61 @@ const run = new Function(
 
 describe("visits per reward", () => {
   /**
-   * The founder's own worked example: eight stamps, two welcome, one a visit is
-   * seven visits. Six to fill the card, plus the one they walk in and claim it
-   * on.
+   * Eight stamps, two welcome: sign up (1), six visits to fill the card, and
+   * the one they walk in and claim on. Eight.
+   *
+   * THE SIGN-UP VISIT USED TO BE MISSING, which priced every card one visit
+   * short and so overstated what the shop was giving away. Signing up is a
+   * visit — they were in the shop to scan the poster — and it is ONE visit
+   * whether the welcome hands over one stamp or two.
    */
-  it("matches the example the rule was written from", () => {
-    expect(run.visitsPerReward(8, 2, 1)).toBe(7);
+  it("counts the sign-up, the earning visits and the claim", () => {
+    expect(run.visitsPerReward(8, 2, 1)).toBe(8);
   });
 
   it("takes one more visit at the new default of one welcome stamp", () => {
-    expect(run.visitsPerReward(8, 1, 1)).toBe(8);
+    expect(run.visitsPerReward(8, 1, 1)).toBe(9);
   });
 
-  it("halves the visits when a visit is worth two stamps", () => {
-    // Seven stamps still to earn at two a visit is four visits, not 3.5 — you
-    // cannot make half a visit, and rounding down would promise a reward a
-    // visit earlier than it arrives.
-    expect(run.visitsPerReward(8, 1, 2)).toBe(5);
+  /**
+   * The rate is fixed at one now, but the argument is still honoured for cards
+   * issued while two-a-visit was offered.
+   */
+  it("still divides by the rate a card was made with", () => {
+    expect(run.visitsPerReward(8, 1, 2)).toBe(6);
   });
 
   it("never claims a reward costs nothing", () => {
     // Welcome stamps at or above the target fill the card on sign-up. That is
-    // still one visit — they were in the shop to scan the poster.
-    expect(run.visitsPerReward(5, 5, 1)).toBe(1);
-    expect(run.visitsPerReward(5, 9, 1)).toBe(1);
+    // the sign-up visit and the claim: two, and never fewer.
+    expect(run.visitsPerReward(5, 5, 1)).toBe(2);
+    expect(run.visitsPerReward(5, 9, 1)).toBe(2);
   });
 });
 
 describe("what a reward is worth", () => {
-  it("counts an item and money off as a whole visit", () => {
-    // Deliberate: the alternative is asking every shop what a customer usually
-    // spends, and one more money box buys a number that is still a guess.
+  /**
+   * Against the till, now that the rules form asks for it.
+   *
+   * A free coffee worth RM12 on a RM20 average order is 60% of a visit. It was
+   * assumed to be a whole one, which made every item-reward card read as more
+   * generous than it is.
+   */
+  it("measures an item and money off against the average order", () => {
+    expect(run.rewardShare("item", 0, 12, 20)).toBeCloseTo(60, 5);
+    expect(run.rewardShare("amount", 0, 5, 20)).toBeCloseTo(25, 5);
+  });
+
+  it("cannot make a reward worth more than the visit it comes off", () => {
+    expect(run.rewardShare("item", 0, 40, 20)).toBe(100);
+  });
+
+  it("falls back to a whole visit when the shop has not said what it takes", () => {
+    // A confident zero would be worse than the old assumption: it would tell a
+    // shop its card costs nothing.
     expect(run.rewardShare("item", 0)).toBe(100);
     expect(run.rewardShare("amount", 0)).toBe(100);
+    expect(run.rewardShare("item", 0, 12, 0)).toBe(100);
   });
   it("uses the percentage the owner typed", () => {
     expect(run.rewardShare("percent", 20)).toBe(20);
@@ -93,18 +115,28 @@ describe("the effective discount", () => {
   const at = (o: Record<string, unknown>) =>
     run.effectiveDiscount({ target: 8, welcome: 1, perVisit: 1, rewardType: "item", percent: 0, ...o });
 
-  it("is one free visit in every eight on the default card", () => {
-    expect(at({})).toBeCloseTo(12.5, 5);
+  it("is one free visit in every nine on the default card", () => {
+    // Nine visits, not eight: the sign-up is one of them.
+    expect(at({})).toBeCloseTo(100 / 9, 5);
   });
 
   it("falls as the card gets longer", () => {
-    expect(at({ target: 10 })).toBeCloseTo(10, 5);
-    expect(at({ target: 4 })).toBeCloseTo(25, 5);
+    expect(at({ target: 10 })).toBeCloseTo(100 / 11, 5);
+    expect(at({ target: 4 })).toBeCloseTo(20, 5);
   });
 
   it("is a fraction of a visit when the reward is a percentage", () => {
-    // 20% off, once every eight visits.
-    expect(at({ rewardType: "percent", percent: 20 })).toBeCloseTo(2.5, 5);
+    // 20% off, once every nine visits.
+    expect(at({ rewardType: "percent", percent: 20 })).toBeCloseTo(20 / 9, 5);
+  });
+
+  /** The average order value changes it, which is the point of asking for it. */
+  it("falls when the reward is small against the average order", () => {
+    const rich = at({ value: 12, basket: 20 });   // 60% of a visit, every 9
+    const poor = at({ value: 12, basket: 12 });   // a whole visit, every 9
+    expect(rich).toBeCloseTo(60 / 9, 5);
+    expect(poor).toBeCloseTo(100 / 9, 5);
+    expect(rich).toBeLessThan(poor);
   });
 
   it("rises when welcome stamps do, because the card is shorter to fill", () => {
@@ -162,8 +194,8 @@ describe("the guidance box", () => {
 
   it("leads with the figure and says it again in visits", () => {
     const g = run.guidance(stamps);
-    expect(g.headline).toContain("12.5%");
-    expect(g.detail).toContain("8 times");
+    expect(g.headline).toContain("11.1%");
+    expect(g.detail).toContain("9 times");
   });
 
   /**
