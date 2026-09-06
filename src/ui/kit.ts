@@ -868,15 +868,21 @@ export const DESIGN_PANEL_CSS = /* css */ `
        this class and the console renders the panel, so a copy kept in one
        stylesheet left every fold on the console with no border, no tint and no
        caret — a bare <details> with a browser triangle. */
-    .fold { border: 1px solid var(--line); border-radius: var(--r); padding: 0 14px; margin-top: 14px;
-            background: var(--surface); }
-    .fold summary { cursor: pointer; padding: 14px 0; font-weight: 600; list-style: none;
-                    display: flex; gap: 8px; align-items: center; }
+    /* THE SAME FOLD AS .grp, and it has to look like it. There were five
+       treatments of "a section that opens" across the product — two markers,
+       four sizes and three weights — and an owner who learns that a triangle
+       opens a section on one screen learns nothing that helps on the next. */
+    .fold { border: 1px solid var(--line); border-radius: var(--r); padding: 0 var(--s3);
+            margin-top: var(--s3); background: var(--surface); }
+    .fold summary { cursor: pointer; padding: var(--s3) 0; font-size: var(--t-sm);
+                    font-weight: 700; list-style: none;
+                    display: flex; gap: var(--s2); align-items: center; }
     .fold summary::-webkit-details-marker { display: none; }
-    .fold summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
+    .fold summary::before { content: "▸"; color: var(--ink2); font-size: var(--t-md);
+                            font-weight: 400; line-height: 1; transition: transform .18s; }
     @media (prefers-reduced-motion: reduce) { .fold summary::before { transition: none; } }
     .fold[open] summary::before { transform: rotate(90deg); }
-    .fold[open] { padding-bottom: 18px; }
+    .fold[open] { padding-bottom: var(--s3); }
     /* Opened, the fold is a tinted region — so the boxes inside it step up to
        the page colour rather than repeating the tint. --surface on --surface is
        no step at all, which is what made an open Design read as one grey slab
@@ -922,7 +928,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        "Stamps to reward" wraps to two lines instead of shoving the columns
        apart, and min-width:0 so flex actually lets them shrink. */
     .row3 > div { min-width: 0; }
-    .row3 label { font-size: .64rem; letter-spacing: .03em; line-height: 1.3; }
+    .row3 label { font-size: var(--t-xs); letter-spacing: var(--tr-caps); line-height: var(--lh-tight); }
     /* --- live wallet-card preview --- */
     .pv { border-radius: 14px; padding: 16px; margin: 10px 0 4px; box-shadow: 0 4px 16px rgba(43,29,21,.18); }
     .pv-top { display: flex; align-items: center; gap: 10px; }
@@ -1075,7 +1081,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
     /* The design fold's own summary carries the section heading now, so the
        first control inside it must not add a second heading's worth of air. */
     .dfold { margin-top: var(--s4); }
-    .dfold > summary { font-size: var(--t-md); }
+    .dfold > summary { font-size: var(--t-sm); }
     .dfold .dsec.first { margin-top: 0; }
     /* Halved. Four headings at 26+18 was 176px of empty page between the card
        and the last control, on the one screen that is read top to bottom in a
@@ -1219,7 +1225,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        stays under the colour it belongs to. */
     .swnames { display: flex; margin-top: 4px; }
     .swnames span { flex: 1 1 0; min-width: 0; text-align: center;
-                    font-size: .6rem; letter-spacing: .04em; color: var(--muted);
+                    font-size: var(--t-xs); letter-spacing: var(--tr-caps); color: var(--muted);
                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* Inline rejection notice (e.g. a stamp upload with no transparency) —
        stays on screen, unlike a toast, because it asks the owner to go and fix
@@ -1323,7 +1329,7 @@ export const DESIGN_PANEL_CSS = /* css */ `
        the bar. (0,3,0) wins outright rather than depending on which stylesheet
        happens to be printed last. */
     .actbar .btn.btn-ghost { width: 100%; border-radius: 0; background: var(--bg);
-                             box-shadow: none; padding: 11px 10px; font-size: .88rem;
+                             box-shadow: none; padding: var(--s2); font-size: var(--t-sm);
                              display: flex; align-items: center; justify-content: center;
                              gap: 6px; line-height: 1.2; }
     /* Hover says exactly which section you are about to pick. Neon as a RING,
@@ -1863,11 +1869,15 @@ export const DESIGN_PANEL_JS = /* js */ `
              one lived inside a collapsed section, so it could be missed
              entirely. The confirmation carries both consequences instead, since
              they genuinely differ and one button is what now hides that. -->
-        <!-- Hidden where the host has its own. In the Create wizard the button
-             underneath already says "Finish and publish" and already saves the
-             design, so this was a second Save for the same work — and an owner
-             who pressed the wrong one was told nothing had happened. -->
-        <button class="btn btn-neon" style="margin-top:20px" data-a="save"\${env.hideSave ? " hidden" : ""}>\${env.saveLabel}</button>\`;
+        <!-- NOT RENDERED where the host has its own save, rather than rendered
+             and hidden. It carried a hidden attribute for that, which did
+             nothing at all: .btn sets display:block and an element's own
+             display beats [hidden] every time — the same trap this file
+             already patches four times over (see .dpane[hidden] and friends).
+             So the Create wizard showed a "Save design" button directly above
+             its own "Finish and publish", which saves the design anyway.
+             Leaving it out entirely is the fix that cannot come undone. -->
+        \${env.hideSave ? "" : '<button class="btn btn-neon" style="margin-top:20px" data-a="save">' + env.saveLabel + "</button>"}\`;
 
       const f = (k) => div.querySelector('[data-f=' + k + ']');
       const q = (s) => div.querySelector(s);
@@ -2893,7 +2903,7 @@ export const DESIGN_PANEL_JS = /* js */ `
 
         const asked = modal(
           "Position your image",
-          '<p class="muted" style="margin:0 0 10px;font-size:.86rem">Drag to move it. ' +
+          '<p class="muted" style="margin:0 0 10px;font-size:var(--t-sm)">Drag to move it. ' +
             "Pinch, or use the slider, to zoom.</p>" +
             '<div class="cropwrap" style="width:' + VW + "px;height:" + VH + 'px">' +
               '<canvas data-crop width="' + VW + '" height="' + VH + '"></canvas>' +

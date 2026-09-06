@@ -119,7 +119,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .home { display: flex; flex-direction: column; }
     .home-main { order: 2; }
     .homehead { display: flex; align-items: center; justify-content: space-between;
-                gap: var(--s3); flex-wrap: wrap; margin: var(--s3) 0 var(--s3); }
+                gap: var(--s3); flex-wrap: wrap; margin: var(--s2) 0 var(--s3); }
     .homehead .sec { margin: 0; }
     /* A .seg shrunk to sit on a heading row without towering over it: reading
        size, and the smallest padding on the scale top and bottom. The labels
@@ -131,7 +131,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* Home's launch checklist uses the same quiet label, readable row name,
        and small supporting state as the rest of the page. Keeping it here
        rather than as inline declarations makes every state look alike. */
-    .launch-progress { order: 1; margin: 0 0 var(--s4); padding: var(--s3); background: var(--accent-wash);
+    .launch-progress { order: 1; margin: 0 0 var(--s3); padding: var(--s3); background: var(--accent-wash);
                        border: 1px solid var(--accent); border-radius: var(--r-lg); }
     .launch-heading { margin: 0 0 var(--s2); font-size: var(--type-section-heading-size);
                       font-weight: var(--type-section-heading-weight); line-height: var(--type-section-heading-leading);
@@ -275,7 +275,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        height each is the whole geometry, and a percentage height re-lays itself
        on rotation for free — which an SVG with a fixed viewBox does not. */
     .vplot { position: relative; display: flex; align-items: flex-end; gap: var(--s2);
-             height: 150px; margin-top: var(--s5); }
+             height: 150px; margin-top: var(--s4); }
     /* Four dashed rules behind the bars, so a height can be read roughly
        without an axis. Recessive on purpose — they are a backdrop, not data. */
     .vgrid { position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -452,7 +452,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             padding: var(--s3); margin-top: var(--s3); }
     .links { display: flex; gap: var(--s3); margin-top: var(--s2); flex-wrap: wrap; font-size: var(--t-sm); }
     ${DESIGN_PANEL_CSS}
-    .account { margin-top: var(--s5); }
+    .account { margin-top: var(--s4); }
     .card { max-width: 480px; }
     ${SEG_CSS}
     ${POPOVER_CSS}
@@ -552,7 +552,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /* The Powered by line is a sibling of #app in the shared shell, which with
        nothing scrolling would strand it under the floating nav. The script
        moves it inside the sheet instead — see app(). */
-    .sheet .pby { margin-top: var(--s5); }
+    .sheet .pby { margin-top: var(--s4); }
     .topbar img { width: 26px; height: 26px; border-radius: var(--r-sm); flex: none; }
     /* The greeting, LEFT of the bar and next to the logo — a dashboard says
        hello to the person running the shop, it does not label itself. min-width:0
@@ -805,7 +805,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .cfilter { display: flex; gap: var(--s2); flex-wrap: wrap; margin: var(--s3) 0 var(--s2); }
     .cfilter input[type="search"] { flex: 1; min-width: 160px; margin: 0; }
     .cfilter select { padding: var(--s2) var(--s3); border: 1px solid var(--field-border); border-radius: var(--r);
-                      font: inherit; background: var(--bg); color: var(--ink); }
+                      font-family: inherit; font-size: var(--t-md);
+                      background: var(--bg); color: var(--ink); }
     /* Segment filters. Ink when chosen, never neon — the neon on this screen
        belongs to the next action, and a filter is not one. */
     .segchip { width: auto; padding: var(--s2) var(--s3); border-radius: 999px; border: 1px solid var(--field-border);
@@ -853,7 +854,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .act .at { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 62px; }
     .act .aw strong { letter-spacing: var(--tr-code); }
     textarea { width: 100%; padding: var(--s2) var(--s3); border: 1px solid var(--field-border);
-               border-radius: var(--r); font: inherit; resize: vertical; }
+               border-radius: var(--r); font-family: inherit; font-size: var(--t-md);
+               resize: vertical; }
     /* --- Manage: the two lists, and one programme's page --- */
     #mtabs { margin: var(--s3) 0 0; }
     /* Shown once anyone is enrolled. A note, not a lock: changing a live
@@ -1024,12 +1026,22 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .ready { color: #1a7f37; font-weight: 700; }
     /* --- customers view: one collapsible section per recency group --- */
     .grp { border-radius: var(--r); padding: 0 var(--s3) var(--s3); margin-bottom: var(--s2); background: var(--bg); }
+    /* A section heading, so it is sized like one. It named no size at all and
+       therefore inherited the sheet's 12px, which made a fold TITLE the same
+       size as the fine print inside it — and left its own grey hint, at 14px,
+       LARGER than the heading it hangs off. Both were the wrong way round. */
     .grp summary { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; cursor: pointer;
-                   padding: var(--s3) 0; font-weight: 700; list-style: none; }
+                   padding: var(--s3) 0; font-size: var(--dashboard-interface-size);
+                   font-weight: 700; list-style: none; }
     .grp summary::-webkit-details-marker { display: none; }
-    .grp summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
+    /* The one thing on the row you are meant to press, so it is not the
+       smallest, faintest mark on it. Sized and inked deliberately rather than
+       inheriting whatever the row happened to be. */
+    .grp summary::before { content: "▸"; color: var(--ink2); font-size: var(--t-md);
+                           font-weight: 400; line-height: 1; transition: transform .18s; }
     .grp[open] summary::before { transform: rotate(90deg); }
-    .grp .gh { color: var(--muted); font-weight: 400; font-size: var(--t-sm); }
+    @media (prefers-reduced-motion: reduce) { .grp summary::before { transition: none; } }
+    .grp .gh { color: var(--muted); font-weight: 400; font-size: var(--dashboard-supporting-size); }
     /* The launch checklist's folds: the same .grp fold, separated by a rule
        instead of sitting in its own box, because they are one list. */
     .grp.rdy { border-radius: 0; padding: 0; margin: 0; background: none;
@@ -1052,7 +1064,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        the page belongs to whatever the owner came here to do (DESIGN.md 1). */
     /* The gap between the top bar and whatever screen is under it. The banner
        takes it when there is one, so the two never stack their margins. */
-    #pinwarn:not(:empty), #screen { margin-top: var(--s4); }
+    #pinwarn:not(:empty), #screen { margin-top: var(--s3); }
     #pinwarn:not(:empty) + #screen { margin-top: 0; }
     .pinwarn { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2);
                background: #fef3c7; color: #7c2d12; border: 1px solid #fcd34d;
@@ -1069,7 +1081,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        above every heading is most of what made this read as a wiki page. */
     .sec { font-size: var(--type-section-heading-size); font-weight: var(--type-section-heading-weight);
            line-height: var(--type-section-heading-leading); letter-spacing: var(--type-section-heading-tracking);
-           margin: var(--s5) 0 var(--s3); }
+           margin: var(--s4) 0 var(--s3); }
+    /* The action row and the heading under it both carry margin, and adjacent
+       margins collapse — so the largest won and the three buttons sat 40px off
+       their own details. They are one block about one card. */
+    .cardacts + .sec { margin-top: var(--s3); }
     /* --- counter activity: facts, and nothing that looks like a verdict --- */
     /* Deliberately has no state styling at all. There is no red, no bold-on-
        threshold, no chip: the moment one number can look different from
@@ -1424,7 +1440,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                 // Otherwise "4 stamps over 66s" under a heading that says "within
                 // a minute" reads as a contradiction. The minute is the gap
                 // between stamps, not the length of the whole run.
-                '<p class="muted" style="margin-top:12px;font-size:.82rem">Each stamp landed under a ' +
+                '<p class="muted" style="margin-top:12px;font-size:var(--dashboard-supporting-size)">Each stamp landed under a ' +
                 "minute after the one before it, so a run of several can span longer than that.</p>");
             }
             if (kind === "devices") {
@@ -1434,7 +1450,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                    dayOf(r.first_seen), dayOf(r.last_seen), r.stamps]) +
                 // Both of these would mislead if left unsaid, and neither is a
                 // judgement — they are how the list is built.
-                '<p class="muted" style="margin-top:12px;font-size:.82rem">Phones that have stamped in ' +
+                '<p class="muted" style="margin-top:12px;font-size:var(--dashboard-supporting-size)">Phones that have stamped in ' +
                 "the last 14 days, not phones signed in. A phone whose browser data is cleared comes " +
                 "back as a new one here. To sign every phone out, reset the staff access code under Shop.</p>");
             }
@@ -1623,7 +1639,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                paintCycle reveals this one only for the shops it belongs to. -->
           <option value="21" hidden>Once every 2–3 weeks</option>
         </select>
-        <p class="muted" data-cycleout style="margin:6px 0 0;font-size:.84rem"></p>
+        <p class="muted" data-cycleout style="margin:6px 0 0;font-size:var(--dashboard-supporting-size)"></p>
 
         <h2 class="sec">Staff</h2>
         <p class="muted">Staff use the stamper to record visits.\${info("One access code for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
@@ -4685,6 +4701,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const bg = v.background === "card" ? (card.bg || "#101312") : dark ? "#101312" : "#f2f4f1";
         const fg = dark ? "#fff" : "#0c0e0d";
         preview.style.background = bg; preview.style.color = fg;
+        // Raw sizes below, on purpose: this is a PREVIEW OF ARTWORK — the
+        // poster or the social post the shop will print or upload — so its type
+        // is the design of that piece, not our interface scale. The card
+        // mock-ups in the design panel are raw for the identical reason.
         preview.innerHTML = '<div style="padding:24px;min-height:230px;display:flex;flex-direction:column;justify-content:space-between">' +
           '<p style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:0">' + esc(card.shopName || card.name || "Loyalty club") + "</p>" +
           '<div><h4 style="font-family:var(--display);font-size:28px;line-height:1.05;letter-spacing:-.03em;margin:0 0 12px">' + esc(v.message) +
