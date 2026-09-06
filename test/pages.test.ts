@@ -1518,14 +1518,19 @@ describe("dashboard information architecture", () => {
      * Neon is on Create alone now.
      *
      * The top bar carried it too, which made it one of DESIGN.md's fenced
-     * exceptions. It is a thin white bar that gets out of the way as you
-     * scroll, so the accent has one job again: the next thing to press.
+     * exceptions. It is a thin bar that gets out of the way as you scroll, so
+     * the accent has one job again: the next thing to press.
+     *
+     * It takes the PAGE's colour and carries no line under it. White over an
+     * off-white page with a hairline between read as a band stuck across the
+     * top rather than as the top of the app.
      */
     it("puts neon on Create, and nowhere else in the chrome", () => {
       const at = html.indexOf(".topbar { flex: none;");
       const bar = html.slice(at, html.indexOf("}", at));
       expect(bar).not.toContain("var(--accent)");
-      expect(bar).toContain("background: var(--bg)");
+      expect(bar).toContain("background: var(--surface)");
+      expect(bar).not.toContain("border-bottom");
       expect(bar).toContain("color: var(--ink)");
       expect(bar).not.toContain("#fff");
 
@@ -3727,13 +3732,27 @@ describe("the manage screens", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
   const detail = html.slice(html.indexOf("function rewardDetailScreen(id)"), html.indexOf("function dealLine(card)"));
 
-  it("has two panes behind one switch", () => {
-    expect(html).toContain('data-mt="rewards"');
-    expect(html).toContain('data-mt="campaigns"');
+  /**
+   * ONE pane, and no switch.
+   *
+   * Manage was two screens behind a pill, and the second one was three lines
+   * saying there was nothing there yet — so a control that cost a tap on every
+   * visit existed to offer an empty page. Campaigns sits at the top of
+   * Customers, which is the screen about people.
+   */
+  it("is one pane with no tab switch", () => {
+    expect(html).not.toContain('data-mt="rewards"');
+    expect(html).not.toContain('data-mt="campaigns"');
     expect(html).toContain("function rewardsPane(host)");
-    expect(html).toContain("function campaignsPane(host)");
-    // Both tabs are addresses, so a refresh lands back on the one you were on.
-    expect(html).toContain('navigate("/manage/" + b.dataset.mt)');
+    expect(html).toContain("function campaignsBlock()");
+    // The old address still resolves — it forwards rather than 404ing anyone
+    // who bookmarked it.
+    expect(html).toContain('navigate("/customers", true)');
+    // And the block really is on Customers, above the customer list.
+    const cust = html.slice(html.indexOf("function customersScreen()"),
+                            html.indexOf("function customerDetail"));
+    expect(cust.indexOf("campaignsBlock()")).toBeGreaterThan(-1);
+    expect(cust.indexOf("campaignsBlock()")).toBeLessThan(cust.indexOf("Your customers"));
   });
 
   /**
@@ -3745,7 +3764,7 @@ describe("the manage screens", () => {
    * all, and that is held here rather than left as an intention.
    */
   it("shows no performance figures anywhere in Manage", () => {
-    const manage = html.slice(html.indexOf("function manageScreen(tab)"),
+    const manage = html.slice(html.indexOf("function manageScreen()"),
                               html.indexOf("function designerFor(card, extra)"));
     expect(manage).not.toContain('class="metric"');
     // The HEADING, not the word: the comment where the block used to be says
@@ -3805,16 +3824,23 @@ describe("the manage screens", () => {
     expect(pane).not.toMatch(/\.offsetLeft\b/);
   });
 
-  /** Poster, Share, Add, Edit — on a real card, which is the only kind now. */
-  it("offers the card's actions and its setup, never its numbers", () => {
+  /**
+   * THREE actions: Test, Share, Edit.
+   *
+   * Poster was a fourth, which split "how do I give this out" across two
+   * controls sitting next to each other. It is inside Share now, with the two
+   * other links that answer the same question.
+   */
+  it("offers the card's actions and its details, never its numbers", () => {
     const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
-    for (const a of ["Poster", "Share", "Add", "Edit"]) expect(body).toContain(a);
+    for (const a of ["Test", "Share", "Edit"]) expect(body).toContain(a);
+    expect(body).not.toContain('actBtn("poster"');
     // The example branch went with the example tiles: there is one tile shape
     // now, so there is nothing to keep the same shape as.
     expect(body).not.toContain("t.eg");
-    // Info is SETUP, not numbers.
-    expect(body).toContain("dealLine(c)");
-    expect(body).toContain("Welcome stamps");
+    // Details is what the card DOES, not how it is doing.
+    expect(body).toContain("detailRows(c)");
+    expect(body).toContain(">Details<");
     expect(body).not.toContain("customers");
   });
 
@@ -3825,9 +3851,15 @@ describe("the manage screens", () => {
    */
   it("shares through a list that a second option could join", () => {
     const sheet = html.slice(html.indexOf("function shareSheet(card)"),
-                             html.indexOf("function campaignsPane(host)"));
+                             html.indexOf("function campaignsBlock()"));
     expect(sheet).toContain('class="sharelist2"');
     expect(sheet).toContain("Copy sign-up link");
+    // Poster stopped being a button of its own beside Share, which split "how
+    // do I give this out" across two controls. Every way of handing the card
+    // over is in the one sheet that answers that question.
+    expect(sheet).toContain("Printable poster");
+    expect(sheet).toContain("Sign-up page");
+    expect(sheet).toContain("Customer page");
     // Clipboard access is refused outside a secure context, so there is a
     // fallback rather than a button that silently does nothing.
     expect(sheet).toContain("navigator.clipboard");
@@ -3843,7 +3875,7 @@ describe("the manage screens", () => {
    * links behind them, which is a screen demonstrating itself.
    */
   it("says it has no campaign data yet, and keeps the way to make one", () => {
-    const pane = html.slice(html.indexOf("function campaignsPane(host)"),
+    const pane = html.slice(html.indexOf("function campaignsBlock()"),
                             html.indexOf("function manageDetailScreen"));
     expect(pane).toContain("No campaign data yet.");
     expect(pane).toContain('data-nav="/create/campaign"');
@@ -3880,17 +3912,69 @@ describe("the manage screens", () => {
     expect(css).toContain(".pick.opt > .pickdot { grid-column: 3; }");
   });
 
-  it("marks a draft and offers the way back into the flow", () => {
+  /**
+   * A draft is ONE button, and the word "Draft" above the card is the whole
+   * explanation.
+   *
+   * It used to be a tinted bar: a pill, a sentence saying nobody could be given
+   * the card, the button, and a delete link. The pill is the status line now
+   * and the sentence is what the word means, so what is left is the way back
+   * into the flow. Deleting lives on the card's own page, which says whether it
+   * will really delete or only hide.
+   */
+  it("gives a draft one button and no explanation block", () => {
     const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
     expect(body).toContain("const draft = !c.publishedAt");
     expect(body).toContain("Continue editing");
     expect(body).toContain("data-resume");
-    // Sign-ups on a draft have not been closed; they have not begun.
-    expect(body).toContain('draft ? "Not started"');
+    expect(body).not.toContain("draftbar");
+    expect(body).not.toContain("data-draftdel");
+    expect(body).not.toContain("Not finished yet");
     // Back to Rules, not Choose: the type is the answer that made the card.
     const paint = html.slice(html.indexOf("const resume = body.querySelector"),
-                             html.indexOf('body.querySelector("[data-poster]")'));
+                             html.indexOf('body.querySelector("[data-share]")'));
     expect(paint).toContain('navigate("/create/" + c.id + "/rules")');
+  });
+
+  /**
+   * Three states, not two. A card that has ENDED has closed its sign-ups while
+   * everybody holding one keeps collecting and keeps claiming, so it is neither
+   * live nor unfinished — and it was the one state this screen could not show.
+   */
+  it("says which state the card is in, above the card", () => {
+    const fn = html.slice(html.indexOf("function statusOf(c)"), html.indexOf("function detailRows(c)"));
+    expect(fn).toContain('{ key: "draft", label: "Draft" }');
+    expect(fn).toContain('{ key: "ended", label: "Ended" }');
+    expect(fn).toContain('{ key: "live", label: "Active" }');
+    // Drawn above the strip, and repainted as you swipe.
+    const pane = html.slice(html.indexOf("function rewardsPane(host)"), html.indexOf("function statusOf(c)"));
+    expect(pane.indexOf("data-cstat")).toBeLessThan(pane.indexOf('class="carwrap"'));
+    expect(pane).toContain("statusOf(t.card).label");
+    // The card's own page uses the SAME badge. It had a .pstat span with no CSS
+    // anywhere, so it rendered as bare text run into the card's name.
+    expect(html).not.toContain('class="pstat');
+  });
+
+  /**
+   * Three rows that say what the card DOES.
+   *
+   * They replace a "The deal" line that answered a different question and knew
+   * nothing about earn modes — so a points card earning from what people SPEND
+   * described itself as though it earned per visit.
+   */
+  it("describes a card by program, earning and reward", () => {
+    const rows = html.slice(html.indexOf("function detailRows(c)"), html.indexOf("function cardBody(t)"));
+    expect(rows).toContain('"Program"');
+    expect(rows).toContain('"Earning"');
+    expect(rows).toContain('"Reward"');
+    // A membership card counts nothing, so it has no Earning row at all —
+    // absent rather than empty, because an empty row invites the reader to
+    // wonder what should have been in it.
+    expect(rows).toContain('if (earn) rows.push(["Earning", earn])');
+    const earn = html.slice(html.indexOf("function earnLine(c)"), html.indexOf("function rewardLine(c)"));
+    expect(earn).toContain('if (c.kind === "membership") return ""');
+    expect(earn).toContain('c.earnMode === "spend"');
+    expect(earn).toContain("Your staff decide at the counter");
   });
 
   /**
@@ -3901,7 +3985,7 @@ describe("the manage screens", () => {
    */
   it("offers a test card from Manage, not from the designer", () => {
     const body = html.slice(html.indexOf("function cardBody(t)"), html.indexOf("const actBtn ="));
-    expect(body).toContain('actBtn("testadd", ICON_ADD, "Add")');
+    expect(body).toContain('actBtn("testadd", ICON_ADD, "Test")');
     const sheet = html.slice(html.indexOf("function testCardSheet(card)"),
                              html.indexOf("const actBtn ="));
     expect(sheet).toContain("Add to Apple Wallet");
@@ -3985,7 +4069,7 @@ describe("the manage screens", () => {
 describe("the create screens", () => {
   const html = dashboardPage({ emailConfigured: true } as never);
   const campaign = html.slice(html.indexOf("function createCampaignScreen(type)"),
-                              html.indexOf("function manageScreen(tab)"));
+                              html.indexOf("function manageScreen()"));
 
   /**
    * The four reward types are the four the database already holds, so wiring
@@ -4349,7 +4433,7 @@ describe("the screen builders, actually run", () => {
     'function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){' +
       'return {"&":"&amp;","<":"&lt;",">":"&gt;",\'"\':"&quot;"}[c];});}' +
       'const ROOT = "/dashboard";' +
-      cut("const KIND_LABEL =", "function manageScreen(tab)") +
+      cut("const KIND_LABEL =", "function manageScreen()") +
       cut("function custCard(x)", "/**\n     * What happened at the counter today.") +
       cut("function dealLine(card)", "function endedNote()") +
       "return { custCard, dealLine, segLabel, KIND_LABEL };",

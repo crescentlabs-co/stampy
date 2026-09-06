@@ -186,9 +186,15 @@ Numbers that line up in a column get `font-variant-numeric: tabular-nums`.
   an inline style on Home, the token is your job.
 - **Inputs** keep a visible `--field-border`; a borderless field on a white page
   is not discoverable.
-- **App chrome** is a thin white top bar, a scrolling sheet under it that runs
-  edge to edge, and a `--bg` bottom nav that FLOATS — a pill inset from the
-  screen edges, not a strip welded to the bottom.
+- **App chrome** is a thin top bar in the SAME `--surface` as the page, a
+  scrolling sheet under it that runs edge to edge, and a `--bg` bottom nav that
+  FLOATS — a pill inset from the screen edges, not a strip welded to the bottom.
+
+  The top bar carries **no border and no colour of its own**. It was white over
+  an off-white page with a hairline between, which read as a band stuck across
+  the screen rather than as the top of the app. The one thing in it that is
+  meant to be pressed — the ⋯ — takes a `--bg` circle with a `--line` ring, and
+  it stands out precisely because the bar behind it stopped trying to.
 
   **Both bars thin out as you scroll, and neither one leaves.** One class
   (`.tucked`) on one scroll listener drives both, so they can never disagree

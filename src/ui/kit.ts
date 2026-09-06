@@ -224,6 +224,10 @@ export const baseCss = /* css */ `
   }
   :is(.fold, .grp, .bucket, .mdetail) .btn-ghost:hover { background: var(--surface); }
   .btn { transition: transform .09s ease, filter .15s ease; }
+  /* The one red button in the app, for the one kind of action that cannot be
+     undone. Built from --bad, so it is the same red as every warning. */
+  .btn-danger { background: var(--bad); color: #fff; }
+  .btn-danger:hover { filter: brightness(1.08); }
   .btn:active { transform: scale(.985); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
@@ -441,7 +445,17 @@ export const MODAL_JS = /* js */ `
    * Ask, and resolve true only if they confirm. bodyHtml is markup we build —
    * anything the user typed goes through mdlEsc on the way in.
    */
-  function modal(title, bodyHtml, okLabel) {
+  /**
+   * Our own confirmation box.
+   *
+   * NOT the browser's own built-in confirmation, which a phone can be told to
+   * stop showing — after which it answers "no" in silence and the button
+   * quietly stops working. That is what invariant 8 forbids, and this is the
+   * thing it points at instead.
+   *
+   * The danger flag turns the OK button red, for the ones that destroy something.
+   */
+  function modal(title, bodyHtml, okLabel, danger) {
     return new Promise(function (resolve) {
       var last = document.activeElement;
       var wrap = document.createElement("div");
@@ -451,9 +465,10 @@ export const MODAL_JS = /* js */ `
           '<h3 id="mdlt"></h3><div class="mdlbody"></div>' +
           '<div class="mdlrow">' +
             '<button type="button" class="btn btn-ghost" data-no>Cancel</button>' +
-            '<button type="button" class="btn btn-dark" data-yes></button>' +
+            '<button type="button" class="btn" data-yes></button>' +
           "</div>" +
         "</div>";
+      wrap.querySelector("[data-yes]").classList.add(danger ? "btn-danger" : "btn-dark");
       wrap.querySelector("#mdlt").textContent = title;
       wrap.querySelector(".mdlbody").innerHTML = bodyHtml;
       var yes = wrap.querySelector("[data-yes]"), no = wrap.querySelector("[data-no]");

@@ -328,29 +328,66 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
        Which is also why there is no full-bleed negative margin any more: it
        made the strip wider than the block its own padding was measured from. */
-    .carousel { --slide: 78%;
-                display: flex; gap: var(--s2); overflow-x: auto; scroll-snap-type: x mandatory;
+    /* PIXELS on the outside, 100% of the content box on the slide. Both used to
+       be percentages measured from different boxes, so the card came out 78% of
+       78% and off-centre — which is why the numbers here are not percentages
+       and must not become them again. The gutter is what the neighbouring cards
+       peek through. */
+    .carousel { display: flex; gap: var(--s2); overflow-x: auto; scroll-snap-type: x mandatory;
                 -webkit-overflow-scrolling: touch; scrollbar-width: none;
-                padding: 0 calc((100% - var(--slide)) / 2) var(--s2); }
+                padding: 0 var(--s5) var(--s2); }
     .carousel::-webkit-scrollbar { display: none; }
-    .slide { position: relative; flex: 0 0 100%; scroll-snap-align: center; min-width: 0; }
+    .slide { position: relative; flex: 0 0 100%; scroll-snap-align: center; min-width: 0;
+             /* A tile is swiped far more often than it is dragged, and the last
+                one is an <a>, which a browser will happily start dragging
+                instead of scrolling. */
+             -webkit-user-drag: none; }
+    .slide a { -webkit-user-drag: none; }
     /* The arrows sit in the gutter the carousel's own padding already leaves,
        so they cost no width and never overlap the card. Quiet by default — this
        strip is swiped far more often than it is clicked, and two loud buttons
        either side of the card would be the first thing the eye lands on instead
        of the card. They exist because swiping is the ONLY other way through,
        and a keyboard cannot swipe. */
-    .carwrap { position: relative; }
+    /* Out of the sheet's own side padding, so the strip runs to the screen and
+       the next card peeks off the edge instead of being clipped 16px short of
+       it. A fixed margin, not a percentage: see the carousel above. */
+    .carwrap { position: relative; margin-inline: calc(-1 * var(--s3)); }
+    /* Buttons, not bare glyphs. They sit ON the neighbouring card now that the
+       strip reaches the edge, and a dark grey chevron on dark artwork is
+       invisible. Translucent so the card still reads through them. */
     .carnav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
-              width: 32px; height: 44px; display: flex; align-items: center;
+              width: 32px; height: 32px; display: flex; align-items: center;
               justify-content: center; padding: 0; cursor: pointer;
-              background: none; border: 0; color: var(--muted); }
+              border-radius: 999px; color: var(--ink);
+              background: rgba(255,255,255,.72); border: 1px solid rgba(12,14,13,.12);
+              backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
     .carnav svg { width: 20px; height: 20px; fill: none; stroke: currentColor;
                   stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .carnav:hover { color: var(--ink); }
+    .carnav:hover { background: rgba(255,255,255,.92); }
     .carnav:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: var(--r-sm); }
-    .carnav.prev { left: -4px; }
-    .carnav.next { right: -4px; }
+    .carnav.prev { left: 6px; }
+    .carnav.next { right: 6px; }
+    /* The state of the card you are looking at, above it. A dot and a word:
+       the dot carries the colour so the word never has to be read to get the
+       gist, and the word carries the meaning so the colour never has to be. */
+    .cstat { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2);
+             font-size: var(--t-sm); font-weight: 700; color: var(--muted);
+             letter-spacing: var(--tr-sm); min-height: 18px; }
+    .cstat::before { content: ""; width: 8px; height: 8px; border-radius: 999px;
+                     background: currentColor; flex: none; }
+    .cstat.live  { color: #2e7d4f; }
+    .cstat.draft { color: var(--muted); }
+    .cstat.ended { color: #8a6100; }
+    /* Nothing selected — the add tile. No dot, because there is no state. */
+    .cstat.none::before { display: none; }
+    /* The add tile is not a card, so the body under it is empty — but it keeps
+       its height. Without this the page was 404px shorter the instant that tile
+       centred, and the scroll container reflowed under your finger mid-swipe,
+       which is what "swiping to the last one sticks" actually was. */
+    [data-cardbody] { min-height: 300px; }
+    /* The surface switcher sits UNDER the card in Manage, tight against it. */
+    .carwrap + .dsurf { margin: 0 0 var(--s3); }
     .addtile { display: flex; flex-direction: column; align-items: center;
                justify-content: center; gap: var(--s2); min-height: 190px;
                border-radius: var(--r); padding: var(--s4); text-align: center;
@@ -460,8 +497,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                  background: var(--bg); }
     /* position:relative so the ⋯ menu has something to hang off now that the
        bar is no longer sticky; z-index so it stays above the sheet's corners. */
+    /* The SAME colour as the page below it, and no line under it. It was white
+       over an off-white page with a hairline between, which read as a band
+       stuck across the top rather than as the top of the app. */
     .topbar { flex: none; position: relative; z-index: 40; display: flex; align-items: center;
-              gap: var(--s2); background: var(--bg); color: var(--ink); border-bottom: 1px solid var(--line);
+              gap: var(--s2); background: var(--surface); color: var(--ink);
               /* The bar runs to the very top of the phone. The page paints
                  into the notch now (viewport-fit=cover), so the bar's own
                  padding carries the status bar rather than leaving a white
@@ -516,12 +556,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .topbar .shop { flex: 1; min-width: 0; text-align: left; font-family: var(--display);
                     font-weight: 700; font-size: var(--t-md); letter-spacing: var(--tr-lg);
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .topbar .dots { flex: none; width: 36px; height: 36px; border: 0; border-radius: 999px;
-                    background: transparent; color: var(--ink); font-size: var(--t-lg);
+    /* A round button, which it always looked like it should be and never was.
+       It stands out now precisely because the bar behind it stopped trying to. */
+    .topbar .dots { flex: none; width: 36px; height: 36px; border-radius: 999px;
+                    background: var(--bg); border: 1px solid var(--line);
+                    color: var(--ink); font-size: var(--t-lg);
                     /* Not type: the glyph is centred in a 36px circle, so the
                        line box has to be the glyph and nothing else. */
                     line-height: 1; cursor: pointer; padding: 0; }
-    .topbar .dots:hover { background: rgba(12,14,13,.1); }
+    .topbar .dots:hover { background: var(--ghost-bg); }
     /* INK, not neon, per rule 3 — the ring goes dark on a light ground, and
        #c9f73d is a light ground. A neon ring on neon is no ring at all. */
     .topbar .dots:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
@@ -2025,8 +2068,14 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       ["/create", () => createScreen()],
       ["/ready/:id", (p) => readyScreen(p.id)],
       ["/manage/:tab/:id", (p) => manageDetailScreen(p.tab, p.id)],
-      ["/manage/:tab", (p) => manageScreen(p.tab)],
-      ["/manage", () => manageScreen("rewards")],
+      // Campaigns moved to Customers, which is the screen about people. The
+      // address stays alive and forwards rather than 404ing anyone who
+      // bookmarked it or has it open in another tab.
+      ["/manage/:tab", (p) => {
+        if (p.tab === "campaigns") { navigate("/customers", true); return document.createElement("div"); }
+        return p.tab === "rewards" ? manageScreen() : notFoundScreen();
+      }],
+      ["/manage", () => manageScreen()],
       ["/shop/:section", (p) => shopScreen(p.section)],
       ["/shop", () => shopScreen("")],
     ];
@@ -2795,7 +2844,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     function customersScreen() {
       const d = document.createElement("div");
       d.innerHTML =
-        '<h2 class="sec first">Your customers</h2>' +
+        campaignsBlock() +
+        '<h2 class="sec">Your customers</h2>' +
         '<div data-health></div>' +
         '<div class="cfilter">' +
           '<input data-q type="search" placeholder="Search by card code" autocomplete="off">' +
@@ -4073,28 +4123,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     const KIND_LABEL = { stamp: "Stamps", milestones: "Stamps + milestones",
                          membership: "Membership", points: "Points" };
 
-    function manageScreen(tab) {
-      if (tab !== "rewards" && tab !== "campaigns") return notFoundScreen();
+    /**
+     * Manage — one screen, about one card.
+     *
+     * It used to be two, behind a pill: Rewards and Campaigns. Campaigns is
+     * three lines saying there is nothing there yet, so a control that cost a
+     * tap on every visit existed to offer an empty page. It lives at the top of
+     * Customers now, which is the screen about people — and a campaign is a
+     * message to people.
+     */
+    function manageScreen() {
       const d = document.createElement("div");
-      d.innerHTML =
-        '<h2 class="sec first">Manage</h2>' +
-        '<div class="seg" id="mtabs" role="tablist">' +
-          '<button data-mt="rewards"' + (tab === "rewards" ? ' class="on"' : "") + ">Rewards</button>" +
-          '<button data-mt="campaigns"' + (tab === "campaigns" ? ' class="on"' : "") + ">Campaigns</button>" +
-          '<span class="thumb"></span>' +
-        "</div>" +
-        '<div data-mlist style="margin-top:16px"></div>';
-      const seg = d.querySelector("#mtabs");
-      seg.querySelectorAll("[data-mt]").forEach((b) => {
-        b.onclick = () => navigate("/manage/" + b.dataset.mt);
-      });
-      // The thumb measures the button it sits under, so it can only be placed
-      // once the strip is in the document.
-      setTimeout(() => moveThumb(seg), 0);
-
-      const list = d.querySelector("[data-mlist]");
-      if (tab === "rewards") rewardsPane(list);
-      else campaignsPane(list);
+      d.innerHTML = '<h2 class="sec first">Manage</h2><div data-mlist></div>';
+      rewardsPane(d.querySelector("[data-mlist]"));
       return d;
     }
 
@@ -4121,17 +4162,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         .map((c) => ({ card: c }));
 
       host.innerHTML =
-        '<div class="cardhead">' +
-          // The SAME control the design step has, not a dropdown that says the
-          // answer in a word. Two icons and one tap each, instead of open, read,
-          // tap — for a choice with exactly two options.
-          '<div class="dsurf" data-faces role="tablist">' +
-            '<button type="button" class="dsurfbtn on" data-face="apple" role="tab"' +
-              ' aria-selected="true" aria-label="iPhone">${APPLE_GLYPH}</button>' +
-            '<button type="button" class="dsurfbtn" data-face="google" role="tab"' +
-              ' aria-selected="false" aria-label="Android">${GOOGLE_GLYPH}</button>' +
-          "</div>" +
-        "</div>" +
+        // What state the card you are looking at is in, above the card and
+        // changing as you swipe. Three states, not two: a card whose sign-ups
+        // have closed is still collecting and still paying out for everyone
+        // holding one, so calling it Active would be wrong — and it was the one
+        // state this screen could not show at all.
+        '<p class="cstat" data-cstat></p>' +
         // The arrows are the keyboard's way through the strip. Swiping is a
         // touchscreen gesture and a scroll-snap strip offers nothing else, so
         // without these a keyboard could reach card one and stop there.
@@ -4141,6 +4177,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<div class="carousel" data-car></div>' +
           '<button type="button" class="carnav next" data-car-next aria-label="Next card">' +
             ICON_CHEV_R + "</button>" +
+        "</div>" +
+        // Under the card, tight against it: it switches which face of THAT card
+        // you are looking at, and it used to sit above the strip in a header row
+        // of its own, a long way from the thing it changes.
+        '<div class="dsurf" data-faces role="tablist">' +
+          '<button type="button" class="dsurfbtn on" data-face="apple" role="tab"' +
+            ' aria-selected="true" aria-label="iPhone">${APPLE_GLYPH}</button>' +
+          '<button type="button" class="dsurfbtn" data-face="google" role="tab"' +
+            ' aria-selected="false" aria-label="Android">${GOOGLE_GLYPH}</button>' +
         "</div>" +
         '<div data-cardbody></div>';
 
@@ -4226,8 +4271,17 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         return tiles[at] || null;
       }
 
+      const stat = host.querySelector("[data-cstat]");
+
       function paint() {
         const t = current();
+        // The add tile is not a card, so it has no state and nothing to do to
+        // it. The status line goes quiet and the body empties — but the body
+        // keeps its height, which is the whole of the "swiping to the last tile
+        // sticks" complaint: the page was 404px shorter the instant that tile
+        // centred, and the scroll container reflowed under your finger.
+        stat.className = "cstat" + (t ? " " + statusOf(t.card).key : " none");
+        stat.textContent = t ? statusOf(t.card).label : "";
         body.innerHTML = t ? cardBody(t) : "";
         if (!t) return;
         const c = t.card;
@@ -4236,26 +4290,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         const resume = body.querySelector("[data-resume]");
         if (resume) {
           // Back to Rules, not to Choose: the type is the one answer they
-          // definitely gave — it is what created the card.
+          // definitely gave — it is what created the card. Deleting lives on
+          // the card's own page now, and this is how a draft reaches it.
           resume.onclick = () => navigate("/create/" + c.id + "/rules");
-          // Two taps, never a browser dialog (invariant 8). The server decides
-          // whether this really deletes: a draft nobody has ever been given is
-          // gone for good, and one that somehow issued a card is archived.
-          arm(body.querySelector("[data-draftdel]"), "Tap again to delete it", async () => {
-            const { body: out } = await api("/card/" + encodeURIComponent(c.id) + "/remove", {
-              method: "POST",
-            });
-            if (!out || !out.ok) { toast("That didn\u2019t work. Try again."); return; }
-            await refreshCards();
-            navigate("/manage/rewards", true);
-            toast(out.outcome === "deleted"
-              ? "Deleted."
-              : "Removed from your dashboard. Cards already issued keep working.");
-          });
           return;
         }
-        body.querySelector("[data-poster]").onclick = () =>
-          window.open("/c/" + encodeURIComponent(c.id) + "/poster", "_blank", "noopener");
         body.querySelector("[data-share]").onclick = () => shareSheet(c);
         body.querySelector("[data-testadd]").onclick = () => testCardSheet(c);
         body.querySelector("[data-edit]").onclick = () => navigate("/manage/rewards/" + c.id);
@@ -4271,35 +4310,97 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       paint();
     }
 
-    /** The four actions and the setup, under whichever card is showing. */
+    /**
+     * What state a card is in, in one word.
+     *
+     * THREE, not two. A card that has ended has closed its sign-ups while
+     * everybody already holding one keeps collecting and keeps claiming — so it
+     * is neither live nor unfinished, and calling it either would be a lie
+     * about the promise still outstanding on it.
+     */
+    function statusOf(c) {
+      if (!c.publishedAt) return { key: "draft", label: "Draft" };
+      if (c.endedAt) return { key: "ended", label: "Ended" };
+      return { key: "live", label: "Active" };
+    }
+
+    /**
+     * What this card IS, in three lines: the kind, how it is earned, and what
+     * it pays out.
+     *
+     * This replaces a "The deal" line that answered a different question and
+     * knew nothing about earn modes — so a points card earning from what people
+     * SPEND described itself as though it earned per visit.
+     */
+    function detailRows(c) {
+      const rows = [["Program", KIND_LABEL[c.kind] || "Stamps"]];
+      const earn = earnLine(c);
+      // A membership card counts nothing, so it has nothing to earn. The row is
+      // absent rather than empty: an empty row invites the reader to wonder
+      // what should have been in it.
+      if (earn) rows.push(["Earning", earn]);
+      rows.push(["Reward", rewardLine(c)]);
+      return rows.map(([k, v]) =>
+        '<div class="drow"><span>' + esc(k) + "</span><b>" + esc(v) + "</b></div>").join("");
+    }
+
+    /** "1 visit = 2 stamps", "RM1 = 5 points", or who decides at the counter. */
+    function earnLine(c) {
+      if (c.kind === "membership") return "";
+      if (c.kind !== "points") {
+        const n = c.stampsPerVisit || 1;
+        return "1 visit = " + n + (n === 1 ? " stamp" : " stamps");
+      }
+      const per = c.earnPoints || 1;
+      const pts = per + (per === 1 ? " point" : " points");
+      if (c.earnMode === "manual") return "Your staff decide at the counter";
+      if (c.earnMode === "spend") return rm(c.earnSpend || 1) + " = " + pts;
+      return "1 visit = " + pts;
+    }
+
+    /** "10 stamps = Free coffee", "500 points = RM10 off", or the perks. */
+    function rewardLine(c) {
+      if (c.kind === "membership") {
+        // The escape below is DOUBLED, and it has to be. This whole script
+        // lives inside a template literal, so a single backslash-n is turned
+        // into a real newline while the page is being built — which leaves an
+        // unterminated string and a page that does not parse at all. Writing
+        // the sequence out in a comment does the same thing, which is how this
+        // very line broke it the first time.
+        const perks = (c.benefits || "").split("\\n").map((l) => l.trim()).filter(Boolean);
+        return perks.length ? perks.join(", ") : "No perks listed yet";
+      }
+      if (c.kind === "points") {
+        const at = c.pointsTarget || 0;
+        return (at ? at + " points = " : "") + (c.reward || "a reward");
+      }
+      // A card with rewards along the way lists them all: having more than one
+      // is the entire point of that card, and naming only the last would
+      // describe a different programme.
+      if (c.kind === "milestones" && (c.milestones || []).length) {
+        return c.milestones.map((m) => m.at + " = " + m.reward).join(" \u00b7 ");
+      }
+      const n = c.stampsTarget || 0;
+      return (n ? n + (n === 1 ? " stamp = " : " stamps = ") : "") + (c.reward || "a reward");
+    }
+
+    /** The actions and the details, under whichever card is showing. */
     function cardBody(t) {
       const c = t.card;
       // An unfinished card has no poster to print and no link worth sharing —
-      // nothing hands it to a customer until it is published. So it says what
-      // it is and offers the one thing that helps: the way back into the flow.
+      // nothing hands it to a customer until it is published. The status line
+      // above the card already says "Draft", and that word is the explanation,
+      // so all that is left here is the way back into the flow.
       const draft = !c.publishedAt;
       return (draft
-        ? '<div class="draftbar"><span class="pill pill-warn">Draft</span>' +
-          "<span>Not finished yet, so nobody can be given this card.</span>" +
-          '<button type="button" class="btn btn-neon" data-resume>Continue editing</button>' +
-          // The other thing you might want, and the only screen a draft can be
-          // reached from: its Edit button is Continue editing, so the card page
-          // that carries Remove has no link to it from here.
-          '<button type="button" class="draftdel" data-draftdel>Delete this card</button></div>'
+        ? '<button type="button" class="btn btn-neon" data-resume style="margin-top:14px">' +
+          "Continue editing</button>"
         : '<div class="cardacts">' +
-            actBtn("poster", ICON_POSTER, "Poster") +
+            actBtn("testadd", ICON_ADD, "Test") +
             actBtn("share", ICON_SHARE, "Share") +
-            actBtn("testadd", ICON_ADD, "Add") +
             actBtn("edit", ICON_EDIT, "Edit") +
           "</div>") +
-        '<h2 class="sec">Info</h2>' +
-        '<div class="drow"><span>Type</span><b>' + esc(KIND_LABEL[c.kind] || "Stamps") + "</b></div>" +
-        '<div class="drow"><span>The deal</span><b>' + esc(dealLine(c)) + "</b></div>" +
-        (c.stampsStart
-          ? '<div class="drow"><span>Welcome stamps</span><b>' + c.stampsStart + "</b></div>"
-          : "") +
-        '<div class="drow"><span>Sign-ups</span><b>' +
-          (draft ? "Not started" : c.endedAt ? "Closed" : "Open") + "</b></div>";
+        '<h2 class="sec">Details</h2>' + detailRows(c);
     }
 
     const ICON_ADD =
@@ -4584,9 +4685,19 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       wrap.className = "mdl";
       wrap.innerHTML =
         '<div class="mdlbox" role="dialog" aria-modal="true" aria-label="Share">' +
-          "<h3>Share your sign-up link</h3>" +
+          "<h3>Share this card</h3>" +
+          // Every way of handing this card to somebody, in the one place that
+          // answers that question. Poster used to be a button of its own beside
+          // Share, which split "how do I give this out" across two controls.
+          // Same three links the card's own page carries, same wording.
           '<div class="sharelist2">' +
             '<button type="button" class="popopt" data-copy>Copy sign-up link</button>' +
+            '<a class="popopt" href="/c/' + esc(card.id) + '/poster" target="_blank" rel="noopener">' +
+              "Printable poster</a>" +
+            '<a class="popopt" href="/c/' + esc(card.id) + '?s=link" target="_blank" rel="noopener">' +
+              "Sign-up page</a>" +
+            '<a class="popopt" href="/c/' + esc(card.id) + '/me" target="_blank" rel="noopener">' +
+              "Customer page</a>" +
           "</div>" +
           '<p class="muted" style="margin-top:10px;word-break:break-all">' + esc(link) + "</p>" +
           '<div class="mdlrow"><button type="button" class="btn btn-ghost" data-no>Close</button></div>' +
@@ -4631,13 +4742,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      * to swipe through, and a card shape round a line of text is a card shape
      * pretending there is something to look at.
      */
-    function campaignsPane(host) {
-      // Nothing stores a campaign yet — see CAMPAIGN_SPEC. This list used to be
-      // four invented rows with Edit links behind them, which is a screen
-      // demonstrating itself rather than a screen doing anything. It says the
-      // true thing instead and keeps the one control that will matter.
-      host.innerHTML =
-        '<h2 class="sec first">Campaigns</h2>' +
+    /**
+     * Campaigns, as the first thing on Customers.
+     *
+     * Nothing stores a campaign yet — see CAMPAIGN_SPEC. This used to be four
+     * invented rows with Edit links behind them, which is a screen
+     * demonstrating itself rather than a screen doing anything. It says the
+     * true thing instead and keeps the one control that will matter.
+     */
+    function campaignsBlock() {
+      return '<h2 class="sec first">Campaigns</h2>' +
         '<p class="cmpempty">No campaign data yet.</p>' +
         '<a class="addrow" href="' + ROOT + '/create/campaign" data-nav="/create/campaign">' +
         "+ Create campaign</a>";
@@ -4668,16 +4782,15 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       const enrolled = m.active > 0;
       const over = Boolean(card.endedAt);
       d.innerHTML = back +
-        '<h2 class="sec first">' + esc(card.name || card.shopName) +
-          '<span class="pstat' + (over ? " off" : "") + '">' +
-          (over ? "Ended" : "Active") + "</span></h2>" +
+        '<h2 class="sec first">' + esc(card.name || card.shopName) + "</h2>" +
+        // The SAME badge the strip shows. This was a .pstat span with no CSS
+        // anywhere, so it rendered as bare text run into the card's name.
+        '<p class="cstat ' + statusOf(card).key + '">' + statusOf(card).label + "</p>" +
         // No Performance block. Home's two charts answer how a programme is
         // doing; the same figures computed on a second screen is how a headline
         // came to disagree with the list under it, twice. This page is for
         // changing a card, not for reading it.
-        '<h2 class="sec">Setup</h2>' +
-        '<div class="drow"><span>Type</span><b>' + (KIND_LABEL[card.kind] || "Stamps") + "</b></div>" +
-        '<div class="drow"><span>The deal</span><b>' + esc(dealLine(card)) + "</b></div>" +
+        '<h2 class="sec">Details</h2>' + detailRows(card) +
         (card.stampsStart ? '<div class="drow"><span>Welcome stamps</span><b>' +
           card.stampsStart + "</b></div>" : "") +
         (enrolled ? lockNote(m.active) : "") +
@@ -4725,7 +4838,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
             "a customer has stops."
           : "Nobody has ever been given this card, so removing it deletes it " +
             "for good. That cannot be undone.") + "</p>" +
-        '<button class="btn btn-ghost" style="width:auto;padding:11px 18px;margin-top:10px" data-remove>' +
+        '<button class="btn btn-danger" style="width:auto;padding:11px 18px;margin-top:10px" data-remove>' +
         (enrolled ? "Remove from my dashboard" : "Delete this card") + "</button>" +
         '<h2 class="sec">What it looks like</h2>' +
         '<div data-design></div>';
@@ -4747,22 +4860,36 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           navigate("/manage/rewards/" + card.id, true);
           toast(over ? "Sign-ups are open again." : "Sign-ups closed. Existing cards still work.");
         });
-      arm(d.querySelector("[data-remove]"),
-        enrolled ? "Tap again to remove it" : "Tap again to delete it",
-        async () => {
-          const { body } = await api("/card/" + encodeURIComponent(card.id) + "/remove", {
-            method: "POST",
-          });
-          if (!body || !body.ok) { toast("That didn\u2019t work. Try again."); return; }
-          await refreshCards();
-          navigate("/manage/rewards");
-          // The server says which of the two happened, and the message says the
-          // same. Reporting "deleted" for a card that was archived would be the
-          // one lie an owner could not check.
-          toast(body.outcome === "deleted"
-            ? "Deleted."
-            : "Removed from your dashboard. Cards already issued keep working.");
+      // A box, not a second tap. Two-tap arming is right on a counter phone
+      // being used at speed by somebody who may not have chosen to press it;
+      // this is an owner, sitting still, doing something that cannot be undone,
+      // and it deserves to be asked properly. Our own box — never confirm(),
+      // which a phone can silence (invariant 8).
+      d.querySelector("[data-remove]").onclick = async () => {
+        const ok = await modal(
+          enrolled ? "Remove this card?" : "Delete this card?",
+          enrolled
+            ? "<p>It comes off your dashboard. Every card already issued keeps " +
+              "working \u2014 those customers carry on collecting and can still claim.</p>"
+            : "<p>Nobody has ever been given this card, so it is deleted for good. " +
+              "This cannot be undone.</p>",
+          enrolled ? "Remove it" : "Delete it",
+          true,
+        );
+        if (!ok) return;
+        const { body } = await api("/card/" + encodeURIComponent(card.id) + "/remove", {
+          method: "POST",
         });
+        if (!body || !body.ok) { toast("That didn\u2019t work. Try again."); return; }
+        await refreshCards();
+        navigate("/manage/rewards");
+        // The server says which of the two happened, and the message says the
+        // same. Reporting "deleted" for a card that was archived would be the
+        // one lie an owner could not check.
+        toast(body.outcome === "deleted"
+          ? "Deleted."
+          : "Removed from your dashboard. Cards already issued keep working.");
+      };
       d.querySelector("[data-design]").appendChild(designerFor(card));
       return d;
     }
