@@ -334,7 +334,7 @@ export interface OwnerRow {
   /**
    * The staff PIN, scrypt-hashed — ONE per owner, covering every card they run.
    * A PIN used to hang off each café row, so an owner with a coffee card and a
-   * pastry card had two PINs and two stamper links for one counter. That was an
+   * pastry card had two access codes and two Scanner links for one counter. That was an
    * accident of the data model, not a decision.
    */
   staff_pin_hash: string;
@@ -532,7 +532,7 @@ export function getPool(): pg.Pool {
  *
  * A row in that table was never a café — it is ONE loyalty programme, and a
  * merchant can run several. Calling it `cafes` is what produced a separate staff
- * PIN per card, and a stamper that resolved to another merchant's counter: both
+ * access code per card, and a Scanner that resolved to another merchant's counter: both
  * bugs read the name and believed it. Every future reader would too.
  *
  * This is the one non-additive migration in the project (see CLAUDE.md). Two
@@ -703,7 +703,7 @@ export async function migrate(): Promise<void> {
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS staff_pin_hash text NOT NULL DEFAULT '';
     -- Bumped whenever the PIN changes. It is baked into each staff session
     -- cookie, so changing the PIN signs every staff phone out — that's the
-    -- break-glass control when a stamper link or PIN gets out.
+    -- break-glass control when a Scanner link or access code gets out.
     ALTER TABLE cards ADD COLUMN IF NOT EXISTS staff_session_epoch integer NOT NULL DEFAULT 1;
     -- v1.1: value tracking — stamps × average spend gives the owner a money figure.
     -- Cents, not numeric: pg returns numeric as a string, integers as numbers.
@@ -716,7 +716,7 @@ export async function migrate(): Promise<void> {
     -- Every "last stamp / last nudge for this card" lookup hits this.
     CREATE INDEX IF NOT EXISTS idx_events_serial_type ON events(serial, type);
     -- v1.2: the staff PIN moves up to the OWNER. One counter, one PIN, one
-    -- stamper link, however many cards they run — the per-café PIN was an
+    -- Scanner link, however many cards they run — the per-café PIN was an
     -- accident of "+ Add card" creating a whole new card row. The cards columns
     -- stay (additive only) but are no longer read; the backfill below lifts each
     -- owner's existing PIN up so nobody has to be told a new one.
@@ -4518,16 +4518,28 @@ export async function searchCustomerPasses(
   const digits = clean.replace(/\D/g, "").slice(0, 15);
   const capped = Math.max(1, Math.min(8, Math.trunc(limit) || 8));
   const res = await getPool().query<CustomerPassSearchRow>(
-    `SELECT p.*, cu.display_name, cu.phone_number, cu.profile_consent_at,
+    `WITH exact_code AS (
+       SELECT 1 FROM passes ep
+       JOIN cards ec ON ec.id = ep.card_id
+       WHERE ec.merchant_id = $1 AND NOT ep.is_test AND ep.short_code = $6
+       LIMIT 1
+     )
+     SELECT p.*, cu.display_name, cu.phone_number, cu.profile_consent_at,
             c.name AS card_name
        FROM passes p
        JOIN cards c ON c.id = p.card_id
        LEFT JOIN customers cu ON cu.id = p.customer_id
       WHERE c.merchant_id = $1 AND NOT p.is_test
         AND (
-          p.short_code LIKE $2
-          OR lower(COALESCE(cu.display_name, '')) LIKE $3 ESCAPE '\\'
-          OR ($4 <> '' AND replace(COALESCE(cu.phone_number, ''), '+', '') LIKE $5)
+          p.short_code = $6
+          OR (
+            NOT EXISTS (SELECT 1 FROM exact_code)
+            AND (
+              p.short_code LIKE $2
+              OR lower(COALESCE(cu.display_name, '')) LIKE $3 ESCAPE '\\'
+              OR ($4 <> '' AND replace(COALESCE(cu.phone_number, ''), '+', '') LIKE $5)
+            )
+          )
         )
       ORDER BY CASE WHEN p.short_code = $6 THEN 0 ELSE 1 END,
                p.updated_at DESC
@@ -4541,46 +4553,6 @@ export async function searchCustomerPasses(
       clean.toUpperCase(),
       capped,
     ],
-  );
-  return res.rows;
-}
-
-export async function getPassByShortCode(cardId: string, shortCode: string): Promise<PassRow | null> {
-  const res = await getPool().query<PassRow>(
-    `SELECT * FROM passes WHERE card_id = $1 AND short_code = $2`,
-    [cardId, shortCode.toUpperCase().trim()],
-  );
-  return res.rows[0] ?? null;
-}
-
-/**
- * A typed short code, looked up across everything the merchant runs.
- *
- * `short_code` is UNIQUE platform-wide, so widening from one card to the shop
- * adds no ambiguity — it only stops staff being told "no such card" because the
- * customer happened to hand over the pastry card while the phone showed coffee.
- */
-export async function getPassByShortCodeForMerchant(
-  merchantId: string | undefined,
-  shortCode: string,
-): Promise<PassRow | null> {
-  if (!merchantId) return null;
-  const res = await getPool().query<PassRow>(
-    `SELECT p.* FROM passes p JOIN cards c ON c.id = p.card_id
-      WHERE c.merchant_id = $1 AND p.short_code = $2`,
-    [merchantId, shortCode.toUpperCase().trim()],
-  );
-  return res.rows[0] ?? null;
-}
-
-/** Cards for the staff list, most-recently-active first (last stamp, else created)
- *  — newest-enrolled ordering buried the customers staff actually serve. */
-export async function listRecentPasses(cardId: string, limit = 20): Promise<PassRow[]> {
-  const res = await getPool().query<PassRow>(
-    `SELECT p.* FROM passes p
-      WHERE p.card_id = $1
-      ORDER BY ${LAST_VISIT_SQL} DESC LIMIT $2`,
-    [cardId, limit],
   );
   return res.rows;
 }
@@ -5213,7 +5185,7 @@ export interface CounterActivity {
  *    `type = 'stamp'` has only ever meant "somebody stamped at the counter".
  *    There is nothing to filter out, and nothing that could drift.
  * 2. **`forced` is the literal "stamped again" event**, not an inference. The
- *    stamper refuses a second stamp on the same card inside 60s
+ *    Scanner refuses a second stamp on the same card inside 60s
  *    (STAMP_COOLDOWN_MS, src/routes/staff.ts) unless staff confirm, and the
  *    confirmation is what sets this column. A forced stamp is still one stamp:
  *    it counts once in `stamps` and once in `stampedAgain`, never twice in
@@ -5268,7 +5240,7 @@ export async function counterActivity(cardIds: string[]): Promise<CounterActivit
     // grouping themselves. A run of one is not a run, hence HAVING count > 1.
     //
     // The COUNT ON THE SCREEN comes from this query too (`total`), not from
-    // `events.forced`. Both describe the same thing — the stamper refuses a
+    // `events.forced`. Both describe the same thing — the Scanner refuses a
     // second stamp inside 60s unless staff confirm, and that confirmation sets
     // `forced` — but they can drift apart at a day boundary, where the first
     // stamp of a run falls yesterday and only the confirmation lands today.

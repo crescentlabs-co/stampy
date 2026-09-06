@@ -21,7 +21,7 @@ describe("customer profile validation", () => {
   });
 
   it("accepts international numbers without treating the phone as an identity", () => {
-    expect(normalizePhoneNumber("+44 (0) 7700 900123")).toBe("+4407700900123");
+    expect(normalizePhoneNumber("+44 (0) 7700 900123")).toBe("+447700900123");
     expect(normalizePhoneNumber("0065 8123 4567")).toBe("+6581234567");
   });
 
@@ -32,6 +32,8 @@ describe("customer profile validation", () => {
       .toEqual({ ok: false, error: "invalid-phone" });
     expect(parseCustomerProfile({ displayName: "Aisyah", phoneNumber: "0123456789" }))
       .toEqual({ ok: false, error: "consent-required" });
+    expect(parseCustomerProfile({ displayName: "Aisyah", phoneNumber: "0123456789", consent: "yes" }).ok)
+      .toBe(true);
   });
 
   it("caps the fields before they reach the database", () => {

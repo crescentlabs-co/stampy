@@ -64,7 +64,7 @@ real address now, so back is part of the product.
 `merchants` (the business, one per login) → `cards` (a loyalty programme) →
 `passes` (one customer's wallet card) → `customers` (a person at one merchant).
 `cards` used to be called `cafes` and was all four things at once, which is what
-produced a PIN per card and a stamper that resolved to a stranger's counter.
+produced an access code per card and a Scanner that resolved to a stranger's counter.
 
 **A card's id can never change.** It is printed on QR posters, forms the Google
 class id (`<issuer>.stampy-<card.id>`, re-sent on every stamp), and appears in
@@ -238,10 +238,11 @@ target nobody holds any more. Never key card art by a number a card can change.
    count uses `count(DISTINCT COALESCE(p.customer_id, p.serial))`. Counting
    passes instead is how the Home headline came to disagree with the list
    under it — twice.
-6. **Customer identity is a signed per-merchant cookie and nothing else.** No
-   name, email or phone — the privacy page promises exactly that. It therefore
-   identifies a BROWSER: a new phone is a new customer, and that is accepted,
-   not a bug to fix by collecting PII.
+6. **Customer identity is still the signed per-merchant cookie.** Name and phone
+   are required lookup details, not credentials: never deduplicate, merge, or
+   authenticate customers by either field. A new phone can therefore create a
+   new customer record even when a family shares a phone number. Profile reads
+   and writes stay merchant-scoped, require consent, and never log the details.
 7. **"Customer" has one definition, everywhere:** a pass that was stamped, is
    in a wallet now, or ever was (`ACTIVE_PASS_SQL`, src/db.ts). Deleting the
    pass must NOT un-count someone — that would let churn erase its own
@@ -285,9 +286,9 @@ target nobody holds any more. Never key card art by a number a card can change.
    old reader stays in `src/auth.ts` and MUST NOT be deleted — customers hold
    400-day cookies, and ignoring them mints everyone a duplicate card.
    **There is ONE staff PIN per owner** (`owners.staff_pin_hash`), covering
-   every card they run — one counter, one PIN, one stamper page. It used to
+   every card they run — one counter, one access code, one Scanner. It used to
    hang off each card row, so "+ Add card" silently minted a second PIN and a
-   second stamper link; don't reintroduce that. Which card a staff request is
+   second Scanner link; don't reintroduce that. Which card a staff request is
    about travels in `x-card-id` and is checked against that owner's cards.
    The **PIN is only ever stored as a scrypt hash** — nothing can read it
    back, so the UI shows a new PIN once and otherwise only replaces it. Each

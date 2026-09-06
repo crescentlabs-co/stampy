@@ -1,6 +1,6 @@
 /**
  * Card mutation + cross-platform delivery — the one place a card change turns
- * into a phone notification. Shared by the staff stamper (stamp/redeem) and the
+ * into a phone notification. Shared by the staff Scanner (stamp/redeem) and the
  * owner dashboard (nudge / bulk win-back), so both platforms behave identically.
  *
  *   apple  → empty APNs push; the device re-fetches the pass and iOS renders the
@@ -43,14 +43,14 @@ export interface PushSummary {
 export interface ApplyOptions extends EventMeta {
   nudgeText?: string;
   /**
-   * Widen the scope from one card to a whole merchant. The staff stamper sets
+   * Widen the scope from one card to a whole merchant. The staff Scanner sets
    * this so a customer can present ANY of the shop's cards and it just works —
    * without it, whatever card the phone happened to be showing would refuse.
    */
   merchantId?: string;
   /**
    * Return as soon as the stamp is committed and logged, and deliver to the
-   * wallet in the background. The staff stamper sets this: at a counter the
+   * wallet in the background. The staff Scanner sets this: at a counter the
    * staff screen is the receipt, and making it wait on Google — which can take
    * many seconds to reach an Android phone — holds up the queue for something
    * neither the customer nor the till is looking at.

@@ -55,7 +55,7 @@ export const baseCss = /* css */ `
     src: url("/assets/fonts/bricolage-grotesque-latin.woff2") format("woff2");
   }
   /* Headlines only. The body stays on the grotesque, which is what the staff
-     stamper is read in at arm's length — a serif there would be a downgrade. */
+     Scanner is read in at arm's length — a serif there would be a downgrade. */
   @font-face {
     font-family: "Instrument Serif";
     font-style: normal;
@@ -424,14 +424,14 @@ export const PALETTE_JS = /* js */ `
 
 /**
  * The confirmation popup and the ⓘ hint, shared by the dashboard and the staff
- * stamper. Exported as source, like PALETTE_JS, so both pages run one copy and
+ * Scanner. Exported as source, like PALETTE_JS, so both pages run one copy and
  * test/pages.test.ts compiles the code that actually ships.
  *
  * **This is not `confirm()`, and it must never become it.** A browser offers
  * "prevent this page from creating additional dialogs" after a few in a row; a
  * counter hits that in one shift, and from then on every dialog silently answers
  * "cancel" with nothing on screen. That is invariant 8, and it is why destructive
- * buttons on the stamper arm instead of asking. A popup we build ourselves has
+ * buttons on the Scanner arm instead of asking. A popup we build ourselves has
  * no such switch, so it can carry the things an owner has to read before they
  * commit — which is the whole point: those sentences used to sit as grey subtext
  * under the button, where nobody read them either.
@@ -4303,7 +4303,7 @@ export const MODAL_CSS = /* css */ `
  * `brand` puts the Powered by line at the foot, and defaults to ON for exactly
  * the same reason the escape lives here: the first pass at this signed the
  * dashboard tabs and the console and missed the sign-up page, the login form,
- * the claim page, the stamper and four others. Opt OUT by name — a page with no
+ * the claim page, the Scanner and four others. Opt OUT by name — a page with no
  * footer should be a decision someone made, not one they forgot.
  */
 export function page(

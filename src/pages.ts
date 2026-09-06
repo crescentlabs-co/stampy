@@ -35,6 +35,7 @@ import {
 // reason to make every one of them change.
 // The dashboard lives in its own file too; same reasoning, same re-export.
 export { dashboardPage } from "./dashboardV2.js";
+export { staffPage } from "./ui/staffPage.js";
 
 export {
   DESIGN_PANEL_CSS,
@@ -186,7 +187,8 @@ export function landingPage(
     <label class="consent"><input name="consent" type="checkbox" value="1" required>
       <span>We ask for your name and phone number so ${esc(business)} can find your loyalty card at the counter
       and help with your account. We do not use these details for marketing or sell them.
-      <a href="/privacy" target="_blank">Privacy Policy</a>.</span></label>
+      Read our <a href="/privacy" target="_blank">Privacy Policy</a> and
+      <a href="/terms" target="_blank">Terms</a>.</span></label>
     <button class="btn btn-dark" type="submit" style="margin-top:16px">Continue</button>
   </form>`;
   // Lead with the wallet native to the phone (the other stays as a fallback),
@@ -411,14 +413,14 @@ export function claimPage(
           : body.error === "too-many-attempts" ? "Too many tries — wait a few minutes."
           : "Couldn’t finish. Try again.");
       }
-      // No PIN here any more. This screen used to print one under "write it
+      // No access code here any more. This screen used to print one under "write it
       // down now" — the only moment it could ever be read, since only a hash is
       // stored — which made handing somebody their shop a memory test at the
       // exact moment they are least ready for one. They pick their own under
       // Shop, and the dashboard tells them the counter is waiting on it.
       $("#app").innerHTML =
         '<div class="cl-done"><h1>You’re in ✅</h1>' +
-        '<p class="sub">Your shop is yours. Next: pick a staff PIN so your counter can start stamping.</p>' +
+        '<p class="sub">Your shop is yours. Next: pick a Staff access code so your counter can start stamping.</p>' +
         '<button class="btn btn-dark" style="margin-top:16px" id="dash">Go to my dashboard</button></div>';
       $("#dash").onclick = () => { location.href = "/dashboard"; };
     };
@@ -1256,7 +1258,7 @@ export function supportPage(contactEmail = ""): string {
       <li><strong>Can&rsquo;t log in?</strong> Use <a href="/dashboard">Forgot password</a> on the
         login page. If no email arrives, write to us and we will reset it by hand and send you a
         temporary password.</li>
-      <li><strong>Staff can&rsquo;t stamp?</strong> Your counter PIN is under <em>Shop</em> in your
+      <li><strong>Staff can&rsquo;t stamp?</strong> Your Staff access code is under <em>Shop</em> in your
         dashboard, and you can replace it there. Changing it signs every staff phone out, which is
         the point &mdash; do it if a phone goes missing.</li>
       <li><strong>Want to change your card?</strong> Colours, logo, reward and the number of stamps
@@ -1318,7 +1320,7 @@ export function privacyPage(contactEmail = ""): string {
     <p>We do not ask for your email address, date of birth or payment details. We hold:</p>
     <ul>
       <li><strong>Your name and phone number</strong> — only so that shop&rsquo;s authorised staff can find your loyalty card and help with your account. The phone number is not used to log in, merge records or send marketing.</li>
-      <li><strong>A random card number and a short card code</strong> — the identifiers printed in the card&rsquo;s barcode, so staff can scan it.</li>
+      <li><strong>A random card number and a short card code</strong> — the QR contains the random number for scanning, while the short support code remains in the card&rsquo;s details.</li>
       <li><strong>Your stamps</strong> — the current count, and the date and time of each stamp, reward and correction.</li>
       <li><strong>Which wallet you use</strong> — Apple or Google.</li>
       <li><strong>Technical information your browser sends</strong> when you open a join page: the browser and device type it identifies itself as, and the link or page you arrived from. We use this to tell real customers from link previews and web crawlers, and to see where sign-ups come from.</li>
@@ -1343,7 +1345,7 @@ export function privacyPage(contactEmail = ""): string {
       excluded from then on.</p>
 
     <h2>What we collect from café owners</h2>
-    <p>Your email address, a securely hashed password (we can never see the password itself), your staff PIN as a one-way hash, and the card details you enter: café name, reward, colours, and any logo or banner you upload.</p>
+    <p>Your email address, a securely hashed password (we can never see the password itself), your Staff access code as a one-way hash, and the card details you enter: café name, reward, colours, and any logo or banner you upload.</p>
 
     <h2>Why we collect it</h2>
     <ul>
@@ -1367,7 +1369,7 @@ export function privacyPage(contactEmail = ""): string {
     <p>These providers operate outside Malaysia, so running the service involves transferring data overseas. We only use providers that offer protection comparable to the PDPA, and we send them the minimum the card needs to work. Apple and Google handle what they receive under their own privacy policies.</p>
 
     <h2>Where it&rsquo;s stored</h2>
-    <p>In a managed PostgreSQL database at Railway, transmitted over encrypted (HTTPS) connections. Passwords and staff PINs are one-way hashed and are never stored in a form anyone can read back.</p>
+    <p>In a managed PostgreSQL database at Railway, transmitted over encrypted (HTTPS) connections. Passwords and Staff access codes are one-way hashed and are never stored in a form anyone can read back.</p>
 
     <h2>How long we keep it</h2>
     <p>Your card and its stamps are kept while the card is in your wallet. <strong>Turn messages off and the offers stop. Your card keeps working.</strong> <strong>Delete the card and it stops updating and receives nothing further</strong> — no more stamps, no more messages. If you turn messages off we keep the date you asked, so that we can prove we honoured it.</p>
@@ -1433,7 +1435,7 @@ export function privacyPageBm(contactEmail = ""): string {
       dikecualikan mulai saat itu.</p>
 
     <h2>Apa yang kami kumpul daripada pemilik kafe</h2>
-    <p>Alamat e-mel anda, kata laluan yang dicincang secara selamat (kami tidak dapat melihat kata laluan sebenar), PIN kakitangan anda sebagai cincangan sehala, dan butiran kad yang anda masukkan: nama kafe, ganjaran, warna, serta apa-apa logo atau sepanduk yang anda muat naik.</p>
+    <p>Alamat e-mel anda, kata laluan yang dicincang secara selamat (kami tidak dapat melihat kata laluan sebenar), kod akses kakitangan anda sebagai cincangan sehala, dan butiran kad yang anda masukkan: nama kafe, ganjaran, warna, serta apa-apa logo atau sepanduk yang anda muat naik.</p>
 
     <h2>Mengapa kami mengumpulnya</h2>
     <ul>
@@ -1457,7 +1459,7 @@ export function privacyPageBm(contactEmail = ""): string {
     <p>Penyedia ini beroperasi di luar Malaysia, jadi menjalankan perkhidmatan ini melibatkan pemindahan data ke luar negara. Kami hanya menggunakan penyedia yang menawarkan perlindungan setanding dengan PDPA, dan kami menghantar kepada mereka hanya apa yang diperlukan oleh kad untuk berfungsi. Apple dan Google mengendalikan apa yang mereka terima di bawah dasar privasi mereka sendiri.</p>
 
     <h2>Di mana ia disimpan</h2>
-    <p>Di dalam pangkalan data PostgreSQL terurus di Railway, dihantar melalui sambungan tersulit (HTTPS). Kata laluan dan PIN kakitangan dicincang sehala dan tidak pernah disimpan dalam bentuk yang boleh dibaca semula oleh sesiapa.</p>
+    <p>Di dalam pangkalan data PostgreSQL terurus di Railway, dihantar melalui sambungan tersulit (HTTPS). Kata laluan dan kod akses kakitangan dicincang sehala dan tidak pernah disimpan dalam bentuk yang boleh dibaca semula oleh sesiapa.</p>
 
     <h2>Berapa lama kami menyimpannya</h2>
     <p>Kad anda dan setemnya disimpan selagi kad itu berada di dalam dompet anda. <strong>Matikan mesej dan tawaran akan berhenti. Kad anda tetap berfungsi.</strong> <strong>Padamkan kad itu dan ia berhenti dikemas kini serta tidak menerima apa-apa lagi</strong> — tiada setem, tiada mesej. Jika anda mematikan mesej, kami menyimpan tarikh anda meminta, supaya kami boleh membuktikan bahawa kami mematuhinya.</p>
@@ -1487,7 +1489,7 @@ export function termsPage(contactEmail = ""): string {
 
     <h2>Your account</h2>
     <ul>
-      <li>Keep your login and your café&rsquo;s staff PIN secure — you&rsquo;re responsible for activity under them.</li>
+      <li>Keep your login and your café&rsquo;s Staff access code secure — you&rsquo;re responsible for activity under them.</li>
       <li>Give accurate information when you sign up.</li>
     </ul>
 
@@ -1516,7 +1518,7 @@ export function termsPage(contactEmail = ""): string {
     <ul>
       <li>Process customer data only to run your loyalty programme, on your instructions, and never for our own purposes.</li>
       <li>Never sell it, use it for advertising, market to your customers, or combine one café&rsquo;s data with another&rsquo;s.</li>
-      <li>Keep it secure — encrypted connections, hashed passwords and PINs, and access limited to what running the service requires.</li>
+      <li>Keep it secure — encrypted connections, hashed passwords and Staff access codes, and access limited to what running the service requires.</li>
       <li>Use sub-processors only where the service needs them (Apple, Google and our hosting provider — named in the <a href="/privacy">Privacy Policy</a>), and send them the minimum required.</li>
       <li>Help you answer a customer&rsquo;s access, correction or deletion request within a reasonable time.</li>
       <li>Tell you without undue delay if we become aware of a breach affecting your customers&rsquo; data, with what we know, so you can meet your own notification duties.</li>
@@ -1539,571 +1541,6 @@ export function termsPage(contactEmail = ""): string {
 }
 
 // ---------------------------------------------------------------- staff ----
-
-/**
- * The stamper. `signedIn` comes from the staff session cookie — an unsigned-in
- * device is only ever sent the PIN form, so the page itself leaks no café data.
- */
-export function staffPage(signedIn: boolean, cardId = DEFAULT_CARD_ID): string {
-  const css = /* css */ `
-    .pass { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
-            padding: 14px; margin-top: 12px; }
-    .pass .dots { font-size: 1.15rem; letter-spacing: 2px; margin: 6px 0; }
-    .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-    .row .btn { padding: 16px 18px; font-size: 1.05rem; min-height: 54px; }
-    /* Read one-handed, at arm's length, with a queue waiting. */
-    .toast { font-family: var(--display); font-weight: 800; font-size: 1.2rem;
-             letter-spacing: -.02em; padding: 18px 28px; border-radius: var(--r);
-             background: var(--accent); color: var(--on-accent); bottom: 32px; }
-    .ready { color: #1a7f37; font-weight: 700; }
-    .signout { background: none; border: none; color: var(--muted); font: inherit; font-size: .85rem;
-               cursor: pointer; padding: 4px 0; text-decoration: underline; }
-    .homehint { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line);
-                border-radius: 12px; background: var(--surface); }
-    .homehint p { margin: 0; font-size: .88rem; line-height: 1.55; }
-    .homehint button { background: none; border: 0; color: var(--muted); font: inherit; padding: 6px 0 0;
-                       text-decoration: underline; cursor: pointer; }
-    #scanner {
-      position: fixed; inset: 0; background: #000; z-index: 40;
-      display: none; flex-direction: column;
-    }
-    #scanner.on { display: flex; }
-    #scanner video { flex: 1; object-fit: cover; width: 100%; }
-    #scanner .bar { padding: 14px; }
-    .codebox { display: flex; gap: 8px; margin-top: 8px; }
-    .codebox input { text-transform: uppercase; letter-spacing: 3px; font-weight: 700; text-align: center; }
-    .codebox .btn { width: auto; padding: 12px 18px; }
-    /* A button waiting for its second tap. Loud, because it is about to give
-       away a free coffee — and because the tap that armed it may have been a
-       pocket. It disarms itself after four seconds. */
-    .btn.armed { background: #9a3412; border-color: #9a3412; color: #fff; }
-    /* The whole point of the redeem rework: a card that has hit its target is
-       already on screen when the customer hands over their phone, instead of
-       being somewhere in a list of twenty. */
-    #readywrap:not(:empty) { margin-top: 22px; }
-    #readywrap .pass { border-color: #1a7f37; border-width: 2px; }
-    /* Card switcher: only rendered when the owner runs more than one card. */
-    .cardpick { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 16px; }
-    .cardpick button { width: auto; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line);
-                       background: none; font: inherit; font-size: .9rem; cursor: pointer; }
-    .cardpick button.on { background: var(--ink, #111); color: #fff; border-color: var(--ink, #111); }
-    .find { border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 14px; margin-top: 22px; }
-    .find summary { cursor: pointer; padding: 12px 0; font-weight: 600; list-style: none; display: flex; gap: 8px; align-items: center; }
-    .find summary::-webkit-details-marker { display: none; }
-    .find summary::before { content: "▸"; color: var(--muted); font-weight: 400; transition: transform .18s; }
-    .find[open] summary::before { transform: rotate(90deg); }
-    ${MODAL_CSS}
-  `;
-  // Shared by both states. Everything below it is emitted for one state only:
-  // an unsigned-in phone is never sent the stamper code, so the page is a gate
-  // rather than a hidden panel.
-  const sharedJs = /* js */ `
-    const $ = (s, el=document) => el.querySelector(s);
-    // Which card this phone is stamping — decided by the SERVER and injected
-    // here, not re-derived from the URL. A bare /staff used to make the browser
-    // claim "default", which on a multi-merchant deployment is someone else's
-    // counter. Switchable in the page: one PIN covers every card the owner runs.
-    let cardId = ${JSON.stringify(cardId)};
-
-    async function api(path, opts = {}) {
-      const res = await fetch("/staff/api" + path, {
-        ...opts,
-        headers: { "Content-Type": "application/json", "x-card-id": cardId, ...(opts.headers||{}) },
-      });
-      if (res.status === 429) {
-        const b = await res.json().catch(() => ({}));
-        toast("Too many attempts — try again in " + (b.retryAfterSeconds || 60) + "s");
-        throw new Error("rate");
-      }
-      // The session expired or was cleared — reload so the server serves the PIN form.
-      if (res.status === 401) { location.reload(); throw new Error("signed-out"); }
-      return res.json();
-    }
-
-    function toast(msg) {
-      const t = $(".toast"); t.textContent = msg; t.classList.add("show");
-      setTimeout(() => t.classList.remove("show"), 2600);
-    }
-  `;
-
-  const loginJs = /* js */ `
-    $("#app").innerHTML = \`
-      <h1>Staff login</h1>
-      <p class="sub">Enter the staff access code. This phone stays signed in for two weeks.</p>
-      <input id="pin" type="password" inputmode="numeric" placeholder="Access code">
-      <button class="btn btn-dark" style="margin-top:12px" id="go">Enter</button>\`;
-    async function signIn() {
-      const pin = $("#pin").value.trim();
-      if (!pin) return toast("Type the access code");
-      // The PIN crosses the wire once, here — after this the phone is authorised
-      // by its session cookie instead of resending the PIN on every stamp.
-      const out = await api("/login", { method: "POST", body: JSON.stringify({ pin }) });
-      if (out.ok) location.reload();
-      else toast("Wrong access code");
-    }
-    $("#go").onclick = signIn;
-    $("#pin").onkeydown = (e) => { if (e.key === "Enter") signIn(); };
-  `;
-
-  const stamperJs = /* js */ `
-    ${MODAL_JS}
-    // ---- two-tap confirm, deliberately NOT a browser dialog ----
-    // Browsers offer "prevent this page from creating additional dialogs" after
-    // a few in a row. A busy counter hits that in one shift, and once a staff
-    // member ticks it every later dialog silently reports "cancel" — the redeem
-    // button would just stop working, with no error, until someone reloaded. So
-    // the confirmation lives in the button itself. A test enforces this.
-    let armedBtn = null, armedTimer = null;
-    function disarm() {
-      if (armedBtn) { armedBtn.textContent = armedBtn.dataset.label; armedBtn.classList.remove("armed"); }
-      clearTimeout(armedTimer); armedBtn = null; armedTimer = null;
-    }
-    /** First tap arms and relabels; second tap within 4s runs it. */
-    function arm(btn, prompt, go) {
-      btn.dataset.label = btn.textContent;
-      btn.onclick = () => {
-        if (armedBtn === btn) { disarm(); go(); return; }
-        disarm();
-        armedBtn = btn;
-        btn.textContent = prompt;
-        btn.classList.add("armed");
-        armedTimer = setTimeout(disarm, 4000);
-      };
-    }
-
-    let busy = false; // debounce: one tap/scan = one stamp
-    async function act(path, body, doneMsg) {
-      if (busy) return; busy = true;
-      try {
-        let out = await api(path, { method: "POST", body: JSON.stringify(body) });
-        // Anti-spam: the same card was stamped moments ago. A genuine second
-        // order is one tap on the popup — it used to mean scanning the card
-        // again, which on the scanner path meant reopening the camera and
-        // lining the phone back up for something staff had already decided.
-        // This is our own popup, never the browser's — a browser dialog can be
-        // switched off mid-shift and then silently answers "cancel".
-        if (out.error === "too-soon") {
-          const again = await modal(
-            "Stamp it again?",
-            "<p>This card was stamped <strong>" + out.secondsLeft + "s</strong> ago. " +
-              "Only do this if they really are buying a second one.</p>",
-            "Add another",
-          );
-          if (!again) return out;
-          out = await api(path, { method: "POST", body: JSON.stringify({ ...body, force: true }) });
-        }
-        if (out.error) toast("Error: " + out.error);
-        else {
-          // The customer can hand over any of the shop's cards, so name the one
-          // it landed on when that isn't the card currently on screen.
-          const other = out.card && out.card.id !== cardId ? " on " + out.card.name : "";
-          // The count, not the push. The wallet update is sent in the background
-          // now, so claiming "pushed to phone ✓" here would be a guess — and the
-          // stamp is already saved either way, which is what staff need to know.
-          // A membership card has no target, so "3 of 10" would be a number
-          // out of a number that means nothing. Its visit count says the same
-          // reassuring thing — the tap registered — without inventing a goal.
-          const count = !out.pass ? ""
-            : out.pass.kind === "membership"
-              ? (out.pass.stamps > 0 ? " — visit " + out.pass.stamps : "")
-              : out.pass.kind === "points"
-                ? " — " + out.pass.stamps + (out.pass.stamps === 1 ? " point" : " points")
-                : " — " + out.pass.stamps + " of " + out.pass.target;
-          // A points card the phone was not already showing carries its own
-          // rules, so the buttons match the card in hand rather than the card
-          // the phone happened to be on.
-          if (out.card) applyCounterRules(out.card);
-          toast(doneMsg + other + count);
-        }
-        // Redraw from the response rather than waiting on a second round trip.
-        // The server already told us the new state; fetching it again only
-        // holds the button locked while a queue waits.
-        if (out.pass) {
-          const i = allPasses.findIndex((p) => p.serial === out.pass.serial);
-          if (i >= 0) allPasses[i] = out.pass; else allPasses.unshift(out.pass);
-          renderReady(); renderList();
-        }
-        void load();
-        return out;
-      } finally { busy = false; }
-    }
-
-    // ------------------------------------------------------------ scanner ----
-    // Primary: native BarcodeDetector. Fallback: jsQR over canvas frames
-    // (iPhone Safari has no BarcodeDetector). Final fallback: typed card code.
-    let stream = null, scanTimer = null, lastScan = "";
-    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-    async function onScanResult(text) {
-      if (!text || busy) return;
-      if (text === lastScan) return; // same card still in front of the camera
-      lastScan = text;
-      stopScanner();
-      const value = text.trim();
-      if (uuidRe.test(value)) await act("/stamp", { serial: value }, "Stamp added");
-      else await act("/stamp-by-code", { code: value.replace(/^Code /i, "") }, "Stamp added");
-    }
-
-    async function startScanner() {
-      lastScan = "";
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }, audio: false,
-        });
-      } catch { toast("Camera not available — type the card code instead"); return; }
-      $("#scanner").classList.add("on");
-      const video = $("#scanner video");
-      video.srcObject = stream;
-      await video.play();
-
-      if ("BarcodeDetector" in window) {
-        const det = new BarcodeDetector({ formats: ["qr_code"] });
-        scanTimer = setInterval(async () => {
-          try {
-            const codes = await det.detect(video);
-            if (codes.length) onScanResult(codes[0].rawValue);
-          } catch {}
-        }, 250);
-      } else if (window.jsQR) {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        scanTimer = setInterval(() => {
-          if (!video.videoWidth) return;
-          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0);
-          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const hit = jsQR(img.data, img.width, img.height);
-          if (hit && hit.data) onScanResult(hit.data);
-        }, 300);
-      } else {
-        stopScanner();
-        toast("Scanning not supported on this phone — type the card code instead");
-      }
-    }
-
-    function stopScanner() {
-      clearInterval(scanTimer); scanTimer = null;
-      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-      $("#scanner").classList.remove("on");
-    }
-
-    // --------------------------------------------------------------- views ----
-    let allPasses = [];
-    // The shop's own one-tap amounts, refreshed with the pass list. Empty on
-    // every card that is not a points card, and only ever used in MANUAL mode:
-    // the other two work the amount out themselves, so a row of guesses beside
-    // them would be three ways to answer one question.
-    let presets = [];
-    // How this card earns — 'visit', 'spend' or 'manual'. It decides what staff
-    // are asked for after a scan, and nothing else on this page.
-    let earnMode = "visit";
-    let earnPoints = 1;
-
-    /**
-     * An amount typed at the counter, for the odd bill the presets do not cover.
-     *
-     * An inline row rather than a browser prompt. A phone can suppress those,
-     * after which they return nothing and the button silently does nothing at
-     * all — the same reason nothing destructive on this page uses one either
-     * (CLAUDE.md invariant 8). A test asserts this page ships no browser
-     * dialogs, and it reads the comments too, so do not name one here.
-     */
-    function askAmount(host, p) {
-      ask(host, p, {
-        placeholder: "Points",
-        step: "1",
-        nag: "Type how many points",
-        send: (n) => ({ serial: p.serial, amount: Math.trunc(n) }),
-      });
-    }
-
-    /**
-     * What the customer just spent, in ringgit.
-     *
-     * The SUM is not done here. This sends the money and the server turns it
-     * into points, which is the whole point of a spend card: the rate lives on
-     * the card, and a browser that could send points instead could send any
-     * number it liked.
-     */
-    function askSpend(host, p) {
-      ask(host, p, {
-        placeholder: "RM spent",
-        step: "0.01",
-        nag: "Type what they spent",
-        send: (n) => ({ serial: p.serial, spend: n }),
-      });
-    }
-
-    /** The one row both of those are. */
-    function ask(host, p, o) {
-      if (host.querySelector(".amtrow")) return;
-      const row = document.createElement("div");
-      row.className = "row amtrow";
-      row.innerHTML =
-        '<input class="amtin" type="number" min="0" step="' + o.step +
-          '" inputmode="decimal" placeholder="' + o.placeholder + '">' +
-        '<button class="btn btn-stamp" data-a="amtok">Add</button>' +
-        '<button class="btn btn-ghost" data-a="amtno">Cancel</button>';
-      const input = row.querySelector(".amtin");
-      row.querySelector('[data-a=amtno]').onclick = () => row.remove();
-      row.querySelector('[data-a=amtok]').onclick = () => {
-        const n = Number(input.value);
-        if (!(n > 0)) { toast(o.nag); return; }
-        row.remove();
-        act("/stamp", o.send(n), "Points added");
-      };
-      host.appendChild(row);
-      input.focus();
-    }
-    /**
-     * Take the counter's rules off whatever the server just said.
-     *
-     * Guarded field by field rather than assigned wholesale: a stamp response
-     * carries no presets and no earn mode, and blanking them would take the
-     * buttons off a points card that is simply not the one being stamped.
-     */
-    function applyCounterRules(o) {
-      if (!o) return;
-      if (Array.isArray(o.presets) && o.presets.length) presets = o.presets;
-      if (o.earnMode) earnMode = o.earnMode;
-      if (o.earnPoints > 0) earnPoints = o.earnPoints;
-    }
-    let found = []; // server-side search hits (cards outside the recent 20)
-    async function load() {
-      const out = await api("/passes");
-      allPasses = out.passes;
-      applyCounterRules(out);
-      renderReady();
-      renderList();
-    }
-    /** One card, with whatever actions it currently allows. */
-    function passRow(p) {
-      const div = document.createElement("div");
-      div.className = "pass";
-      // A membership card is checked IN, not stamped: it has no target, so there
-      // is no progress to show and never a reward to give. It still records a
-      // stamp underneath, which is what keeps its visits in the customer groups
-      // and the counter log alongside everybody else's.
-      const member = p.kind === "membership";
-      const points = p.kind === "points";
-      // A MANUAL points counter offers the shop's own amounts as one-tap
-      // buttons. Typing a number on a busy counter is how 500 lands where 50
-      // was meant, so the free entry sits behind a second tap and these carry
-      // the traffic. The other two modes work the amount out themselves, so
-      // they get one button and no guessing.
-      const amounts = points && earnMode === "manual"
-        ? (presets.length ? presets : [1, 5, 10]) : [];
-      div.innerHTML = \`
-        <strong>\${p.code}</strong>
-        \${p.rewardReady ? '<span class="ready"> — ' + (points ? "ENOUGH TO SPEND 🎉" : "REWARD READY 🎉") + '</span>' : ""}
-        \${member
-          ? '<div class="dots"><span class="muted">Member' + (p.stamps > 0 ? " — " + p.stamps + (p.stamps === 1 ? " visit" : " visits") : "") + '</span></div>'
-          : points
-          ? '<div class="dots"><b>' + p.stamps + '</b> <span class="muted">' + (p.stamps === 1 ? "point" : "points") + '</span></div>'
-          : '<div class="dots">' + p.dots + ' <span class="muted">' + p.stamps + '/' + p.target +
-            (p.total && p.total !== p.target ? ' (of ' + p.total + ')' : '') + '</span></div>'}
-        <div class="row">
-          \${points && earnMode === "spend"
-            ? '<button class="btn btn-stamp" data-a="spent">What did they spend?</button>'
-            : points && earnMode === "visit"
-            ? '<button class="btn btn-stamp" data-a="stamp">+' + earnPoints +
-              (earnPoints === 1 ? " point" : " points") + '</button>'
-            : points
-            ? amounts.map((n) => '<button class="btn btn-stamp" data-a="add" data-n="' + n + '">+' + n + '</button>').join("") +
-              '<button class="btn btn-ghost" data-a="custom">Other amount</button>'
-            : '<button class="btn btn-stamp" data-a="stamp">' + (member ? "Check in ✓" : "+1 Stamp") + '</button>'}
-          \${p.stamps > 0 ? '<button class="btn btn-ghost" data-a="undo">' + (member ? "− Undo check-in" : points ? "− Undo last" : "− Undo a stamp") + '</button>' : ""}
-          \${points
-            ? (p.canBuy || []).map((m, i) =>
-                '<button class="btn btn-ghost" data-a="spend" data-i="' + i + '">Give ' + m.reward + ' (−' + m.at + ')</button>').join("")
-            : (p.rewardReady ? '<button class="btn btn-ghost" data-a="redeem">' + redeemLabel(p) + '</button>' : "")}
-        </div>\`;
-      const stampBtn = div.querySelector('[data-a=stamp]');
-      if (stampBtn) stampBtn.onclick = () =>
-        act("/stamp", { serial: p.serial },
-          member ? "Checked in" : points ? "Points added" : "Stamp added");
-      // Asking for money is not destructive, so it is not behind arm() the way
-      // "Other amount" is: that one guards a number staff INVENT, and this one
-      // opens a box for a figure that is already on the till.
-      const spentBtn = div.querySelector('[data-a=spent]');
-      if (spentBtn) spentBtn.onclick = () => askSpend(div, p);
-      for (const b of div.querySelectorAll('[data-a=add]')) {
-        b.onclick = () => act("/stamp", { serial: p.serial, amount: Number(b.getAttribute("data-n")) }, "Points added");
-      }
-      // Behind a second tap, and behind an inline entry row rather than a
-      // browser dialog: a staff phone can suppress those, after which they
-      // return nothing and the button silently stops working (CLAUDE.md 8).
-      const customBtn = div.querySelector('[data-a=custom]');
-      if (customBtn) arm(customBtn, "Type an amount", () => askAmount(div, p));
-      for (const b of div.querySelectorAll('[data-a=spend]')) {
-        const m = (p.canBuy || [])[Number(b.getAttribute("data-i"))];
-        if (m) arm(b, "Confirm — give " + m.reward + "?", () =>
-          act("/redeem", { serial: p.serial, at: m.at }, m.reward + " given — " + m.at + " points off"));
-      }
-      // The fix for a mis-scan. Before this the only way back was to redeem,
-      // which handed out a free reward.
-      const u = div.querySelector('[data-a=undo]');
-      if (u) arm(u, "Confirm — undo?", () => act("/undo", { serial: p.serial }, member ? "Check-in removed" : "Stamp removed"));
-      const r = div.querySelector('[data-a=redeem]');
-      if (r) arm(r, "Confirm — give reward?", () => act("/redeem", { serial: p.serial },
-        p.finalReward ? "Reward given — card restarted" : "Reward given — card carries on"));
-      return div;
-    }
-
-    /**
-     * What the redeem button says.
-     *
-     * A card with rewards up the ladder pays out and CARRIES ON, so "give
-     * reward and restart" would be a lie on every rung but the last — and the
-     * customer would be told their stamps had gone when they had not. Naming
-     * the prize also stops staff handing over the wrong one on a card with
-     * three of them.
-     */
-    function redeemLabel(p) {
-      const what = p.reward ? "Give " + p.reward : "Give reward";
-      return what + (p.finalReward ? " & restart" : " & carry on");
-    }
-
-    // Cards at their target, always on screen. The customer's last stamp used to
-    // drop them somewhere into a list of twenty and staff had to go hunting for
-    // the card that was right in front of them.
-    function renderReady() {
-      const host = $("#readywrap"); if (!host) return;
-      const ready = allPasses.filter((p) => p.rewardReady);
-      host.innerHTML = "";
-      if (!ready.length) return;
-      const anyPoints = ready.some((p) => p.kind === "points");
-      host.insertAdjacentHTML("beforeend",
-        "<h2>Ready to redeem</h2><p class=\\"sub\\">" +
-        (ready.length === 1 ? "One card has" : ready.length + " cards have") +
-        (anyPoints ? " enough to spend." : " hit the target.") + "</p>");
-      for (const p of ready) host.appendChild(passRow(p));
-    }
-
-    function renderList() {
-      const list = $("#list"); if (!list) return;
-      const q = ($("#search")?.value || "").trim().toUpperCase();
-      // A search hit found on the server (found[]) wins over the recent list,
-      // which only holds 20 cards — a regular from last month isn't in it.
-      const rows = q ? (found.length ? found : allPasses.filter((p) => p.code.toUpperCase().includes(q))) : allPasses;
-      list.innerHTML = "";
-      if (!allPasses.length && !found.length) {
-        list.innerHTML = '<p class="muted" style="margin-top:16px">No cards yet — a customer scans the Add-to-Wallet QR to create the first one.</p>';
-        return;
-      }
-      if (!rows.length) {
-        list.innerHTML = '<p class="muted" style="margin-top:16px">' +
-          (q.length >= 6 ? 'No card has the code ' + q + '.' : 'Type the full 6-character code to search every card.') + '</p>';
-        return;
-      }
-      if (!q) {
-        list.insertAdjacentHTML("beforeend",
-          '<p class="muted" style="margin:10px 0 0">The ' + rows.length + ' most recent cards. Type a code to reach any other.</p>');
-      }
-      for (const p of rows) list.appendChild(passRow(p));
-    }
-
-    // Codes are exactly 6 chars, so once that much is typed we can ask the
-    // server — that's the only way to reach a card outside the recent 20.
-    let searchTimer = null;
-    function onSearch() {
-      const q = ($("#search")?.value || "").trim().toUpperCase();
-      clearTimeout(searchTimer);
-      if (q.length < 6) { found = []; renderList(); return; }
-      searchTimer = setTimeout(async () => {
-        try {
-          const out = await api("/lookup?code=" + encodeURIComponent(q));
-          found = out.pass ? [out.pass] : [];
-        } catch (e) {
-          found = []; // 404 = no such code; renderList explains
-        }
-        renderList();
-      }, 250);
-    }
-
-    // One PIN covers every card the owner runs, so a counter with a coffee card
-    // and a pastry card switches here instead of signing in twice. Hidden
-    // entirely for the overwhelmingly common case of a single card.
-    async function renderCards() {
-      const out = await api("/cards");
-      const cards = out.cards || [];
-      const host = $("#cards");
-      if (cards.length < 2) { host.innerHTML = ""; return; }
-      host.innerHTML = '<label>Stamping</label><div class="cardpick">' +
-        cards.map((c) => '<button class="' + (c.id === cardId ? "on" : "") +
-          '" data-c="' + c.id + '">' + c.name + "</button>").join("") + "</div>";
-      host.querySelectorAll("[data-c]").forEach((b) => {
-        b.onclick = () => {
-          cardId = b.dataset.c;
-          // Keep the URL honest, so a reload (or a bookmark) stays on this card.
-          history.replaceState(null, "", "/staff?c=" + encodeURIComponent(cardId));
-          renderCards();
-          load();
-        };
-      });
-    }
-
-    $("#app").innerHTML = \`
-      <h1>Stamper</h1>
-      <p class="sub">Scan the customer’s card, or type its code.</p>
-      <div id="homehint"></div>
-      <div id="cards"></div>
-      <button class="btn btn-stamp" id="scan">📷 Scan card</button>
-      <div class="codebox">
-        <input id="code" placeholder="CARD CODE" maxlength="8" autocomplete="off">
-        <button class="btn btn-ghost" id="bycode">Stamp</button>
-      </div>
-      <div id="readywrap"></div>
-      <details class="find" id="find">
-        <summary>Find a card</summary>
-        <input id="search" placeholder="🔍 Card code" autocomplete="off" style="text-transform:uppercase">
-        <div id="list" style="margin-top:10px"></div>
-      </details>
-      <button class="signout" id="out">Sign this phone out</button>\`;
-    // This only records a dismissed hint, never a credential. The owner can
-    // dismiss it on this counter without affecting another staff phone.
-    try {
-      if (!document.cookie.includes("punchme-scanner-home-hint=1")) {
-        $("#homehint").innerHTML = '<div class="homehint"><p><strong>Add scanner to Home Screen</strong><br>On iPhone: tap Share, then <em>Add to Home Screen</em>. On Android: open the browser menu, then tap <em>Install app</em> or <em>Add to Home screen</em>.</p><button type="button" data-hidehint>Don’t show again</button></div>';
-        $("[data-hidehint]").onclick = () => { document.cookie = "punchme-scanner-home-hint=1; Max-Age=31536000; Path=/staff; SameSite=Lax"; $("#homehint").innerHTML = ""; };
-      }
-    } catch (_) { /* Storage may be unavailable in a private browser window. */ }
-    $("#scan").onclick = startScanner;
-    $("#bycode").onclick = () => {
-      const code = $("#code").value.trim();
-      if (!code) return toast("Type the code shown on the customer’s card");
-      act("/stamp-by-code", { code }, "Stamp added").then(() => { $("#code").value = ""; });
-    };
-    $("#search").oninput = onSearch;
-    arm($("#out"), "Confirm — sign out?", async () => {
-      await api("/logout", { method: "POST" });
-      location.reload();
-    });
-    renderCards();
-    load();
-    // Don't repaint out from under a half-confirmed action — the poll would
-    // replace the armed button and swallow the second tap.
-    clearInterval(window.__poll);
-    window.__poll = setInterval(() => { if (!armedBtn) load(); }, 10000);
-  `;
-  // The camera overlay and jsQR (the BarcodeDetector fallback iPhone Safari
-  // needs) are only worth loading for a phone that can actually stamp.
-  const scanner = signedIn
-    ? `<div id="scanner"><video playsinline muted></video>
-         <div class="bar"><button class="btn btn-ghost" onclick="stopScanner()">Cancel</button></div>
-       </div>
-       <script src="/staff/jsqr.js"></script>`
-    : "";
-  return page(
-    "PunchMe — Staff",
-    `<div class="card" id="app"></div>
-     ${scanner}
-     <div class="toast"></div>
-     <script>${sharedJs}${signedIn ? stamperJs : loginJs}</script>`,
-    css,
-  );
-}
-
 // --------------------------------------------------------------- poster ----
 
 /**
@@ -2569,7 +2006,7 @@ export function adminPage(): string {
     // had ever stamped, which is the most misleading thing a console can do.
     const RET_FLOOR = 10;
 
-    // Two-tap confirmation, same idiom as the stamper and the dashboard: a
+    // Two-tap confirmation, same idiom as the Scanner and the dashboard: a
     // browser dialog can be suppressed, after which confirm() returns false and
     // the action silently stops working. First tap relabels, second within 4s
     // runs it.
@@ -3103,7 +2540,7 @@ export function adminPage(): string {
         const liveCards = cards.filter((c) => !c.archived_at);
         // Silent when nothing is wrong, which is most of the time.
         const wrong = [];
-        if (m.pin_failed_24h) wrong.push(m.pin_failed_24h + " failed staff PINs today");
+        if (m.pin_failed_24h) wrong.push(m.pin_failed_24h + " failed Staff access codes today");
         if (m.lookup_failed_7d >= 5) wrong.push(m.lookup_failed_7d + " codes matched nothing this week");
         if (m.messages_failed) wrong.push(m.messages_failed + " messages never arrived");
         if (m.staff_devices === 1 && m.stamps >= 20) wrong.push("only one staff phone has ever stamped");
@@ -3209,7 +2646,7 @@ export function adminPage(): string {
           "</div>" +
 
           (staffRows.length ? '<details class="fold" style="margin-top:18px"><summary>Counter phones (' +
-            staffRows.length + ")" + info("A PHONE, not a person — signing out and back in mints a new id, and changing the PIN resets them all. Rewards is flagged when one phone hands out rewards on more than 30% of the stamps it adds; that is the shape free-coffee-for-friends takes.") + "</summary>" +
+            staffRows.length + ")" + info("A PHONE, not a person — signing out and back in mints a new id, and changing the Staff access code resets them all. Rewards is flagged when one phone hands out rewards on more than 30% of the stamps it adds; that is the shape free-coffee-for-friends takes.") + "</summary>" +
             '<div class="tw"><table><tr><th>Phone</th><th>Stamps</th><th>Rewards</th><th>Undos</th><th>Forced</th><th>Last seen</th></tr>' +
             staffRows.map((s) => '<tr><td class="mono">' + esc(s.actor.replace("staff:", "")) + "</td><td>" +
               // The columns stay RAW — stamps, undos and forced side by side is
@@ -3294,7 +2731,7 @@ export function adminPage(): string {
           "Making a new one REPLACES the one already sent, so anything you have DM'd stops working — that is also how you withdraw a link that went to the wrong person."
         ) + "</h4>" +
           '<div class="flags">Nobody has claimed this shop. Until they do there is no login, no ' +
-          "staff PIN, and their sign-up page stays closed — so no customer can be given a card " +
+          "Staff access code, and their sign-up page stays closed — so no customer can be given a card " +
           "that nobody could stamp.</div>" +
           (out
             ? '<div class="temp" style="margin-top:8px">' + esc(m.claim_token || "(link withdrawn)") +
@@ -3665,6 +3102,7 @@ export function adminPage(): string {
           // the shop's — sat untouched on the object, where a class write cannot
           // reach. A count of zero is meaningful now: nothing was stuck.
           const fixed = (r.results || []).filter((x) => x.cleared > 0);
+          const barcodeFixed = (r.results || []).filter((x) => x.barcodes > 0);
           out.innerHTML = '<p class="dnote" style="margin:8px 0 0">' +
             (r.failed
               ? esc(r.failed + " of " + r.total + " failed: ") +
@@ -3674,6 +3112,11 @@ export function adminPage(): string {
               ? "<br>" + esc(r.cleared + " card" + (r.cleared === 1 ? "" : "s") +
                   " in a wallet showed their own old band — cleared, so the shop’s design shows through: ") +
                 fixed.map((x) => esc(x.name) + " (" + x.cleared + ")").join(", ")
+              : "") +
+            (r.barcodes
+              ? "<br>" + esc(r.barcodes + " card" + (r.barcodes === 1 ? "" : "s") +
+                  " had an old QR caption or value — repaired: ") +
+                barcodeFixed.map((x) => esc(x.name) + " (" + x.barcodes + ")").join(", ")
               : "") + "</p>";
         };
       }

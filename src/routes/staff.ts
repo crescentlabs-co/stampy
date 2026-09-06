@@ -4,13 +4,14 @@
  * authorised by that cookie, not by replaying the PIN. Multi-café: requests
  * carry x-card-id (or ?c= on the page); the session is scoped to that café.
  *
- *   GET  /staff                    login form, or the stamper once signed in
+ *   GET  /staff                    login form, or the Scanner once signed in
  *   POST /staff/api/login          { pin } → staff session cookie
  *   POST /staff/api/logout         drop this device's session
- *   GET  /staff/api/passes         recent cards as JSON
- *   GET  /staff/api/lookup?code=   find one card by its printed code
+ *   POST /staff/api/resolve        { value } → identify one card, no mutation
+ *   POST /staff/api/search         { query } → up to eight merchant-only matches
+ *   POST /staff/api/customer-profile → save consented lookup details
+ *   POST /staff/api/points-preview → calculate spend points authoritatively
  *   POST /staff/api/stamp          { serial } → +1 stamp → push   (scanner path)
- *   POST /staff/api/stamp-by-code  { code }   → resolve short code → +1 stamp (typed fallback)
  *   POST /staff/api/undo           { serial } → −1 stamp → push   (fix a mis-scan)
  *   POST /staff/api/redeem         { serial } → restart the card → push
  *
@@ -29,6 +30,7 @@ import {
   staffCookieOwners,
 } from "../auth.js";
 import { applyAndPush } from "../cardActions.js";
+import { maskPhoneNumber, parseCustomerProfile } from "../customerProfile.js";
 import { clear, hit, peek } from "../rateLimit.js";
 import {
   addStamps,
@@ -41,19 +43,20 @@ import {
   ownerForCard,
   ownerIsArchived,
   type OwnerRow,
+  getCustomer,
   getPass,
-  getPassByShortCodeForMerchant,
+  getPassForMerchant,
   logEvent,
   lastStampAt,
-  listRecentPasses,
   redeemPass,
+  searchCustomerPasses,
+  setCustomerProfile,
   verifyStaffPin,
   type CardRow,
   type MerchantRow,
   type EventType,
   type PassRow,
   lastStampAmount,
-  MAX_POINTS_COST,
   asEarnMode,
   asPointPresets,
 } from "../db.js";
@@ -61,6 +64,7 @@ import {
   affordableRewards, isFinalReward, isRewardReady, rewardFor, stampDots, targetFor,
 } from "../passModel.js";
 import { staffPage } from "../pages.js";
+import { fixedVisitPoints, pointsForSpend } from "../scannerRules.js";
 
 export const staffRouter = Router();
 
@@ -169,7 +173,7 @@ async function requireStaff(req: StaffRequest, res: Response, next: NextFunction
   const session = readStaffCookie(req, found.owner.id);
   if (!session) return void res.status(401).json({ error: "not-signed-in" });
   // A PIN change bumps the owner's epoch, which strands every older cookie —
-  // that's how the owner revokes a phone or a leaked stamper link, across all
+  // that's how the owner revokes a phone or a leaked Scanner link, across all
   // of their cards at once.
   if (await ownerIsArchived(found.owner.id)) {
     return void res.status(403).json({ error: "account-closed" });
@@ -235,14 +239,8 @@ staffRouter.post("/api/logout", async (req, res) => {
   res.json({ ok: true });
 });
 
-/** The cards this signed-in phone may stamp — populates the card switcher. */
-staffRouter.get("/api/cards", requireStaff, async (req: StaffRequest, res) => {
-  const cards = await cardsForOwner(req.owner!.id);
-  res.json({ cards: cards.map((c) => ({ id: c.id, name: c.name })), selected: req.card!.id });
-});
-
 /**
- * The stamper page is only served to a signed-in device; everyone else gets the
+ * The Scanner page is only served to a signed-in device; everyone else gets the
  * PIN form. So a leaked /staff link on its own reveals nothing about the café —
  * no card list, no codes, no customer count.
  */
@@ -250,13 +248,19 @@ staffRouter.get("/", async (req, res) => {
   const found = await resolveCard(req);
   const session = found ? readStaffCookie(req, found.owner.id) : null;
   const signedIn = Boolean(session && found && session.epoch === found.owner.staff_session_epoch);
-  // A cookie that survived a PIN change would otherwise get the stamper shell,
+  // A cookie that survived a PIN change would otherwise get the Scanner shell,
   // fail its first API call, reload, and loop. Drop it here instead.
   if (session && !signedIn && found) clearStaffCookie(res, found.owner.id);
+  const merchant = signedIn && found ? await merchantForOwner(found.owner.id) : null;
   // The page is TOLD which card it is for. It used to re-derive that from the
   // URL, so a bare /staff had the browser send x-card-id:"default" no matter
   // which counter the server had actually resolved.
-  res.type("html").send(staffPage(signedIn, found?.card.id ?? DEFAULT_CARD_ID));
+  res.type("html").send(staffPage(
+    signedIn,
+    found?.card.id ?? DEFAULT_CARD_ID,
+    merchant?.id,
+    merchant?.name,
+  ));
 });
 
 // QR-decoder fallback for browsers without BarcodeDetector (iPhone Safari).
@@ -282,6 +286,7 @@ function passView(row: PassRow) {
     code: row.short_code,
     kind: row.kind,
     stamps: row.stamp_count,
+    visitAmount: Math.max(1, row.stamps_per_visit),
     // What this card is counting TO right now. On a milestones card that is the
     // next rung, not the top of the ladder — staff and customer must be looking
     // at the same number, and the customer's card shows the next prize.
@@ -317,34 +322,109 @@ function counterRules(card: CardRow) {
   return {
     presets: asPointPresets(card.point_presets),
     earnMode: asEarnMode(card.earn_mode),
-    earnPoints: Math.max(1, card.earn_points || 1),
+    earnPoints: fixedVisitPoints(card.earn_points),
+    earnSpendCents: Math.max(0, card.earn_spend_cents || 0),
   };
 }
 
-staffRouter.get("/api/passes", requireStaff, async (req: StaffRequest, res) => {
-  const rows = await listRecentPasses(req.card!.id, 20);
-  res.json({ passes: rows.map(passView), ...counterRules(req.card!) });
-});
+/** One response shape for camera scans, typed codes and search selections. */
+async function scannerView(row: PassRow, merchantId: string | undefined) {
+  const card = await getCard(row.card_id);
+  if (!card || !merchantId || card.merchant_id !== merchantId) return null;
+  const customer = row.customer_id ? await getCustomer(row.customer_id) : null;
+  const customerOwned = customer?.merchant_id === merchantId ? customer : null;
+  return {
+    pass: passView(row),
+    card: {
+      id: card.id,
+      name: card.name,
+      kind: row.kind,
+      memberLabel: card.member_label,
+      benefits: card.benefits,
+      ...counterRules(card),
+    },
+    customer: {
+      name: customerOwned?.display_name || "",
+      phoneMasked: maskPhoneNumber(customerOwned?.phone_number || ""),
+      profileComplete: Boolean(
+        row.is_test || (customerOwned?.display_name && customerOwned.phone_number && customerOwned.profile_consent_at),
+      ),
+    },
+    test: row.is_test,
+  };
+}
 
-/** Look a card up by its printed 6-char code, without stamping it. The staff
- *  list only holds the 20 most recent cards, so filtering that list client-side
- *  could never find an older regular — this searches every card of the café. */
-staffRouter.get("/api/lookup", requireStaff, async (req: StaffRequest, res) => {
-  const code = String(req.query.code ?? "").trim();
-  if (!code) return void res.status(400).json({ error: "missing-code" });
-  const row = await getPassByShortCodeForMerchant(req.merchant?.id, code);
+/** Resolve first; mutation happens only after staff review the detected card. */
+staffRouter.post("/api/resolve", requireStaff, async (req: StaffRequest, res) => {
+  const value = typeof req.body?.value === "string" ? req.body.value.trim() : "";
+  if (!value || value.length > 80) return void res.status(400).json({ error: "invalid-card-code" });
+  const row = await getPassForMerchant(req.merchant?.id, value);
   if (!row) {
-    // A typed code that matched nothing: a worn poster, a deleted pass, a
-    // customer at the wrong shop, or staff mistyping. All four are worth
-    // knowing about and none of them leave any other trace.
     await logEvent(req.card!.id, "", "lookup_failed", {
       actor: actorOf(req),
       merchantId: req.merchant?.id ?? null,
-      metadata: { code },
+      // The value may be a phone number entered through the fallback search.
+      // Record the miss, never the value itself.
+      metadata: {},
     }).catch(() => {});
     return void res.status(404).json({ error: "no-such-card" });
   }
-  res.json({ pass: passView(row) });
+  const view = await scannerView(row, req.merchant?.id);
+  if (!view) return void res.status(404).json({ error: "no-such-card" });
+  res.json(view);
+});
+
+/** POST keeps names and phone numbers out of URLs and ordinary access logs. */
+staffRouter.post("/api/search", requireStaff, async (req: StaffRequest, res) => {
+  const query = typeof req.body?.query === "string" ? req.body.query.trim() : "";
+  if (query.length < 2 || query.length > 80) {
+    return void res.status(400).json({ error: "invalid-search" });
+  }
+  const rows = await searchCustomerPasses(req.merchant?.id, query, 8);
+  res.json({
+    results: rows.map((row) => ({
+      serial: row.serial,
+      code: row.short_code,
+      name: row.display_name || "",
+      phoneMasked: maskPhoneNumber(row.phone_number),
+      cardName: row.card_name,
+      kind: row.kind,
+      platform: row.platform,
+    })),
+  });
+});
+
+staffRouter.post("/api/customer-profile", requireStaff, async (req: StaffRequest, res) => {
+  const serial = typeof req.body?.serial === "string" ? req.body.serial : "";
+  const row = await getPassForMerchant(req.merchant?.id, serial);
+  if (!row) return void res.status(404).json({ error: "no-such-card" });
+  if (!row.customer_id || row.is_test) return void res.status(409).json({ error: "profile-not-needed" });
+  const parsed = parseCustomerProfile((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) return void res.status(422).json({ error: parsed.error });
+  const customer = await setCustomerProfile(row.customer_id, req.merchant!.id, parsed.profile);
+  if (!customer) return void res.status(404).json({ error: "no-such-customer" });
+  await logEvent(row.card_id, row.serial, "customer_profile", {
+    actor: actorOf(req),
+    merchantId: req.merchant!.id,
+    customerId: customer.id,
+    metadata: { profile_source: "staff" },
+  });
+  const view = await scannerView(row, req.merchant?.id);
+  if (!view) return void res.status(404).json({ error: "no-such-card" });
+  res.json(view);
+});
+
+staffRouter.post("/api/points-preview", requireStaff, async (req: StaffRequest, res) => {
+  const serial = typeof req.body?.serial === "string" ? req.body.serial : "";
+  const row = await getPassForMerchant(req.merchant?.id, serial);
+  if (!row) return void res.status(404).json({ error: "no-such-card" });
+  const card = await getCard(row.card_id);
+  if (!card || row.kind !== "points" || asEarnMode(card.earn_mode) !== "spend") {
+    return void res.status(409).json({ error: "not-spend-points" });
+  }
+  const quote = pointsForSpend(req.body?.spend, card.earn_spend_cents, card.earn_points);
+  if (!quote.ok) return void res.status(422).json({ error: quote.error });
+  res.json(quote);
 });
 
 /** Thin HTTP wrapper over applyAndPush (src/cardActions.ts) for the staff routes. */
@@ -371,17 +451,11 @@ async function updateAndPush(
     deferPush: true,
   });
   if (!result) return void res.status(404).json({ error: "no-such-card" });
+  const view = await scannerView(result.row, req.merchant?.id);
+  if (!view) return void res.status(404).json({ error: "no-such-card" });
   res.json({
-    pass: passView(result.row),
+    ...view,
     push: result.push,
-    // Which card it landed on — the staff page names it when it isn't the one
-    // currently on screen, and reads its presets when it is a points card the
-    // phone was not already showing.
-    card: {
-      id: result.card.id,
-      name: result.card.name,
-      ...counterRules(result.card),
-    },
   });
 }
 
@@ -399,38 +473,28 @@ async function updateAndPush(
  *           the point of it — a crafted request cannot mint points at its own
  *           rate, the same reason redeem prices a reward off the card's own
  *           list rather than trusting what it was told.
- *   manual  staff key the number in, which is what the word means. This is the
- *           only mode that reads `amount`, and it is the behaviour every points
- *           card had before earn modes existed.
  */
 async function stampAmount(
   serial: string,
-  body: { amount?: unknown; spend?: unknown },
-): Promise<number> {
-  const row = await getPass(serial);
+  merchantId: string | undefined,
+  body: { spend?: unknown },
+): Promise<{ ok: true; amount: number } | { ok: false; error: string; status: number }> {
+  const row = await getPassForMerchant(merchantId, serial);
+  if (!row) return { ok: false, error: "no-such-card", status: 404 };
   // Off the PASS, never the card: how much a STAMP is worth is frozen at issue
   // like the target and the reward, so a shop halving it cannot double what
   // somebody part-way through still owes.
-  if (row?.kind !== "points") return Math.max(1, row?.stamps_per_visit ?? 1);
+  if (row.kind !== "points") return { ok: true, amount: Math.max(1, row.stamps_per_visit) };
   // The rate, unlike that one, comes off the card — see EarnMode in src/db.ts
   // for why. Off the card THIS PASS belongs to, never whichever card the phone
   // happens to be showing: a customer hands over the card they have.
   const card = await getCard(row.card_id);
+  if (!card || card.merchant_id !== merchantId) return { ok: false, error: "no-such-card", status: 404 };
   const mode = asEarnMode(card?.earn_mode);
-  const per = Math.max(0, card?.earn_points ?? 0);
-  const cap = (n: number) => Math.max(1, Math.min(MAX_POINTS_COST, Math.floor(n)));
-  if (mode === "visit") return cap(per || 1);
-  if (mode === "spend") {
-    const rate = Math.max(0, card?.earn_spend_cents ?? 0);
-    const major = Number(body.spend);
-    if (!rate || !per || !Number.isFinite(major) || major <= 0) return 1;
-    // Rounded DOWN, and never below one. Down because a shop should not be
-    // surprised by what it handed out; never below one because a scan that
-    // banks nothing reads at the counter as the scan having failed.
-    return cap(Math.round(major * 100) / rate * per);
-  }
-  const n = Math.trunc(Number(body.amount));
-  return Number.isFinite(n) && n >= 1 && n <= MAX_POINTS_COST ? n : 1;
+  if (mode === "visit") return { ok: true, amount: fixedVisitPoints(card.earn_points) };
+  const quote = pointsForSpend(body.spend, card.earn_spend_cents, card.earn_points);
+  if (!quote.ok) return { ok: false, error: quote.error, status: 422 };
+  return { ok: true, amount: quote.points };
 }
 
 staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
@@ -440,24 +504,13 @@ staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
     const secondsLeft = await stampCooldownLeft(serial, req.merchant?.id);
     if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
   }
-  const n = await stampAmount(serial, (req.body ?? {}) as { amount?: unknown; spend?: unknown });
-  await updateAndPush(req, res, serial, "stamp", () => addStamps(serial, n), force === true, n);
-});
-
-/** Typed-code fallback: staff keys in the short code printed on the card. */
-staffRouter.post("/api/stamp-by-code", requireStaff, async (req: StaffRequest, res) => {
-  const { code, force } = (req.body ?? {}) as { code?: string; force?: boolean };
-  if (!code?.trim()) return void res.status(400).json({ error: "missing-code" });
-  const row = await getPassByShortCodeForMerchant(req.merchant?.id, code);
-  if (!row) return void res.status(404).json({ error: "no-such-card" });
-  if (!force) {
-    const secondsLeft = await stampCooldownLeft(row.serial, req.merchant?.id);
-    if (secondsLeft > 0) return void res.status(409).json({ error: "too-soon", secondsLeft });
-  }
-  const byCode = await stampAmount(
-    row.serial, (req.body ?? {}) as { amount?: unknown; spend?: unknown });
-  await updateAndPush(req, res, row.serial, "stamp",
-    () => addStamps(row.serial, byCode), force === true, byCode);
+  const quote = await stampAmount(
+    serial, req.merchant?.id, (req.body ?? {}) as { spend?: unknown },
+  );
+  if (!quote.ok) return void res.status(quote.status).json({ error: quote.error });
+  await updateAndPush(
+    req, res, serial, "stamp", () => addStamps(serial, quote.amount), force === true, quote.amount,
+  );
 });
 
 /**
@@ -468,6 +521,9 @@ staffRouter.post("/api/stamp-by-code", requireStaff, async (req: StaffRequest, r
 staffRouter.post("/api/undo", requireStaff, async (req: StaffRequest, res) => {
   const { serial } = (req.body ?? {}) as { serial?: string };
   if (!serial) return void res.status(400).json({ error: "missing-serial" });
+  if (!(await getPassForMerchant(req.merchant?.id, serial))) {
+    return void res.status(404).json({ error: "no-such-card" });
+  }
   // How much to take back is read from the LAST stamp on this card, not from
   // the request. On a points card one tap can be fifty, so "minus one" would
   // leave forty-nine behind — and trusting a number from the browser would let
@@ -482,7 +538,8 @@ staffRouter.post("/api/redeem", requireStaff, async (req: StaffRequest, res) => 
   // On a points card staff pick WHICH reward, and its price comes off the
   // balance. The price is checked against the card's own catalogue rather than
   // taken on trust, or a crafted request could buy a t-shirt for one point.
-  const row = await getPass(serial);
+  const row = await getPassForMerchant(req.merchant?.id, serial);
+  if (!row) return void res.status(404).json({ error: "no-such-card" });
   let cost = 0;
   if (row?.kind === "points") {
     const priced = (row.milestones ?? []).find((m) => m.at === Math.trunc(Number(at)));

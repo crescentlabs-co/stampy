@@ -348,12 +348,15 @@ async function main() {
     return { status: r.status, cookie: r.headers.get("set-cookie")?.split(";")[0] ?? "" };
   };
 
-  const noSession = await fetch(base + "/staff/api/passes", {
-    headers: { "Content-Type": "application/json", "x-card-id": "default" },
+  const noSession = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-card-id": "default" },
+    body: JSON.stringify({ value: p1.serial }),
   });
   expect(noSession.status === 401, "staff API refuses a device with no session");
-  const oldWay = await fetch(base + "/staff/api/passes", {
+  const oldWay = await fetch(base + "/staff/api/resolve", {
+    method: "POST",
     headers: { "Content-Type": "application/json", "x-card-id": "default", "x-staff-pin": "9876" },
+    body: JSON.stringify({ value: p1.serial }),
   });
   expect(oldWay.status === 401, "the old x-staff-pin bearer header is no longer accepted");
 
@@ -374,21 +377,100 @@ async function main() {
     "each sign-in mints a distinct device session (so events are attributable per phone)",
   );
 
-  // A leaked /staff link on its own reveals nothing: no card list, no codes.
+  // A leaked /staff link on its own reveals nothing: no merchant or customer data.
   const staffAnon = await get("/staff");
   expect(
-    staffAnon.body.includes("Staff login") && !staffAnon.body.includes("Scan card"),
-    "GET /staff without a session serves only the PIN form",
+    staffAnon.body.includes("Scanner access") && !staffAnon.body.includes("Name, phone, or card code"),
+    "GET /staff without a session serves only the access-code form",
   );
   const staffSignedIn = await get("/staff", { headers: { cookie: staff1.cookie } });
-  expect(staffSignedIn.body.includes("Scan card"), "GET /staff with a session serves the stamper");
+  expect(
+    staffSignedIn.body.includes("Name, phone, or card code") && staffSignedIn.body.includes("startCamera();"),
+    "GET /staff with a session serves the camera-first Scanner",
+  );
   expect(
     !staffAnon.body.includes("localStorage"),
     "the staff page no longer keeps a credential in localStorage",
   );
 
-  const list = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
-  expect(list.passes.length === 2 && list.passes[0].code.length === 6, "staff list shows cards with short codes");
+  const resolved = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: p2.serial }),
+  });
+  const resolvedOut = JSON.parse(await resolved.text());
+  expect(
+    resolved.status === 200 && resolvedOut.pass.code.length === 6 && resolvedOut.card.name,
+    "Scanner resolves one card without changing it",
+  );
+  const missingConsent = await fetch(base + "/staff/api/customer-profile", {
+    method: "POST", headers: staffHeaders,
+    body: JSON.stringify({ serial: p2.serial, displayName: "Nur Aisyah", phoneNumber: "0123456789" }),
+  });
+  expect(missingConsent.status === 422, "staff cannot save customer details without explicit consent");
+  const staffProfile = await fetch(base + "/staff/api/customer-profile", {
+    method: "POST", headers: staffHeaders,
+    body: JSON.stringify({
+      serial: p2.serial, displayName: "Nur Aisyah", phoneNumber: "012-345 6789", consent: "yes",
+    }),
+  });
+  const staffProfileOut = JSON.parse(await staffProfile.text());
+  expect(
+    staffProfile.status === 200 && staffProfileOut.customer.name === "Nur Aisyah" &&
+      staffProfileOut.customer.profileComplete && !JSON.stringify(staffProfileOut).includes("+60123456789"),
+    "staff can save consented lookup details and receive only a masked phone number",
+  );
+  const sharedPhoneProfile = await fetch(base + "/staff/api/customer-profile", {
+    method: "POST", headers: staffHeaders,
+    body: JSON.stringify({
+      serial: p1.serial, displayName: "Aisyah Family", phoneNumber: "012-345 6789", consent: "yes",
+    }),
+  });
+  expect(sharedPhoneProfile.status === 200, "a family phone number can be saved on another customer");
+  for (const query of ["Nur Ais", "0123456789", p2.short_code.toLowerCase()]) {
+    const found = await fetch(base + "/staff/api/search", {
+      method: "POST", headers: staffHeaders, body: JSON.stringify({ query }),
+    });
+    const searchOut = JSON.parse(await found.text());
+    expect(
+      found.status === 200 && searchOut.results.some((row: any) => row.serial === p2.serial) &&
+        searchOut.results.length <= 8,
+      `Scanner search finds the same card by ${query === "Nur Ais" ? "name" : query === "0123456789" ? "phone" : "code"}`,
+    );
+  }
+  const sharedPhoneSearch = await fetch(base + "/staff/api/search", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ query: "0123456789" }),
+  });
+  const sharedPhoneResults = JSON.parse(await sharedPhoneSearch.text()).results;
+  expect(
+    p1.customer_id !== p2.customer_id &&
+      sharedPhoneResults.some((row: any) => row.serial === p1.serial) &&
+      sharedPhoneResults.some((row: any) => row.serial === p2.serial),
+    "a shared phone number finds both separate customers without merging them",
+  );
+  await setStaffPinFor(secondOwner.id, "2468");
+  const secondStaff = await staffLogin(starter.id, "2468");
+  const isolatedSearch = await fetch(base + "/staff/api/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-card-id": starter.id,
+      cookie: secondStaff.cookie,
+    },
+    body: JSON.stringify({ query: "Nur Aisyah" }),
+  });
+  expect(
+    isolatedSearch.status === 200 && JSON.parse(await isolatedSearch.text()).results.length === 0,
+    "Scanner search never crosses into another merchant's customers",
+  );
+  const staffProfileAudit = (await getPool().query<{ metadata: Record<string, unknown> }>(
+    `SELECT metadata FROM events WHERE type = 'customer_profile' AND serial = $1 ORDER BY id DESC LIMIT 1`,
+    [p2.serial],
+  )).rows[0];
+  expect(
+    staffProfileAudit?.metadata?.profile_source === "staff" &&
+      !JSON.stringify(staffProfileAudit.metadata).includes("Nur") &&
+      !JSON.stringify(staffProfileAudit.metadata).includes("012"),
+    "staff profile audit records its source without personal information",
+  );
 
   // Stamp by serial (scanner path)
   const stamp = await fetch(base + "/staff/api/stamp", {
@@ -397,15 +479,22 @@ async function main() {
   const stampOut = JSON.parse(await stamp.text());
   expect(stamp.status === 200 && stampOut.pass.stamps === 3, "stamp by serial: 2 → 3");
 
-  // Stamp by short code (typed fallback), lowercase to test normalization
-  const byCode = await fetch(base + "/staff/api/stamp-by-code", {
-    method: "POST", headers: staffHeaders, body: JSON.stringify({ code: p2.short_code.toLowerCase() }),
+  // Typed code fallback resolves first, then enters the same confirmed action.
+  const byCodeResolve = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: p2.short_code.toLowerCase() }),
+  });
+  const byCodeCard = JSON.parse(await byCodeResolve.text());
+  const byCode = await fetch(base + "/staff/api/stamp", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: byCodeCard.pass.serial }),
   });
   const byCodeOut = JSON.parse(await byCode.text());
-  expect(byCode.status === 200 && byCodeOut.pass.stamps === 3, "stamp by typed code (case-insensitive): 2 → 3");
+  expect(
+    byCodeResolve.status === 200 && byCode.status === 200 && byCodeOut.pass.stamps === 3,
+    "typed code resolves case-insensitively into the shared reward flow",
+  );
 
-  const badCode = await fetch(base + "/staff/api/stamp-by-code", {
-    method: "POST", headers: staffHeaders, body: JSON.stringify({ code: "ZZZZZZ" }),
+  const badCode = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: "ZZZZZZ" }),
   });
   expect(badCode.status === 404, "unknown code → 404");
 
@@ -417,8 +506,10 @@ async function main() {
       method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: p1.serial, force: true }),
     });
   }
-  const listFull = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
-  const full = listFull.passes.find((p: any) => p.serial === p1.serial);
+  const fullRes = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: p1.serial }),
+  });
+  const full = JSON.parse(await fullRes.text()).pass;
   expect(full.stamps === 8 && full.rewardReady === true, "stamps clamp at target (8) and rewardReady");
 
   const redeem = await fetch(base + "/staff/api/redeem", {
@@ -444,8 +535,10 @@ async function main() {
   });
   const cd2out = JSON.parse(await cd2.text());
   expect(cd2.status === 409 && cd2out.error === "too-soon" && cd2out.secondsLeft > 0, "cooldown: immediate repeat is refused (too-soon)");
-  const cdList = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
-  expect(cdList.passes.find((p: any) => p.serial === pc.serial).stamps === 3, "cooldown: the refused stamp did NOT increment the card");
+  const cdResolved = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: pc.serial }),
+  });
+  expect(JSON.parse(await cdResolved.text()).pass.stamps === 3, "cooldown: the refused stamp did NOT increment the card");
   const cd3 = await fetch(base + "/staff/api/stamp", {
     method: "POST", headers: staffHeaders, body: JSON.stringify({ serial: pc.serial, force: true }),
   });
@@ -641,8 +734,9 @@ async function main() {
   // A session is scoped to the OWNER: this owner's other card is fine on the
   // same sign-in (one counter, one PIN). Another owner's card is not — see the
   // cross-owner check further down.
-  const sameOwnerCard = await fetch(base + "/staff/api/passes", {
-    headers: { ...staffHeaders, "x-card-id": newCafeOut.id },
+  const sameOwnerCard = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: { ...staffHeaders, "x-card-id": newCafeOut.id },
+    body: JSON.stringify({ value: p1.serial }),
   });
   expect(sameOwnerCard.status === 200, "one staff session covers every card the same owner runs");
 
@@ -650,9 +744,11 @@ async function main() {
   const staff2 = await staffLogin(newCafeOut.id, "9876");
   expect(staff2.status === 200, "the owner's PIN signs in against their second card too");
   const staff2Headers = { "Content-Type": "application/json", "x-card-id": newCafeOut.id, cookie: staff2.cookie };
-  const otherList = await fetch(base + "/staff/api/passes", { headers: staff2Headers });
-  expect(JSON.parse(await otherList.text()).passes.length === 0, "cards are isolated (no cross-card customers)");
-  // A customer hands over whichever card they hold, so the stamper accepts any
+  const emptySearch = await fetch(base + "/staff/api/search", {
+    method: "POST", headers: staff2Headers, body: JSON.stringify({ query: "nobody-here" }),
+  });
+  expect(JSON.parse(await emptySearch.text()).results.length === 0, "Scanner search returns no invented customers");
+  // A customer hands over whichever card they hold, so the Scanner accepts any
   // of the SHOP's cards even when the phone is showing a different one — and
   // says which one it landed on.
   const crossPass = await mk(); // a fresh card on "default", so no cooldown in the way
@@ -660,7 +756,7 @@ async function main() {
     method: "POST", headers: staff2Headers, body: JSON.stringify({ serial: crossPass.serial }),
   });
   const crossOut = JSON.parse(await crossStamp.text());
-  expect(crossStamp.status === 200, "the stamper accepts any card the same merchant runs");
+  expect(crossStamp.status === 200, "the Scanner accepts any card the same merchant runs");
   expect(
     crossOut.card?.id === "default" && crossOut.card?.name,
     "…and names the card it actually stamped",
@@ -715,15 +811,17 @@ async function main() {
   );
 
   // A short code from the shop's other card resolves too — it used to 404.
-  const codeLookup = await fetch(
-    base + "/staff/api/lookup?code=" + encodeURIComponent(crossPass.short_code),
-    { headers: staff2Headers },
-  );
+  const codeLookup = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staff2Headers, body: JSON.stringify({ value: crossPass.short_code }),
+  });
   expect(codeLookup.status === 200, "a short code from the merchant's other card is found");
 
-  // --- Google Wallet branch (no Google creds → graceful, never throws) ---
+  // --- A direct wallet URL cannot bypass the customer details form ---
   const gEnroll = await get("/enroll/google");
-  expect(gEnroll.status === 503, "google enroll → 503 until Google creds configured");
+  expect(
+    gEnroll.status === 200 && gEnroll.body.includes('name="displayName"'),
+    "a direct Google Wallet link returns the required customer details form",
+  );
 
   const gp = await mk("google");
   const gStamp = await fetch(base + "/staff/api/stamp", {
@@ -2742,7 +2840,9 @@ async function main() {
   // The limiter guards sign-in only — an already-signed-in phone keeps working
   // through the block, so one bad actor can't stop the shift.
   expect(
-    (await fetch(base + "/staff/api/passes", { headers: staff2Headers })).status === 200,
+    (await fetch(base + "/staff/api/resolve", {
+      method: "POST", headers: staff2Headers, body: JSON.stringify({ value: p1.serial }),
+    })).status === 200,
     "a signed-in phone still works while sign-in is rate-limited",
   );
 
@@ -2826,8 +2926,8 @@ async function main() {
   );
   const readyJoin = await get("/c/default", { headers: { cookie: customerCookie } });
   expect(
-    readyJoin.body.includes('class="wallet-btn apple"') && !readyJoin.body.includes('name="displayName"'),
-    "the same customer can use the wallet buttons after completing the form",
+    !readyJoin.body.includes('name="displayName"') && readyJoin.body.includes("Almost ready!"),
+    "the same customer has cleared the details gate before wallet setup is available",
   );
   const savedCustomer = (await getPool().query<{
     display_name: string; phone_number: string; profile_consent_at: Date | null;
@@ -2841,7 +2941,7 @@ async function main() {
     "customer phone numbers are normalized and consent is recorded",
   );
   const profileAudit = (await getPool().query<{ metadata: Record<string, unknown> }>(
-    `SELECT metadata FROM events WHERE event_type = 'customer_profile'
+    `SELECT metadata FROM events WHERE type = 'customer_profile'
      AND merchant_id = $1 ORDER BY created_at DESC LIMIT 1`, [m1.id],
   )).rows[0];
   expect(
@@ -3044,24 +3144,23 @@ async function main() {
   expect(terms.status === 200 && terms.body.includes("Terms of Service"), "GET /terms renders the terms");
   expect((await get("/")).body.includes("/privacy"), "marketing footer links the Privacy page");
   expect((await get("/dashboard")).body.includes('id="agree"'), "signup form has the Terms/Privacy consent checkbox");
-  // The customer-facing page links the policies but does NOT gate on a tick-box:
-  // we ask customers for nothing personal, and a consent gate at a counter costs
-  // sign-ups. (Buttons only render once a wallet is configured, hence the guard.)
+  // The customer-facing page collects only the details staff need for lookup,
+  // and records explicit consent before either wallet route can be used.
   const custLanding = (await get("/c/default")).body;
   expect(
     custLanding.includes('href="/terms"') && custLanding.includes('href="/privacy"'),
     "the customer sign-up page links Terms and Privacy",
   );
-  expect(!custLanding.includes('id="agree"'), "the customer sign-up page has no consent tick-box");
-  // The disclosure leads with the fact, not the links — it is a selling point.
+  expect(custLanding.includes('name="consent"'), "the customer sign-up page records lookup consent");
   expect(
-    custLanding.includes("No name, no phone number, no email"),
-    "the join page states plainly that we collect no name, phone or email",
+    custLanding.includes("find your loyalty card at the counter") &&
+      custLanding.includes("do not use these details for marketing or sell them"),
+    "the join page states the narrow purpose and the marketing limit",
   );
-  // No click, no field, no step in front of the button: the line is text only.
   expect(
-    !/<input[^>]*type=["']?checkbox/i.test(custLanding) && !custLanding.includes("<form"),
-    "the join page adds no checkbox, field or form before the wallet button",
+    custLanding.includes('name="displayName"') && custLanding.includes('name="phoneNumber"') &&
+      /<input[^>]*type=["']?checkbox/i.test(custLanding),
+    "the join page requires name, phone and consent before the wallet button",
   );
 
   // PDPA s.7(3) wants the notice in English AND Bahasa Malaysia, and each
@@ -3644,7 +3743,7 @@ async function main() {
           headers: staffHeaders,
           body: JSON.stringify({ serial: earner.serial, force: true, ...body }),
         });
-        return JSON.parse(await r.text());
+        return { status: r.status, ...JSON.parse(await r.text()) };
       };
 
       await asPoints("visit", 0, 5);
@@ -3653,10 +3752,25 @@ async function main() {
         "...and a browser asking for 900 on a visit card still gets the rate");
 
       await asPoints("spend", 100, 1);
+      const preview = await fetch(base + "/staff/api/points-preview", {
+        method: "POST", headers: staffHeaders,
+        body: JSON.stringify({ serial: earner.serial, spend: "25.50", amount: 9000 }),
+      });
+      const previewOut = JSON.parse(await preview.text());
+      expect(
+        preview.status === 200 && previewOut.points === 25 && previewOut.spendCents === 2550,
+        "the server previews spend points from the stored programme rate",
+      );
       expect((await stamp({ spend: 25.5 })).pass.stamps === 25,
         "RM25.50 at a point per ringgit is 25 points, rounded down");
-      expect((await stamp({ amount: 5000 })).pass.stamps === 26,
-        "...and points sent instead of money buy nothing");
+      const beforeForged = (await getPass(earner.serial))!.stamp_count;
+      const forged = await stamp({ amount: 5000 });
+      expect(
+        forged.status === 422 && (await getPass(earner.serial))!.stamp_count === beforeForged,
+        "...and a forged browser-provided points amount cannot award anything",
+      );
+      expect((await stamp({ spend: "1.999" })).status === 422,
+        "a malformed spend is refused rather than rounded into an award");
 
       await asPoints("spend", 500, 1);
       expect((await stamp({ spend: 12 })).pass.stamps === 2,
@@ -4284,20 +4398,25 @@ async function main() {
   await logEvent("default", "", "join_view", { metadata: { bot: false } });
   expect((await funnelOf("default")).scanned === botBefore + 1, "...but a real one counts");
 
-  // --- Staff can look up a card that is NOT in the recent-20 list ---
+  // --- Scanner search is not limited to recent cards ---
   const older = await mk();
   await getPool().query("UPDATE passes SET created_at = now() - interval '200 days' WHERE serial = $1", [older.serial]);
   for (let i = 0; i < 22; i++) await mk(); // push it well past the 20-row window
-  const recent = JSON.parse((await get("/staff/api/passes", { headers: staffHeaders })).body);
+  const olderSearch = await fetch(base + "/staff/api/search", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ query: older.short_code }),
+  });
+  const olderResults = JSON.parse(await olderSearch.text()).results;
   expect(
-    !recent.passes.some((p: any) => p.serial === older.serial),
-    "the older card is outside the recent list (so client-side filtering could never find it)",
+    olderResults.length === 1 && olderResults[0].serial === older.serial,
+    "staff search finds an old card without exposing a browsable recent list",
   );
-  const lookup = JSON.parse(
-    (await get("/staff/api/lookup?code=" + older.short_code, { headers: staffHeaders })).body,
-  );
-  expect(lookup.pass?.serial === older.serial, "staff lookup finds a card by code beyond the recent list");
-  const lookupMiss = await get("/staff/api/lookup?code=ZZZZZZ", { headers: staffHeaders });
+  const lookup = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: older.short_code }),
+  });
+  expect(JSON.parse(await lookup.text()).pass?.serial === older.serial, "typed card code resolves the old card");
+  const lookupMiss = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: "ZZZZZZ" }),
+  });
   expect(lookupMiss.status === 404, "staff lookup of an unknown code → 404");
 
   // --- Housekeeping prune: only truly abandoned cards go ---
@@ -4325,7 +4444,10 @@ async function main() {
   const undo1 = await post("/undo", { serial: un.serial });
   expect(undo1.status === 200 && JSON.parse(await undo1.text()).pass.stamps === 2, "undo takes one stamp back (3 → 2)");
   for (let i = 0; i < 5; i++) await post("/undo", { serial: un.serial });
-  const floored = JSON.parse((await get("/staff/api/lookup?code=" + un.short_code, { headers: staffHeaders })).body);
+  const flooredRes = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: un.short_code }),
+  });
+  const floored = JSON.parse(await flooredRes.text());
   expect(floored.pass.stamps === 0, "undo floors at 0 rather than going negative");
   // Undo follows the same scope as stamping: any card the merchant runs is fair
   // game (the phone shouldn't have to be on the right one to fix a mis-scan).
@@ -4450,19 +4572,27 @@ async function main() {
     (await getCard(secondCard.id))!.staff_pin_hash === "",
     "a card carries no PIN of its own — the one PIN lives on the owner",
   );
-  const bothCards = JSON.parse(await (await fetch(base + "/staff/api/cards", { headers: staffHeaders })).text());
+  const secondCardPass = await mk("apple", undefined, secondCard.id);
+  const autoDetected = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: secondCardPass.serial }),
+  });
   expect(
-    (bothCards.cards || []).some((c: any) => c.id === secondCard.id),
-    "the stamper offers every card the owner runs, on one sign-in",
+    autoDetected.status === 200 && JSON.parse(await autoDetected.text()).card.id === secondCard.id,
+    "the Scanner auto-detects every card the owner runs on one sign-in",
   );
   expect(
-    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-card-id": secondCard.id } })).status === 200,
+    (await fetch(base + "/staff/api/resolve", {
+      method: "POST", headers: { ...staffHeaders, "x-card-id": secondCard.id },
+      body: JSON.stringify({ value: secondCardPass.serial }),
+    })).status === 200,
     "the same staff session stamps the second card without signing in again",
   );
   // A café belonging to somebody else is still refused, header or not.
   expect(
-    (await fetch(base + "/staff/api/passes", {
-      headers: { cookie: staff1.cookie, "x-card-id": ov2nd.cards[0].id },
+    (await fetch(base + "/staff/api/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", cookie: staff1.cookie, "x-card-id": ov2nd.cards[0].id },
+      body: JSON.stringify({ value: p1.serial }),
     })).status === 401,
     "a staff session can't be pointed at another owner's card",
   );
@@ -4474,15 +4604,18 @@ async function main() {
   // and since PINs are 4-6 digits and can collide, could have signed in there.
   const bareStaff = await get("/staff", { headers: { cookie: cookie2 } });
   expect(
-    bareStaff.status === 200 && !bareStaff.body.includes('let cardId = "default"'),
+    bareStaff.status === 200 && !bareStaff.body.includes('const cardId = "default"'),
     "a bare /staff does not silently claim the default café",
   );
   expect(
-    bareStaff.body.includes('let cardId = "' + ov2nd.cards[0].id + '"'),
+    bareStaff.body.includes('const cardId = "' + ov2nd.cards[0].id + '"'),
     "a bare /staff resolves to the logged-in owner's own card",
   );
   // A staff phone that bookmarked plain /staff keeps working, on ITS owner's card.
-  const bookmarked = await fetch(base + "/staff/api/passes", { headers: { cookie: staff1.cookie } });
+  const bookmarked = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: { "Content-Type": "application/json", cookie: staff1.cookie },
+    body: JSON.stringify({ value: p1.serial }),
+  });
   expect(bookmarked.status === 200, "a staff phone with no x-card-id still reaches its own counter");
   // And the owner's Settings link carries the card id, which is what fixes it.
   expect(
@@ -4579,7 +4712,9 @@ async function main() {
 
   // --- Rotating the PIN signs every staff phone out (break-glass) ---
   // Last, because it invalidates the sessions used above.
-  const beforeRotate = await fetch(base + "/staff/api/passes", { headers: staffHeaders });
+  const beforeRotate = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: p1.serial }),
+  });
   expect(beforeRotate.status === 200, "the staff session works before the PIN is rotated");
   const rot = await fetch(base + "/dashboard/api/staff-pin", {
     method: "POST", headers: { "Content-Type": "application/json", cookie: cookieNow },
@@ -4596,18 +4731,26 @@ async function main() {
   const ownerRot = (await getOwnerByEmail("owner@test.my"))!;
   expect(verifyStaffPin(ownerRot, rotOut.staffPin), "the rotated PIN verifies");
   expect(!verifyStaffPin(ownerRot, "9876"), "the old PIN stops working");
-  const afterRotate = await fetch(base + "/staff/api/passes", { headers: staffHeaders });
+  const afterRotate = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: staffHeaders, body: JSON.stringify({ value: p1.serial }),
+  });
   expect(afterRotate.status === 401, "rotating the PIN revokes every existing staff session");
   expect(
-    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, "x-card-id": secondCard.id } })).status === 401,
+    (await fetch(base + "/staff/api/resolve", {
+      method: "POST", headers: { ...staffHeaders, "x-card-id": secondCard.id },
+      body: JSON.stringify({ value: secondCardPass.serial }),
+    })).status === 401,
     "and it revokes them on every card at once",
   );
-  expect((await get("/staff", { headers: { cookie: staff1.cookie } })).body.includes("Staff login"),
+  expect((await get("/staff", { headers: { cookie: staff1.cookie } })).body.includes("Scanner access"),
     "a revoked device is shown the PIN form again (no reload loop)");
   const staffRot = await staffLogin("default", rotOut.staffPin);
   expect(staffRot.status === 200, "staff sign back in with the new PIN");
   expect(
-    (await fetch(base + "/staff/api/passes", { headers: { ...staffHeaders, cookie: staffRot.cookie } })).status === 200,
+    (await fetch(base + "/staff/api/resolve", {
+      method: "POST", headers: { ...staffHeaders, cookie: staffRot.cookie },
+      body: JSON.stringify({ value: p1.serial }),
+    })).status === 200,
     "the new session works",
   );
   // The second owner's PIN is untouched by the first owner rotating theirs.
@@ -4705,14 +4848,15 @@ async function main() {
     "a save that changed nothing is not logged as an edit",
   );
 
-  // A typed code that matched nothing is the only trace of a worn poster.
-  const badLookup = await fetch(base + "/staff/api/lookup?code=ZZZZZZ", {
-    headers: { ...staffHeaders, cookie: staffRot.cookie },
+  // A failed lookup is auditable without retaining what the person typed.
+  const badLookup = await fetch(base + "/staff/api/resolve", {
+    method: "POST", headers: { ...staffHeaders, cookie: staffRot.cookie },
+    body: JSON.stringify({ value: "ZZZZZZ" }),
   });
   expect(badLookup.status === 404, "an unknown code is still a 404");
   const failed = (await getPool().query<{ metadata: { code?: string } }>(
     `SELECT metadata FROM events WHERE type = 'lookup_failed' ORDER BY id DESC LIMIT 1`)).rows[0];
-  expect(failed?.metadata?.code === "ZZZZZZ", "a failed lookup records the code that was typed");
+  expect(!failed?.metadata?.code, "a failed lookup never stores the code or search term that was typed");
 
   // A wrong PIN must outlive the process that counted it.
   const pinBefore = Number((await getPool().query<{ c: string }>(

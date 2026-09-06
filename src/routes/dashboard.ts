@@ -515,7 +515,7 @@ dashboardRouter.post("/api/cards", requireOwner, async (req: OwnerRequest, res) 
  * it, on every card.
  *
  * Was per-café (`/api/card/:id/rotate-pin`), which gave an owner with two cards
- * two PINs and two stamper links for one counter.
+ * two access codes and two Scanner links for one counter.
  */
 /**
  * What a customer joining freezes: the earning rules and the reward.

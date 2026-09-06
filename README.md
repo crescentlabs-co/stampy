@@ -17,9 +17,9 @@ customer's phone in seconds, with a lock-screen notification.
 
 | Piece | Where | What |
 |---|---|---|
-| Customer card | Apple Wallet / Google Wallet | Branded pass, stamp dots, QR barcode + typed card code. Added by scanning the counter QR — the landing page shows both wallet buttons. |
-| Staff stamper | `/staff` (web page, PIN-gated) | 📷 scan the customer's card → +1 stamp; typed-code fallback; redeem & reset; lock-screen nudge. |
-| Owner dashboard | `/dashboard` (email + password) | Three tabs: Customers (the numbers, then the message you send), Card (shop name, rules, design), Shop (every link you hand out, the staff PIN, your login). |
+| Customer card | Apple Wallet / Google Wallet | Branded pass, progress, and a QR barcode. The short support code stays in card details rather than beneath the QR. |
+| Staff Scanner | `/staff` (web page, access-code gated) | Camera-first lookup that identifies the card and opens the correct stamp, spend-points, membership, or reward action automatically. Search by name, phone, or card code is the fallback. |
+| Owner dashboard | `/dashboard` (email + password) | Five destinations: Home, Customers, Create, Manage, and Shop. Shop → Staff holds the Scanner link and Staff access code. |
 | Brain | This Node server + Postgres on Railway | Multi-merchant; issues signed passes, hosts Apple's pass web service, pushes updates via APNs. |
 
 **The model:** a **merchant** is the business (one per login). It runs one or more
@@ -32,9 +32,9 @@ rename and a second card, so the poster is printed once and never again. Each ca
 also keeps its own `/c/<cardId>` pages (landing, `/enroll`, `/qr`), which can never
 be retired: they're on printed QRs and inside every issued Android card.
 
-There is **one staff PIN and one stamper page per owner** (`/staff`), covering every
-card they run. Staff can scan whichever card a customer hands over — the stamper
-doesn't need to be showing that one.
+There is **one Staff access code and one Scanner per owner** (`/staff`), covering
+every card they run. Staff scan whichever card a customer presents; the server
+detects the programme and required counter action.
 
 **Who counts as a customer:** a *person* whose card has been stamped, is in a wallet
 now, or ever was — counted once however many passes they hold, so adding the card on
@@ -43,13 +43,13 @@ when it's deleted; Google reports neither, so an Android card only counts once i
 stamped. Deleting a pass doesn't un-count someone — they move to the "Deleted the
 card" cohort instead.
 
-Identity is a signed cookie per merchant, holding no name, email or phone. It
-identifies a *browser*: a new phone reads as a new customer, which is the deliberate
-cost of asking customers for nothing.
+Identity remains a signed cookie per merchant. A new phone can therefore create a
+new customer record. Name and phone number are required for counter lookup but are
+not login credentials, are not unique, and never merge two customer records.
 
-**Stamping fallback ladder (staff side):** camera scan (BarcodeDetector, or the
-bundled jsQR on iPhone Safari) → typed card code (printed on the pass) → tap the
-card in the recent list.
+**Scanner fallback ladder (staff side):** camera scan (BarcodeDetector, or the
+bundled jsQR on iPhone Safari) → secure search by name, phone, or the short code in
+the card details. There is no browsable recent-customer list.
 
 ## Key URLs (once deployed)
 
@@ -57,7 +57,7 @@ card in the recent list.
 - `/j/<merchant>` — **the join link to print**; survives a rename and a 2nd card
 - `/c/<cardId>` — one card's Add-to-Wallet page (permanent; never retire these)
 - `/qr` — printable counter QR (points at `/c/default`)
-- `/staff` — staff stamper (one PIN per owner; seeded from `STAFF_PIN`)
+- `/staff` — Staff Scanner (one access code per owner; seeded from `STAFF_PIN`)
 - `/dashboard` — owner dashboard (first visit = create the owner account)
 - `/setup` — **green/red checklist of what's configured** — start here
 - `/health` — uptime check

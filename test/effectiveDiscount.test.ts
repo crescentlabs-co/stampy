@@ -217,7 +217,7 @@ describe("the guidance box", () => {
   /**
    * A shop we cannot price gets the box with no number and no verdict.
    * Inventing a figure would be worse than saying we do not have one — this is
-   * the shape a manual points card and a percentage-off spend card both take.
+   * the shape an unpriced points card and a percentage-off spend card both take.
    */
   it("shows no percentage and no band when there is no rate to divide by", () => {
     const g = run.guidance({

@@ -132,7 +132,7 @@ describe("inline page scripts parse", () => {
 /** Globals that genuinely arrive from somewhere else at runtime. */
 const EXTERNAL_GLOBALS = [
   "jsQR", // served from node_modules by a src-only <script> the extractor skips
-  "BarcodeDetector", // a real browser API, absent from TS's DOM lib; the stamper
+  "BarcodeDetector", // a real browser API, absent from TS's DOM lib; the Scanner
                      // feature-detects it and falls back to jsQR (iPhone Safari)
 ];
 
@@ -365,16 +365,16 @@ describe("the printable sign-up poster", () => {
 /**
  * Handing somebody their shop is not a memory test.
  *
- * The claim page used to end on "your staff PIN — write it down now", which was
- * the only moment it could ever be read: a PIN is stored as a scrypt hash and
+ * The claim page used to end on "your staff access code — write it down now", which was
+ * the only moment it could ever be read: the code is stored as a scrypt hash and
  * nothing can reverse it. So the one screen that welcomes a new owner also
  * handed them something to lose. They pick their own under Shop instead, and
  * the dashboard says the counter is waiting on it.
  */
-describe("the claim page hands over a shop, not a PIN", () => {
+describe("the claim page hands over a shop, not an access code", () => {
   const html = claimPage("tok", "Kopi Corner", null, 0);
 
-  it("never prints a PIN, or the machinery for showing one", () => {
+  it("never prints an access code, or the machinery for showing one", () => {
     expect(html).not.toContain("cl-pin");
     expect(html).not.toContain("staffPin");
     expect(html).not.toContain("write it down");
@@ -382,7 +382,7 @@ describe("the claim page hands over a shop, not a PIN", () => {
 
   it("still creates the login, and points at the step that is left", () => {
     expect(html).toContain("/finish");
-    expect(html).toContain("staff PIN");
+    expect(html).toContain("Staff access code");
   });
 });
 
@@ -410,21 +410,25 @@ describe("a shop name can never break out of a page title", () => {
 });
 
 describe("staff page is a gate, not a hidden panel", () => {
-  // A leaked /staff link must not hand the stamper to a device that hasn't typed
-  // the PIN — including its JavaScript, which would reveal the API shape.
-  it("sends no stamper code to a signed-out device", () => {
+  // A leaked /staff link must not hand the Scanner or merchant identity to a
+  // device that has not entered the staff access code.
+  it("sends no scanner code to a signed-out device", () => {
     const anon = staffPage(false);
-    expect(anon).toContain("Staff login");
-    for (const marker of ["Scan card", "/stamp-by-code", "startScanner", "jsqr.js"]) {
+    expect(anon).toContain("Scanner access");
+    for (const marker of ["/resolve", "startCamera", "jsqr.js", "Scanner for"]) {
       expect(anon).not.toContain(marker);
     }
   });
 
-  it("sends the stamper and its camera fallback once signed in", () => {
-    const signedIn = staffPage(true);
-    expect(signedIn).toContain("Scan card");
+  it("starts with the camera and keeps the Safari QR fallback", () => {
+    const signedIn = staffPage(true, "default", "merchant-1", "Kopi Corner");
+    expect(signedIn).toContain("Aim at the QR code on the customer’s wallet card.");
+    expect(signedIn).toContain("Name, phone, or card code");
+    expect(signedIn).toContain("startCamera();");
     expect(signedIn).toContain("jsqr.js");
-    expect(signedIn).not.toContain("Staff login");
+    expect(signedIn).not.toContain("Scanner access");
+    expect(signedIn).not.toContain("cardpick");
+    expect(signedIn).not.toContain("Ready to redeem");
   });
 
   it("never keeps a credential in browser storage", () => {
@@ -434,36 +438,30 @@ describe("staff page is a gate, not a hidden panel", () => {
     }
   });
 
-  // Browsers let a user suppress further dialogs after a few in a row. A counter
-  // hits that in one shift, and from then on confirm() returns false without
-  // asking — "Give reward & restart" would silently do nothing until a reload.
-  // The confirmation has to live in the button, not in a dialog.
-  it("gates destructive actions without confirm()", () => {
+  it("uses the resolved customer panel for reward and undo actions without confirm()", () => {
     const signedIn = staffPage(true);
     expect(signedIn).not.toContain("confirm(");
-    expect(signedIn).toContain("Confirm — give reward?");
-    expect(signedIn).toContain("Confirm — undo?");
+    expect(signedIn).toContain('data-act="redeem"');
+    expect(signedIn).toContain('data-act="undo"');
+    expect(signedIn).toContain("Next customer");
+    expect(signedIn).toContain('e.key !== "Escape"');
   });
 
   // A repeat stamp used to mean scanning the card AGAIN, which on the camera
   // path meant reopening it and lining the phone up for something staff had
   // already decided. It is a popup now — ours, built in the page, so it is not
   // the browser dialog the test above forbids and cannot be suppressed.
-  it("asks about a repeat stamp in a popup rather than a second scan", () => {
+  it("asks about a repeat action in an in-app popup", () => {
     const signedIn = staffPage(true);
-    expect(signedIn).toContain("Stamp it again?");
-    expect(signedIn).toContain("Add another");
+    expect(signedIn).toContain("Record another visit?");
+    expect(signedIn).toContain('"Continue"');
     expect(signedIn).toContain("force: true");
-    expect(signedIn).not.toContain("forceArmed");
-    expect(signedIn).not.toContain("scan or tap again");
   });
 
-  // A card at its target is what the customer is standing there waiting for, so
-  // it gets its own always-visible section rather than a place in a list of 20.
-  it("surfaces reward-ready cards above the searchable list", () => {
+  it("does not add another stamp while a stamp reward is waiting", () => {
     const signedIn = staffPage(true);
-    expect(signedIn).toContain("Ready to redeem");
-    expect(signedIn.indexOf("readywrap")).toBeLessThan(signedIn.indexOf('id="find"'));
+    const action = signedIn.slice(signedIn.indexOf("function renderAction"));
+    expect(action).toContain('p.kind !== "points" && p.rewardReady ? "" : earningAction(p, c)');
   });
 });
 
@@ -1774,7 +1772,7 @@ describe("dashboard information architecture", () => {
   });
 
   // The Access tab existed only because the PIN hung off each café row, giving
-  // an owner with two cards two PINs and two stamper links for one counter.
+  // an owner with two cards two access codes and two Scanner links for one counter.
   it("keeps one PIN, under Shop", () => {
     expect(html).toContain('label: "Shop"');
     expect(html).toContain("/staff-pin");
@@ -1783,7 +1781,7 @@ describe("dashboard information architecture", () => {
   /**
    * Each link sits with the thing it belongs to.
    *
-   * The stamper link stays with the PIN that unlocks it, under Shop → Staff.
+   * The Scanner link stays with the access code that unlocks it, under Shop → Staff.
    * The customer-facing ones — sign-up page, poster, QR, customer page — moved
    * to the programme they share. A poster is a fact about one programme, and
    * once a shop can have more than one, "the" sign-up link stops meaning
@@ -1874,13 +1872,13 @@ describe("dashboard information architecture", () => {
     expect(html).toContain("data-signout");
   });
 
-  // One way to set a PIN, not two. The generator went, and with it the page's
+  // One way to set an access code, not two. The generator went, and with it the page's
   // only use of the two-tap arm() helper.
-  it("has one PIN control and never echoes a PIN back", () => {
+  it("has one access-code control and never echoes it back", () => {
     expect(html).not.toContain("data-newpin");
     expect(html).not.toContain("New staff PIN: ");
     expect(html).not.toContain("function armBtn");
-    // Only the one PIN button remains. (The phrase itself still appears in two
+    // Only the one access-code button remains. (The old phrase still appears in
     // comments explaining what went and why, which is worth keeping.)
     expect(html).not.toContain(">Generate a new PIN<");
   });
@@ -2117,7 +2115,7 @@ describe("dashboard information architecture", () => {
     expect(html).toContain("var infoTip = null, infoFor = null;");
   });
 
-  it("keeps the staff PIN out of the card designer", () => {
+  it("keeps the Staff access code out of the card designer", () => {
     expect(html).not.toContain('data-f="staffPin"');
   });
 
@@ -2232,9 +2230,9 @@ describe("dashboard information architecture", () => {
     expect(html).not.toContain("data-emoji");
   });
 
-  // A PIN is only ever stored hashed, so it can never be read back out — the
+  // An access code is only ever stored hashed, so it can never be read back out — the
   // one place it appears is the response to setting it.
-  it("never asks for a PIN per card", () => {
+  it("never asks for a Staff access code per card", () => {
     expect(html).not.toContain("rotate-pin");
     expect(html).not.toContain("Staff PIN: \" + r.staffPin");
   });
@@ -2490,7 +2488,7 @@ describe("the rebrand renamed the label, not the identifiers", () => {
    *
    * The first pass at this signed the dashboard tabs and the console by hand
    * and silently missed seven others — the customer sign-up page, the login
-   * form, the claim page, the stamper, the counter sheet, setup and reset. A
+   * form, the claim page, the Scanner, the counter sheet, setup and reset. A
    * per-page footer is a thing every future page has to remember; a shell
    * footer is a thing a future page has to deliberately turn off.
    */
@@ -3727,18 +3725,11 @@ describe("the customers screen", () => {
     expect(list).toContain("Showing the first 200");
   });
 
-  /**
-   * THE PRIVACY LINE. This product asks customers for no name, no email and no
-   * phone, and its privacy page promises exactly that in writing. The spec for
-   * this screen asked for a name; there is none to show, and inventing one —
-   * "Customer #4" included — would imply an identity the product refuses to
-   * hold. The card code is what a customer is called here.
-   */
-  it("identifies a customer by their card code and never by a name", () => {
+  it("keeps the stable support code as the dashboard identifier", () => {
     expect(html).toContain("x.code");
     expect(html).not.toContain("Customer name");
     expect(html).not.toContain("customerName");
-    expect(one).toContain("asks customers for no name");
+    expect(one).toContain("saved name or phone number in Scanner");
   });
 
   /**
@@ -4731,7 +4722,7 @@ describe("the merchant launch journey", () => {
   });
 
   it("keeps the scanner home-screen hint non-sensitive and makes a saved poster visible", () => {
-    expect(staffPage(true)).toContain("Add scanner to Home Screen");
+    expect(staffPage(true)).toContain("Add Scanner to Home Screen");
     expect(staffPage(true)).not.toContain("localStorage");
     const poster = posterPage(POSTER_CARD, "Kopi Corner", "kopi-corner", 3, false, {
       message: "Free coffee is closer than you think.",

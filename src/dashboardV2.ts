@@ -805,7 +805,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
     /* The toast is fixed to the viewport, so the sheet's bottom padding does
        nothing for it. baseCss pins it 24px from the bottom, which is inside the
-       floating bar exactly. Lifted here rather than in baseCss: the stamper and
+       floating bar exactly. Lifted here rather than in baseCss: the Scanner and
        the console read that too, and neither of them has a bottom bar. */
     body.shelled .toast { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
 
@@ -1090,7 +1090,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .pinwarn p { margin: 0; flex: 1; min-width: 200px; }
     .pinwarn .btn { width: auto; padding: var(--s2) var(--s3); font-size: var(--t-sm); flex: none;
                     background: #fff; border-color: #d9a441; color: #7c2d12; }
-    /* --- a value shown exactly once (a new PIN) --- */
+    /* --- a value shown exactly once (a new Staff access code) --- */
     .temp { font-family: ui-monospace, Menlo, monospace; background: var(--ghost-bg); padding: var(--s2) var(--s3);
             border-radius: var(--r-sm); margin-top: var(--s2); font-size: var(--t-sm); line-height: var(--lh-read); }
     /* --- Card tab: Design / Rules section headings --- */
@@ -1198,9 +1198,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       });
     }
 
-    // The two-tap arm() helper used to live here for "Generate a new PIN". That
-    // button is gone — an owner types their own PIN now — and it was the only
-    // thing on this page that used it, so the helper went with it. The stamper
+    // The two-tap arm() helper used to live here for "Generate a new access code". That
+    // button is gone — an owner types their own code now — and it was the only
+    // thing on this page that used it, so the helper went with it. The Scanner
     // and the admin console each keep their own copy; both are still used.
 
     /**
@@ -1271,7 +1271,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
 
     // The card editor: DESIGN (what it looks like) and RULES (how it behaves) as
     // two sections with their own Save, because they're two different jobs — the
-    // old single panel mixed a colour picker with the staff PIN behind one button.
+    // old single panel mixed a colour picker with the Staff access code behind one button.
     ${DESIGN_PANEL_JS}
     ${HEALTH_JS}
 
@@ -1333,7 +1333,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
              message box off the screen — loaded only when opened. -->
         \${SHOW_COUNTER_FOLD ? \`
         <details class="grp" style="margin-top:22px" data-counter>
-          <summary><span class="gt">Today's Activity</span>\${info("What happened at your counter today. Nobody is named — everyone shares one PIN. Tap a number for the times.")}<span class="gh" data-clast></span></summary>
+          <summary><span class="gt">Today's Activity</span>\${info("What happened at your counter today. Everyone shares one Staff access code. Tap a number for the times.")}<span class="gh" data-clast></span></summary>
           <div data-cbody style="margin-top:10px"></div>
         </details>\` : ""}
         \${SHOW_FIND_FOLD ? \`
@@ -1659,7 +1659,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         <p class="muted" data-cycleout style="margin:6px 0 0;font-size:var(--dashboard-supporting-size)"></p>
 
         <h2 class="sec">Staff</h2>
-        <p class="muted">Staff use the stamper to record visits.\${info("One access code for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
+        <p class="muted">Staff use the Scanner to record visits.\${info("One access code for your whole counter. It is stored scrambled, so nobody can look it up. Setting a new one signs every staff phone out.")}</p>
         <label style="margin-top:14px" data-pinlabel>Staff access code</label>
         <div class="copyrow" style="margin-top:6px">
           <input data-pin placeholder="4–12 digits" inputmode="numeric" autocomplete="off">
@@ -1701,9 +1701,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // and a second listener on an ancestor would fire on the same click and
       // close what the first just opened.
 
-      // "Set" or "Reset" — an owner who already has a PIN is replacing one, and
+      // "Set" or "Reset" — an owner who already has an access code is replacing it, and
       // the button saying "Set" made that look like a first-time action they had
-      // somehow missed. The PIN itself is never sent back here: only its scrypt
+      // somehow missed. The code itself is never sent back here: only its scrypt
       // hash is stored, so all the server can say is whether one exists.
       if (S.hasStaffPin) {
         div.querySelector("[data-pinlabel]").textContent = "Reset staff access code";
@@ -1712,20 +1712,20 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       }
 
       const pinOut = div.querySelector("[data-pinout]");
-      // The PIN is NOT painted back. "Generate a new PIN" is gone, so the owner
+      // The access code is NOT painted back. The owner
       // always typed the one they just set and reading it back to them serves
       // nobody — while putting a live counter credential on a screen that may be
       // sitting open on the till does. What they do need is the consequence.
       const setPin = async (pin) => {
         const { body } = await api("/staff-pin", { method: "POST", body: JSON.stringify({ pin }) });
         if (!body.ok) {
-          return toast(body.error === "pin-too-short" ? "Use at least 4 digits" : (body.error || "Couldn’t set the PIN"));
+          return toast(body.error === "pin-too-short" ? "Use at least 4 digits" : (body.error || "Couldn’t set the Staff access code"));
         }
         pinOut.innerHTML = '<div class="temp">Access code saved. Every staff phone has been signed out — ' +
           'they each need to sign in again with the new code.</div>';
         div.querySelector("[data-pinlabel]").textContent = "Reset staff access code";
         div.querySelector("[data-setpin]").textContent = "Reset";
-        // The first PIN also clears the banner above. Without this it sits there
+        // The first access code also clears the banner above. Without this it sits there
         // contradicting the confirmation directly beneath it until a reload.
         S.hasStaffPin = true;
         renderPinWarning();
@@ -2060,13 +2060,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     }
 
     /**
-     * The counter cannot stamp until a PIN exists, and nothing used to say so.
+     * The counter cannot stamp until a Staff access code exists, and nothing used to say so.
      *
-     * No PIN is minted at signup or at claim any more — an owner picks their own
-     * under Shop. That is the right trade (a PIN can only ever be read once, and
+     * No access code is minted at signup or at claim any more — an owner picks their own
+     * under Shop. That is the right trade (a code can only ever be read once, and
      * a "write this down now" screen is a memory test at the worst moment), but
      * it leaves a real gap: verifyPassword refuses an empty hash, so every staff
-     * sign-in fails, and it fails looking exactly like a wrong PIN. Above the
+     * sign-in fails, and it fails looking exactly like a wrong code. Above the
      * panels, on every tab, because the tab it sends you to is not the one an
      * owner opens first.
      */
@@ -2092,7 +2092,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         '<button class="btn btn-ghost" id="gopin">' +
           (todo.length > 1 ? "Finish setting up" : !S.hasStaffPin ? "Set staff access code" : "Set it") +
         "</button></div>";
-      // Straight to the section that is missing, not just to Shop: the PIN and
+      // Straight to the section that is missing, not just to Shop: the access code and
       // the visit cycle live under different headings now.
       $("#gopin").onclick = () => navigate(!S.hasStaffPin ? "/shop/staff" : "/shop");
     }
@@ -2989,10 +2989,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     /**
      * One customer as a row you can open.
      *
-     * The code, not a name. This product asks customers for no name, no email
-     * and no phone — the privacy page promises exactly that in writing — so the
-     * 6-character code on their card is the only thing there is to call them,
-     * and inventing "Customer #4" would imply an identity it refuses to hold.
+     * The stable support code remains this list's compact identifier. Names and
+     * phone numbers are lookup details for the counter Scanner; they are not
+     * credentials and do not replace the code that identifies this card.
      */
     function custCard(x) {
       const seen = x.lastDays === 0 ? "in today"
@@ -3087,8 +3086,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         host.innerHTML =
           '<h2 class="sec first">' + esc(x.code) +
             '<span class="cseg h-' + x.health + '">' + segLabel(x.health) + "</span></h2>" +
-          '<p class="muted">Their card code. This shop asks customers for no name, ' +
-          "email or phone — the code is the only thing that identifies them.</p>" +
+          '<p class="muted">Their support code. Staff can also find this card by the ' +
+          "customer’s saved name or phone number in Scanner.</p>" +
           '<div class="totals" style="grid-template-columns:repeat(2,1fr)">' +
             '<div class="metric"><b>' + x.visits + "</b><span>visits</span></div>" +
             '<div class="metric"><b>' + x.stamps + "/" + x.target + "</b><span>towards their reward</span></div>" +
