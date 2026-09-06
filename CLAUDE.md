@@ -106,6 +106,36 @@ a target from 10 to 12 in the morning and this afternoon's redeemer restarts at
 card, and the visit that earned the reward is the stamp a head start would
 otherwise hand over.
 
+**That machinery still works, and the product no longer offers it.** As of the
+Edit-flow rework, **a card's earning rules and its reward are frozen once one
+real customer has joined** — the owner cannot change them at all. The paragraph
+above describes what WOULD happen safely; the founder's decision is that a
+programme's terms should not move under the people on it, full stop. A shop that
+wants different terms ends the card and starts another, which is exactly what
+`ended_at` is for. The list of frozen fields is `LOCKED_ONCE_JOINED`
+(src/routes/dashboard.ts) and **the server is where it is enforced** — the Edit
+screen greys the fields out, but a gate the browser computes is a gate anyone
+can switch off in devtools. The route DROPS those fields rather than rejecting
+the request: the design panel posts them on every save (it holds them hidden so
+it can draw the card it is designing), so a 400 would break saving the design of
+every live card. "One real customer" is `cardCounts(...).active`, so **a test
+card on the owner's own phone locks nothing** — a test pass is not a customer,
+and every count in the product already agrees.
+
+**Only two sections, and no Type step.** Editing a finished card is Rules and
+Design, both mounted from the same components the Create wizard uses —
+`rulesForm` (src/dashboardV2.ts) and `designerFor(card, { showDetails: false,
+showShop: false })`. Those two flags matter: `showDetails: true` switches on a
+SECOND rules editor buried inside the design panel, with no guidance, no
+validation, and a Card type dropdown that could turn a live stamp card into a
+membership card. Never turn it back on for an owner. A card's `kind` cannot
+change once the card exists — everything a customer holds was built from it.
+
+**A rules save re-renders that screen, and that is not politeness.** The design
+panel keeps its own hidden copy of the rules, seeded when it mounted; leave it
+mounted after a rules save and the next design save writes that stale copy back
+over the change. `pnpm test:ui` covers exactly this.
+
 **A POINTS card's EARN RATE is the one thing deliberately NOT frozen on the
 pass, and that is not an oversight.** `cards.earn_mode` (`visit` / `spend` /
 `manual`), `cards.earn_spend_cents` and `cards.earn_points` live on the card
@@ -367,8 +397,12 @@ stamps as `count(stamp) - count(undo)`); `passes.stamp_count` is a cache that
 can be rebuilt. Keep it that way: a stored aggregate that drifts from the log is
 how the Home headline came to disagree with the list under it.
 
-**There is exactly one exception, and it is not a precedent.**
-`hardDeleteMerchant` (src/db.ts) deletes a shop and its entire history in one
+**There are exactly TWO exceptions, and neither is a precedent.** Both delete
+a whole THING together with its whole log, in one transaction, so nothing
+survives to disagree with anything. That is the only shape this is ever allowed
+to take. A correction is still a new row, always.
+
+**One — `hardDeleteMerchant`** (src/db.ts) deletes a shop and its entire history in one
 transaction — events included — so the same onboarding flow can be set up and
 torn down repeatedly while testing. The rule exists so a correction can never
 rewrite history and leave a metric disagreeing with the log; here the shop and
@@ -384,8 +418,21 @@ stamp it reverses stays. The pruner (`pruneAbandonedPasses`) refuses to delete
 any pass that was ever stamped or ever reached a wallet, because that would let
 churn erase its own evidence.
 
-**There is exactly ONE exception, and it is `hardDeleteMerchant` (src/db.ts).**
-It removes a shop that never traded — refused outright if the merchant has any
+**Two — `removeCard`** (src/db.ts) deletes a card that never issued a real
+pass, and takes its `events` and `messages` rows with it. The test is
+`CARD_HAS_REAL_PASS_SQL`: has this card ever minted a pass that was not the
+owner's own `is_test` one? It used to be "has ANYTHING ever touched this card",
+which meant one test card on the owner's own phone — or opening their own
+sign-up page once — made the card un-deletable for ever, while the button still
+said "Delete". Note what the test does NOT use: `ACTIVE_PASS_SQL`. A Google card
+can be sitting in a wallet before it has been stamped or confirmed, and deleting
+that orphans it with no way to tell the phone. **A card ONE real customer has
+held is archived, and stays archived.** The dashboard labels its button off the
+same predicate (`deletable` on the overview payload), so the button and the
+server cannot promise different things.
+
+**Restating the first, because it is written out twice:**
+`hardDeleteMerchant` removes a shop that never traded — refused outright if the merchant has any
 pass, any customer or any sent message — and takes its `events` rows with it, in
 the same transaction. The rule above exists so a *correction* can never rewrite
 history and leave a metric disagreeing with the log; here the shop and its

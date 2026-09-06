@@ -4923,7 +4923,12 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // Which fold to arrive with open. A save re-renders this screen, and
       // landing back with everything shut reads as the change being thrown
       // away. Same trick, same query name, as the ready screen.
-      const want = new URLSearchParams(location.search).get("section");
+      //
+      // With nothing asked for, open the one they can actually change: Rules
+      // normally, Design once the rules are settled. Both shut would leave an
+      // owner who pressed Edit looking at a summary and two closed headings.
+      const want = new URLSearchParams(location.search).get("section") ||
+        (joined ? "design" : "rules");
 
       const fold = (key, title, hint) =>
         '<details class="grp"' + (want === key ? " open" : "") + ">" +
@@ -5009,6 +5014,9 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       if (!joined) {
         const save = document.createElement("button");
         save.className = "btn btn-neon";
+        // A handle for the real-browser test, which is the only thing that
+        // drives this screen the way an owner does.
+        save.setAttribute("data-saverules", "");
         save.style.marginTop = "14px";
         save.textContent = "Save rules";
         save.onclick = async () => {

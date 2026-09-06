@@ -185,6 +185,15 @@ async function main(): Promise<void> {
     await page.waitForTimeout(6000);
 
     const cookie = (await ctx.cookies()).map((c) => `${c.name}=${c.value}`).join("; ");
+    // Read the card back from the server. Every claim this file makes about a
+    // save ends here: the screen saying it worked is exactly what it said the
+    // three times it reached the founder broken.
+    const readCard = async (id: string, jar: string) => {
+      const ov = (await (await fetch(BASE + "/dashboard/api/overview", { headers: { cookie: jar } })).json()) as {
+        cards?: Record<string, unknown>[];
+      };
+      return (ov.cards ?? []).find((c) => c.id === id) as Record<string, unknown> | undefined;
+    };
     const overview = (await (await fetch(BASE + "/dashboard/api/overview", { headers: { cookie } })).json()) as {
       cards?: Record<string, unknown>[];
     };
@@ -215,6 +224,90 @@ async function main(): Promise<void> {
     ok(onManage.visible && onManage.logo !== "", "Manage shows the logo the card was designed with");
     const logoFetch = await fetch(BASE + onManage.logo.replace(BASE, ""), { headers: { cookie } });
     ok(logoFetch.status === 200, "...and that picture actually loads rather than 404ing");
+
+    // ---- The Edit screen: two folds, and no way to change the card's type ----
+    //
+    // Every other suite drives this page's FUNCTIONS. This one is the only
+    // place the screen itself is real, which is why the check that the type
+    // dropdown is gone lives here: it is still in the DOM, because the panel
+    // reads it to draw its own preview, and "gone" therefore means "cannot be
+    // seen or used", which only a browser can answer.
+    const edit = (await page.evaluate(`(() => {
+      const sums = [...document.querySelectorAll("details.grp > summary")]
+        .map((s) => s.textContent || "");
+      const kind = document.querySelector('[data-f="kind"]');
+      const danger = document.querySelector(".dzone");
+      return {
+        folds: sums,
+        kindVisible: kind ? Boolean(kind.offsetParent) : false,
+        kindPresent: Boolean(kind),
+        danger: danger ? (danger.textContent || "") : "",
+        locked: Boolean(document.querySelector(".locknote")),
+        rulesSave: Boolean(document.querySelector("[data-saverules]")),
+      };
+    })()`)) as {
+      folds: string[]; kindVisible: boolean; kindPresent: boolean;
+      danger: string; locked: boolean; rulesSave: boolean;
+    };
+    ok(edit.folds.some((s) => s.startsWith("Rules")), "Edit offers a Rules section");
+    ok(edit.folds.some((s) => s.startsWith("Design")), "Edit offers a Design section");
+    ok(edit.folds.length === 2, "...and no third section — the card's type cannot change");
+    ok(edit.kindPresent && !edit.kindVisible,
+      "the Card type dropdown is in the DOM for the preview and shown to nobody");
+    ok(!edit.locked, "a card nobody has joined is not locked");
+    ok(edit.rulesSave, "...so its rules can be saved");
+    ok(/Delete this program/.test(edit.danger),
+      "the Danger zone offers a real delete on a card nobody holds");
+    ok(/End sign-ups/.test(edit.danger), "...and ending it, which is the other way out");
+
+    // ---- Save a rule, then save the design, and check neither undid the other ----
+    //
+    // THE TRAP THIS GUARDS. The design panel holds its own hidden copy of the
+    // rules so it can draw the card it is designing, seeded when it mounted.
+    // Save a rule and then save the design, and that stale copy goes back over
+    // the change — the owner watches their edit save and then vanish.
+    // Force it open rather than toggling: Rules is already open on arrival for
+    // a card nobody has joined, so a click here would SHUT it.
+    await page.evaluate(`(() => {
+      for (const el of document.querySelectorAll("details.grp")) el.open = true;
+    })()`);
+    await page.waitForTimeout(400);
+    // The form is an accordion and it opens on the EARNING half, so the reward
+    // boxes are not rendered yet. This is the same two-part form the wizard
+    // uses, which is the whole point of the change.
+    await page.locator('[data-open="reward"]').click();
+    await page.waitForTimeout(500);
+    await page.fill('[data-r="rewardName"]', "Free croissant");
+    await page.locator("[data-saverules]").click();
+    await page.waitForTimeout(3000);
+
+    const afterRules = await readCard(cardId, cookie);
+    ok(/croissant/i.test(String(afterRules?.reward ?? "")),
+      "a rules change made on the Edit screen reaches the server");
+
+    await page.evaluate(`(() => {
+      for (const el of document.querySelectorAll("details.grp")) el.open = true;
+    })()`);
+    await page.waitForTimeout(600);
+    await page.evaluate(`(() => {
+      const el = document.querySelector('[data-f="bg"]');
+      if (!el) return;
+      el.value = "#123456";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await page.waitForTimeout(500);
+    await page.locator('[data-a="save"]').click();
+    await page.waitForTimeout(700);
+    const confirm = page.locator("[data-yes]");
+    if (await confirm.count()) await confirm.click();
+    await page.waitForTimeout(4000);
+
+    const afterDesign = await readCard(cardId, cookie);
+    ok(/croissant/i.test(String(afterDesign?.reward ?? "")),
+      "...and saving the DESIGN afterwards does not write the old rules back over it");
+    ok(Boolean(afterDesign?.logoVersion),
+      "...while the artwork is still there after both saves");
 
     // ---- the customer's page carries the design ----
     const signup = await fetch(BASE + "/c/" + cardId);
