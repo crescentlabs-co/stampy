@@ -408,9 +408,6 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        centred, and the scroll container reflowed under your finger mid-swipe,
        which is what "swiping to the last one sticks" actually was. */
     [data-cardbody] { min-height: 300px; }
-    /* The surface switcher sits UNDER the card in Manage, tight against it,
-       and now shares that row with the status pill — see .cardmeta. */
-    .carwrap + .dsurf { margin: 0 0 var(--s3); }
     .addtile { display: flex; flex-direction: column; align-items: center;
                justify-content: center; gap: var(--s2); min-height: 190px;
                border-radius: var(--r); padding: var(--s4); text-align: center;
@@ -424,7 +421,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
        are equals — a published card shows four (Poster, Share, Add, Edit), a
        draft shows the one way back into the flow. This said "three" long after
        Add made it four. */
-    .cardacts { display: flex; justify-content: center; gap: var(--s5); margin: var(--s4) 0 var(--s3); }
+    .cardacts { display: flex; justify-content: center; gap: var(--s5); margin: var(--s3) 0 var(--s3); }
     .actbtn { display: flex; flex-direction: column; align-items: center; gap: var(--s2);
               background: none; border: 0; padding: 0; font: inherit; font-size: var(--t-sm);
               color: var(--ink); cursor: pointer; }
@@ -1044,6 +1041,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .ready { color: #1a7f37; font-weight: 700; }
     /* --- customers view: one collapsible section per recency group --- */
     .grp { border-radius: var(--r); padding: 0 var(--s3) var(--s3); margin-bottom: var(--s2); background: var(--bg); }
+    /* Shut, there is nothing under the summary to give room to. */
+    .grp:not([open]) { padding-bottom: 0; }
     /* A section heading, so it is sized like one. It named no size at all and
        therefore inherited the sheet's 12px, which made a fold TITLE the same
        size as the fine print inside it — and left its own grey hint, at 14px,
