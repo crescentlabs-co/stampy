@@ -3428,11 +3428,13 @@ describe("the dashboard keeps to one scale", () => {
     expect(css).toContain(".sec { font-size: var(--type-section-heading-size)");
     expect(css).toContain(".sec.first { margin-top: 0; font-size: var(--type-page-title-size); }");
     const shell = css.slice(css.indexOf("#app.shell {"), css.indexOf("}", css.indexOf("#app.shell {")));
-    expect(shell).toContain("--type-page-title-size: 28px");
+    expect(shell).toContain("--type-page-title-size: 22px");
     expect(shell).toContain("--type-section-heading-size: 22px");
-    expect(shell).toContain("--dashboard-interface-size: 12px");
-    expect(shell).toContain("--dashboard-supporting-size: 10px");
+    expect(shell).toContain("--dashboard-interface-size: 14px");
+    expect(shell).toContain("--dashboard-supporting-size: 12px");
     expect(css).toContain("#app.shell .sheet .btn, #app.shell .sheet button:not(.ihint), #app.shell .tmenu button {");
+    const sheet = css.slice(css.indexOf(".sheet {"), css.indexOf("}", css.indexOf(".sheet {")));
+    expect(sheet).toContain("font-size: var(--dashboard-supporting-size)");
     const nav = css.slice(css.indexOf(".botnav a {"), css.indexOf("}", css.indexOf(".botnav a {")));
     expect(nav).toContain("font-size: var(--type-navigation-size)");
     expect(nav).toContain("font-weight: var(--type-navigation-weight)");

@@ -67,11 +67,11 @@ customer pages and the staff counter. Its overrides live only inside
 
 | Role | Size | Weight | Where it appears |
 |---|---:|---:|---|
-| Page title | 28px | 700 | `Dashboard`, `Customers`, `Manage` |
+| Page title | 22px | 700 | `Dashboard`, `Customers`, `Manage` |
 | Section heading | 22px | 700 | `Loyalty cards`, `Campaigns`, `Get ready to launch` |
 | Card/list title | 16px | 600 | card names and programme names |
-| Interface body, metric labels, buttons | 12px | 400–600 | `Customers`, form labels, controls and actions |
-| Supporting text | 10px | 400–600 | dates, explanations, chart labels and status detail |
+| Metric labels and buttons | 14px | 500–600 | metric labels, controls and actions |
+| Body and supporting text | 12px | 400–600 | dates, explanations, chart labels and status detail |
 | Navigation | 10px | 600 | bottom navigation labels |
 
 Inputs remain 16px so iPhone Safari does not zoom when someone edits a form.

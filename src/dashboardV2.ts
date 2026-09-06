@@ -62,17 +62,16 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .metric b { font-family: var(--display); font-weight: 800; font-size: var(--t-xl);
                 line-height: var(--lh-tight); display: block; letter-spacing: var(--tr-hero);
                 font-variant-numeric: tabular-nums; color: var(--ink); }
-    /* --- Home has THREE text sizes and no others ------------------------
-       --t-xl (24px) is the title, both section headings and every NUMBER.
-       --t-md (14px) is a row's name and a row's figure.
-       --t-sm (12px) is every other word: labels, subtext, dates, the tooltip.
+    /* --- Home's compact roles -------------------------------------------
+       The page and section headings are both 22px in the merchant workspace.
+       --t-xl (24px) belongs to every number; 14px is the interface layer
+       (metric labels and actions); 12px carries supporting detail.
 
-       It reached five by adding one sensible step at a time, which is what made
-       it read as generated. These three each have a job you can say out loud,
-       and a test holds them. --t-xs (11px) is not one of them: off Home it is
-       the size for UPPERCASE tags and it stays that.
+       The hierarchy comes from the role, not from one-off near-identical
+       sizes. --t-xs is not one of these: off Home it remains reserved for
+       UPPERCASE tags.
 
-       Home's two, and only those two. .metric is also the health tiles on
+       .metric is also the health tiles on
        Customers and the three-up grids on the detail screens — four of these
        across a phone at hero size is a number that does not fit its own box. */
     /* --body, not --display, and 700 rather than 800. A figure sits inside a
@@ -497,8 +496,8 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
                     override the public product's reading scale only inside the
                     signed-in shell, leaving customer pages and the staff counter
                     comfortably readable. */
-                 --type-page-title-size: 28px; --type-section-heading-size: 22px;
-                 --dashboard-interface-size: 12px; --dashboard-supporting-size: 10px;
+                 --type-page-title-size: 22px; --type-section-heading-size: 22px;
+                 --dashboard-interface-size: 14px; --dashboard-supporting-size: 12px;
                  border: 0; box-shadow: none; border-radius: 0;
                  /* Was neon, so the sheet's rounded top corners had something
                     to show through. The bar is white now and the sheet runs to
@@ -549,7 +548,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .sheet { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
              background: var(--surface); border-radius: 0;
              padding: 0 var(--s3) calc(80px + env(safe-area-inset-bottom, 0px));
-             font-size: var(--dashboard-interface-size); line-height: var(--type-body-leading); }
+             font-size: var(--dashboard-supporting-size); line-height: var(--type-body-leading); }
     /* The Powered by line is a sibling of #app in the shared shell, which with
        nothing scrolling would strand it under the floating nav. The script
        moves it inside the sheet instead — see app(). */
@@ -1101,12 +1100,11 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
     .clist td { padding: var(--s2) var(--s2) var(--s2) 0; vertical-align: top; }
     .clist tr + tr td { box-shadow: inset 0 1px 0 var(--line); }
     .clist td.mono { font-family: ui-monospace, Menlo, monospace; font-size: var(--t-sm); }
-    /* The FIRST heading on a screen is its title, so it is set at the size
-       Home's are. Headings further down — Info, Status, Share it — stay a rank
-       below on purpose: making every one of them a title flattens the
-       hierarchy rather than fixing it. */
+    /* Page and section headings share 22px in the compact merchant workspace.
+       Their place and spacing carry the hierarchy; headings further down —
+       Info, Status, Share it — are not promoted to a page title. */
     .sec.first { margin-top: 0; font-size: var(--type-page-title-size); }
-    /* The compact owner interface has a 12px baseline for readable controls.
+    /* Buttons and metric labels are 14px; body and supporting detail are 12px.
        Inputs remain at 16px in baseCss so iPhone never zooms into a form. */
     #app.shell .sheet .btn, #app.shell .sheet button:not(.ihint), #app.shell .tmenu button {
       font-size: var(--dashboard-interface-size);
@@ -2204,8 +2202,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
      */
     function homeScreen() {
       const d = document.createElement("div");
-      // Named so its headings can be a rank bigger than every other screen's
-      // without a rule that reaches out and resizes theirs too.
+      // Named for the Home-only layout rules without reaching into other pages.
       d.className = "home";
       d.innerHTML =
         '<div class="home-main">' +
