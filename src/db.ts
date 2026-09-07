@@ -464,6 +464,17 @@ export interface EventMetadata {
   code?: string;
   /** Which wallet button was tapped, before any pass exists. */
   wallet?: string;
+  /**
+   * What the till actually rang up, in cents, on a points card that earns from
+   * SPEND. The event's `amount` holds the POINTS awarded, which is a number of
+   * points and not a number of ringgit — so without this the only way to price
+   * a visit was to multiply by the shop's average order, which is exactly the
+   * figure a spend card exists to stop guessing at.
+   *
+   * Absent on every other kind of action, and on every row written before this
+   * existed; readers fall back to the card's average order value.
+   */
+  spend_cents?: number;
   [key: string]: unknown;
 }
 
@@ -3083,43 +3094,47 @@ const ACTIVE_PASS_SQL = `(
      )`;
 
 /**
- * Stamps actually GIVEN: every stamp, minus every correction.
+ * VISITS: how many times somebody was served, minus every correction.
+ *
+ * HOW MANY TIMES, NOT HOW MUCH. It used to sum each event's `amount`, and that
+ * is a different question with the same name. A stamp card gives one stamp a
+ * visit, so the two agreed and nobody noticed — until a points card gave ten
+ * points in one go and the shop was told it had had ten visits, and every
+ * number built on top (the Home chart, the revenue figure, the admin console's
+ * spend estimate) came out ten times too big.
+ *
+ * A visit is a person at the counter. What they earned while standing there —
+ * one stamp, ten points, fifty — is a different fact and is still in
+ * `events.amount` for anything that genuinely wants it.
+ *
+ * This is the same rule `CUSTOMER_VISITS_SQL` has always used per person, which
+ * is why the Customers screen was right about a points shop while Home was not.
  *
  * A staff `undo` reverses a mis-scan, and `events` is append-only, so the stamp
- * row stays behind. Any number that means "how much has this shop done" has to
+ * row stays behind. Any number meaning "how much has this shop done" has to
  * take the correction off, or a counter that fat-fingers twice a day reads as
  * busier than one that does not.
  *
- * ONE implementation, because there were five: a constant used by a single
- * query plus four hand-written copies, which is how `stamps` and `stamps_30d`
- * came to sit in the same SELECT with opposite rules. Everything net goes
- * through here.
- *
  * `NOT e.is_test` is part of the rule, not an extra: a card the owner put in
- * their own wallet is not activity. This constant used to be the one net
- * implementation WITHOUT that filter, while the four copies had it.
+ * their own wallet is not activity.
  *
  * The floor at zero is for the same reason `addStamps` clamps: undos can
  * outnumber stamps in a window that starts mid-correction, and a negative
- * "stamps given" is not a fact about anything.
+ * visit count is not a fact about anything.
  *
  * @param scope  SQL that picks the events — usually a card or merchant clause.
  * @param since  a Postgres interval ('7 days'), or "" for all time.
  */
-function netStamps(scope: string, since = ""): string {
+function netVisits(scope: string, since = ""): string {
   const window = since ? ` AND e.created_at > now() - interval '${since}'` : "";
-  // HOW MUCH, not how many rows. One stamp is one, and always was — which is
-  // why a NULL amount reads as 1 and no historical row needs rewriting. One
-  // points event can be fifty, and counting rows would report a shop that gave
-  // away fifty points as having given away one.
   const when = (type: string) =>
-    `COALESCE(sum(COALESCE(e.amount, 1)) FILTER (WHERE e.type = '${type}'${window}), 0)`;
+    `count(*) FILTER (WHERE e.type = '${type}'${window})`;
   return `(SELECT GREATEST(${when("stamp")} - ${when("undo")}, 0)::int
              FROM events e WHERE ${scope} AND NOT e.is_test)`;
 }
 
 /** Net stamps for the card aliased `c`. */
-const NET_STAMPS_SQL = netStamps("e.card_id = c.id");
+const NET_VISITS_SQL = netVisits("e.card_id = c.id");
 
 /**
  * Every event under the merchant aliased `m`. Assumes events are aliased `e`.
@@ -3359,7 +3374,7 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
             (SELECT count(DISTINCT ${PERSON_KEY_SQL})::int FROM passes p
               WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND ${ACTIVE_PASS_SQL}) AS active,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}) AS cards,
-            ${NET_STAMPS_SQL} AS stamps,
+            ${NET_VISITS_SQL} AS stamps,
             (SELECT count(*)::int FROM events e
               WHERE e.card_id = c.id AND e.type = 'redeem' AND NOT e.is_test) AS redemptions,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
@@ -3380,8 +3395,8 @@ export async function allCardsWithStats(): Promise<AdminCardRow[]> {
             (SELECT max(l.created_at) FROM owner_logins l
                JOIN owner_cards oc ON oc.owner_id = l.owner_id
               WHERE oc.card_id = c.id) AS last_owner_login,
-            ${netStamps("e.card_id = c.id", "7 days")} AS stamps_7d,
-            ${netStamps("e.card_id = c.id", "30 days")} AS stamps_30d,
+            ${netVisits("e.card_id = c.id", "7 days")} AS stamps_7d,
+            ${netVisits("e.card_id = c.id", "30 days")} AS stamps_30d,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL}
                AND EXISTS (SELECT 1 FROM events e WHERE e.serial = p.serial AND e.type = 'pass_added')) AS added,
             (SELECT count(*)::int FROM passes p WHERE p.card_id = c.id AND ${REAL_PASS_SQL} AND ${REMOVED_PASS_SQL}) AS removed,
@@ -3646,9 +3661,9 @@ export async function merchantHealth(): Promise<MerchantHealthRow[]> {
             -- table did not. stamps_7d and stamps_prev_7d are compared against
             -- each other for the "slowing down" flag, where two differently
             -- inflated numbers are worse than two wrong ones.
-            ${netStamps(MERCHANT_EVENTS_SQL)} AS stamps,
-            ${netStamps(MERCHANT_EVENTS_SQL, "7 days")} AS stamps_7d,
-            ${netStamps(MERCHANT_EVENTS_SQL, "30 days")} AS stamps_30d,
+            ${netVisits(MERCHANT_EVENTS_SQL)} AS stamps,
+            ${netVisits(MERCHANT_EVENTS_SQL, "7 days")} AS stamps_7d,
+            ${netVisits(MERCHANT_EVENTS_SQL, "30 days")} AS stamps_30d,
             -- The week before last, so the table can show a direction rather
             -- than a number that could mean anything.
             (SELECT GREATEST(
@@ -3907,7 +3922,7 @@ export async function returningRate(merchantId?: string): Promise<ReturningRate>
     ? `c.merchant_id = $1`
     : `EXISTS (SELECT 1 FROM merchants mm WHERE mm.id = c.merchant_id AND mm.archived_at IS NULL)`;
   // Net stamps as of a cutoff: the same count(stamp) - count(undo) rule as
-  // NET_STAMPS_SQL, with the clock wound back. Both windows come off one pass
+  // NET_VISITS_SQL, with the clock wound back. Both windows come off one pass
   // over the events so the rate and its comparison cannot drift apart.
   const netBy = (cutoff: string) =>
     `GREATEST(count(*) FILTER (WHERE e.type = 'stamp' AND e.created_at <= ${cutoff})
@@ -3961,7 +3976,7 @@ export async function returningRate(merchantId?: string): Promise<ReturningRate>
 export interface WeekRow {
   /** Monday 00:00 of the bucket, in the database's timezone. */
   week: Date;
-  /** Net of undos, the NET_STAMPS_SQL rule, floored at zero. */
+  /** Net of undos, the NET_VISITS_SQL rule, floored at zero. */
   stamps: number;
   /** Distinct people stamped that week — per PERSON, invariant 5. */
   active_customers: number;
@@ -4190,12 +4205,16 @@ export async function shopSeries(merchantId: string, window: ShopWindow = 7): Pr
           AND e.created_at >= (SELECT min(at) FROM buckets)
      )
      SELECT b.at,
-            -- The netStamps rule, spelled out: ev has already dropped test rows
+            -- The netVisits rule, spelled out: ev has already dropped test rows
             -- and no longer carries the column to filter on, so the helper
             -- cannot be pointed at it. Same arithmetic, same floor at zero.
+            --
+            -- COUNT, not sum(amount). One person at the counter is one visit,
+            -- whether they earned a stamp or ten points — and this column is
+            -- literally named visits.
             COALESCE((SELECT GREATEST(
-                        COALESCE(sum(amount) FILTER (WHERE type = 'stamp'), 0)
-                      - COALESCE(sum(amount) FILTER (WHERE type = 'undo'), 0), 0)::int
+                        count(*) FILTER (WHERE type = 'stamp')
+                      - count(*) FILTER (WHERE type = 'undo'), 0)::int
                         FROM ev WHERE ev.at = b.at), 0) AS visits,
             COALESCE((SELECT count(*)::int FROM ev
                        WHERE ev.at = b.at AND ev.type = 'redeem'), 0) AS rewards
@@ -4213,8 +4232,16 @@ export async function shopSeries(merchantId: string, window: ShopWindow = 7): Pr
   }>(
     `WITH person AS (${BECAME_CUSTOMER_SQL}),
      ev AS (
-       SELECT e.created_at, e.type, COALESCE(e.amount, 1) AS amount,
-              c.average_spend_cents AS basket
+       SELECT e.created_at, e.type,
+              -- WHAT THIS VISIT WAS WORTH, in cents: the till total if the
+              -- counter recorded one (a points card earning from SPEND does),
+              -- otherwise the shop's own average order.
+              --
+              -- Never the event's amount column. On a points card that is a number
+              -- of POINTS, and points × an average basket is how one ten-point
+              -- visit came to be reported as ten baskets of revenue.
+              COALESCE(NULLIF(e.metadata->>'spend_cents', '')::int,
+                       c.average_spend_cents) AS worth
          FROM events e JOIN cards c ON c.id = e.card_id
         WHERE NOT e.is_test AND c.merchant_id = $1
      )
@@ -4223,25 +4250,27 @@ export async function shopSeries(merchantId: string, window: ShopWindow = 7): Pr
                          ELSE count(*) FILTER (WHERE became_at <= ${cut}) END
                FROM person)::text AS cbefore,
             (SELECT GREATEST(
-                      COALESCE(sum(amount) FILTER (WHERE type = 'stamp'), 0)
-                    - COALESCE(sum(amount) FILTER (WHERE type = 'undo'), 0), 0)::int
+                      count(*) FILTER (WHERE type = 'stamp')
+                    - count(*) FILTER (WHERE type = 'undo'), 0)::int
                FROM ev)::text AS snow,
             (SELECT CASE WHEN ${cut} IS NULL THEN NULL ELSE GREATEST(
-                      COALESCE(sum(amount) FILTER (WHERE type = 'stamp' AND created_at <= ${cut}), 0)
-                    - COALESCE(sum(amount) FILTER (WHERE type = 'undo' AND created_at <= ${cut}), 0), 0)::int
+                      count(*) FILTER (WHERE type = 'stamp' AND created_at <= ${cut})
+                    - count(*) FILTER (WHERE type = 'undo' AND created_at <= ${cut}), 0)::int
                END FROM ev)::text AS sbefore,
-            -- EACH CARD AT ITS OWN BASKET, summed — not the whole shop's stamps
-            -- priced at the dearest card's. A shop running a RM6 coffee card and
-            -- a RM40 dinner card had every coffee stamp counted as RM40, which
-            -- is the same arithmetic that reported RM88 a stamp when the basket
-            -- was still being taken from the reward's value.
+            -- EVERY VISIT AT WHAT IT WAS WORTH, summed — see worth, above.
+            --
+            -- It was sum(amount * basket), which priced a ten-point visit as
+            -- ten baskets; before that it was the whole shop's stamps at the
+            -- dearest card's basket. Now each visit carries its own money: the
+            -- real till total where one was rung up, that card's average order
+            -- where it was not.
             (SELECT GREATEST(
-                      COALESCE(sum(amount * basket) FILTER (WHERE type = 'stamp'), 0)
-                    - COALESCE(sum(amount * basket) FILTER (WHERE type = 'undo'), 0), 0)::bigint
+                      COALESCE(sum(worth) FILTER (WHERE type = 'stamp'), 0)
+                    - COALESCE(sum(worth) FILTER (WHERE type = 'undo'), 0), 0)::bigint
                FROM ev)::text AS rnow,
             (SELECT CASE WHEN ${cut} IS NULL THEN NULL ELSE GREATEST(
-                      COALESCE(sum(amount * basket) FILTER (WHERE type = 'stamp' AND created_at <= ${cut}), 0)
-                    - COALESCE(sum(amount * basket) FILTER (WHERE type = 'undo' AND created_at <= ${cut}), 0), 0)::bigint
+                      COALESCE(sum(worth) FILTER (WHERE type = 'stamp' AND created_at <= ${cut}), 0)
+                    - COALESCE(sum(worth) FILTER (WHERE type = 'undo' AND created_at <= ${cut}), 0), 0)::bigint
                END FROM ev)::text AS rbefore`,
     [merchantId],
   );
@@ -4821,19 +4850,31 @@ export async function logEvent(
  * An `undo` already reversed is skipped, so tapping undo twice takes back the
  * two stamps before it rather than the same one twice.
  */
-export async function lastStampAmount(serial: string): Promise<number> {
-  const res = await getPool().query<{ amount: string }>(
+export async function lastStampAmount(
+  serial: string,
+): Promise<{ amount: number; spendCents: number | null }> {
+  const res = await getPool().query<{ amount: string; spend: string | null }>(
     `WITH ev AS (
-       SELECT type, COALESCE(amount, 1) AS amount, id
+       SELECT type, COALESCE(amount, 1) AS amount, id,
+              (metadata->>'spend_cents') AS spend
          FROM events WHERE serial = $1 AND type IN ('stamp', 'undo')
         ORDER BY id DESC LIMIT 50
      )
-     SELECT amount::text FROM ev WHERE type = 'stamp'
+     SELECT amount::text, spend FROM ev WHERE type = 'stamp'
       OFFSET (SELECT count(*) FROM ev WHERE type = 'undo') LIMIT 1`,
     [serial],
   );
   const n = Number(res.rows[0]?.amount);
-  return Number.isFinite(n) && n > 0 ? n : 1;
+  // The till total comes back with it so the undo can take back the same money
+  // the stamp put in. Without it a corrected spend-card visit would be
+  // subtracted at the shop's AVERAGE order instead of the real one — and on a
+  // spend card that average is often not set at all, so it would subtract
+  // nothing and leave the money behind.
+  const spend = Number(res.rows[0]?.spend);
+  return {
+    amount: Number.isFinite(n) && n > 0 ? n : 1,
+    spendCents: Number.isFinite(spend) && spend > 0 ? spend : null,
+  };
 }
 
 /**
@@ -5045,9 +5086,9 @@ export async function cardMetrics(cardId: string): Promise<CafeMetrics> {
        -- correction, so it comes off. The counter fold one tab away is
        -- deliberately NOT net — see counterActivity, where the take-back is its
        -- own cell and both numbers are facts about the day.
-       ${netStamps("e.card_id = $1")}::text AS stamps,
+       ${netVisits("e.card_id = $1")}::text AS stamps,
        count(*) FILTER (WHERE type = 'redeem')::text AS redemptions,
-       ${netStamps("e.card_id = $1", "30 days")}::text AS "stamps30d",
+       ${netVisits("e.card_id = $1", "30 days")}::text AS "stamps30d",
        count(*) FILTER (WHERE type = 'redeem' AND created_at > now() - interval '30 days')::text AS "redemptions30d",
        (SELECT count(DISTINCT ${PERSON_KEY_SQL}) FROM passes p
           WHERE ${MATURE_PASS_SQL})::text AS matured,

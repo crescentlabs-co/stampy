@@ -30,7 +30,7 @@ async function main() {
   // it again where the closed behaviour is what is being asserted.
   process.env.ALLOW_PUBLIC_SIGNUP = "1";
 
-  const { migrate, ensureEnvStamp, liveCardsForMerchant, cardsForMerchant, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, removeCard, cardHasRealPass, merchantForOwner: ownerMerchant } =
+  const { migrate, ensureEnvStamp, liveCardsForMerchant, cardsForMerchant, lastStampAmount, getPass, addStamps, createPass, generateShortCode, getCard, getStampStrip, logEvent, redeemPass, reissuePass, createOwner, ensureMerchantForOwner, currentSlug, getOwnerByEmail, setResetToken, updateCard, getPool, verifyStaffPin, setStaffPin: setStaffPinFor, createCard, linkOwnerCard, removeCard, cardHasRealPass, shopSeries, merchantForOwner: ownerMerchant } =
     await import("../src/db.js");
 
   /**
@@ -3557,11 +3557,16 @@ async function main() {
       expect(untouched!.stamp_count === 450,
         `...and the refusal left the balance alone (got ${untouched!.stamp_count})`);
 
-      // Undo reverses the amount that was actually given, not one.
-      await logEvent("default", held.serial, "stamp", { amount: 40 });
+      // Undo reverses the amount that was actually given, not one — and on a
+      // spend card it takes back the same MONEY too, or a corrected visit would
+      // leave its revenue behind.
+      await logEvent("default", held.serial, "stamp",
+        { amount: 40, metadata: { spend_cents: 4000 } });
       await addStamps(held.serial, 40);
       const back = await lastStampAmount(held.serial);
-      expect(back === 40, `undo knows the last stamp was worth 40 (got ${back})`);
+      expect(back.amount === 40, `undo knows the last stamp was worth 40 (got ${back.amount})`);
+      expect(back.spendCents === 4000,
+        `...and what the till rang up for it (got ${back.spendCents})`);
 
       await updateCard("default", {
         kind: asIssued!.kind,
@@ -3789,8 +3794,17 @@ async function main() {
       });
     }
 
-    // "Stamps given" counts HOW MUCH, not how many rows. A shop handing out
-    // fifty points in one scan used to read as having handed out one.
+    // VISITS COUNT HOW MANY TIMES, NOT HOW MUCH.
+    //
+    // This used to read the other way round — it summed each event's amount, so
+    // a scan worth thirty points counted as thirty. That is a true statement
+    // about points and a false one about visits, and the number is used as
+    // visits: it is the Home chart's line, the programme chart's bars, and what
+    // the revenue figure is multiplied out of. A shop that gave ten points a
+    // visit was shown ten times the footfall and ten times the money.
+    //
+    // How MUCH was given is still in events.amount for anything that wants it.
+    // This is the same rule CUSTOMER_VISITS_SQL has always used per person.
     {
       const counted = await mk();
       const before = (await cardMetrics("default")).stamps;
@@ -3798,8 +3812,84 @@ async function main() {
       await logEvent("default", counted.serial, "stamp");           // NULL means one
       await logEvent("default", counted.serial, "undo", { amount: 10 });
       const after = (await cardMetrics("default")).stamps;
-      expect(after - before === 21,
-        `thirty points, plus one stamp, minus ten undone is twenty-one (got ${after - before})`);
+      expect(after - before === 1,
+        `two visits minus one undone is one, whatever they were worth (got ${after - before})`);
+    }
+
+    // ---- WHAT A POINTS SHOP IS WORTH, priced two different ways ----
+    //
+    // A points card breaks the shortcut every money figure used to take. On a
+    // stamp card a visit is a stamp, so counting stamps and counting visits give
+    // the same answer and pricing "stamps × average order" is right by accident.
+    // On a points card one visit can be ten points, and it went wrong twice
+    // over: ten visits' worth of footfall, and ten baskets of revenue.
+    //
+    // FIXED earning is priced at the shop's own average order, because nobody
+    // told us the bill. SPEND earning is priced at the bill itself, which the
+    // counter typed in — so that card needs no average order at all, and this
+    // one deliberately has none set.
+    {
+      const money = await createOwner(crypto.randomUUID(), "points-money@shop.my", "x");
+      const shop = await ensureMerchantForOwner(money.id, "Points Money Cafe");
+      const mkPointsCard = async (name: string, patch: Record<string, unknown>) => {
+        const c = await createCard({ merchantId: shop.id, name, reward: "Free coffee",
+          stampsTarget: 10, stampsStart: 0, kind: "points" });
+        await linkOwnerCard(money.id, c.id);
+        await updateCard(c.id, patch as never, "e2e");
+        return c;
+      };
+      const fixedCard = await mkPointsCard("Fixed points", {
+        earn_mode: "visit", earn_points: 10, average_spend_cents: 1200,
+        milestones: [{ at: 200, reward: "Free coffee" }],
+      });
+      const spendCard = await mkPointsCard("Spend points", {
+        earn_mode: "spend", earn_spend_cents: 100, earn_points: 1, average_spend_cents: 0,
+        milestones: [{ at: 200, reward: "Free coffee" }],
+      });
+      const mkPointsPass = async (cardId: string) => {
+        const who = await mkCustomer(shop.id);
+        return createPass({ serial: crypto.randomUUID(), cardId, customerId: who.id,
+          platform: "apple", shortCode: generateShortCode(), authToken: "t".repeat(24),
+          stampCount: 0, stampsTarget: 200, reward: "Free coffee", kind: "points" });
+      };
+      const pinFixed = await mkPointsPass(fixedCard.id);
+      const pinSpend = await mkPointsPass(spendCard.id);
+      await setStaffPinFor(money.id, "4321");
+      const pointsStaff = (await staffLogin(fixedCard.id, "4321")).cookie;
+      const tap = (cardId: string, serial: string, extra: Record<string, unknown> = {}) =>
+        fetch(base + "/staff/api/stamp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-card-id": cardId, cookie: pointsStaff },
+          body: JSON.stringify({ serial, force: true, ...extra }),
+        });
+
+      for (let i = 0; i < 3; i++) await tap(fixedCard.id, pinFixed.serial);
+      await tap(spendCard.id, pinSpend.serial, { spend: "25.50" });
+      await tap(spendCard.id, pinSpend.serial, { spend: "10" });
+
+      const fixedSeen = await cardMetrics(fixedCard.id);
+      const spendSeen = await cardMetrics(spendCard.id);
+      expect(fixedSeen.stamps === 3,
+        `ten points three times is THREE visits, not thirty (got ${fixedSeen.stamps})`);
+      expect((await getPass(pinFixed.serial))!.stamp_count === 30,
+        "...while the customer's balance really is thirty points");
+      expect(spendSeen.stamps === 2, `two bills is two visits (got ${spendSeen.stamps})`);
+      expect((await getPass(pinSpend.serial))!.stamp_count === 35,
+        "...and RM25.50 plus RM10 at a point a ringgit is thirty-five points");
+
+      // The bill is kept on the event, or there is nothing to price it with.
+      const kept = await getPool().query<{ spend: string | null }>(
+        `SELECT metadata->>'spend_cents' AS spend FROM events
+          WHERE serial = $1 AND type = 'stamp' ORDER BY id`, [pinSpend.serial]);
+      expect(kept.rows.map((r) => r.spend).join(",") === "2550,1000",
+        `the till total is recorded against the visit (got ${kept.rows.map((r) => r.spend).join(",")})`);
+
+      const shopMoney = await shopSeries(shop.id, 0);
+      expect(shopMoney.points.reduce((a, p) => a + p.visits, 0) === 5,
+        "the chart plots five visits, not thirty-five");
+      // 3 x RM12 from the fixed card's average order, plus the two real bills.
+      expect(shopMoney.revenueCents.now === 3600 + 2550 + 1000,
+        `fixed earns at the average order and spend earns at the till (got ${shopMoney.revenueCents.now})`);
     }
 
     // The owner's OWN card, added from the same browser and therefore hanging

@@ -398,6 +398,25 @@ stamps as `count(stamp) - count(undo)`); `passes.stamp_count` is a cache that
 can be rebuilt. Keep it that way: a stored aggregate that drifts from the log is
 how the Home headline came to disagree with the list under it.
 
+**A VISIT IS AN EVENT, NOT AN AMOUNT.** `netVisits` (src/db.ts) counts stamp
+rows minus undo rows — never `sum(events.amount)`. It summed the amount once,
+which is a true statement about STAMPS and a false one about visits: on a stamp
+card a visit is one stamp so the two agreed and nothing looked wrong, and then a
+points card gave ten points in one scan and the shop was told it had had ten
+visits and earned ten baskets. How MUCH was given is still `events.amount` for
+anything that genuinely wants it. `CUSTOMER_VISITS_SQL` and `counterActivity`
+already counted rows, which is why the Customers screen was right about a points
+shop while Home was not — three definitions, one name. There is one now.
+
+**Money is per VISIT, and each visit carries its own.** `shopSeries` prices a
+visit at `events.metadata.spend_cents` when the counter recorded a till total —
+which a points card earning from SPEND always does — and at that card's
+`average_spend_cents` otherwise. Not `amount × basket`, which multiplied points
+by a basket; not `max(average_spend_cents)` across the shop, which priced a RM6
+coffee card at the dinner card's RM40. **A spend-earning points card therefore
+needs no average order value at all**, and the rules form does not ask for one:
+asking a shop to estimate a number we are about to be told exactly is how a
+guess ends up outranking a fact.
 **There are exactly TWO exceptions, and neither is a precedent.** Both delete
 a whole THING together with its whole log, in one transaction, so nothing
 survives to disagree with anything. That is the only shape this is ever allowed

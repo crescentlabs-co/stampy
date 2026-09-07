@@ -3745,12 +3745,25 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         "<label>Welcome points" + info("Points a NEW card starts with, as a welcome. Given once \u2014 a card that has just paid out keeps whatever was left over instead.") + "</label>" +
         '<input data-r="welcome" type="number" min="0" step="1" value="' + r.welcome + '">';
 
+      /**
+       * What a customer usually spends, asked only where we cannot know it.
+       *
+       * A points card that earns from SPEND is told the real till total at
+       * every visit, and that is what its money is built from — so asking the
+       * shop to also estimate an average would be asking for a guess we would
+       * then ignore. Every other kind has no such number, and this is it.
+       */
+      const wantsBasket = () => !(points && r.earnMode === "spend");
       const basketField = () =>
-        '<label class="dlbl">Average order value (RM)' +
-          info("What a customer usually spends in one visit. This is what turns visits into a money figure on Home \u2014 it is not the reward's price.") +
-        "</label>" +
-        '<input data-r="basket" type="number" min="0" step="0.10" placeholder="e.g. 20" value="' +
-          esc(String(r.basket)).replace(/"/g, "&quot;") + '">';
+        (wantsBasket()
+          ? '<label class="dlbl">Average order value (RM)' +
+              info("What a customer usually spends in one visit. This is what turns visits into a money figure on Home \u2014 it is not the reward's price.") +
+            "</label>" +
+            '<input data-r="basket" type="number" min="0" step="0.10" placeholder="e.g. 20" value="' +
+              esc(String(r.basket)).replace(/"/g, "&quot;") + '">'
+          : '<p class="dhint">Your staff enter the bill at the counter, so your ' +
+            "money figures come from what customers actually spent \u2014 nothing to " +
+            "estimate here.</p>");
 
       const paintLocked = () => {
         body.innerHTML =
@@ -3782,11 +3795,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
           '<input data-r="shopName" maxlength="60" value="' +
             esc(r.shopName).replace(/"/g, "&quot;") + '">' +
           '<p class="dhint">This will be what your card displays.</p>' +
-          '<label class="dlbl">Average order value (RM)' +
-            info("What a customer usually spends in one visit. This is what turns visits into a money figure on Home \u2014 it is not the reward's price.") +
-          "</label>" +
-          '<input data-r="basket" type="number" min="0" step="0.10" placeholder="e.g. 20" value="' +
-            esc(String(r.basket)).replace(/"/g, "&quot;") + '">' +
+          basketField() +
           (locked
             ? '<div class="locknote">Your program rules are locked. Customers have ' +
               "already joined this program, so its earning and reward rules can no " +

@@ -437,11 +437,14 @@ async function updateAndPush(
   forced = false,
   /** How much this moved the counter. Left unset it is one, as it always was. */
   amount: number | null = null,
+  /** The till total, on a points card that earns from spend. See EventMetadata. */
+  metadata: { spend_cents: number } | undefined = undefined,
 ): Promise<void> {
   const result = await applyAndPush(req.card!, serial, eventType, update, {
     actor: actorOf(req),
     forced,
     amount,
+    metadata,
     // A customer hands over whichever card they have; the phone shouldn't have
     // to be showing that one already.
     merchantId: req.merchant?.id,
@@ -478,7 +481,10 @@ async function stampAmount(
   serial: string,
   merchantId: string | undefined,
   body: { spend?: unknown },
-): Promise<{ ok: true; amount: number } | { ok: false; error: string; status: number }> {
+): Promise<
+  | { ok: true; amount: number; spendCents?: number }
+  | { ok: false; error: string; status: number }
+> {
   const row = await getPassForMerchant(merchantId, serial);
   if (!row) return { ok: false, error: "no-such-card", status: 404 };
   // Off the PASS, never the card: how much a STAMP is worth is frozen at issue
@@ -494,7 +500,10 @@ async function stampAmount(
   if (mode === "visit") return { ok: true, amount: fixedVisitPoints(card.earn_points) };
   const quote = pointsForSpend(body.spend, card.earn_spend_cents, card.earn_points);
   if (!quote.ok) return { ok: false, error: quote.error, status: 422 };
-  return { ok: true, amount: quote.points };
+  // The POINTS move the counter; the RINGGIT are what the visit was worth. Both
+  // travel, because `amount` can only carry one of them and pricing a points
+  // card off its average order is the guess a spend card exists to remove.
+  return { ok: true, amount: quote.points, spendCents: quote.spendCents };
 }
 
 staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
@@ -510,6 +519,7 @@ staffRouter.post("/api/stamp", requireStaff, async (req: StaffRequest, res) => {
   if (!quote.ok) return void res.status(quote.status).json({ error: quote.error });
   await updateAndPush(
     req, res, serial, "stamp", () => addStamps(serial, quote.amount), force === true, quote.amount,
+    quote.spendCents === undefined ? undefined : { spend_cents: quote.spendCents },
   );
 });
 
@@ -529,7 +539,10 @@ staffRouter.post("/api/undo", requireStaff, async (req: StaffRequest, res) => {
   // leave forty-nine behind — and trusting a number from the browser would let
   // a stale screen reverse an amount that was never given.
   const back = await lastStampAmount(serial);
-  await updateAndPush(req, res, serial, "undo", () => addStamps(serial, -back), false, back);
+  await updateAndPush(req, res, serial, "undo", () => addStamps(serial, -back.amount), false,
+    back.amount,
+    // The till total the stamp carried, so the money comes off with the points.
+    back.spendCents === null ? undefined : { spend_cents: back.spendCents });
 });
 
 staffRouter.post("/api/redeem", requireStaff, async (req: StaffRequest, res) => {
