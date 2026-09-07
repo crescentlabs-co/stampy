@@ -2270,8 +2270,10 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
       // clean rather than restoring a filter the owner has forgotten setting.
       // Opens on Stamps. A ratio cannot be drawn for a shop with no counted
       // customers yet, and that is exactly the shop most likely to be looking.
-      comparison(d.querySelector("[data-programs]"), PROGRAMME_SPEC,
-        { metric: "visits", type: "all", status: "all", picked: [] });
+      const programState = { metric: "visits", type: "all", status: "all", picked: [] };
+      const drawPrograms = () =>
+        comparison(d.querySelector("[data-programs]"), PROGRAMME_SPEC, programState);
+      drawPrograms();
       comparison(d.querySelector("[data-campaigns]"), CAMPAIGN_SPEC,
         { metric: "rate", type: "all", status: "all", picked: [] });
 
@@ -2325,6 +2327,13 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // with the tab that is lit.
         if (mine !== live) return;
         if (body && body.ok && body.series) paint(body.series);
+        // The programme chart reads S.cards, which is loaded once at sign-in.
+        // Without this it showed the numbers as they stood when the page was
+        // opened and only caught up after a log out and back in — beside tiles
+        // that refresh every time. Re-read the shop, then redraw it.
+        await refreshCards();
+        if (mine !== live) return;
+        drawPrograms();
       }
       load("7");
 
@@ -2631,7 +2640,7 @@ export function dashboardPage(canEmail: boolean, contactEmail = "", allowSignup 
         // yet got a dash and an empty plot under a heading that had promised
         // its loyalty cards. A count is never undefined: it is 0, or it is a
         // number, and either draws.
-        { k: "visits", name: "Stamps", of: (r) => r.visits, fmt: (v) => v.toLocaleString() },
+        { k: "visits", name: "Visits", of: (r) => r.visits, fmt: (v) => v.toLocaleString() },
         { k: "per", name: "Visits per customer",
           of: (r) => (r.customers ? r.visits / r.customers : 0),
           fmt: (v) => (v > 0 ? v.toFixed(1) : "—") },

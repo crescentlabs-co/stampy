@@ -394,6 +394,35 @@ async function main(): Promise<void> {
       "...and the Danger zone stops offering a delete once a card is out there");
     ok(!/Delete this program/.test(shut.danger), "...it really is gone, not just reworded");
 
+    // ---- Home's programme chart keeps up without a log out ----
+    //
+    // It was drawn ONCE while the screen was being built, off the cards loaded
+    // at sign-in, and nothing ever drew it again — so a stamp taken since only
+    // appeared after logging out and back in, beside tiles that refetch every
+    // time. This walks the way an owner does: look, get stamped, come back.
+    await page.evaluate(`document.querySelector('[data-nav="/"]').click()`);
+    await page.waitForTimeout(3500);
+    const chartVal = () => page.evaluate(`(() => {
+      const v = document.querySelector("[data-programs] .vval");
+      return v ? v.textContent : "(none)";
+    })()`);
+    const before = await chartVal();
+    // A stamp at the counter, while the dashboard is open.
+    await db.logEvent(cardId, joinPass.serial, "stamp", { merchantId: merchant!.id });
+    await page.evaluate(`document.querySelector('[data-nav="/customers"]').click()`);
+    await page.waitForTimeout(1200);
+    await page.evaluate(`document.querySelector('[data-nav="/"]').click()`);
+    await page.waitForTimeout(3500);
+    const after = await chartVal();
+    ok(Number(after) === Number(before) + 1,
+      "the programme chart catches up without a log out (" + before + " then " + after + ")");
+    // And it is labelled the way the rest of the product labels it.
+    const metricName = await page.evaluate(`(() => {
+      const m = document.querySelector("[data-programs] .cmpmetric span");
+      return m ? m.textContent : "";
+    })()`);
+    ok(metricName === "Visits", "...under the same word the tiles use (got: " + metricName + ")");
+
     // ---- the customer's page carries the design ----
     const signup = await fetch(BASE + "/c/" + cardId);
     ok(signup.status === 200, "the customer's sign-up page opens");
