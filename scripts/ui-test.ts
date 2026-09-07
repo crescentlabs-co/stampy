@@ -423,6 +423,82 @@ async function main(): Promise<void> {
     })()`);
     ok(metricName === "Visits", "...under the same word the tiles use (got: " + metricName + ")");
 
+    // ---- THE COUNTER, on a second phone ----
+    //
+    // The scanner is the one screen used by somebody who is not the owner, in a
+    // hurry, with a customer waiting — and finishing an action used to replace
+    // the buttons with "Next customer". So the tenth stamp filled the card and
+    // then hid the Give reward button the very same reply had just earned, and
+    // a second stamp for a second coffee meant searching the customer out
+    // again. Both cost a whole round trip at the till. Neither is visible to a
+    // test that calls the page's functions: they were the SHEET.
+    await db.setStaffPin((await db.getOwnerByEmail("ui@test.my"))!.id, "1234");
+    await db.getPool().query(
+      "UPDATE passes SET stamp_count = 8, stamps_target = 10 WHERE serial = $1", [joinPass.serial]);
+    const till = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+    const tillCrashes: string[] = [];
+    till.on("pageerror", (e) => tillCrashes.push(e.message));
+    await till.goto(BASE + "/staff?c=" + cardId, { waitUntil: "networkidle" });
+    await till.fill("#pin", "1234");
+    await till.locator("#go").click();
+    await till.waitForTimeout(2500);
+    // Found by the typed code, which is the fallback when a camera will not read.
+    await till.fill("#search", joinPass.short_code);
+    await till.press("#search", "Enter");
+    await till.waitForTimeout(1500);
+    await till.locator(".search-hit").first().click();
+    await till.waitForTimeout(1500);
+    const sheet = () => till.evaluate(`(() => ({
+      buttons: [...document.querySelectorAll("#actionBody .btn")].map((b) => (b.textContent || "").trim()),
+      progress: (document.querySelector("#actionBody .progress-card strong") || {}).textContent || "",
+    }))()`) as Promise<{ buttons: string[]; progress: string }>;
+
+    const opened = await sheet();
+    ok(/8 of 10/.test(opened.progress), "the counter opens the customer at their real progress");
+    ok(opened.buttons.some((b) => /Add 1 stamp/.test(b)), "...and offers the stamp");
+
+    // A stamp taken soon after the last one asks first — staff confirm it is a
+    // second purchase and not a double tap. That popup is the app's own, never
+    // the browser's, so it can be answered here the way a thumb answers it.
+    const addStamp = async () => {
+      await till.locator('#actionBody [data-act="stamp"]').click();
+      await till.waitForTimeout(1200);
+      const again = till.locator(".mdl button", { hasText: /^Continue$/ });
+      if (await again.count()) { await again.first().click(); }
+      await till.waitForTimeout(1800);
+    };
+
+    await addStamp();
+    const stamped = await sheet();
+    ok(/9 of 10/.test(stamped.progress), "a stamp lands");
+    // THE SECOND COMPLAINT: keep going without searching the customer out again.
+    ok(stamped.buttons.some((b) => /Add 1 stamp/.test(b)),
+      "...and the stamp button is still there for the next one");
+
+    await addStamp();
+    const full = await sheet();
+    ok(/10 of 10/.test(full.progress), "the tenth stamp fills the card");
+    // THE FIRST COMPLAINT: the reward is offered there and then.
+    ok((await till.locator('#actionBody [data-act="redeem"]').count()) > 0,
+      "...and Give reward is offered without scanning the card again");
+    ok(!full.buttons.some((b) => /Add 1 stamp/.test(b)),
+      "...while a full card takes no more stamps");
+
+    await till.locator('#actionBody [data-act="redeem"]').click();
+    await till.waitForTimeout(2000);
+    const done = await sheet();
+    // 0 of SEVEN, not of ten, and that is the whole point of redeemPass: the
+    // pass was issued at a target of 10 and this walk lowered the card to 7
+    // earlier on, so the customer restarts on TODAY'S rules. It is the one
+    // moment a rules change reaches somebody already holding a card, and it
+    // happening here proves the counter reads the card and not a stale pass.
+    ok(/0 of 7/.test(done.progress),
+      "handing the reward over restarts the card on today's rules, in the same sheet"
+        + " (got: " + done.progress + ")");
+    ok(done.buttons.some((b) => /Add 1 stamp/.test(b)), "...ready to start again");
+    ok(tillCrashes.length === 0,
+      "nothing threw on the counter" + (tillCrashes[0] ? ": " + tillCrashes[0] : ""));
+
     // ---- the customer's page carries the design ----
     const signup = await fetch(BASE + "/c/" + cardId);
     ok(signup.status === 200, "the customer's sign-up page opens");

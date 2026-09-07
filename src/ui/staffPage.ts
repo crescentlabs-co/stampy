@@ -232,12 +232,35 @@ export function staffPage(
     function renderAction() {
       if (!current) return;
       const p = current.pass, c = current.card, u = current.customer;
+      // A card that is full takes no more stamps: the only thing left to do
+      // with it is hand the reward over.
       const earn = p.kind !== "points" && p.rewardReady ? "" : earningAction(p, c);
-      const action = completedAction
-        ? '<div class="success-note">' + escText(completedAction) + ' · ' + escText(progressText(p)) + '</div>' +
-          '<div class="action-stack"><button class="btn btn-stamp" id="next">Next customer</button>' +
-          (p.stamps > 0 ? '<button class="btn btn-ghost" data-act="undo">Undo last action</button>' : "") + '</div>'
-        : '<div class="action-stack">' + rewardActions(p) + earn + '</div>';
+      // WHAT JUST HAPPENED, AND WHAT CAN HAPPEN NEXT — both, always.
+      //
+      // Finishing an action used to REPLACE the buttons with a success note and
+      // "Next customer", which made the sheet a dead end and cost the counter a
+      // whole rescan twice over. The tenth stamp fills the card, so the reply
+      // already says the reward is ready — and the sheet answered "Next
+      // customer" and hid the Give reward button that reply had just earned.
+      // Staff had to scan the same card again to hand over a reward the app
+      // knew was owed. Adding a second stamp for a second coffee meant the same
+      // round trip.
+      //
+      // The reply to every action carries the card's new state, so the buttons
+      // are rebuilt from THAT: the reward appears the moment it is ready, and
+      // the stamp button is still there for the next round. The note above them
+      // says what was just recorded and where the card now stands.
+      const note = completedAction
+        ? '<div class="success-note">' + escText(completedAction) + ' · ' + escText(progressText(p)) + '</div>'
+        : "";
+      // Undo and Next only after something has been done — before that there is
+      // nothing to undo and the way out is the × in the corner.
+      const after = completedAction
+        ? (p.stamps > 0 ? '<button class="btn btn-ghost" data-act="undo">Undo last action</button>' : "") +
+          '<button class="btn btn-ghost" id="next">Next customer</button>'
+        : "";
+      const action = note + '<div class="action-stack">' +
+        rewardActions(p) + earn + after + '</div>';
       $("#actionBody").innerHTML =
         '<div class="sheet-top"><div><h2>' + escText(u.name || "Customer") + '</h2>' +
           '<p class="customer-meta">' + escText([u.phoneMasked, "Card " + p.code].filter(Boolean).join(" · ")) + '</p>' +
